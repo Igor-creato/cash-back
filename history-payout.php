@@ -152,7 +152,7 @@ class HistoryPayout
      */
     private function render_payouts_table(array $payouts): void
     {
-        echo '<table class="wd-table shop_table_responsive">';
+        echo '<table id="payouts-table" class="wd-table shop_table_responsive">';
         echo '<thead>';
         echo '<tr>';
         echo '<th>' . esc_html__('Номер заявки', 'cashback-plugin') . '</th>';
@@ -174,7 +174,7 @@ class HistoryPayout
             echo '<td data-title="' . esc_attr__('Способ вывода', 'cashback-plugin') . '">' . esc_html($this->get_payout_method_label($payout->payout_method) ?: __('Не указан', 'cashback-plugin')) . '</td>';
             echo '<td data-title="' . esc_attr__('Счет', 'cashback-plugin') . '">' . esc_html($this->get_display_account($payout) ?: __('Не указан', 'cashback-plugin')) . '</td>';
             echo '<td data-title="' . esc_attr__('Банк', 'cashback-plugin') . '">' . esc_html($this->get_bank_name_by_code($payout->provider ?? '') ?: __('Не указан', 'cashback-plugin')) . '</td>';
-            echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '">' . esc_html($this->get_status_label($payout->status)) . '</td>';
+            echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '" class="status-' . esc_attr($payout->status) . '">' . esc_html($this->get_status_label($payout->status)) . '</td>';
             echo '</tr>';
         }
 
@@ -364,7 +364,7 @@ class HistoryPayout
                 'history-payout-css',
                 plugin_dir_url(__FILE__) . 'assets/css/history-payout.css',
                 array(),
-                '1.0.0'
+                '1.4.0'
             );
 
             wp_enqueue_script(

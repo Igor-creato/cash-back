@@ -72,17 +72,36 @@
 }
 
 /* Reset button */
-#history-filter-reset {
-    border: 1px solid var(--btn-accented-bgcolor, #0073aa) !important;
-    border-radius: var(--btn-accented-brd-radius, 4px) !important;
-    color: var(--btn-accented-bgcolor, #0073aa) !important;
-    background-color: transparent !important;
-    text-transform: var(--btn-accented-transform, var(--btn-transform, uppercase)) !important;
-    font-weight: var(--btn-accented-font-weight, var(--btn-font-weight, 600)) !important;
-    font-family: var(--btn-accented-font-family, var(--btn-font-family, inherit)) !important;
-    font-style: var(--btn-accented-font-style, var(--btn-font-style, unset)) !important;
-    padding: 8px 18px !important;
-    cursor: pointer;
+#history-filter-reset:hover {
+    color: var(--btn-accented-color-hover, #fff) !important;
+    box-shadow: var(--btn-accented-box-shadow-hover) !important;
+    background-color: var(--btn-accented-bgcolor-hover, #005a87) !important;
+}
+
+/* Desktop status colors - remove backgrounds and add text colors */
+.wd-cashback-history #transactions-table tbody tr td.status-balance {
+    color: #00a32a !important;
+    background: transparent !important;
+}
+
+.wd-cashback-history #transactions-table tbody tr td.status-completed {
+    color: #00a32a !important;
+    background: transparent !important;
+}
+
+.wd-cashback-history #transactions-table tbody tr td.status-waiting {
+    color: #0073aa !important;
+    background: transparent !important;
+}
+
+.wd-cashback-history #transactions-table tbody tr td.status-hold {
+    color: #dba617 !important;
+    background: transparent !important;
+}
+
+.wd-cashback-history #transactions-table tbody tr td.status-declined {
+    color: #d63638 !important;
+    background: transparent !important;
 }
 
 #history-filter-reset:hover {
@@ -108,5 +127,113 @@
         max-width: none;
         min-width: auto;
         width: 100%;
+    }
+
+    /* Mobile cards for transactions table - override WooCommerce defaults */
+    /* Hide table header on mobile */
+    .wd-cashback-history #transactions-table thead {
+        display: none !important;
+    }
+
+    /* Table becomes a stack of cards */
+    .wd-cashback-history #transactions-table {
+        border: none !important;
+        border-collapse: collapse !important;
+    }
+
+    .wd-cashback-history #transactions-table tbody {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 12px !important;
+        border: none !important;
+    }
+
+    /* Override WooCommerce responsive styles */
+    .wd-cashback-history #transactions-table tbody tr {
+        display: flex !important;
+        flex-direction: column !important;
+        background: #fff !important;
+        border: 1px solid #e0e0e0 !important;
+        border-radius: 8px !important;
+        padding: 14px 16px !important;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06) !important;
+        margin-bottom: 0 !important;
+        position: static !important;
+        gap: 0 !important;
+        border-bottom: none !important;
+        padding-bottom: 14px !important;
+    }
+
+    /* Each cell = labelled row inside the card */
+    .wd-cashback-history #transactions-table tbody tr td {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        padding: 6px 0 !important;
+        border: none !important;
+        border-bottom: 1px solid #f0f0f0 !important;
+        font-size: 14px !important;
+        background: transparent !important;
+        position: static !important;
+    }
+
+    .wd-cashback-history #transactions-table tbody tr td:last-child {
+        border-bottom: none !important;
+        padding-bottom: 0 !important;
+    }
+
+    .wd-cashback-history #transactions-table tbody tr td:first-child {
+        padding-top: 0 !important;
+    }
+
+    /* data-title label */
+    .wd-cashback-history #transactions-table tbody tr td::before {
+        content: attr(data-title) !important;
+        font-weight: 600 !important;
+        color: #555 !important;
+        font-size: 13px !important;
+        flex-shrink: 0 !important;
+        margin-right: 12px !important;
+        display: inline-block !important;
+    }
+
+    /* ID — make it stand out as a card header */
+    .wd-cashback-history #transactions-table tbody tr td:first-child {
+        font-weight: 700 !important;
+        font-size: 15px !important;
+        padding-bottom: 8px !important;
+        margin-bottom: 2px !important;
+        border-bottom: 2px solid var(--btn-accented-bgcolor, #0073aa) !important;
+    }
+
+    /* Status — highlight with color */
+    .wd-cashback-history #transactions-table tbody tr td:last-child {
+        font-weight: 600 !important;
+    }
+
+    /* Status colors */
+    .wd-cashback-history #transactions-table tbody tr td.status-balance {
+        color: #00a32a !important;
+        background: transparent !important;
+    }
+
+    .wd-cashback-history #transactions-table tbody tr td.status-completed {
+        color: #00a32a !important;
+        background: transparent !important;
+    }
+
+    .wd-cashback-history #transactions-table tbody tr td.status-waiting {
+        color: #0073aa !important;
+        background: transparent !important;
+    }
+
+    .wd-cashback-history #transactions-table tbody tr td.status-hold {
+        color: #dba617 !important;
+        background: transparent !important;
+    }
+
+    .wd-cashback-history #transactions-table tbody tr td.status-declined {
+        color: #d63638 !important;
+        background: transparent !important;
     }
 }

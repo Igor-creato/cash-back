@@ -180,7 +180,7 @@ class CashbackHistory
      */
     private function render_transactions_table(array $transactions): void
     {
-        echo '<table class="wd-table shop_table_responsive">';
+        echo '<table id="transactions-table" class="wd-table shop_table_responsive">';
         echo '<thead>';
         echo '<tr>';
         echo '<th>' . esc_html__('ID', 'cashback-plugin') . '</th>';
@@ -200,7 +200,7 @@ class CashbackHistory
             echo '<td data-title="' . esc_attr__('Магазин', 'cashback-plugin') . '">' . esc_html($transaction->offer_name ?? __('Н/Д', 'cashback-plugin')) . '</td>';
             echo '<td data-title="' . esc_attr__('Номер заказа', 'cashback-plugin') . '">' . esc_html($transaction->order_number ?? __('Н/Д', 'cashback-plugin')) . '</td>';
             echo '<td data-title="' . esc_attr__('Кэшбэк', 'cashback-plugin') . '">' . esc_html($transaction->cashback ?? '0.00') . '</td>';
-            echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '">' . esc_html($this->get_status_label($transaction->order_status)) . '</td>';
+            echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '" class="status-' . esc_attr($transaction->order_status) . '">' . esc_html($this->get_status_label($transaction->order_status)) . '</td>';
             echo '</tr>';
         }
 
@@ -428,7 +428,7 @@ class CashbackHistory
                     'cashback-history-css',
                     plugin_dir_url(__FILE__) . 'assets/css/cashback-history.css',
                     array(),
-                    '1.0.0'
+                    '1.3.0'
                 );
             }
 
