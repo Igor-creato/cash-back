@@ -16,6 +16,7 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
           script: |
             cd /home/igor/site/volumes/wordpress/wp-content/plugins/cash-back
             git pull origin main
