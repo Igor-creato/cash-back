@@ -91,6 +91,29 @@
     background-color: var(--btn-accented-bgcolor-hover, #005a87) !important;
 }
 
+/* Desktop status colors - remove backgrounds and add text colors */
+.wd-history-payout #payouts-table tbody tr td.status-paid {
+    color: #00a32a !important;
+    background: transparent !important;
+}
+
+.wd-history-payout #payouts-table tbody tr td.status-processing,
+.wd-history-payout #payouts-table tbody tr td.status-needs_retry {
+    color: #dba617 !important;
+    background: transparent !important;
+}
+
+.wd-history-payout #payouts-table tbody tr td.status-waiting {
+    color: #0073aa !important;
+    background: transparent !important;
+}
+
+.wd-history-payout #payouts-table tbody tr td.status-failed,
+.wd-history-payout #payouts-table tbody tr td.status-declined {
+    color: #d63638 !important;
+    background: transparent !important;
+}
+
 @media (max-width: 768px) {
     .wd-history-payout .clicks-filters-row {
         flex-direction: column;
