@@ -1,0 +1,119 @@
+.cashback-rate-history-wrap .cashback-filters {
+    background: #fff;
+    padding: 15px;
+    margin: 15px 0;
+    border: 1px solid #c3c4c7;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.cashback-rate-history-wrap .cashback-filters-form {
+    margin: 0;
+}
+
+.cashback-rate-history-wrap .cashback-filters-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    align-items: flex-end;
+}
+
+.cashback-rate-history-wrap .cashback-filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.cashback-rate-history-wrap .cashback-filter-group label {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.cashback-rate-history-wrap .cashback-filter-group select,
+.cashback-rate-history-wrap .cashback-filter-group input[type="date"],
+.cashback-rate-history-wrap .cashback-filter-group input[type="text"] {
+    min-width: 150px;
+}
+
+.cashback-rate-history-wrap .cashback-filter-actions {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    padding-bottom: 2px;
+}
+
+.cashback-rate-history-table {
+    margin-top: 15px;
+}
+
+.cashback-rate-history-table .cashback-no-results {
+    text-align: center;
+    padding: 20px;
+    color: #646970;
+}
+
+.cashback-rate-type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.rate-type-cashback {
+    background: #d1e4ff;
+    color: #1d2327;
+}
+
+.rate-type-affiliate_commission {
+    background: #d4edda;
+    color: #1d2327;
+}
+
+.rate-type-affiliate_global {
+    background: #fff3cd;
+    color: #1d2327;
+}
+
+.rate-type-cashback_global {
+    background: #f0d1ff;
+    color: #1d2327;
+}
+
+.cashback-new-rate {
+    font-weight: 600;
+}
+
+.cashback-pagination {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-top: 15px;
+    padding: 10px 0;
+}
+
+.cashback-pagination-info {
+    color: #646970;
+    font-size: 13px;
+}
+
+.cashback-pagination .pagination-links {
+    margin: 0;
+}
+
+@media screen and (max-width: 782px) {
+    .cashback-rate-history-wrap .cashback-filters-row {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .cashback-rate-history-wrap .cashback-filter-group {
+        width: 100%;
+    }
+
+    .cashback-rate-history-wrap .cashback-filter-group select,
+    .cashback-rate-history-wrap .cashback-filter-group input[type="date"],
+    .cashback-rate-history-wrap .cashback-filter-group input[type="text"] {
+        width: 100%;
+    }
+}

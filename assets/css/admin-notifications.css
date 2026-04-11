@@ -1,0 +1,112 @@
+/* Админ-настройки уведомлений */
+
+.cashback-admin-notifications {
+    max-width: 800px;
+}
+
+.cashback-admin-card {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+}
+
+.cashback-admin-card h2 {
+    margin: 0 0 6px;
+    font-size: 1.2em;
+}
+
+.cashback-admin-card > .description {
+    margin: 0 0 16px;
+    color: #666;
+}
+
+.cashback-notifications-admin-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.cashback-notifications-admin-table thead th {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 2px solid #ddd;
+    font-size: 13px;
+    color: #555;
+}
+
+.cashback-notifications-admin-table thead th:last-child {
+    width: 200px;
+}
+
+.cashback-notifications-admin-table tbody tr {
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.cashback-notifications-admin-table tbody td {
+    padding: 12px;
+    vertical-align: middle;
+}
+
+/* Admin toggle */
+.cashback-admin-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+
+.cashback-admin-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+}
+
+.cashback-admin-toggle-slider {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    background: #ccc;
+    border-radius: 24px;
+    transition: background 0.25s;
+    flex-shrink: 0;
+}
+
+.cashback-admin-toggle-slider::before {
+    content: "";
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    left: 3px;
+    bottom: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.25s;
+}
+
+.cashback-admin-toggle input:checked + .cashback-admin-toggle-slider {
+    background: #2271b1;
+}
+
+.cashback-admin-toggle input:checked + .cashback-admin-toggle-slider::before {
+    transform: translateX(20px);
+}
+
+.cashback-admin-toggle-label {
+    font-size: 13px;
+    color: #666;
+    user-select: none;
+}
+
+/* Status */
+.cashback-admin-notification-status {
+    margin-left: 12px;
+    font-size: 13px;
+    color: #00a32a;
+}
+
+.cashback-admin-notification-status.error {
+    color: #d63638;
+}

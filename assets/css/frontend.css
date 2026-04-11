@@ -1,0 +1,855 @@
+/* Модальное окно */
+.wc-affiliate-modal {
+    display: block !important;
+    position: fixed !important;
+    z-index: 2147483647 !important;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    overflow: auto;
+}
+
+.wc-affiliate-modal.show {
+    opacity: 1;
+}
+
+.wc-affiliate-modal-content {
+    background-color: #fff;
+    margin: 10% auto;
+    padding: 30px;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 500px;
+    position: relative;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    animation: slideDown 0.3s ease;
+    text-align: center;
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-50px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.wc-affiliate-modal-close {
+    position: absolute;
+    right: 15px;
+    top: 15px;
+    font-size: 28px;
+    font-weight: bold;
+    color: #aaa;
+    cursor: pointer;
+    line-height: 20px;
+    transition: color 0.2s ease;
+}
+
+.wc-affiliate-modal-close:hover,
+.wc-affiliate-modal-close:focus {
+    color: #000;
+}
+
+.wc-affiliate-modal-icon {
+    font-size: 48px;
+    margin-bottom: 15px;
+}
+
+.wc-affiliate-modal-title {
+    margin: 0 0 15px;
+    font-size: 24px;
+    color: #333;
+}
+
+.wc-affiliate-modal-message {
+    font-size: 16px;
+    color: #666;
+    line-height: 1.6;
+    margin: 0 0 25px;
+}
+
+.wc-affiliate-modal-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 15px; /* Добавляем отступ снизу */
+}
+
+.wc-affiliate-login-link {
+    display: block;
+    margin-top: 15px;
+    font-size: 14px;
+    color: #0073aa;
+    text-decoration: none;
+}
+
+.wc-affiliate-login-link:hover {
+    text-decoration: underline;
+}
+
+.wc-affiliate-btn {
+    padding: 12px 30px;
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    transition: all 0.3s ease;
+    font-weight: var(--wd-btn-font-weight, 500);
+    font-family: var(--wd-font-family, inherit);
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.wc-affiliate-btn-primary {
+    background-color: var(--wd-primary-color, #0073aa);
+    color: #fff;
+}
+
+.wc-affiliate-btn-primary:hover {
+    filter: brightness(0.9);
+    color: #fff !important;
+}
+
+.wc-affiliate-btn-secondary {
+    background-color: var(--wd-primary-color, #0073aa);
+    color: #fff;
+}
+
+.wc-affiliate-btn-secondary:hover {
+    filter: brightness(0.9);
+    color: #fff !important;
+}
+
+/* Адаптивность */
+@media (max-width: 600px) {
+    .wc-affiliate-modal-content {
+        width: 95%;
+        margin: 20% auto;
+        padding: 20px;
+    }
+
+    .wc-affiliate-btn {
+        width: 100%;
+    }
+}
+
+/* Дополнительные стили для отладки */
+.wc-affiliate-modal {
+    display: block !important;
+    visibility: visible !important;
+}
+
+/* Frontend styles for the cashback withdrawal functionality */
+.cashback-withdrawal-container {
+    margin: 20px 0;
+    padding: 20px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background-color: #f9f9f9;
+}
+
+.cashback-withdrawal-form {
+    margin-top: 20px;
+    padding: 20px;
+    background-color: #fff;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+}
+
+.cashback-withdrawal-form .form-row {
+    margin-bottom: 15px;
+}
+
+.cashback-withdrawal-form label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+.cashback-withdrawal-form .input-text {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+/* Применяем стили темы WoodMart к кнопкам */
+button[name="withdrawal_submit"],
+button#save_payout_details_btn {
+    border-radius: var(--btn-accented-brd-radius) !important;
+    color: var(--btn-accented-color) !important;
+    box-shadow: var(--btn-accented-box-shadow) !important;
+    background-color: var(--btn-accented-bgcolor) !important;
+    text-transform: var(--btn-accented-transform, var(--btn-transform, uppercase)) !important;
+    font-weight: var(--btn-accented-font-weight, var(--btn-font-weight, 600)) !important;
+    font-family: var(--btn-accented-font-family, var(--btn-font-family, inherit)) !important;
+    font-style: var(--btn-accented-font-style, var(--btn-font-style, unset)) !important;
+}
+
+/* Hover эффект для кнопок */
+button[name="withdrawal_submit"]:hover,
+button#save_payout_details_btn:hover {
+    color: var(--btn-accented-color-hover) !important;
+    box-shadow: var(--btn-accented-box-shadow-hover) !important;
+    background-color: var(--btn-accented-bgcolor-hover) !important;
+}
+
+#withdrawal-messages {
+    margin-top: 15px;
+}
+
+.success-message {
+    padding: 10px;
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
+.error-message {
+    padding: 10px;
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
+.balance-display {
+    margin-bottom: 15px;
+}
+
+.balance-amount {
+    font-weight: bold;
+    font-size: 1.2em;
+}
+
+.balance-green {
+    color: #28a745;
+}
+
+.balance-gray {
+    color: #6c757d;
+}
+
+.balance-pending {
+    color: #e67e22;
+}
+
+.balance-paid {
+    color: #17a2b8;
+}
+
+/* ============================================================
+   Навигация вкладок
+   ============================================================ */
+.cashback-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 0;
+    background: transparent;
+    border-bottom: 2px solid var(--btn-accented-bgcolor, #0073aa);
+}
+
+.cashback-tabs button.cashback-tab {
+    border: none !important;
+    border-radius: 10px 10px 0 0 !important;
+    padding: 12px 24px !important;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 600;
+    color: #555 !important;
+    background-color: #e0e0e0 !important;
+    transition: background-color 0.2s, color 0.2s, box-shadow 0.2s;
+    position: relative;
+    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.08) !important;
+}
+
+.cashback-tabs button.cashback-tab:hover {
+    background-color: #c8c8c8 !important;
+    color: #333 !important;
+}
+
+.cashback-tabs button.cashback-tab.active {
+    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
+    color: var(--btn-accented-color, #fff) !important;
+    box-shadow: 0 -3px 8px rgba(0, 0, 0, 0.12) !important;
+}
+
+.cashback-tabs button.cashback-tab.active:hover {
+    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
+    color: var(--btn-accented-color, #fff) !important;
+}
+
+.cashback-tabs button.cashback-tab.cashback-tab--error {
+    color: #fff !important;
+    background-color: #dc3232 !important;
+}
+
+/* Контент вкладок */
+.cashback-tab-content {
+    display: none;
+    padding-top: 20px;
+}
+
+.cashback-tab-content.active {
+    display: block;
+}
+
+/* ============================================================
+   Карточки баланса (грид 3 в ряд)
+   ============================================================ */
+.balance-info-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.balance-info-card {
+    padding: 15px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.balance-info-label {
+    display: block;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 6px;
+}
+
+.balance-info-value {
+    display: block;
+    font-size: 1.3em;
+    font-weight: 700;
+}
+
+.min-payout-amount {
+    font-weight: bold;
+    color: #007cba;
+}
+
+/* Стили для отображения способа вывода и номера счета */
+.cashback-withdrawal-container .payout-details {
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.cashback-withdrawal-container .payout-details p {
+    margin: 5px 0;
+    font-size: 14px;
+}
+
+.cashback-withdrawal-container .payout-details .no-payout-details {
+    color: #d63638;
+    font-style: italic;
+}
+
+.cashback-withdrawal-container .payout-details strong {
+    color: #333;
+}
+
+/* Стили для полей профиля пользователя */
+.woocommerce-form .woocommerce-account-fields fieldset {
+    border: 1px solid #d3ced2;
+    padding: 20px;
+    margin: 20px 0;
+    border-radius: 4px;
+}
+
+.woocommerce-form .woocommerce-account-fields legend {
+    font-weight: bold;
+    padding: 0 10px;
+    background: white;
+}
+
+.woocommerce-form-row--first,
+.woocommerce-form-row--last {
+    margin-bottom: 1em;
+}
+
+#payout_details_message {
+    margin-left: 10px;
+    padding: 5px 10px;
+    border-radius: 3px;
+    display: inline-block;
+    margin-top: 5px;
+}
+
+#payout_details_message.success {
+    color: #46b450;
+    background-color: #ecf7ee;
+    border: 1px solid #46b450;
+}
+
+#payout_details_message.error {
+    color: #dc3232;
+    background-color: #ffeae9;
+    border: 1px solid #dc3232;
+}
+
+#save_payout_details_btn {
+    margin-top: 10px;
+}
+
+.payout-current-data {
+    margin-top: 15px;
+    padding: 10px;
+    background-color: #f9f9f9;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    transition: all 0.3s ease;
+    animation: fadeIn 0.5s ease;
+}
+
+.payout-current-data .woocommerce-info {
+    margin: 0;
+}
+
+/* Анимация появления блока с текущими данными */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Анимация обновления блока */
+.payout-current-data.updating {
+    opacity: 0.5;
+    transform: scale(0.98);
+}
+
+/* Стили для формы настроек вывода на странице вывода кэшбэка */
+.payout-settings-form {
+    margin: 20px 0;
+    padding: 20px;
+    background-color: #fff;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+}
+
+.payout-settings-form h3 {
+    margin-top: 0;
+    margin-bottom: 20px;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+#payout_settings_message {
+    margin-bottom: 20px;
+    padding: 10px 15px;
+    border-radius: 4px;
+    display: none;
+}
+
+#payout_settings_message.success {
+    display: block;
+    color: #155724;
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+}
+
+#payout_settings_message.error {
+    display: block;
+    color: #721c24;
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+}
+
+/* Стили для кнопки сохранения настроек */
+#save_payout_settings_btn {
+    border-radius: var(--btn-accented-brd-radius, 4px) !important;
+    color: var(--btn-accented-color, #fff) !important;
+    box-shadow: var(--btn-accented-box-shadow) !important;
+    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
+    text-transform: var(--btn-accented-transform, var(--btn-transform, uppercase)) !important;
+    font-weight: var(--btn-accented-font-weight, var(--btn-font-weight, 600)) !important;
+    font-family: var(--btn-accented-font-family, var(--btn-font-family, inherit)) !important;
+    font-style: var(--btn-accented-font-style, var(--btn-font-style, unset)) !important;
+}
+
+#save_payout_settings_btn:hover {
+    color: var(--btn-accented-color-hover, #fff) !important;
+    box-shadow: var(--btn-accented-box-shadow-hover) !important;
+    background-color: var(--btn-accented-bgcolor-hover, #005a87) !important;
+}
+
+/* Полная ширина для формы */
+.payout-settings-form .form-row-wide {
+    width: 100%;
+    clear: both;
+    margin-bottom: 1em;
+}
+.payout-settings-form .clear {
+    clear: both;
+}
+
+/* Стили для секции настроек вывода */
+.payout-settings-section {
+    margin: 20px 0;
+    padding: 20px;
+    background-color: #fff;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+}
+
+.payout-settings-section h3 {
+    margin-top: 0;
+    margin-bottom: 20px;
+    font-size: 18px;
+    font-weight: 600;
+    color: #333;
+}
+
+/* Стили для отображения сохраненных данных */
+.payout-settings-display {
+    padding: 15px;
+    background-color: #f9f9f9;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    margin-bottom: 15px;
+    transition: all 0.3s ease;
+}
+
+.payout-settings-display p {
+    margin: 10px 0;
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+.payout-settings-display strong {
+    display: inline-block;
+    min-width: 200px;
+    color: #333;
+    font-weight: 600;
+}
+
+/* Скрытие формы редактирования */
+.payout-settings-form-hidden {
+    display: none !important;
+}
+
+/* Кнопки действий */
+#edit_payout_settings_btn,
+#cancel_edit_payout_settings_btn {
+    border-radius: var(--btn-accented-brd-radius, 4px) !important;
+    text-transform: var(--btn-accented-transform, var(--btn-transform, uppercase)) !important;
+    font-weight: var(--btn-accented-font-weight, var(--btn-font-weight, 600)) !important;
+    font-family: var(--btn-accented-font-family, var(--btn-font-family, inherit)) !important;
+    font-style: var(--btn-accented-font-style, var(--btn-font-style, unset)) !important;
+    padding: 10px 20px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+#edit_payout_settings_btn {
+    color: var(--btn-accented-color, #fff) !important;
+    box-shadow: var(--btn-accented-box-shadow) !important;
+    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
+}
+
+#edit_payout_settings_btn:hover {
+    color: var(--btn-accented-color-hover, #fff) !important;
+    box-shadow: var(--btn-accented-box-shadow-hover) !important;
+    background-color: var(--btn-accented-bgcolor-hover, #005a87) !important;
+}
+
+#cancel_edit_payout_settings_btn {
+    color: var(--btn-accented-color, #fff) !important;
+    box-shadow: var(--btn-accented-box-shadow) !important;
+    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
+    margin-left: 10px;
+}
+
+#cancel_edit_payout_settings_btn:hover {
+    color: var(--btn-accented-color-hover, #fff) !important;
+    box-shadow: var(--btn-accented-box-shadow-hover) !important;
+    background-color: var(--btn-accented-bgcolor-hover, #005a87) !important;
+}
+
+/* Анимация переключения между режимами */
+.payout-settings-display,
+#payout_settings_form {
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ============================================================
+   Компонент поиска банков — autocomplete / combobox
+   ============================================================ */
+
+/* Обёртка combobox */
+.bank-search-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+/* Поле ввода поиска */
+#bank_search_input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+    background-color: #fff;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+#bank_search_input:focus {
+    border-color: #0073aa;
+    box-shadow: 0 0 0 1px #0073aa;
+    outline: none;
+}
+
+/* Ошибка ввода — общий стиль для всех полей формы */
+.payout-settings-form .input--error,
+.payout-settings-form .input--error:focus,
+.cashback-withdrawal-form .input--error,
+.cashback-withdrawal-form .input--error:focus {
+    border-color: #dc3232 !important;
+    box-shadow: 0 0 0 1px #dc3232 !important;
+}
+
+/* Ошибка ввода — поле поиска банка */
+#bank_search_input.bank-search-input--error,
+#bank_search_input.bank-search-input--error:focus {
+    border-color: #dc3232;
+    box-shadow: 0 0 0 1px #dc3232;
+}
+
+/* Выпадающий список банков */
+.bank-search-results {
+    display: none;
+    position: absolute;
+    z-index: 1000;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 240px;
+    overflow-y: auto;
+    margin: 2px 0 0;
+    padding: 0;
+    list-style: none;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 0 0 4px 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Видимое состояние */
+.bank-search-results.bank-search-results--visible {
+    display: block;
+}
+
+/* Элемент списка */
+.bank-search-item {
+    padding: 10px 12px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #333;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background-color 0.15s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bank-search-item:last-child {
+    border-bottom: none;
+}
+
+/* Hover / активный (клавиатура) */
+.bank-search-item:hover,
+.bank-search-item.bank-search-item--active {
+    background-color: #f0f7fc;
+    color: #0073aa;
+}
+
+/* Выбранный элемент */
+.bank-search-item[aria-selected="true"] {
+    font-weight: 600;
+    background-color: #e8f4fd;
+}
+
+/* Нет результатов */
+.bank-search-no-results {
+    padding: 10px 12px;
+    font-size: 14px;
+    color: #999;
+    font-style: italic;
+    cursor: default;
+}
+
+/* Сообщение об ошибке валидации */
+.bank-search-error {
+    display: none;
+    margin-top: 4px;
+    padding: 4px 8px;
+    font-size: 13px;
+    color: #dc3232;
+    background-color: #ffeae9;
+    border-radius: 3px;
+}
+
+/* Responsive дизайн */
+@media (max-width: 768px) {
+    .cashback-tabs {
+        overflow-x: auto;
+        gap: 3px;
+    }
+
+    .cashback-tabs button.cashback-tab {
+        padding: 10px 16px !important;
+        font-size: 14px;
+        white-space: nowrap;
+        border-radius: 8px 8px 0 0 !important;
+    }
+
+    .balance-info-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .payout-settings-display strong {
+        display: block;
+        min-width: auto;
+        margin-bottom: 5px;
+    }
+
+    #cancel_edit_payout_settings_btn {
+        margin-left: 0;
+        margin-top: 10px;
+        display: block;
+        width: 100%;
+    }
+
+    /* Мобильная адаптация банковского поиска */
+    .bank-search-results {
+        max-height: 200px;
+    }
+
+    .bank-search-item {
+        padding: 12px 14px;
+        font-size: 16px; /* Увеличиваем для удобства тача */
+        min-height: 44px; /* Минимальный размер для touch targets по WCAG */
+        display: flex;
+        align-items: center;
+    }
+
+    #bank_search_input {
+        font-size: 16px; /* Предотвращаем zoom на iOS */
+        min-height: 44px;
+    }
+}
+
+/* Маленькие экраны */
+@media (max-width: 480px) {
+    .bank-search-results {
+        max-height: 180px;
+    }
+
+    .bank-search-item {
+        padding: 14px 12px;
+    }
+}
+
+/* Screen readers: скрытый текст для a11y */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ============================================================
+   Cashback Display — карточки товаров и страница товара
+   ============================================================ */
+
+.cashback-display {
+    display: block;
+    margin-top: 4px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--wd-primary-color, #e44d26);
+    line-height: 1.4;
+}
+
+/* Каталог товаров */
+.cashback-display--loop {
+    font-size: 15px;
+}
+
+/* Отдельный блок кэшбэка (без цены) */
+.cashback-display--standalone {
+    margin-top: 0;
+}
+
+/* Страница товара и quick-view (p.price — только single/modal, не каталог) */
+p.price .cashback-display {
+    font-size: inherit;
+    margin-top: 8px;
+}
+
+/* Кэшбэк внутри стандартного WooCommerce .price контейнера:
+   наследует font-size и font-weight от темы, задаёт только цвет */
+.price > .cashback-display--standalone {
+    font-size: inherit;
+    font-weight: inherit;
+    display: inline;
+}
+
+@media (max-width: 768px) {
+    .cashback-display--loop {
+        font-size: 12px;
+    }
+
+    .price > .cashback-display--standalone {
+        font-size: inherit;
+    }
+
+    .cashback-display--single {
+        font-size: 14px;
+    }
+}
+

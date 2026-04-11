@@ -1,0 +1,283 @@
+/* Стили для модуля поддержки в кабинете пользователя */
+
+.cashback-support-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 0;
+    background: transparent;
+    border-bottom: 2px solid var(--btn-accented-bgcolor, #0073aa);
+}
+.cashback-support-tabs button.cashback-support-tab {
+    border: none !important;
+    border-radius: 10px 10px 0 0 !important;
+    padding: 12px 24px !important;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 600;
+    color: #555 !important;
+    background-color: #e0e0e0 !important;
+    transition: background-color 0.2s, color 0.2s, box-shadow 0.2s;
+    position: relative;
+    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.08) !important;
+}
+.cashback-support-tabs button.cashback-support-tab:hover {
+    background-color: #c8c8c8 !important;
+    color: #333 !important;
+}
+.cashback-support-tabs button.cashback-support-tab.active {
+    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
+    color: var(--btn-accented-color, #fff) !important;
+    box-shadow: 0 -3px 8px rgba(0, 0, 0, 0.12) !important;
+}
+.cashback-support-tabs button.cashback-support-tab.active:hover {
+    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
+    color: var(--btn-accented-color, #fff) !important;
+}
+.support-tab-badge {
+    display: inline-block;
+    min-width: 18px;
+    height: 18px;
+    line-height: 18px;
+    padding: 0 5px;
+    border-radius: 50%;
+    background: #f44336;
+    color: #fff !important;
+    font-size: 11px;
+    font-weight: bold;
+    text-align: center;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+.cashback-support-tab-content {
+    padding: 20px 0 10px;
+}
+.support-ticket-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    border: 1px solid #e0e0e0;
+    margin-bottom: 10px;
+    cursor: pointer;
+    border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    transition: all 0.2s ease;
+}
+.support-ticket-row:hover {
+    background-color: #f5f5f5;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+}
+.support-ticket-info {
+    flex: 1;
+}
+.support-ticket-info strong {
+    display: block;
+    margin-bottom: 4px;
+}
+.support-ticket-meta {
+    font-size: 0.85em;
+    color: #666;
+}
+.support-ticket-meta span {
+    margin-right: 12px;
+}
+.support-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 0.8em;
+    border-radius: 3px;
+    color: #fff;
+}
+.support-badge-open { background: #2196F3; }
+.support-badge-answered { background: #4CAF50; }
+.support-badge-closed { background: #9E9E9E; }
+.support-badge-urgent { background: #f44336; }
+.support-badge-normal { background: #ff9800; }
+.support-badge-not_urgent { background: #607d8b; }
+.support-message {
+    padding: 14px 18px;
+    margin-bottom: 10px;
+    border: 1px solid #e0e0e0;
+    border-left: 4px solid #999;
+    border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.support-message-admin {
+    background: #e8f4f8;
+    border-left-color: #2196F3;
+}
+.support-message-user {
+    background: #f9f9f9;
+    border-left-color: #999;
+}
+.support-message-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 0.9em;
+}
+.support-message-header .date {
+    color: #888;
+}
+.support-form-group {
+    margin-bottom: 15px;
+}
+.support-form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+.support-form-group input[type="text"],
+.support-form-group select,
+.support-form-group textarea {
+    width: 100%;
+    max-width: 600px;
+    padding: 8px;
+    border: 1px solid #ddd;
+}
+.support-form-group textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+.support-btn {
+    display: inline-block;
+    padding: 10px 24px;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    transition: opacity 0.2s, background-color 0.2s;
+}
+.support-btn:hover { opacity: 0.85; }
+.support-btn-primary {
+    border-radius: var(--btn-accented-brd-radius) !important;
+    color: var(--btn-accented-color, #fff) !important;
+    box-shadow: var(--btn-accented-box-shadow) !important;
+    background-color: var(--btn-accented-bgcolor, #333) !important;
+    text-transform: var(--btn-accented-transform, var(--btn-transform, uppercase)) !important;
+    font-weight: var(--btn-accented-font-weight, var(--btn-font-weight, 600)) !important;
+    font-family: var(--btn-accented-font-family, var(--btn-font-family, inherit)) !important;
+    font-style: var(--btn-accented-font-style, var(--btn-font-style, unset)) !important;
+}
+.support-btn-primary:hover {
+    color: var(--btn-accented-color-hover, #fff) !important;
+    box-shadow: var(--btn-accented-box-shadow-hover) !important;
+    background-color: var(--btn-accented-bgcolor-hover, #555) !important;
+    opacity: 1;
+}
+.support-btn-danger {
+    border-radius: var(--btn-accented-brd-radius) !important;
+    color: #fff !important;
+    background-color: #f44336 !important;
+    text-transform: var(--btn-accented-transform, var(--btn-transform, uppercase)) !important;
+    font-weight: var(--btn-accented-font-weight, var(--btn-font-weight, 600)) !important;
+    font-family: var(--btn-accented-font-family, var(--btn-font-family, inherit)) !important;
+    font-style: var(--btn-accented-font-style, var(--btn-font-style, unset)) !important;
+}
+.support-btn-danger:hover {
+    background-color: #d32f2f !important;
+    opacity: 1;
+}
+.support-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.support-alert {
+    padding: 12px 16px;
+    margin-bottom: 15px;
+    border: 1px solid;
+}
+.support-alert-success {
+    background: #e8f5e9;
+    border-color: #4CAF50;
+    color: #2e7d32;
+}
+.support-alert-error {
+    background: #ffebee;
+    border-color: #f44336;
+    color: #c62828;
+}
+.support-ticket-actions {
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+#support-pagination {
+    margin-top: 15px;
+    padding: 10px 0;
+}
+.support-ticket-row.has-unread {
+    border-left: 4px solid #4CAF50;
+    background-color: #f0f9f0;
+}
+.support-ticket-row.has-unread:hover {
+    background-color: #e5f5e5;
+}
+.support-unread-badge {
+    display: inline-block;
+    min-width: 18px;
+    height: 18px;
+    line-height: 18px;
+    padding: 0 5px;
+    border-radius: 50%;
+    background: #f44336;
+    color: #fff;
+    font-size: 11px;
+    font-weight: bold;
+    text-align: center;
+    margin-left: 8px;
+}
+.support-field-error {
+    border-color: #f44336 !important;
+    box-shadow: 0 0 0 1px #f44336 !important;
+}
+
+/* === Вложения файлов === */
+.support-files-info {
+    margin-top: 5px;
+    font-size: 0.85em;
+    color: #666;
+}
+.support-files-preview {
+    margin-top: 8px;
+}
+.support-file-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 0.9em;
+}
+.support-file-name {
+    color: #333;
+}
+.support-file-size {
+    color: #888;
+    font-size: 0.85em;
+}
+.support-attachments {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed #ddd;
+}
+.support-attachment-link {
+    display: inline-block;
+    margin-right: 12px;
+    margin-bottom: 4px;
+    padding: 3px 8px;
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    font-size: 0.85em;
+    text-decoration: none;
+    color: #333;
+    transition: background 0.2s;
+}
+.support-attachment-link:hover {
+    background: #e8e8e8;
+    color: #333;
+}
+.support-attachment-size {
+    color: #888;
+    font-size: 0.9em;
+}

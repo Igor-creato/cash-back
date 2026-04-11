@@ -1,0 +1,471 @@
+/**
+ * Cashback API Validation — Admin CSS
+ * @since 5.0.0
+ */
+
+/* Network selector dropdown */
+#cashback-network-selector {
+    min-width: 300px;
+    margin-bottom: 20px;
+    padding: 6px 8px;
+    font-size: 14px;
+}
+
+/* Network cards */
+.cashback-network-card {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    padding: 20px 25px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.cashback-network-card h2 {
+    margin-top: 0;
+    font-size: 1.3em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.cashback-network-card h2 .slug {
+    color: #72777c;
+    font-weight: normal;
+    font-size: 0.8em;
+}
+
+.cashback-network-card .form-table th {
+    width: 180px;
+    padding: 12px 10px 12px 0;
+}
+
+.cashback-network-card .form-table td {
+    padding: 8px 10px;
+}
+
+/* Status badges */
+.status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 0.7em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.status-badge.active {
+    background: #dff0d8;
+    color: #3c763d;
+}
+
+.status-badge.inactive {
+    background: #f2dede;
+    color: #a94442;
+}
+
+/* Save button status */
+.cashback-save-status {
+    margin-left: 12px;
+    font-size: 13px;
+    vertical-align: middle;
+}
+
+/* Validation result */
+#cashback-validation-result {
+    max-width: 1100px;
+}
+
+#cashback-validation-result .notice {
+    margin-left: 0;
+}
+
+#cashback-validation-result table {
+    margin-top: 10px;
+}
+
+#cashback-validation-result code {
+    font-size: 11px;
+    background: #f1f1f1;
+    padding: 2px 5px;
+    border-radius: 2px;
+}
+
+#cashback-validation-result h3 {
+    color: #23282d;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 8px;
+}
+
+/* Sync info */
+.cashback-sync-info {
+    margin: 15px 0;
+}
+
+/* Inline validate button (payouts page) */
+.cashback-inline-validate-btn {
+    padding: 2px 8px !important;
+    font-size: 12px !important;
+    min-height: 26px !important;
+    line-height: 22px !important;
+}
+
+.cashback-inline-validate-status {
+    font-size: 12px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+/* Sync log table */
+#cashback-sync-log-table {
+    margin-top: 10px;
+    max-width: 1000px;
+}
+
+#cashback-sync-log-table code {
+    font-size: 11px;
+}
+
+/* Tab content */
+.tab-content {
+    max-width: 1100px;
+}
+
+/* Button hero override for validate */
+#cashback-validate-btn {
+    font-size: 15px !important;
+}
+
+/* Status map visual editor */
+.status-map-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.status-map-col-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #72777c;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.status-map-col-label:first-child {
+    width: 200px;
+}
+
+.status-map-arrow-spacer {
+    width: 18px;
+    flex-shrink: 0;
+}
+
+.status-map-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 600px;
+}
+
+.status-map-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.status-map-cpa {
+    width: 200px !important;
+}
+
+.status-map-arrow {
+    color: #72777c;
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.status-map-local {
+    min-width: 160px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    border: 1px solid #8c8f94;
+}
+
+.status-map-remove {
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.status-map-remove:hover .dashicons {
+    opacity: 0.7;
+}
+
+/* Field map editor */
+.field-map-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.field-map-col-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #72777c;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.field-map-col-label:first-child {
+    width: 200px;
+}
+
+.field-map-arrow-spacer {
+    width: 18px;
+    flex-shrink: 0;
+}
+
+.field-map-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 600px;
+}
+
+.field-map-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.field-map-api {
+    width: 200px !important;
+}
+
+.field-map-arrow {
+    color: #72777c;
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.field-map-local {
+    min-width: 220px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    border: 1px solid #8c8f94;
+}
+
+.field-map-remove {
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.field-map-remove:hover .dashicons {
+    opacity: 0.7;
+}
+
+/* Mismatch cell highlighting */
+#cashback-validation-result td.cell-mismatch {
+    color: #dc3232;
+    font-weight: bold;
+    background-color: #fef1f1;
+}
+
+/* Validation result sub-tabs */
+.validation-result-tabs {
+    border-bottom: 1px solid #ccd0d4;
+}
+
+.validation-result-tabs .nav-tab {
+    font-size: 13px;
+    padding: 6px 14px;
+}
+
+.tab-badge {
+    display: inline-block;
+    min-width: 18px;
+    height: 18px;
+    line-height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: #ddd;
+    color: #555;
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+
+.tab-badge.badge-red {
+    background: #dc3232;
+    color: #fff;
+}
+
+.validation-tab-content {
+    padding: 15px 0;
+}
+
+.validation-tab-content table {
+    max-width: 100%;
+}
+
+.validation-empty {
+    color: #72777c;
+    font-style: italic;
+    padding: 10px 0;
+}
+
+/* Action buttons in validation result tables */
+.validation-actions {
+    white-space: nowrap;
+}
+
+.validation-actions .button-small {
+    font-size: 11px !important;
+    padding: 2px 8px !important;
+    min-height: 24px !important;
+    line-height: 20px !important;
+    margin: 1px 2px !important;
+}
+
+/* Inline edit inputs */
+.validation-tab-content .edit-input {
+    width: 100px;
+    padding: 2px 4px;
+    font-size: 12px;
+    border: 1px solid #0073aa;
+    border-radius: 3px;
+}
+
+.validation-tab-content select.edit-input {
+    width: auto;
+    min-width: 90px;
+}
+
+/* Row in editing mode */
+.validation-tab-content tr.editing {
+    background-color: #fff8e5 !important;
+}
+
+/* Smooth background transition for flash effect */
+.validation-tab-content tr {
+    transition: background-color 0.3s ease;
+}
+
+/* Disabled overwrite button for balance rows */
+.cashback-overwrite-tx-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* =========================================================================
+   Campaigns Tab: Two-Column Layout
+   ========================================================================= */
+
+#cashback-campaigns-search-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+#cashback-campaigns-search {
+    min-width: 250px;
+    padding: 4px 8px;
+}
+
+#cashback-campaigns-net-stats {
+    margin: 10px 0 5px;
+    color: #666;
+    font-size: 13px;
+}
+
+#cashback-campaigns-net-stats p {
+    margin: 2px 0;
+}
+
+#cashback-campaigns-columns {
+    display: flex;
+    gap: 20px;
+    margin-top: 15px;
+}
+
+#cashback-campaigns-active-col,
+#cashback-campaigns-inactive-col {
+    flex: 1;
+    min-width: 0;
+}
+
+#cashback-campaigns-active-col h3,
+#cashback-campaigns-inactive-col h3 {
+    margin-top: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#cashback-active-count,
+#cashback-inactive-count {
+    display: inline-block;
+    min-width: 18px;
+    height: 18px;
+    line-height: 18px;
+    padding: 0 6px;
+    border-radius: 9px;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+}
+
+#cashback-active-count {
+    background: #dff0d8;
+    color: #3c763d;
+}
+
+#cashback-inactive-count {
+    background: #f2dede;
+    color: #a94442;
+}
+
+@media screen and (max-width: 1200px) {
+    #cashback-campaigns-columns {
+        flex-direction: column;
+    }
+}
+
+/* Validation table pagination */
+.validation-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 10px;
+    padding: 8px 0;
+}
+
+.validation-pagination .pagination-info {
+    color: #666;
+    font-size: 13px;
+}
+
+.validation-pagination .pagination-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.validation-pagination .pagination-current {
+    font-size: 13px;
+    min-width: 120px;
+    text-align: center;
+}
+

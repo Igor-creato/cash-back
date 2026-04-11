@@ -1,0 +1,144 @@
+/**
+ * Cashback Contact Form — Styles.
+ * Совместимость с темой Woodmart / WooCommerce.
+ *
+ * @since 2.1.0
+ */
+
+.cb-contact-form-wrap {
+    max-width: 640px;
+    margin: 0 auto;
+}
+
+.cb-contact-form-wrap form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.cb-contact-field label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+    font-size: 14px;
+    color: #333;
+}
+
+.cb-contact-field label .required {
+    color: #e2401c;
+}
+
+.cb-contact-field input[type="text"],
+.cb-contact-field input[type="email"],
+.cb-contact-field textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #333;
+    background: #fff;
+    transition: border-color 0.2s ease;
+    box-sizing: border-box;
+}
+
+.cb-contact-field input:focus,
+.cb-contact-field textarea:focus {
+    border-color: #83b735;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(131, 183, 53, 0.15);
+}
+
+.cb-contact-field input.cb-field-error,
+.cb-contact-field textarea.cb-field-error {
+    border-color: #e2401c;
+}
+
+.cb-contact-field textarea {
+    resize: vertical;
+    min-height: 120px;
+}
+
+/* CAPTCHA */
+.cb-contact-captcha {
+    display: flex;
+    justify-content: flex-start;
+}
+
+/* Submit */
+.cb-contact-submit-row {
+    padding-top: 4px;
+}
+
+#cb-contact-submit {
+    display: inline-block;
+    padding: 12px 32px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: #fff;
+    background-color: #83b735;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s ease, opacity 0.2s ease;
+}
+
+#cb-contact-submit:hover {
+    background-color: #72a02e;
+}
+
+#cb-contact-submit:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Messages */
+.cb-contact-messages {
+    padding: 12px 16px;
+    border-radius: 4px;
+    font-size: 14px;
+    line-height: 1.5;
+    margin-top: 4px;
+}
+
+.cb-contact-messages.cb-msg-success {
+    background: #eaf7e0;
+    border: 1px solid #83b735;
+    color: #3d6b0a;
+}
+
+.cb-contact-messages.cb-msg-error {
+    background: #fef0ed;
+    border: 1px solid #e2401c;
+    color: #a82b10;
+}
+
+/* Spinner */
+.cb-contact-spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: cb-spin 0.6s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+}
+
+@keyframes cb-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+    .cb-contact-form-wrap {
+        padding: 0 8px;
+    }
+
+    #cb-contact-submit {
+        width: 100%;
+    }
+}

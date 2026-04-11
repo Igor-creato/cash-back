@@ -1,0 +1,79 @@
+/**
+ * Cashback Bot Protection — Styles.
+ *
+ * @since 2.1.0
+ */
+
+/* Honeypot — скрыто от пользователей, видимо для ботов */
+.cb-hp-wrap {
+    position: absolute;
+    left: -9999px;
+    top: -9999px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* CAPTCHA контейнер */
+.cb-captcha-container {
+    margin: 16px 0;
+}
+
+/* Overlay вариант (когда контейнер создаётся динамически) */
+.cb-captcha-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 99999;
+}
+
+/* Виджет CAPTCHA */
+.cb-captcha-widget {
+    background: #fff;
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 400px;
+    width: 90%;
+    position: relative;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+}
+
+.cb-captcha-message {
+    margin: 0 0 16px;
+    font-size: 14px;
+    color: #333;
+    text-align: center;
+}
+
+/* Кнопка закрытия */
+.cb-captcha-close {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: #999;
+    cursor: pointer;
+    line-height: 1;
+    padding: 4px;
+}
+
+.cb-captcha-close:hover {
+    color: #333;
+}
+
+/* SmartCaptcha виджет — центрирование */
+#cb-smartcaptcha-widget {
+    display: flex;
+    justify-content: center;
+    min-height: 78px;
+}

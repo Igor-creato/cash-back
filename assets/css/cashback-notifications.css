@@ -1,0 +1,139 @@
+/* Настройки уведомлений — личный кабинет */
+
+.cashback-notifications-settings {
+    max-width: 600px;
+}
+
+.cashback-notifications-settings h3 {
+    margin: 0 0 8px;
+    font-size: 1.3em;
+}
+
+.cashback-notifications-desc {
+    color: #666;
+    margin: 0 0 20px;
+}
+
+.cashback-notifications-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.cashback-notifications-table thead th {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid #ddd;
+    font-size: 13px;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.cashback-notifications-table thead th:last-child {
+    text-align: center;
+    width: 80px;
+}
+
+.cashback-notifications-table tbody tr {
+    border-bottom: 1px solid #eee;
+}
+
+.cashback-notifications-table tbody td {
+    padding: 14px 12px;
+    font-size: 14px;
+}
+
+.cashback-notifications-table tbody td:last-child {
+    text-align: center;
+}
+
+.cashback-notifications-disabled-hint {
+    display: block;
+    font-size: 12px;
+    color: #999;
+    margin-top: 2px;
+}
+
+/* Toggle switch */
+.cashback-toggle {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    cursor: pointer;
+}
+
+.cashback-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.cashback-toggle-slider {
+    position: absolute;
+    inset: 0;
+    background: #ccc;
+    border-radius: 24px;
+    transition: background 0.25s;
+}
+
+.cashback-toggle-slider::before {
+    content: "";
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    left: 3px;
+    bottom: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.25s;
+}
+
+.cashback-toggle input:checked + .cashback-toggle-slider {
+    background: #2271b1;
+}
+
+.cashback-toggle input:checked + .cashback-toggle-slider::before {
+    transform: translateX(20px);
+}
+
+.cashback-toggle input:disabled + .cashback-toggle-slider {
+    background: #e0e0e0;
+    cursor: not-allowed;
+}
+
+/* Actions */
+.cashback-notifications-actions {
+    margin-top: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.cashback-btn-primary {
+    background: #2271b1 !important;
+    color: #fff !important;
+    border: none !important;
+    padding: 10px 24px !important;
+    border-radius: 4px !important;
+    cursor: pointer !important;
+    font-size: 14px !important;
+}
+
+.cashback-btn-primary:hover {
+    background: #135e96 !important;
+}
+
+.cashback-btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed !important;
+}
+
+.cashback-notifications-status {
+    font-size: 13px;
+    color: #2271b1;
+}
+
+.cashback-notifications-status.error {
+    color: #d63638;
+}

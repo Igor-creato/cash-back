@@ -1,0 +1,438 @@
+/* Стили для админки */
+
+/* Модал переноса транзакции */
+#transfer-modal {
+    background: rgba(0, 0, 0, 0.55);
+}
+#transfer-modal-inner {
+    background: #fff;
+    padding: 24px;
+    border-radius: 4px;
+    max-width: 420px;
+    margin: 10% auto;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+#transfer-email {
+    width: 100%;
+    margin: 8px 0 0;
+    box-sizing: border-box;
+}
+
+/* Таблица параметров партнерской сети в метабоксе товара */
+.affiliate-network-params-table {
+    border-collapse: collapse;
+}
+
+.affiliate-network-params-table th,
+.affiliate-network-params-table td {
+    padding: 6px 8px;
+    vertical-align: middle;
+}
+
+.affiliate-network-params-table .param-inline-input {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Таблица индивидуальных параметров товара */
+.affiliate-product-params-table {
+    border-collapse: collapse;
+}
+
+.affiliate-product-params-table th,
+.affiliate-product-params-table td {
+    padding: 6px 8px;
+    vertical-align: middle;
+}
+
+.affiliate-product-params-table input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.remove-product-param-btn {
+    min-width: 28px;
+    padding: 0 6px !important;
+    line-height: 24px !important;
+    height: 26px !important;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+/* Предупреждение об отключенной сети */
+.affiliate-network-warning {
+    font-size: 13px;
+}
+
+/* Подсветка ошибки для выпадающего списка сети */
+#_affiliate_network_id.select-error {
+    border-color: #d63638 !important;
+    box-shadow: 0 0 0 1px #d63638 !important;
+}
+
+/* Стили для неактивных платежных систем и банков в таблице выплат */
+.cashback-inactive-warning {
+    color: #d63638 !important;
+    font-weight: 600;
+}
+
+/* Стили для полей редактирования в таблицах */
+.edit-field .edit-input {
+    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.edit-field input[type="text"],
+.edit-field input[type="number"],
+.edit-field select {
+    max-width: 150px;
+    width: 100%;
+}
+
+.edit-field[data-field="ban_reason"] input {
+    max-width: 200px;
+}
+
+.cashback-inactive-badge {
+    color: #d63638;
+    font-size: 11px;
+    font-style: italic;
+    display: block;
+    margin-top: 2px;
+}
+
+/* === Стили для детальной страницы заявки на выплату === */
+
+.payout-detail-wrap #poststuff {
+    padding-top: 10px;
+}
+
+.payout-detail-wrap .postbox {
+    margin-bottom: 20px;
+}
+
+.payout-detail-wrap .postbox .hndle {
+    cursor: default;
+}
+
+/* Таблица данных заявки */
+.payout-detail-table th {
+    width: 180px;
+    font-weight: 600;
+    padding: 10px 10px 10px 0;
+    vertical-align: middle;
+}
+
+.payout-detail-table td {
+    padding: 10px 0;
+    vertical-align: middle;
+}
+
+.payout-detail-table .detail-value {
+    margin-right: 6px;
+}
+
+.payout-detail-table .payout-amount {
+    font-size: 1.2em;
+    color: #1d2327;
+}
+
+/* Кнопка копирования */
+.payout-detail-table .copy-btn,
+.payout-detail-form .copy-btn {
+    vertical-align: middle;
+    min-width: 30px;
+    padding: 0 6px;
+    line-height: 24px;
+    height: 26px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.copy-btn.copied {
+    background-color: #00a32a !important;
+    border-color: #00a32a !important;
+    color: #fff !important;
+}
+
+/* Кнопка расшифровки (глаз) на детальной странице */
+.decrypt-detail-btn {
+    vertical-align: middle;
+    cursor: pointer;
+}
+
+/* Расшифрованные данные */
+.payout-account-detail-cell .decrypted-account {
+    font-weight: 600;
+    color: #1d2327;
+}
+
+.decrypted-full-name {
+    font-weight: 600;
+    color: #1d2327;
+    margin-right: 6px;
+}
+
+/* Форма управления заявкой — вертикальный layout */
+.payout-detail-form--inline .payout-detail-form__fields {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 400px;
+}
+
+.payout-detail-form__field {
+    display: flex;
+    flex-direction: column;
+}
+
+.payout-detail-form__field label {
+    margin-bottom: 4px;
+    white-space: nowrap;
+}
+
+.payout-detail-form__field select,
+.payout-detail-form__field input[type="text"],
+.payout-detail-form__field input[type="number"],
+.payout-detail-form__field textarea {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.payout-detail-form__field textarea {
+    resize: vertical;
+}
+
+.payout-detail-form__actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+}
+
+#save-detail-btn {
+    font-size: 14px;
+    height: 36px;
+}
+
+/* Кнопка Просмотр в таблице */
+.view-btn {
+    margin-right: 4px !important;
+}
+
+/* Адаптация для узких экранов */
+@media screen and (max-width: 782px) {
+    .payout-detail-table th {
+        width: auto;
+        display: block;
+        padding-bottom: 2px;
+    }
+
+    .payout-detail-table td {
+        display: block;
+        padding-top: 0;
+    }
+}
+
+/* === Антифрод-модуль === */
+
+/* Severity badges */
+.cashback-severity-critical {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    background: #d63638;
+}
+
+.cashback-severity-high {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    background: #dba617;
+}
+
+.cashback-severity-medium {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #1d2327;
+    background: #f0c33c;
+}
+
+.cashback-severity-low {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #1d2327;
+    background: #c3c4c7;
+}
+
+/* Alert actions */
+.cashback-actions {
+    white-space: nowrap;
+}
+
+.cashback-actions .button-small {
+    margin-bottom: 2px;
+}
+
+/* Modal */
+.cashback-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 100050;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 40px;
+    overflow-y: auto;
+}
+
+.cashback-modal-content {
+    background: #fff;
+    border-radius: 4px;
+    padding: 20px 25px 25px;
+    max-width: 800px;
+    width: 90%;
+    position: relative;
+    box-shadow: 0 3px 20px rgba(0, 0, 0, 0.3);
+    margin-bottom: 40px;
+}
+
+.cashback-modal-close {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 24px;
+    cursor: pointer;
+    color: #666;
+    line-height: 1;
+}
+
+.cashback-modal-close:hover {
+    color: #d63638;
+}
+
+.cashback-modal-content h2 {
+    margin-top: 0;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #c3c4c7;
+}
+
+.cashback-modal-content h3 {
+    margin-top: 18px;
+    margin-bottom: 8px;
+}
+
+/* Filters row */
+.cashback-filters select {
+    vertical-align: middle;
+    margin-right: 4px;
+}
+
+.cashback-filters .button {
+    vertical-align: middle;
+}
+
+/* Settings form spacing */
+#fraud-settings-form .form-table th {
+    width: 280px;
+}
+
+#fraud-settings-form .small-text {
+    width: 80px;
+}
+
+#fraud-settings-message {
+    margin-top: 10px;
+}
+
+/* === Страница статистики кэшбэка === */
+
+.cashback-stats-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin: 20px 0;
+}
+
+.cashback-stat-card {
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-left: 4px solid #2271b1;
+    padding: 16px 20px;
+    min-width: 200px;
+    flex: 1 1 200px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.cashback-stat-card.card-commission {
+    border-left-color: #2271b1;
+}
+
+.cashback-stat-card.card-cashback {
+    border-left-color: #d63638;
+}
+
+.cashback-stat-card.card-profit {
+    border-left-color: #00a32a;
+}
+
+.cashback-stat-card .stat-label {
+    font-size: 12px;
+    color: #646970;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.cashback-stat-card .stat-value {
+    font-size: 24px;
+    font-weight: 600;
+    color: #1d2327;
+}
+
+.cashback-stat-card .stat-value.positive {
+    color: #00a32a;
+}
+
+.cashback-stat-card .stat-value.negative {
+    color: #d63638;
+}
+
+.cashback-stats-section {
+    margin-bottom: 20px;
+}
+
+.cashback-stats-section .postbox .hndle {
+    cursor: default;
+}
+
+.cashback-stats-section .widefat th {
+    font-weight: 600;
+}
+
+@media screen and (max-width: 782px) {
+    .cashback-stats-cards {
+        flex-direction: column;
+    }
+
+    .cashback-stat-card {
+        min-width: auto;
+    }
+}
