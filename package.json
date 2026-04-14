@@ -1,0 +1,16 @@
+{
+  "private": true,
+  "name": "cashback-plugin-tooling",
+  "version": "0.0.0",
+  "description": "JS lint & audit tooling for the Cashback WordPress plugin.",
+  "devDependencies": {
+    "@wordpress/eslint-plugin": "^22.0.0",
+    "eslint": "^9.20.0",
+    "eslint-plugin-security": "^3.0.1",
+    "globals": "^15.14.0"
+  },
+  "scripts": {
+    "lint:js": "eslint \"assets/js/**/*.js\"",
+    "audit": "npm audit --audit-level=high"
+  }
+}

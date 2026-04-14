@@ -1,0 +1,16 @@
+title = "Cashback plugin gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Paths excluded from secret scanning (docs / local dev)."
+paths = [
+    '''(^|/)obsidian/''',
+    '''(^|/)context/''',
+    '''(^|/)development/''',
+    '''(^|/)wp-plugin-tests/''',
+    '''(^|/)languages/''',
+    '''(^|/)vendor/''',
+    '''(^|/)node_modules/''',
+]
