@@ -16,9 +16,9 @@ if (!defined('ABSPATH')) {
  * - IP and User-Agent tracking
  * - Suspicious flagging
  */
-class Cashback_Claims_Antifraud
-{
-    private const MAX_CLAIMS_PER_DAY = 5;
+class Cashback_Claims_Antifraud {
+
+    private const MAX_CLAIMS_PER_DAY  = 5;
     private const MAX_CLAIMS_PER_WEEK = 15;
 
     /**
@@ -28,10 +28,9 @@ class Cashback_Claims_Antifraud
      * @param string $order_id
      * @return array{blocked: bool, reasons: string[], suspicious: bool, suspicious_reasons: string[]}
      */
-    public static function pre_submit_check(int $user_id, string $order_id): array
-    {
-        $reasons = [];
-        $suspicious_reasons = [];
+    public static function pre_submit_check( int $user_id, string $order_id ): array {
+        $reasons            = array();
+        $suspicious_reasons = array();
 
         $rate_check = self::check_rate_limit($user_id);
         if ($rate_check['blocked']) {
@@ -49,12 +48,12 @@ class Cashback_Claims_Antifraud
             $suspicious_reasons = array_merge($suspicious_reasons, $order_check['suspicious_reasons']);
         }
 
-        return [
+        return array(
             'blocked'            => !empty($reasons),
             'reasons'            => $reasons,
             'suspicious'         => !empty($suspicious_reasons),
             'suspicious_reasons' => $suspicious_reasons,
-        ];
+        );
     }
 
     /**
@@ -63,11 +62,10 @@ class Cashback_Claims_Antifraud
      * @param int $user_id
      * @return array{blocked: bool, reasons: string[], suspicious: bool, suspicious_reasons: string[]}
      */
-    private static function check_rate_limit(int $user_id): array
-    {
+    private static function check_rate_limit( int $user_id ): array {
         global $wpdb;
 
-        $today = gmdate('Y-m-d');
+        $today      = gmdate('Y-m-d');
         $week_start = gmdate('Y-m-d', strtotime('monday this week'));
 
         $today_count = (int) $wpdb->get_var($wpdb->prepare(
@@ -84,8 +82,8 @@ class Cashback_Claims_Antifraud
             $week_start
         ));
 
-        $reasons = [];
-        $suspicious = [];
+        $reasons    = array();
+        $suspicious = array();
 
         if ($today_count >= self::MAX_CLAIMS_PER_DAY) {
             $reasons[] = sprintf(
@@ -105,18 +103,18 @@ class Cashback_Claims_Antifraud
 
         if ($today_count >= self::MAX_CLAIMS_PER_DAY * 0.8) {
             $suspicious[] = sprintf(
-                __('Пользователь приближается к дневному лимиту (%d/%d).', 'cashback-plugin'),
+                __('Пользователь приближается к дневному лимиту (%1$d/%2$d).', 'cashback-plugin'),
                 $today_count,
                 self::MAX_CLAIMS_PER_DAY
             );
         }
 
-        return [
+        return array(
             'blocked'            => !empty($reasons),
             'reasons'            => $reasons,
             'suspicious'         => !empty($suspicious),
             'suspicious_reasons' => $suspicious,
-        ];
+        );
     }
 
     /**
@@ -126,8 +124,7 @@ class Cashback_Claims_Antifraud
      * @param int $current_user_id
      * @return array{blocked: bool, reasons: string[], suspicious: bool, suspicious_reasons: string[]}
      */
-    private static function check_order_id_uniqueness(string $order_id, int $current_user_id): array
-    {
+    private static function check_order_id_uniqueness( string $order_id, int $current_user_id ): array {
         global $wpdb;
 
         $existing = $wpdb->get_row($wpdb->prepare(
@@ -137,30 +134,30 @@ class Cashback_Claims_Antifraud
             $order_id
         ), ARRAY_A);
 
-        $reasons = [];
-        $suspicious = [];
+        $reasons    = array();
+        $suspicious = array();
 
         if ($existing) {
             if ((int) $existing['user_id'] === $current_user_id) {
-                if (in_array($existing['status'], ['draft', 'submitted', 'sent_to_network'], true)) {
+                if (in_array($existing['status'], array( 'draft', 'submitted', 'sent_to_network' ), true)) {
                     $reasons[] = __('Заявка с таким номером заказа уже существует.', 'cashback-plugin');
                 }
             } else {
-                $reasons[] = __('Этот номер заказа уже используется в другой заявке.', 'cashback-plugin');
+                $reasons[]    = __('Этот номер заказа уже используется в другой заявке.', 'cashback-plugin');
                 $suspicious[] = sprintf(
-                    __('Order ID %s уже заявлен пользователем %d.', 'cashback-plugin'),
+                    __('Order ID %1$s уже заявлен пользователем %2$d.', 'cashback-plugin'),
                     $order_id,
                     $existing['user_id']
                 );
             }
         }
 
-        return [
+        return array(
             'blocked'            => !empty($reasons),
             'reasons'            => $reasons,
             'suspicious'         => !empty($suspicious),
             'suspicious_reasons' => $suspicious,
-        ];
+        );
     }
 
     /**
@@ -173,11 +170,10 @@ class Cashback_Claims_Antifraud
      * @param string $user_agent
      * @return array{is_suspicious: bool, reasons: string[]}
      */
-    public static function post_submit_analysis(int $claim_id, int $user_id, string $order_id, string $ip_address, string $user_agent): array
-    {
+    public static function post_submit_analysis( int $claim_id, int $user_id, string $order_id, string $ip_address, string $user_agent ): array {
         global $wpdb;
 
-        $reasons = [];
+        $reasons = array();
 
         $other_users_same_ip = (int) $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(DISTINCT user_id) FROM `{$wpdb->prefix}cashback_claims`
@@ -225,20 +221,20 @@ class Cashback_Claims_Antifraud
         if ($is_suspicious) {
             $wpdb->update(
                 "{$wpdb->prefix}cashback_claims",
-                [
-                    'is_suspicious'    => 1,
+                array(
+                    'is_suspicious'      => 1,
                     'suspicious_reasons' => wp_json_encode($reasons),
-                ],
-                ['claim_id' => $claim_id],
-                ['%d', '%s'],
-                ['%d']
+                ),
+                array( 'claim_id' => $claim_id ),
+                array( '%d', '%s' ),
+                array( '%d' )
             );
         }
 
-        return [
+        return array(
             'is_suspicious' => $is_suspicious,
             'reasons'       => $reasons,
-        ];
+        );
     }
 
     /**
@@ -246,8 +242,7 @@ class Cashback_Claims_Antifraud
      *
      * @return int
      */
-    public static function get_max_claims_per_day(): int
-    {
+    public static function get_max_claims_per_day(): int {
         return (int) get_option('cashback_claims_max_per_day', self::MAX_CLAIMS_PER_DAY);
     }
 
@@ -256,8 +251,7 @@ class Cashback_Claims_Antifraud
      *
      * @return int
      */
-    public static function get_max_claims_per_week(): int
-    {
+    public static function get_max_claims_per_week(): int {
         return (int) get_option('cashback_claims_max_per_week', self::MAX_CLAIMS_PER_WEEK);
     }
 }

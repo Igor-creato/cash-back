@@ -14,20 +14,18 @@ if (!defined('ABSPATH')) {
  * - Status changes (to user)
  * - New claim alerts (to admins)
  */
-class Cashback_Claims_Notifications
-{
-    public function __construct()
-    {
-        add_action('cashback_claim_created', [$this, 'notify_user_created'], 10, 3);
-        add_action('cashback_claim_created', [$this, 'notify_admin_new_claim'], 10, 3);
-        add_action('cashback_claim_status_changed', [$this, 'notify_user_status_changed'], 10, 6);
+class Cashback_Claims_Notifications {
+
+    public function __construct() {
+        add_action('cashback_claim_created', array( $this, 'notify_user_created' ), 10, 3);
+        add_action('cashback_claim_created', array( $this, 'notify_admin_new_claim' ), 10, 3);
+        add_action('cashback_claim_status_changed', array( $this, 'notify_user_status_changed' ), 10, 6);
     }
 
     /**
      * Notify user when claim is created.
      */
-    public function notify_user_created(int $claim_id, int $user_id, array $data): void
-    {
+    public function notify_user_created( int $claim_id, int $user_id, array $data ): void {
         $user = get_user_by('id', $user_id);
         if (!$user) {
             return;
@@ -60,9 +58,8 @@ ID заявки: %3$s
     /**
      * Notify admins about new claim.
      */
-    public function notify_admin_new_claim(int $claim_id, int $user_id, array $data): void
-    {
-        $admins = get_users(['role__in' => ['administrator', 'shop_manager']]);
+    public function notify_admin_new_claim( int $claim_id, int $user_id, array $data ): void {
+        $admins = get_users(array( 'role__in' => array( 'administrator', 'shop_manager' ) ));
 
         foreach ($admins as $admin) {
             $subject = sprintf(
@@ -95,8 +92,7 @@ ID заявки: %4$s
     /**
      * Notify user when claim status changes.
      */
-    public function notify_user_status_changed(int $claim_id, string $old_status, string $new_status, string $note, string $actor_type, ?int $actor_id): void
-    {
+    public function notify_user_status_changed( int $claim_id, string $old_status, string $new_status, string $note, string $actor_type, ?int $actor_id ): void {
         global $wpdb;
 
         $claim = $wpdb->get_row($wpdb->prepare(
@@ -113,14 +109,14 @@ ID заявки: %4$s
             return;
         }
 
-        $status_labels = [
+        $status_labels = array(
             'submitted'       => __('Отправлена', 'cashback-plugin'),
             'sent_to_network' => __('Отправлена партнёру', 'cashback-plugin'),
             'approved'        => __('Одобрена', 'cashback-plugin'),
             'declined'        => __('Отклонена', 'cashback-plugin'),
-        ];
+        );
 
-        $label = $status_labels[$new_status] ?? $new_status;
+        $label = $status_labels[ $new_status ] ?? $new_status;
 
         $subject = sprintf(
             /* translators: 1: claim ID, 2: new status */
@@ -148,14 +144,13 @@ ID заявки: %4$s
     /**
      * Send email with plugin branding.
      */
-    private function send_email(string $to, string $subject, string $message): void
-    {
-        $headers = [
+    private function send_email( string $to, string $subject, string $message ): void {
+        $headers = array(
             'Content-Type: text/html; charset=UTF-8',
             'From: ' . get_option('blogname') . ' <' . get_option('admin_email') . '>',
-        ];
+        );
 
-        $html = '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">';
+        $html  = '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">';
         $html .= '<h2 style="color: #333;">' . esc_html(get_option('blogname')) . '</h2>';
         $html .= '<p style="white-space: pre-line;">' . wp_kses_post($message) . '</p>';
         $html .= '<hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">';

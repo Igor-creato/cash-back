@@ -14,15 +14,15 @@ if (!defined('ABSPATH')) {
  * - Status transitions with event logging
  * - Query claims
  */
-class Cashback_Claims_Manager
-{
-    private const VALID_TRANSITIONS = [
-        'draft'           => ['submitted'],
-        'submitted'       => ['sent_to_network', 'approved', 'declined'],
-        'sent_to_network' => ['approved', 'declined'],
-        'approved'        => [],
-        'declined'        => [],
-    ];
+class Cashback_Claims_Manager {
+
+    private const VALID_TRANSITIONS = array(
+        'draft'           => array( 'submitted' ),
+        'submitted'       => array( 'sent_to_network', 'approved', 'declined' ),
+        'sent_to_network' => array( 'approved', 'declined' ),
+        'approved'        => array(),
+        'declined'        => array(),
+    );
 
     /**
      * Create a new claim.
@@ -30,38 +30,46 @@ class Cashback_Claims_Manager
      * @param array $data Claim data
      * @return array{success: bool, claim_id?: int, error?: string}
      */
-    public static function create(array $data): array
-    {
+    public static function create( array $data ): array {
         global $wpdb;
 
         $user_id = get_current_user_id();
         if (!$user_id) {
-            return ['success' => false, 'error' => __('Необходима авторизация.', 'cashback-plugin')];
+            return array(
+				'success' => false,
+				'error'   => __('Необходима авторизация.', 'cashback-plugin'),
+			);
         }
 
         $eligibility = Cashback_Claims_Eligibility::check($user_id, $data['click_id'] ?? '');
         if (!$eligibility['eligible']) {
-            return ['success' => false, 'error' => implode(' ', $eligibility['reasons'])];
+            return array(
+				'success' => false,
+				'error'   => implode(' ', $eligibility['reasons']),
+			);
         }
 
         $antifraud = Cashback_Claims_Antifraud::pre_submit_check($user_id, $data['order_id'] ?? '');
         if ($antifraud['blocked']) {
-            return ['success' => false, 'error' => implode(' ', $antifraud['reasons'])];
+            return array(
+				'success' => false,
+				'error'   => implode(' ', $antifraud['reasons']),
+			);
         }
 
-        $scoring = Cashback_Claims_Scoring::calculate([
+        $scoring = Cashback_Claims_Scoring::calculate(array(
             'user_id'     => $user_id,
             'click_id'    => $data['click_id'],
             'order_date'  => $data['order_date'],
             'order_value' => $data['order_value'],
             'merchant_id' => $eligibility['data']['merchant_id'] ?? 0,
             'comment'     => $data['comment'] ?? '',
-        ]);
+        ));
 
-        $ip = class_exists('Cashback_Encryption') ? Cashback_Encryption::get_client_ip() : ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+        $ip = class_exists('Cashback_Encryption') ? Cashback_Encryption::get_client_ip() : ( $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0' );
         $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
 
-        $insert_data = [
+        $insert_data = array(
             'user_id'           => $user_id,
             'click_id'          => $data['click_id'],
             'product_id'        => $eligibility['data']['product_id'] ?? 0,
@@ -75,30 +83,30 @@ class Cashback_Claims_Manager
             'is_suspicious'     => $antifraud['suspicious'] ? 1 : 0,
             'ip_address'        => $ip,
             'user_agent'        => $ua,
-        ];
+        );
 
-        $insert_format = ['%d', '%s', '%d', '%s', '%s', '%f', '%s', '%s', '%s', '%f', '%d', '%s', '%s'];
+        $insert_format = array( '%d', '%s', '%d', '%s', '%s', '%f', '%s', '%s', '%s', '%f', '%d', '%s', '%s' );
 
         $merchant_id = $eligibility['data']['merchant_id'] ?? 0;
         if ($merchant_id > 0) {
             $insert_data['merchant_id'] = $merchant_id;
-            $insert_format[] = '%d';
+            $insert_format[]            = '%d';
         }
 
         $merchant_name = $eligibility['data']['merchant_name'] ?? '';
         if ($merchant_name !== '') {
             $insert_data['merchant_name'] = $merchant_name;
-            $insert_format[] = '%s';
+            $insert_format[]              = '%s';
         }
 
         if (!empty($data['evidence_urls'])) {
             $insert_data['evidence_urls'] = wp_json_encode($data['evidence_urls']);
-            $insert_format[] = '%s';
+            $insert_format[]              = '%s';
         }
 
         if (!empty($antifraud['suspicious_reasons'])) {
             $insert_data['suspicious_reasons'] = wp_json_encode($antifraud['suspicious_reasons']);
-            $insert_format[] = '%s';
+            $insert_format[]                   = '%s';
         }
 
         $inserted = $wpdb->insert(
@@ -109,9 +117,15 @@ class Cashback_Claims_Manager
 
         if (!$inserted) {
             if (strpos($wpdb->last_error, 'Duplicate entry') !== false && strpos($wpdb->last_error, 'uk_click_user') !== false) {
-                return ['success' => false, 'error' => __('Заявка по этому переходу уже подана. Повторная заявка невозможна, дождитесь решения сервиса.', 'cashback-plugin')];
+                return array(
+					'success' => false,
+					'error'   => __('Заявка по этому переходу уже подана. Повторная заявка невозможна, дождитесь решения сервиса.', 'cashback-plugin'),
+				);
             }
-            return ['success' => false, 'error' => __('Не удалось создать заявку. Попробуйте позже.', 'cashback-plugin')];
+            return array(
+				'success' => false,
+				'error'   => __('Не удалось создать заявку. Попробуйте позже.', 'cashback-plugin'),
+			);
         }
 
         $claim_id = (int) $wpdb->insert_id;
@@ -123,14 +137,17 @@ class Cashback_Claims_Manager
             self::log_event($claim_id, 'submitted', __('Антифрод: подозрительная заявка. Причины: ', 'cashback-plugin') . implode('; ', $post_analysis['reasons']), null, 'system');
         }
 
-        $event_data = array_merge($data, [
-            'product_name' => $eligibility['data']['product_name'] ?? '—',
+        $event_data = array_merge($data, array(
+            'product_name'  => $eligibility['data']['product_name'] ?? '—',
             'merchant_name' => $eligibility['data']['merchant_name'] ?? '—',
-        ]);
+        ));
 
         do_action('cashback_claim_created', $claim_id, $user_id, $event_data);
 
-        return ['success' => true, 'claim_id' => $claim_id];
+        return array(
+			'success'  => true,
+			'claim_id' => $claim_id,
+		);
     }
 
     /**
@@ -143,13 +160,15 @@ class Cashback_Claims_Manager
      * @param int|null $actor_id
      * @return array{success: bool, error?: string}
      */
-    public static function transition_status(int $claim_id, string $new_status, string $note = '', string $actor_type = 'admin', ?int $actor_id = null): array
-    {
+    public static function transition_status( int $claim_id, string $new_status, string $note = '', string $actor_type = 'admin', ?int $actor_id = null ): array {
         global $wpdb;
 
-        $allowed_statuses = ['draft', 'submitted', 'sent_to_network', 'approved', 'declined'];
+        $allowed_statuses = array( 'draft', 'submitted', 'sent_to_network', 'approved', 'declined' );
         if (!in_array($new_status, $allowed_statuses, true)) {
-            return ['success' => false, 'error' => __('Недопустимый статус.', 'cashback-plugin')];
+            return array(
+				'success' => false,
+				'error'   => __('Недопустимый статус.', 'cashback-plugin'),
+			);
         }
 
         $claim = $wpdb->get_row($wpdb->prepare(
@@ -158,38 +177,47 @@ class Cashback_Claims_Manager
         ), ARRAY_A);
 
         if (!$claim) {
-            return ['success' => false, 'error' => __('Заявка не найдена.', 'cashback-plugin')];
+            return array(
+				'success' => false,
+				'error'   => __('Заявка не найдена.', 'cashback-plugin'),
+			);
         }
 
         $current_status = $claim['status'];
-        $allowed = self::VALID_TRANSITIONS[$current_status] ?? [];
+        $allowed        = self::VALID_TRANSITIONS[ $current_status ] ?? array();
 
         if (!in_array($new_status, $allowed, true)) {
-            return ['success' => false, 'error' => sprintf(
-                /* translators: 1: current status, 2: new status */
-                __('Недопустимый переход: из "%1$s" в "%2$s".', 'cashback-plugin'),
-                $current_status,
-                $new_status
-            )];
+            return array(
+				'success' => false,
+				'error'   => sprintf(
+								/* translators: 1: current status, 2: new status */
+								__('Недопустимый переход: из "%1$s" в "%2$s".', 'cashback-plugin'),
+								$current_status,
+								$new_status
+							),
+			);
         }
 
         $updated = $wpdb->update(
             "{$wpdb->prefix}cashback_claims",
-            ['status' => $new_status],
-            ['claim_id' => $claim_id],
-            ['%s'],
-            ['%d']
+            array( 'status' => $new_status ),
+            array( 'claim_id' => $claim_id ),
+            array( '%s' ),
+            array( '%d' )
         );
 
         if ($updated === false) {
-            return ['success' => false, 'error' => $wpdb->last_error];
+            return array(
+				'success' => false,
+				'error'   => $wpdb->last_error,
+			);
         }
 
         self::log_event($claim_id, $new_status, $note, $actor_id, $actor_type);
 
         do_action('cashback_claim_status_changed', $claim_id, $current_status, $new_status, $note, $actor_type, $actor_id);
 
-        return ['success' => true];
+        return array( 'success' => true );
     }
 
     /**
@@ -201,20 +229,19 @@ class Cashback_Claims_Manager
      * @param int|null $actor_id
      * @param string $actor_type
      */
-    public static function log_event(int $claim_id, string $status, string $note = '', ?int $actor_id = null, string $actor_type = 'system'): void
-    {
+    public static function log_event( int $claim_id, string $status, string $note = '', ?int $actor_id = null, string $actor_type = 'system' ): void {
         global $wpdb;
 
         $wpdb->insert(
             "{$wpdb->prefix}cashback_claim_events",
-            [
+            array(
                 'claim_id'   => $claim_id,
                 'status'     => $status,
                 'note'       => $note,
                 'actor_id'   => $actor_id,
                 'actor_type' => $actor_type,
-            ],
-            ['%d', '%s', '%s', '%d', '%s']
+            ),
+            array( '%d', '%s', '%s', '%d', '%s' )
         );
     }
 
@@ -225,8 +252,7 @@ class Cashback_Claims_Manager
      * @param int $user_id If provided, verify ownership
      * @return array|null
      */
-    public static function get_claim(int $claim_id, ?int $user_id = null): ?array
-    {
+    public static function get_claim( int $claim_id, ?int $user_id = null ): ?array {
         global $wpdb;
 
         $sql = "SELECT c.*, u.display_name as user_display_name, u.user_email as user_email
@@ -234,10 +260,10 @@ class Cashback_Claims_Manager
                 LEFT JOIN `{$wpdb->prefix}users` u ON u.ID = c.user_id
                 WHERE c.claim_id = %d";
 
-        $params = [$claim_id];
+        $params = array( $claim_id );
 
         if ($user_id) {
-            $sql .= ' AND c.user_id = %d';
+            $sql     .= ' AND c.user_id = %d';
             $params[] = $user_id;
         }
 
@@ -259,7 +285,7 @@ class Cashback_Claims_Manager
         $claim['events'] = $events;
 
         if ($claim['suspicious_reasons']) {
-            $claim['suspicious_reasons_decoded'] = json_decode($claim['suspicious_reasons'], true) ?: [];
+            $claim['suspicious_reasons_decoded'] = json_decode($claim['suspicious_reasons'], true) ?: array();
         }
 
         return $claim;
@@ -274,33 +300,32 @@ class Cashback_Claims_Manager
      * @param string $status_filter
      * @return array{claims: array[], total: int, pages: int}
      */
-    public static function get_user_claims(int $user_id, int $page = 1, int $per_page = 20, string $status_filter = '', array $filters = []): array
-    {
+    public static function get_user_claims( int $user_id, int $page = 1, int $per_page = 20, string $status_filter = '', array $filters = array() ): array {
         global $wpdb;
 
-        $offset = ($page - 1) * $per_page;
-        $where = 'c.user_id = %d';
-        $params = [$user_id];
+        $offset = ( $page - 1 ) * $per_page;
+        $where  = 'c.user_id = %d';
+        $params = array( $user_id );
 
         if ($status_filter && $status_filter !== 'all') {
-            $where .= ' AND c.status = %s';
+            $where   .= ' AND c.status = %s';
             $params[] = $status_filter;
         }
 
         $date_from = $filters['date_from'] ?? '';
-        $date_to = $filters['date_to'] ?? '';
+        $date_to   = $filters['date_to'] ?? '';
         if ($date_from !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
-            $where .= ' AND c.created_at >= %s';
+            $where   .= ' AND c.created_at >= %s';
             $params[] = $date_from . ' 00:00:00';
         }
         if ($date_to !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
-            $where .= ' AND c.created_at <= %s';
+            $where   .= ' AND c.created_at <= %s';
             $params[] = $date_to . ' 23:59:59';
         }
 
         $search = $filters['search'] ?? '';
         if ($search !== '') {
-            $where .= ' AND c.product_name LIKE %s';
+            $where   .= ' AND c.product_name LIKE %s';
             $params[] = '%' . $wpdb->esc_like($search) . '%';
         }
 
@@ -311,30 +336,30 @@ class Cashback_Claims_Manager
              WHERE {$where}
              ORDER BY c.created_at DESC
              LIMIT %d OFFSET %d",
-            ...array_merge($params, [$per_page, $offset])
+            ...array_merge($params, array( $per_page, $offset ))
         ), ARRAY_A);
 
         // Fetch events for each claim (admin/system notes visible to user)
-        $claim_ids = array_column($claims, 'claim_id');
-        $events_by_claim = [];
+        $claim_ids       = array_column($claims, 'claim_id');
+        $events_by_claim = array();
         if (!empty($claim_ids)) {
             $placeholders = implode(',', array_fill(0, count($claim_ids), '%d'));
-            $events = $wpdb->get_results($wpdb->prepare(
+            $events       = $wpdb->get_results($wpdb->prepare(
                 "SELECT event_id, claim_id, status, note, actor_type, is_read, created_at
                  FROM `{$wpdb->prefix}cashback_claim_events`
                  WHERE claim_id IN ({$placeholders}) AND note IS NOT NULL AND note != ''
                    AND NOT (actor_type = 'system' AND note LIKE %s)
                  ORDER BY created_at ASC",
-                ...array_merge($claim_ids, ['%Антифрод:%'])
+                ...array_merge($claim_ids, array( '%Антифрод:%' ))
             ), ARRAY_A);
 
             foreach ($events as $event) {
-                $events_by_claim[$event['claim_id']][] = $event;
+                $events_by_claim[ $event['claim_id'] ][] = $event;
             }
         }
 
         foreach ($claims as &$claim) {
-            $claim['events'] = $events_by_claim[$claim['claim_id']] ?? [];
+            $claim['events'] = $events_by_claim[ $claim['claim_id'] ] ?? array();
         }
         unset($claim);
 
@@ -345,7 +370,11 @@ class Cashback_Claims_Manager
 
         $pages = (int) ceil($total / $per_page);
 
-        return ['claims' => $claims, 'total' => $total, 'pages' => max(1, $pages)];
+        return array(
+			'claims' => $claims,
+			'total'  => $total,
+			'pages'  => max(1, $pages),
+		);
     }
 
     /**
@@ -354,35 +383,34 @@ class Cashback_Claims_Manager
      * @param array $args Filters: status, suspicious, merchant_id, search, date_from, date_to, orderby, order
      * @return array{claims: array[], total: int, pages: int}
      */
-    public static function get_claims_admin(array $args = []): array
-    {
+    public static function get_claims_admin( array $args = array() ): array {
         global $wpdb;
 
-        $per_page = (int) ($args['per_page'] ?? 20);
-        $page = max(1, (int) ($args['page'] ?? 1));
-        $offset = ($page - 1) * $per_page;
+        $per_page = (int) ( $args['per_page'] ?? 20 );
+        $page     = max(1, (int) ( $args['page'] ?? 1 ));
+        $offset   = ( $page - 1 ) * $per_page;
 
-        $where = [];
-        $params = [];
+        $where  = array();
+        $params = array();
 
         if (!empty($args['status'])) {
-            $where[] = 'c.status = %s';
+            $where[]  = 'c.status = %s';
             $params[] = $args['status'];
         }
 
         if (isset($args['suspicious']) && $args['suspicious'] !== '') {
-            $where[] = 'c.is_suspicious = %d';
+            $where[]  = 'c.is_suspicious = %d';
             $params[] = (int) $args['suspicious'];
         }
 
         if (!empty($args['merchant_id'])) {
-            $where[] = 'c.merchant_id = %d';
+            $where[]  = 'c.merchant_id = %d';
             $params[] = (int) $args['merchant_id'];
         }
 
         if (!empty($args['search'])) {
-            $where[] = '(c.order_id LIKE %s OR c.product_name LIKE %s OR c.merchant_name LIKE %s OR u.display_name LIKE %s OR u.user_email LIKE %s)';
-            $like = '%' . $wpdb->esc_like($args['search']) . '%';
+            $where[]  = '(c.order_id LIKE %s OR c.product_name LIKE %s OR c.merchant_name LIKE %s OR u.display_name LIKE %s OR u.user_email LIKE %s)';
+            $like     = '%' . $wpdb->esc_like($args['search']) . '%';
             $params[] = $like;
             $params[] = $like;
             $params[] = $like;
@@ -391,25 +419,25 @@ class Cashback_Claims_Manager
         }
 
         if (!empty($args['date_from'])) {
-            $where[] = 'c.created_at >= %s';
+            $where[]  = 'c.created_at >= %s';
             $params[] = $args['date_from'] . ' 00:00:00';
         }
 
         if (!empty($args['date_to'])) {
-            $where[] = 'c.created_at <= %s';
+            $where[]  = 'c.created_at <= %s';
             $params[] = $args['date_to'] . ' 23:59:59';
         }
 
         $where_sql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
-        $allowed_orderby = ['claim_id', 'created_at', 'probability_score', 'order_value', 'status'];
-        $orderby = in_array($args['orderby'] ?? '', $allowed_orderby, true) ? $args['orderby'] : 'created_at';
-        $order = strtoupper($args['order'] ?? '') === 'ASC' ? 'ASC' : 'DESC';
+        $allowed_orderby = array( 'claim_id', 'created_at', 'probability_score', 'order_value', 'status' );
+        $orderby         = in_array($args['orderby'] ?? '', $allowed_orderby, true) ? $args['orderby'] : 'created_at';
+        $order           = strtoupper($args['order'] ?? '') === 'ASC' ? 'ASC' : 'DESC';
 
         $join_sql = "LEFT JOIN `{$wpdb->prefix}users` u ON u.ID = c.user_id";
 
-        $list_params = array_merge($params, [$per_page, $offset]);
-        $claims = $wpdb->get_results($wpdb->prepare(
+        $list_params = array_merge($params, array( $per_page, $offset ));
+        $claims      = $wpdb->get_results($wpdb->prepare(
             "SELECT c.*, u.display_name as user_display_name, u.user_email as user_email
              FROM `{$wpdb->prefix}cashback_claims` c
              {$join_sql}
@@ -432,7 +460,11 @@ class Cashback_Claims_Manager
 
         $pages = (int) ceil($total / $per_page);
 
-        return ['claims' => $claims, 'total' => $total, 'pages' => max(1, $pages)];
+        return array(
+			'claims' => $claims,
+			'total'  => $total,
+			'pages'  => max(1, $pages),
+		);
     }
 
     /**
@@ -440,8 +472,7 @@ class Cashback_Claims_Manager
      *
      * @return array
      */
-    public static function get_admin_stats(): array
-    {
+    public static function get_admin_stats(): array {
         global $wpdb;
 
         $row = $wpdb->get_row(
@@ -458,10 +489,16 @@ class Cashback_Claims_Manager
             ARRAY_A
         );
 
-        return $row ?: [
-            'total' => 0, 'draft' => 0, 'submitted' => 0, 'sent_to_network' => 0,
-            'approved' => 0, 'declined' => 0, 'suspicious' => 0, 'avg_probability' => 0,
-        ];
+        return $row ?: array(
+            'total'           => 0,
+			'draft'           => 0,
+			'submitted'       => 0,
+			'sent_to_network' => 0,
+            'approved'        => 0,
+			'declined'        => 0,
+			'suspicious'      => 0,
+			'avg_probability' => 0,
+        );
     }
 
     /**
@@ -472,8 +509,7 @@ class Cashback_Claims_Manager
      * @param int $actor_id
      * @return array{success: bool, error?: string}
      */
-    public static function add_note(int $claim_id, string $note, int $actor_id): array
-    {
+    public static function add_note( int $claim_id, string $note, int $actor_id ): array {
         global $wpdb;
 
         $claim = $wpdb->get_var($wpdb->prepare(
@@ -482,11 +518,14 @@ class Cashback_Claims_Manager
         ));
 
         if (!$claim) {
-            return ['success' => false, 'error' => __('Заявка не найдена.', 'cashback-plugin')];
+            return array(
+				'success' => false,
+				'error'   => __('Заявка не найдена.', 'cashback-plugin'),
+			);
         }
 
         self::log_event($claim_id, $claim, $note, $actor_id, 'admin');
 
-        return ['success' => true];
+        return array( 'success' => true );
     }
 }

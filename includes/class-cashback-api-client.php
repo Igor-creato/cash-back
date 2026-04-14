@@ -23,8 +23,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class Cashback_API_Client
-{
+class Cashback_API_Client {
+
     /** @var self|null */
     private static ?self $instance = null;
 
@@ -44,21 +44,19 @@ class Cashback_API_Client
     private string $sync_log_table;
 
     /** @var array<string, Cashback_Network_Adapter_Interface> Реестр адаптеров (slug => adapter) */
-    private array $adapters = [];
+    private array $adapters = array();
 
     /**
      * @return self
      */
-    public static function get_instance(): self
-    {
+    public static function get_instance(): self {
         if (null === self::$instance) {
             self::$instance = new self();
         }
         return self::$instance;
     }
 
-    private function __construct()
-    {
+    private function __construct() {
         global $wpdb;
         $this->networks_table     = $wpdb->prefix . 'cashback_affiliate_networks';
         $this->checkpoints_table  = $wpdb->prefix . 'cashback_validation_checkpoints';
@@ -87,13 +85,12 @@ class Cashback_API_Client
      *
      * @param Cashback_Network_Adapter_Interface $adapter
      */
-    public function register_adapter(Cashback_Network_Adapter_Interface $adapter): void
-    {
-        $this->adapters[$adapter->get_slug()] = $adapter;
+    public function register_adapter( Cashback_Network_Adapter_Interface $adapter ): void {
+        $this->adapters[ $adapter->get_slug() ] = $adapter;
 
         foreach ($adapter->get_aliases() as $alias) {
-            if (!isset($this->adapters[$alias])) {
-                $this->adapters[$alias] = $adapter;
+            if (!isset($this->adapters[ $alias ])) {
+                $this->adapters[ $alias ] = $adapter;
             }
         }
     }
@@ -104,9 +101,8 @@ class Cashback_API_Client
      * @param string $slug Slug сети (admitad, epn и др.)
      * @return Cashback_Network_Adapter_Interface|null
      */
-    public function get_adapter(string $slug): ?Cashback_Network_Adapter_Interface
-    {
-        return $this->adapters[$slug] ?? null;
+    public function get_adapter( string $slug ): ?Cashback_Network_Adapter_Interface {
+        return $this->adapters[ $slug ] ?? null;
     }
 
     /**
@@ -115,9 +111,8 @@ class Cashback_API_Client
      * @param string $slug
      * @return bool
      */
-    public function has_adapter(string $slug): bool
-    {
-        return isset($this->adapters[$slug]);
+    public function has_adapter( string $slug ): bool {
+        return isset($this->adapters[ $slug ]);
     }
 
     // =========================================================================
@@ -131,8 +126,7 @@ class Cashback_API_Client
      * @param array $credentials ['client_id' => ..., 'client_secret' => ..., ...]
      * @return bool
      */
-    public function save_credentials(int $network_id, array $credentials): bool
-    {
+    public function save_credentials( int $network_id, array $credentials ): bool {
         global $wpdb;
 
         if (!class_exists('Cashback_Encryption') || !Cashback_Encryption::is_configured()) {
@@ -152,10 +146,10 @@ class Cashback_API_Client
 
         $result = $wpdb->update(
             $this->networks_table,
-            ['api_credentials' => $encrypted],
-            ['id' => $network_id],
-            ['%s'],
-            ['%d']
+            array( 'api_credentials' => $encrypted ),
+            array( 'id' => $network_id ),
+            array( '%s' ),
+            array( '%d' )
         );
 
         return $result !== false;
@@ -167,8 +161,7 @@ class Cashback_API_Client
      * @param int $network_id
      * @return array|null
      */
-    public function get_credentials(int $network_id): ?array
-    {
+    public function get_credentials( int $network_id ): ?array {
         global $wpdb;
 
         $encrypted = $wpdb->get_var($wpdb->prepare(
@@ -199,8 +192,7 @@ class Cashback_API_Client
      * @param string $slug Slug сети (admitad, epn)
      * @return array|null
      */
-    public function get_network_config(string $slug): ?array
-    {
+    public function get_network_config( string $slug ): ?array {
         global $wpdb;
 
         $network = $wpdb->get_row($wpdb->prepare(
@@ -214,13 +206,13 @@ class Cashback_API_Client
 
         // Расшифровать credentials
         if (!empty($network['api_credentials'])) {
-            $creds = $this->get_credentials((int) $network['id']);
+            $creds                  = $this->get_credentials((int) $network['id']);
             $network['credentials'] = $creds;
         }
 
         // Парсим маппинг статусов
         if (!empty($network['api_status_map'])) {
-            $network['status_map'] = json_decode($network['api_status_map'], true) ?: [];
+            $network['status_map'] = json_decode($network['api_status_map'], true) ?: array();
         } else {
             $network['status_map'] = $this->get_default_status_map($slug);
         }
@@ -236,8 +228,7 @@ class Cashback_API_Client
      *
      * @return array
      */
-    public function get_all_active_networks(): array
-    {
+    public function get_all_active_networks(): array {
         global $wpdb;
 
         return $wpdb->get_results(
@@ -246,25 +237,24 @@ class Cashback_API_Client
              WHERE is_active = 1 AND api_base_url IS NOT NULL AND api_base_url != ''
              ORDER BY sort_order, name",
             ARRAY_A
-        ) ?: [];
+        ) ?: array();
     }
 
     /**
      * Маппинг статусов по умолчанию (делегация адаптеру)
      */
-    private function get_default_status_map(string $slug): array
-    {
+    private function get_default_status_map( string $slug ): array {
         $adapter = $this->get_adapter($slug);
         if ($adapter) {
             return $adapter->get_default_status_map();
         }
 
         // Общий fallback для сетей без адаптера
-        return [
+        return array(
             'pending'  => 'waiting',
             'approved' => 'completed',
             'declined' => 'declined',
-        ];
+        );
     }
 
     // =========================================================================
@@ -274,23 +264,32 @@ class Cashback_API_Client
     /**
      * Дефолтный маппинг полей API → колонки транзакций
      */
-    private const DEFAULT_FIELD_MAP = [
+    private const DEFAULT_FIELD_MAP = array(
         'payment'          => 'comission',
         'cart'             => 'sum_order',
         'action_id'        => 'uniq_id',
         'order_id'         => 'order_number',
         'advcampaign_id'   => 'offer_id',
         'advcampaign_name' => 'offer_name',
-    ];
+    );
 
     /**
      * Допустимые колонки транзакций для маппинга (whitelist)
      */
-    private const ALLOWED_LOCAL_COLUMNS = [
-        'comission', 'sum_order', 'uniq_id', 'order_number',
-        'offer_id', 'offer_name', 'currency', 'action_date',
-        'click_time', 'action_type', 'website_id', 'funds_ready',
-    ];
+    private const ALLOWED_LOCAL_COLUMNS = array(
+        'comission',
+		'sum_order',
+		'uniq_id',
+		'order_number',
+        'offer_id',
+		'offer_name',
+		'currency',
+		'action_date',
+        'click_time',
+		'action_type',
+		'website_id',
+		'funds_ready',
+    );
 
     /**
      * Получить маппинг полей из конфига сети (мерж с дефолтом)
@@ -304,19 +303,18 @@ class Cashback_API_Client
      * @param array $config Конфиг сети (строка из cashback_affiliate_networks)
      * @return array<string, string> API field → local column
      */
-    private function get_field_map(array $config): array
-    {
+    private function get_field_map( array $config ): array {
         if (!empty($config['api_field_map'])) {
             $raw = $config['api_field_map'];
-            $map = is_string($raw) ? json_decode($raw, true) : (is_array($raw) ? $raw : null);
+            $map = is_string($raw) ? json_decode($raw, true) : ( is_array($raw) ? $raw : null );
             if (is_array($map) && !empty($map)) {
                 // Фильтруем: допускаем только валидные локальные колонки
-                $filtered = [];
+                $filtered = array();
                 foreach ($map as $api_field => $local_col) {
                     $api_field = trim((string) $api_field);
                     $local_col = trim((string) $local_col);
                     if ($api_field !== '' && in_array($local_col, self::ALLOWED_LOCAL_COLUMNS, true)) {
-                        $filtered[$api_field] = $local_col;
+                        $filtered[ $api_field ] = $local_col;
                     }
                 }
 
@@ -326,7 +324,7 @@ class Cashback_API_Client
                     $covered_columns = array_values($filtered);
                     foreach (self::DEFAULT_FIELD_MAP as $def_api => $def_col) {
                         if (!in_array($def_col, $covered_columns, true)) {
-                            $filtered[$def_api] = $def_col;
+                            $filtered[ $def_api ] = $def_col;
                         }
                     }
                     return $filtered;
@@ -347,25 +345,24 @@ class Cashback_API_Client
      * @param array $field_map Маппинг API field → local column
      * @return array<string, mixed> local_column → value
      */
-    private function apply_field_map(array $action, array $field_map): array
-    {
-        $result = [];
+    private function apply_field_map( array $action, array $field_map ): array {
+        $result = array();
 
         foreach ($field_map as $api_field => $local_col) {
-            $value = $action[$api_field] ?? null;
+            $value = $action[ $api_field ] ?? null;
 
             // Приведение типов по колонке
             switch ($local_col) {
                 case 'comission':
                 case 'sum_order':
-                    $result[$local_col] = (float) ($value ?? 0);
+                    $result[ $local_col ] = (float) ( $value ?? 0 );
                     break;
                 case 'offer_id':
                 case 'website_id':
-                    $result[$local_col] = ($value !== null && $value !== '') ? (int) $value : null;
+                    $result[ $local_col ] = ( $value !== null && $value !== '' ) ? (int) $value : null;
                     break;
                 default:
-                    $result[$local_col] = (string) ($value ?? '');
+                    $result[ $local_col ] = (string) ( $value ?? '' );
                     break;
             }
         }
@@ -380,10 +377,9 @@ class Cashback_API_Client
      * @param array  $field_map    Маппинг API field → local column
      * @return string Имя поля API (или пустая строка)
      */
-    private function api_field_for(string $local_column, array $field_map): string
-    {
+    private function api_field_for( string $local_column, array $field_map ): string {
         $flipped = array_flip($field_map);
-        return (string) ($flipped[$local_column] ?? '');
+        return (string) ( $flipped[ $local_column ] ?? '' );
     }
 
     /**
@@ -395,11 +391,10 @@ class Cashback_API_Client
      * @param array $field_map Маппинг полей
      * @return int 0 или 1
      */
-    private function resolve_funds_ready(array $action, array $field_map): int
-    {
+    private function resolve_funds_ready( array $action, array $field_map ): int {
         $fm_funds_ready = $this->api_field_for('funds_ready', $field_map);
         if ($fm_funds_ready !== '') {
-            return !empty($action[$fm_funds_ready]) ? 1 : 0;
+            return !empty($action[ $fm_funds_ready ]) ? 1 : 0;
         }
         if (isset($action['funds_ready'])) {
             return (int) $action['funds_ready'];
@@ -417,10 +412,9 @@ class Cashback_API_Client
     /**
      * Собрать URL из конфига сети (api_base_url + endpoint) или вернуть fallback
      */
-    private function build_api_url(array $network_config, string $endpoint_key, string $fallback_url): string
-    {
+    private function build_api_url( array $network_config, string $endpoint_key, string $fallback_url ): string {
         $base     = rtrim($network_config['api_base_url'] ?? '', '/');
-        $endpoint = $network_config[$endpoint_key] ?? '';
+        $endpoint = $network_config[ $endpoint_key ] ?? '';
 
         if ($endpoint !== '' && preg_match('#^https?://#i', $endpoint)) {
             if (!$this->is_safe_api_url($endpoint)) {
@@ -447,8 +441,7 @@ class Cashback_API_Client
      *
      * Разрешает только HTTPS и блокирует приватные/зарезервированные IP-адреса.
      */
-    private function is_safe_api_url(string $url): bool
-    {
+    private function is_safe_api_url( string $url ): bool {
         $parsed = parse_url($url);
 
         if (!$parsed || !isset($parsed['scheme'], $parsed['host'])) {
@@ -486,8 +479,7 @@ class Cashback_API_Client
      * @param string $network_slug  Slug сети для роутинга (epn, admitad и др.)
      * @return array|null Массив заголовков или null при ошибке
      */
-    private function build_auth_headers(array $credentials, array $network_config, string $network_slug = ''): ?array
-    {
+    private function build_auth_headers( array $credentials, array $network_config, string $network_slug = '' ): ?array {
         $auth_type = $network_config['api_auth_type'] ?? 'oauth2';
 
         if ($auth_type === 'api_key') {
@@ -496,7 +488,7 @@ class Cashback_API_Client
                 error_log('Cashback API Client: API key is empty');
                 return null;
             }
-            return ['Authorization' => 'Bearer ' . $api_key];
+            return array( 'Authorization' => 'Bearer ' . $api_key );
         }
 
         // OAuth2: делегация адаптеру
@@ -514,8 +506,7 @@ class Cashback_API_Client
      * @param int $network_id ID сети
      * @return array ['success' => bool, 'message' => string]
      */
-    public function test_connection(int $network_id): array
-    {
+    public function test_connection( int $network_id ): array {
         global $wpdb;
 
         $network = $wpdb->get_row($wpdb->prepare(
@@ -524,7 +515,10 @@ class Cashback_API_Client
         ), ARRAY_A);
 
         if (!$network) {
-            return ['success' => false, 'message' => 'Сеть не найдена'];
+            return array(
+				'success' => false,
+				'message' => 'Сеть не найдена',
+			);
         }
 
         $credentials = $this->get_credentials($network_id);
@@ -533,11 +527,17 @@ class Cashback_API_Client
         // Проверка наличия credentials
         if ($auth_type === 'api_key') {
             if (!$credentials || empty($credentials['api_key'])) {
-                return ['success' => false, 'message' => 'API Key не настроен. Сохраните API Key.'];
+                return array(
+					'success' => false,
+					'message' => 'API Key не настроен. Сохраните API Key.',
+				);
             }
         } else {
             if (!$credentials || empty($credentials['client_id']) || empty($credentials['client_secret'])) {
-                return ['success' => false, 'message' => 'API credentials не настроены. Сохраните client_id и client_secret.'];
+                return array(
+					'success' => false,
+					'message' => 'API credentials не настроены. Сохраните client_id и client_secret.',
+				);
             }
         }
 
@@ -547,51 +547,75 @@ class Cashback_API_Client
             // Для API Key: пробуем GET-запрос к actions endpoint с limit=1
             $auth_headers = $this->build_auth_headers($credentials, $network_config);
             if (!$auth_headers) {
-                return ['success' => false, 'message' => 'Не удалось сформировать заголовки авторизации.'];
+                return array(
+					'success' => false,
+					'message' => 'Не удалось сформировать заголовки авторизации.',
+				);
             }
 
             $actions_url = $this->build_api_url($network_config, 'api_actions_endpoint', '');
             if (empty($actions_url)) {
-                return ['success' => false, 'message' => 'Actions Endpoint не настроен.'];
+                return array(
+					'success' => false,
+					'message' => 'Actions Endpoint не настроен.',
+				);
             }
 
-            $url = $actions_url . '?' . http_build_query(['limit' => 1]);
+            $url = $actions_url . '?' . http_build_query(array( 'limit' => 1 ));
 
-            $response = wp_remote_get($url, [
+            $response = wp_remote_get($url, array(
                 'timeout' => 30,
                 'headers' => $auth_headers,
-            ]);
+            ));
 
             if (is_wp_error($response)) {
-                return ['success' => false, 'message' => 'Ошибка запроса: ' . $response->get_error_message()];
+                return array(
+					'success' => false,
+					'message' => 'Ошибка запроса: ' . $response->get_error_message(),
+				);
             }
 
             $code = wp_remote_retrieve_response_code($response);
             if ($code >= 200 && $code < 300) {
-                return ['success' => true, 'message' => 'Соединение успешно. API ответил HTTP ' . $code . '.'];
+                return array(
+					'success' => true,
+					'message' => 'Соединение успешно. API ответил HTTP ' . $code . '.',
+				);
             }
 
-            return ['success' => false, 'message' => 'API вернул HTTP ' . $code . '. Проверьте API Key и URL.'];
+            return array(
+				'success' => false,
+				'message' => 'API вернул HTTP ' . $code . '. Проверьте API Key и URL.',
+			);
         }
 
         // OAuth2: делегация адаптеру
-        $slug = $network['slug'] ?? '';
+        $slug    = $network['slug'] ?? '';
         $adapter = $this->get_adapter($slug);
 
         if (!$adapter) {
-            return ['success' => false, 'message' => 'Нет зарегистрированного адаптера для сети: ' . $slug];
+            return array(
+				'success' => false,
+				'message' => 'Нет зарегистрированного адаптера для сети: ' . $slug,
+			);
         }
 
         $token = $adapter->get_token($credentials, $network_config);
 
         if ($token) {
-            return ['success' => true, 'message' => 'Соединение успешно. OAuth2 токен получен.'];
+            return array(
+				'success' => true,
+				'message' => 'Соединение успешно. OAuth2 токен получен.',
+			);
         }
 
         $detail = $adapter->get_last_token_error()
             ?: 'Проверьте client_id, client_secret и URL эндпоинта.';
 
-        return ['success' => false, 'message' => 'Не удалось получить токен. ' . $detail];
+        return array(
+			'success' => false,
+			'message' => 'Не удалось получить токен. ' . $detail,
+		);
     }
 
     // =========================================================================
@@ -608,16 +632,15 @@ class Cashback_API_Client
      * @param array  $network_config Конфигурация сети
      * @return array ['success' => bool, 'actions' => [...], 'total' => int, 'error' => string|null]
      */
-    public function fetch_all_actions_for_network(string $slug, array $credentials, array $params, int $max_pages = 20, array $network_config = []): array
-    {
+    public function fetch_all_actions_for_network( string $slug, array $credentials, array $params, int $max_pages = 20, array $network_config = array() ): array {
         $adapter = $this->get_adapter($slug);
         if (!$adapter) {
-            return [
+            return array(
                 'success' => false,
-                'actions' => [],
+                'actions' => array(),
                 'total'   => 0,
                 'error'   => 'No adapter registered for network: ' . $slug,
-            ];
+            );
         }
 
         return $adapter->fetch_all_actions($credentials, $params, $max_pages, $network_config);
@@ -635,8 +658,7 @@ class Cashback_API_Client
      * @param string $date_str Строка даты из API
      * @return string|null MySQL DATETIME (Y-m-d H:i:s) или null
      */
-    protected static function parse_api_date(string $date_str): ?string
-    {
+    protected static function parse_api_date( string $date_str ): ?string {
         $date_str = trim($date_str);
         if ($date_str === '') {
             return null;
@@ -646,7 +668,7 @@ class Cashback_API_Client
         if (preg_match('/^\d{10,13}$/', $date_str)) {
             $timestamp = (int) $date_str;
             if (strlen($date_str) === 13) {
-                $timestamp = (int) ($timestamp / 1000);
+                $timestamp = (int) ( $timestamp / 1000 );
             }
             $dt = new DateTime();
             $dt->setTimestamp($timestamp);
@@ -662,14 +684,14 @@ class Cashback_API_Client
         $date_str = preg_replace('/\s+\d{2}:\d{2}$/', '', $date_str);
         $date_str = rtrim($date_str, 'Z');
 
-        $formats = [
+        $formats = array(
             'Y-m-d H:i:s',  // 2024-01-15 10:30:00
             'Y-m-d H:i',    // 2024-01-15 10:30
             'Y-m-d',         // 2024-01-15
             'd.m.Y H:i:s',  // 15.01.2024 10:30:00
             'd.m.Y H:i',    // 15.01.2024 10:30
             'd.m.Y',         // 15.01.2024
-        ];
+        );
 
         foreach ($formats as $format) {
             $dt = DateTime::createFromFormat($format, $date_str);
@@ -699,18 +721,17 @@ class Cashback_API_Client
      * @param bool   $use_checkpoint Использовать инкрементальный чекпоинт
      * @return array Результат валидации
      */
-    public function validate_user(int $user_id, string $network_slug = 'admitad', bool $use_checkpoint = true): array
-    {
+    public function validate_user( int $user_id, string $network_slug = 'admitad', bool $use_checkpoint = true ): array {
         global $wpdb;
 
         $network = $this->get_network_config($network_slug);
         if (!$network || empty($network['credentials'])) {
-            return [
-                'success'    => false,
-                'error'      => 'Сеть не найдена или API не настроен: ' . $network_slug,
-                'user_id'    => $user_id,
-                'network'    => $network_slug,
-            ];
+            return array(
+                'success' => false,
+                'error'   => 'Сеть не найдена или API не настроен: ' . $network_slug,
+                'user_id' => $user_id,
+                'network' => $network_slug,
+            );
         }
 
         // ─── Определяем дату начала ───
@@ -728,12 +749,12 @@ class Cashback_API_Client
                     $user_id
                 ));
                 if ($reg_date) {
-                    $date_start = (new DateTime($reg_date))->format('d.m.Y');
+                    $date_start = ( new DateTime($reg_date) )->format('d.m.Y');
                 }
             }
         }
 
-        $date_end = (new DateTime())->format('d.m.Y');
+        $date_end = ( new DateTime() )->format('d.m.Y');
 
         // ─── Запрос к API ───
         // api_user_field = 'subid2' (partner_token передаётся в subid2 при генерации ссылки)
@@ -741,14 +762,14 @@ class Cashback_API_Client
         $user_field = $network['api_user_field'] ?? 'subid2';
 
         // В партнёрских ссылках используется partner_token (не user_id)
-        $partner_token = Mariadb_Plugin::get_partner_token($user_id);
+        $partner_token  = Mariadb_Plugin::get_partner_token($user_id);
         $api_user_value = $partner_token !== null ? $partner_token : (string) $user_id;
 
-        $api_params = [
+        $api_params = array(
             $user_field  => $api_user_value,
             'date_start' => $date_start,
             'date_end'   => $date_end,
-        ];
+        );
 
         if (!empty($network['api_website_id'])) {
             $api_params['website'] = $network['api_website_id'];
@@ -757,12 +778,12 @@ class Cashback_API_Client
         $api_result = $this->fetch_all_actions_for_network($network_slug, $network['credentials'], $api_params, 20, $network);
 
         if (!$api_result['success']) {
-            return [
-                'success'    => false,
-                'error'      => 'API error: ' . $api_result['error'],
-                'user_id'    => $user_id,
-                'network'    => $network_slug,
-            ];
+            return array(
+                'success' => false,
+                'error'   => 'API error: ' . $api_result['error'],
+                'user_id' => $user_id,
+                'network' => $network_slug,
+            );
         }
 
         $api_actions = $api_result['actions'];
@@ -792,16 +813,16 @@ class Cashback_API_Client
 
         // ─── Индексы для матчинга ───
         // 1. Основной: по click_id (= API.subid1, наш UUID)
-        $local_by_click_id = [];
+        $local_by_click_id = array();
         // 2. Fallback: по uniq_id (= API.action_id, уникальный ID в рамках CPA-сети)
-        $local_by_uniq_id = [];
+        $local_by_uniq_id = array();
 
         foreach ($local_transactions as $tx) {
             if (!empty($tx['click_id'])) {
-                $local_by_click_id[$tx['click_id']] = $tx;
+                $local_by_click_id[ $tx['click_id'] ] = $tx;
             }
             if (!empty($tx['uniq_id'])) {
-                $local_by_uniq_id[$tx['uniq_id']] = $tx;
+                $local_by_uniq_id[ $tx['uniq_id'] ] = $tx;
             }
         }
 
@@ -812,12 +833,12 @@ class Cashback_API_Client
         $field_map = $network['field_map'];
 
         // Имена полей API по маппингу (обратный поиск)
-        $fm_payment  = $this->api_field_for('comission', $field_map) ?: 'payment';
-        $fm_cart     = $this->api_field_for('sum_order', $field_map) ?: 'cart';
-        $fm_uniq_id  = $this->api_field_for('uniq_id', $field_map) ?: 'action_id';
-        $fm_order_id = $this->api_field_for('order_number', $field_map) ?: 'order_id';
-        $fm_offer_id = $this->api_field_for('offer_id', $field_map) ?: 'advcampaign_id';
-        $fm_offer_nm = $this->api_field_for('offer_name', $field_map) ?: 'advcampaign_name';
+        $fm_payment     = $this->api_field_for('comission', $field_map) ?: 'payment';
+        $fm_cart        = $this->api_field_for('sum_order', $field_map) ?: 'cart';
+        $fm_uniq_id     = $this->api_field_for('uniq_id', $field_map) ?: 'action_id';
+        $fm_order_id    = $this->api_field_for('order_number', $field_map) ?: 'order_id';
+        $fm_offer_id    = $this->api_field_for('offer_id', $field_map) ?: 'advcampaign_id';
+        $fm_offer_nm    = $this->api_field_for('offer_name', $field_map) ?: 'advcampaign_name';
         $fm_currency    = $this->api_field_for('currency', $field_map) ?: 'currency';
         $fm_action_date = $this->api_field_for('action_date', $field_map) ?: 'action_date';
         $fm_click_time  = $this->api_field_for('click_time', $field_map) ?: 'click_date';
@@ -828,22 +849,30 @@ class Cashback_API_Client
         $click_field = $network['api_click_field'] ?? 'subid1';
 
         // ─── Сравнение ───
-        $matched       = [];
-        $mismatched    = [];
-        $missing_local = []; // Есть в API, нет локально
+        $matched       = array();
+        $mismatched    = array();
+        $missing_local = array(); // Есть в API, нет локально
 
         // Суммы по API (по замапленным статусам)
-        $api_sums = ['approved' => 0.0, 'pending' => 0.0, 'declined' => 0.0];
+        $api_sums = array(
+			'approved' => 0.0,
+			'pending'  => 0.0,
+			'declined' => 0.0,
+		);
 
         // Суммы по локальным сматченным (по статусам)
-        $local_sums = ['approved' => 0.0, 'pending' => 0.0, 'declined' => 0.0];
+        $local_sums = array(
+			'approved' => 0.0,
+			'pending'  => 0.0,
+			'declined' => 0.0,
+		);
 
         // Множество сматченных click_id для обратной проверки (только полные совпадения)
-        $matched_click_ids = [];
+        $matched_click_ids = array();
 
         // Множество click_id локальных транзакций, найденных в API (совпавших или расходящихся)
         // Используется в обратной проверке missing_api, чтобы не дублировать mismatched
-        $api_matched_local_click_ids = [];
+        $api_matched_local_click_ids = array();
 
         // Debug: логируем только ключи первого action из API для диагностики маппинга
         // Данные не логируем — могут содержать PII (email, имя, телефон)
@@ -852,11 +881,11 @@ class Cashback_API_Client
         }
 
         foreach ($api_actions as $action) {
-            $api_click_id = (string) ($action[$click_field] ?? '');
-            $api_status   = strtolower($action['status'] ?? 'pending');
-            $api_payment  = (float) ($action[$fm_payment] ?? 0);
-            $api_cart     = (float) ($action[$fm_cart] ?? 0);
-            $mapped_status = $status_map[$api_status] ?? 'waiting';
+            $api_click_id  = (string) ( $action[ $click_field ] ?? '' );
+            $api_status    = strtolower($action['status'] ?? 'pending');
+            $api_payment   = (float) ( $action[ $fm_payment ] ?? 0 );
+            $api_cart      = (float) ( $action[ $fm_cart ] ?? 0 );
+            $mapped_status = $status_map[ $api_status ] ?? 'waiting';
 
             // Подсчёт сумм по API
             // balance — эквивалент completed (из кастомного маппинга approved→balance)
@@ -872,52 +901,52 @@ class Cashback_API_Client
             $local_tx = null;
 
             // 1. Основной ключ: click_id (наш UUID, наиболее надёжный)
-            if ($api_click_id !== '' && isset($local_by_click_id[$api_click_id])) {
-                $local_tx = $local_by_click_id[$api_click_id];
+            if ($api_click_id !== '' && isset($local_by_click_id[ $api_click_id ])) {
+                $local_tx = $local_by_click_id[ $api_click_id ];
             }
 
             // 2. Fallback: uniq_id (уникальный ID в рамках CPA-сети)
             if (!$local_tx) {
-                $action_id_key = (string) ($action[$fm_uniq_id] ?? '');
-                if ($action_id_key !== '' && isset($local_by_uniq_id[$action_id_key])) {
-                    $local_tx = $local_by_uniq_id[$action_id_key];
+                $action_id_key = (string) ( $action[ $fm_uniq_id ] ?? '' );
+                if ($action_id_key !== '' && isset($local_by_uniq_id[ $action_id_key ])) {
+                    $local_tx = $local_by_uniq_id[ $action_id_key ];
                 }
             }
 
             if (!$local_tx) {
-                $missing_local[] = [
-                    'action_id'      => $action[$fm_uniq_id] ?? '',
-                    'click_id'       => $api_click_id,
-                    'order_id'       => $action[$fm_order_id] ?? '',
-                    'status'         => $api_status,
-                    'payment'        => $api_payment,
-                    'cart'           => $api_cart,
-                    'date'           => $action[$fm_action_date] ?? '',
-                    'campaign'       => $action[$fm_offer_nm] ?? '',
-                    'campaign_id'    => $action[$fm_offer_id] ?? '',
-                    'currency'       => $action[$fm_currency] ?? 'RUB',
-                    'click_time'     => $action[$fm_click_time] ?? $action['click_time'] ?? $action['closing_date'] ?? '',
-                    'action_type'    => $action[$fm_action_type] ?? '',
-                    'website_id'     => $action[$fm_website_id] ?? $action['website_name'] ?? $action['website'] ?? ($network['api_website_id'] ?? ''),
-                    'funds_ready'    => $this->resolve_funds_ready($action, $field_map),
-                ];
+                $missing_local[] = array(
+                    'action_id'   => $action[ $fm_uniq_id ] ?? '',
+                    'click_id'    => $api_click_id,
+                    'order_id'    => $action[ $fm_order_id ] ?? '',
+                    'status'      => $api_status,
+                    'payment'     => $api_payment,
+                    'cart'        => $api_cart,
+                    'date'        => $action[ $fm_action_date ] ?? '',
+                    'campaign'    => $action[ $fm_offer_nm ] ?? '',
+                    'campaign_id' => $action[ $fm_offer_id ] ?? '',
+                    'currency'    => $action[ $fm_currency ] ?? 'RUB',
+                    'click_time'  => $action[ $fm_click_time ] ?? $action['click_time'] ?? $action['closing_date'] ?? '',
+                    'action_type' => $action[ $fm_action_type ] ?? '',
+                    'website_id'  => $action[ $fm_website_id ] ?? $action['website_name'] ?? $action['website'] ?? ( $network['api_website_id'] ?? '' ),
+                    'funds_ready' => $this->resolve_funds_ready($action, $field_map),
+                );
                 continue;
             }
 
             // Запоминаем что эта локальная транзакция найдена в API (независимо от расхождений)
             if (!empty($local_tx['click_id'])) {
-                $api_matched_local_click_ids[$local_tx['click_id']] = true;
+                $api_matched_local_click_ids[ $local_tx['click_id'] ] = true;
             }
 
             // Запоминаем что эта локальная транзакция сматчена
             if (!empty($local_tx['click_id'])) {
-                $matched_click_ids[$local_tx['click_id']] = true;
+                $matched_click_ids[ $local_tx['click_id'] ] = true;
             }
 
             // ─── СРАВНЕНИЕ ───
             $local_status     = $local_tx['order_status'];
             $local_commission = (float) $local_tx['comission'];
-            $local_cart       = (float) ($local_tx['sum_order'] ?? 0);
+            $local_cart       = (float) ( $local_tx['sum_order'] ?? 0 );
 
             // Суммы по локальным
             if ($local_status === 'completed' || $local_status === 'balance') {
@@ -930,46 +959,46 @@ class Cashback_API_Client
 
             // Статус: completed и balance — оба эквивалентны approved в API
             // (balance = финализированный completed, зачислено в баланс)
-            $approved_statuses = ['completed', 'balance'];
-            $status_match = ($local_status === $mapped_status)
-                || (in_array($local_status, $approved_statuses, true)
-                    && in_array($mapped_status, $approved_statuses, true));
+            $approved_statuses = array( 'completed', 'balance' );
+            $status_match      = ( $local_status === $mapped_status )
+                || ( in_array($local_status, $approved_statuses, true)
+                    && in_array($mapped_status, $approved_statuses, true) );
 
             // Комиссия: допускаем погрешность 0.001 (float-артефакты)
             $commission_match = abs($api_payment - $local_commission) < 0.001;
 
             // Сумма заказа: допускаем погрешность 0.001 (float-артефакты)
             // Не считаем mismatch если у одной из сторон 0 (не всегда передаётся)
-            $cart_match = ($api_cart == 0 || $local_cart == 0)
+            $cart_match = ( $api_cart == 0 || $local_cart == 0 )
                 || abs($api_cart - $local_cart) < 0.001;
 
             if ($status_match && $commission_match && $cart_match) {
-                $matched[] = [
+                $matched[] = array(
                     'local_id'         => (int) $local_tx['id'],
                     'click_id'         => $api_click_id,
                     'api_status'       => $api_status,
                     'local_status'     => $local_status,
                     'api_payment'      => $api_payment,
                     'local_commission' => $local_commission,
-                ];
+                );
             } else {
-                $mismatched[] = [
-                    'uniq_id'            => $local_tx['uniq_id'] ?? '',
-                    'click_id'           => $api_click_id,
-                    'local_id'           => $local_tx['id'],
-                    'api_status'         => $api_status,
-                    'local_status'       => $local_status,
-                    'mapped_api_status'  => $mapped_status,
-                    'api_payment'        => $api_payment,
-                    'local_commission'   => $local_commission,
-                    'api_cart'           => $api_cart,
-                    'local_cart'         => $local_cart,
-                    'status_mismatch'    => !$status_match,
+                $mismatched[] = array(
+                    'uniq_id'             => $local_tx['uniq_id'] ?? '',
+                    'click_id'            => $api_click_id,
+                    'local_id'            => $local_tx['id'],
+                    'api_status'          => $api_status,
+                    'local_status'        => $local_status,
+                    'mapped_api_status'   => $mapped_status,
+                    'api_payment'         => $api_payment,
+                    'local_commission'    => $local_commission,
+                    'api_cart'            => $api_cart,
+                    'local_cart'          => $local_cart,
+                    'status_mismatch'     => !$status_match,
                     'commission_mismatch' => !$commission_match,
-                    'cart_mismatch'      => !$cart_match,
-                    'action_id'          => $action[$fm_uniq_id] ?? '',
-                    'order_id'           => $action[$fm_order_id] ?? '',
-                ];
+                    'cart_mismatch'       => !$cart_match,
+                    'action_id'           => $action[ $fm_uniq_id ] ?? '',
+                    'order_id'            => $action[ $fm_order_id ] ?? '',
+                );
 
                 // Авто-обновляем расхождения — синхронизируем локальные данные с API
                 $dummy_updated = 0;
@@ -994,10 +1023,10 @@ class Cashback_API_Client
         }
 
         // ─── Обратная проверка: транзакции есть у нас, но нет в API ───
-        $missing_api = [];
+        $missing_api = array();
         foreach ($local_transactions as $tx) {
             // Пропускаем если транзакция найдена в API (полное совпадение или расхождение — неважно)
-            if (!empty($tx['click_id']) && isset($api_matched_local_click_ids[$tx['click_id']])) {
+            if (!empty($tx['click_id']) && isset($api_matched_local_click_ids[ $tx['click_id'] ])) {
                 continue;
             }
             // Пропускаем balance — финализировано, может быть за пределами API
@@ -1009,16 +1038,16 @@ class Cashback_API_Client
                 continue;
             }
 
-            $missing_api[] = [
+            $missing_api[] = array(
                 'local_id'     => $tx['id'],
                 'uniq_id'      => $tx['uniq_id'] ?? '',
                 'click_id'     => $tx['click_id'],
                 'order_number' => $tx['order_number'],
                 'status'       => $tx['order_status'],
                 'commission'   => (float) $tx['comission'],
-                'sum_order'    => (float) ($tx['sum_order'] ?? 0),
+                'sum_order'    => (float) ( $tx['sum_order'] ?? 0 ),
                 'created'      => $tx['created_at'],
-            ];
+            );
         }
 
         // ─── Дополнительная проверка для перенесённых из unregistered транзакций ───
@@ -1027,22 +1056,22 @@ class Cashback_API_Client
         // Поэтому основной запрос к API (subid2=user_id) их не возвращает.
         // Делаем дополнительные запросы по уникальным значениям original_cpa_subid.
         if (!empty($missing_api)) {
-            $transferred_missing = [];
+            $transferred_missing = array();
             foreach ($missing_api as $key => $m) {
-                $local_tx   = $local_by_click_id[$m['click_id']] ?? null;
+                $local_tx   = $local_by_click_id[ $m['click_id'] ] ?? null;
                 $orig_subid = $local_tx['original_cpa_subid'] ?? null;
 
                 if ($orig_subid !== null && $orig_subid !== $api_user_value && $orig_subid !== (string) $user_id) {
-                    $transferred_missing[$orig_subid][$key] = $m;
+                    $transferred_missing[ $orig_subid ][ $key ] = $m;
                 }
             }
 
             foreach ($transferred_missing as $orig_subid => $items) {
-                $extra_params = [
+                $extra_params = array(
                     $user_field  => $orig_subid,
                     'date_start' => $date_start,
                     'date_end'   => $date_end,
-                ];
+                );
                 if (!empty($network['api_website_id'])) {
                     $extra_params['website'] = $network['api_website_id'];
                 }
@@ -1060,17 +1089,17 @@ class Cashback_API_Client
                 }
 
                 foreach ($extra_result['actions'] as $extra_action) {
-                    $extra_click_id  = (string) ($extra_action[$click_field] ?? '');
-                    $extra_action_id = (string) ($extra_action['action_id'] ?? '');
+                    $extra_click_id  = (string) ( $extra_action[ $click_field ] ?? '' );
+                    $extra_action_id = (string) ( $extra_action['action_id'] ?? '' );
 
                     foreach ($items as $key => $m) {
                         $click_match  = $extra_click_id !== '' && $extra_click_id === $m['click_id'];
-                        $action_match = $extra_action_id !== '' && $extra_action_id === ($m['uniq_id'] ?? '');
+                        $action_match = $extra_action_id !== '' && $extra_action_id === ( $m['uniq_id'] ?? '' );
 
                         if ($click_match || $action_match) {
-                            unset($missing_api[$key]);
-                            $matched[] = ['local_id' => $m['local_id']];
-                            unset($items[$key]); // избегаем повторного матчинга
+                            unset($missing_api[ $key ]);
+                            $matched[] = array( 'local_id' => $m['local_id'] );
+                            unset($items[ $key ]); // избегаем повторного матчинга
                             break;
                         }
                     }
@@ -1094,16 +1123,16 @@ class Cashback_API_Client
         }
 
         // ─── Результат ───
-        $has_issues    = !empty($mismatched) || !empty($missing_local) || !empty($missing_api);
-        $total_checked = count($api_actions);
+        $has_issues        = !empty($mismatched) || !empty($missing_local) || !empty($missing_api);
+        $total_checked     = count($api_actions);
         $validation_status = $has_issues ? 'mismatch' : 'match';
 
         // Расхождение: разница между API approved и локальными approved суммами
         $discrepancy = abs($api_sums['approved'] - $local_sums['approved']);
 
         // Обновляем чекпоинт
-        $this->update_checkpoint($user_id, $network_slug, [
-            'last_validated_date'      => (new DateTime())->format('Y-m-d'),
+        $this->update_checkpoint($user_id, $network_slug, array(
+            'last_validated_date'      => ( new DateTime() )->format('Y-m-d'),
             'api_sum_approved'         => $api_sums['approved'],
             'api_sum_pending'          => $api_sums['pending'],
             'api_sum_declined'         => $api_sums['declined'],
@@ -1118,31 +1147,34 @@ class Cashback_API_Client
             'mismatch_count'           => count($mismatched),
             'missing_local_count'      => count($missing_local),
             'missing_api_count'        => count($missing_api),
-        ]);
+        ));
 
-        return [
-            'success'         => true,
-            'user_id'         => $user_id,
-            'network'         => $network_slug,
-            'status'          => $validation_status,
-            'date_range'      => ['start' => $date_start, 'end' => $date_end],
-            'api_total'       => $total_checked,
-            'local_total'     => count($local_transactions),
-            'matched_count'   => count($matched),
-            'mismatch_count'  => count($mismatched),
-            'missing_local'   => $missing_local,
-            'missing_api'     => $missing_api,
-            'mismatched'      => $mismatched,
-            'sums' => [
-                'api_approved'    => $api_sums['approved'],
-                'api_pending'     => $api_sums['pending'],
-                'api_declined'    => $api_sums['declined'],
-                'local_approved'  => $local_sums['approved'],
-                'local_pending'   => $local_sums['pending'],
-                'local_declined'  => $local_sums['declined'],
-                'discrepancy'     => $discrepancy,
-            ],
-        ];
+        return array(
+            'success'        => true,
+            'user_id'        => $user_id,
+            'network'        => $network_slug,
+            'status'         => $validation_status,
+            'date_range'     => array(
+				'start' => $date_start,
+				'end'   => $date_end,
+			),
+            'api_total'      => $total_checked,
+            'local_total'    => count($local_transactions),
+            'matched_count'  => count($matched),
+            'mismatch_count' => count($mismatched),
+            'missing_local'  => $missing_local,
+            'missing_api'    => $missing_api,
+            'mismatched'     => $mismatched,
+            'sums'           => array(
+                'api_approved'   => $api_sums['approved'],
+                'api_pending'    => $api_sums['pending'],
+                'api_declined'   => $api_sums['declined'],
+                'local_approved' => $local_sums['approved'],
+                'local_pending'  => $local_sums['pending'],
+                'local_declined' => $local_sums['declined'],
+                'discrepancy'    => $discrepancy,
+            ),
+        );
     }
 
     // =========================================================================
@@ -1160,18 +1192,17 @@ class Cashback_API_Client
      * @param bool   $use_checkpoint Использовать инкрементальный чекпоинт
      * @return array Результат валидации
      */
-    public function validate_unregistered(string $network_slug = 'admitad', bool $use_checkpoint = true): array
-    {
+    public function validate_unregistered( string $network_slug = 'admitad', bool $use_checkpoint = true ): array {
         global $wpdb;
 
         $network = $this->get_network_config($network_slug);
         if (!$network || empty($network['credentials'])) {
-            return [
-                'success'    => false,
-                'error'      => 'Сеть не найдена или API не настроен: ' . $network_slug,
-                'user_id'    => 0,
-                'network'    => $network_slug,
-            ];
+            return array(
+                'success' => false,
+                'error'   => 'Сеть не найдена или API не настроен: ' . $network_slug,
+                'user_id' => 0,
+                'network' => $network_slug,
+            );
         }
 
         // ─── Определяем дату начала ───
@@ -1187,10 +1218,10 @@ class Cashback_API_Client
             }
         }
 
-        $date_end = (new DateTime())->format('d.m.Y');
+        $date_end = ( new DateTime() )->format('d.m.Y');
 
         // ─── Локальные незарегистрированные транзакции ───
-        $local_start = DateTime::createFromFormat('d.m.Y', $date_start)->format('Y-m-d');
+        $local_start  = DateTime::createFromFormat('d.m.Y', $date_start)->format('Y-m-d');
         $network_name = $network['name'] ?? '';
 
         $local_transactions = $wpdb->get_results($wpdb->prepare(
@@ -1208,8 +1239,8 @@ class Cashback_API_Client
 
         if (empty($local_transactions)) {
             // Нет локальных транзакций — нечего проверять
-            $this->update_checkpoint(0, $network_slug, [
-                'last_validated_date'      => (new DateTime())->format('Y-m-d'),
+            $this->update_checkpoint(0, $network_slug, array(
+                'last_validated_date'      => ( new DateTime() )->format('Y-m-d'),
                 'api_actions_count'        => 0,
                 'local_transactions_count' => 0,
                 'validation_status'        => 'match',
@@ -1217,41 +1248,48 @@ class Cashback_API_Client
                 'mismatch_count'           => 0,
                 'missing_local_count'      => 0,
                 'missing_api_count'        => 0,
-            ]);
+            ));
 
-            return [
-                'success'         => true,
-                'user_id'         => 0,
-                'network'         => $network_slug,
-                'status'          => 'match',
-                'date_range'      => ['start' => $date_start, 'end' => $date_end],
-                'api_total'       => 0,
-                'local_total'     => 0,
-                'matched_count'   => 0,
-                'mismatch_count'  => 0,
-                'missing_local'   => [],
-                'missing_api'     => [],
-                'mismatched'      => [],
-                'sums'            => [
-                    'api_approved'   => 0, 'api_pending'   => 0, 'api_declined'   => 0,
-                    'local_approved' => 0, 'local_pending' => 0, 'local_declined' => 0,
+            return array(
+                'success'        => true,
+                'user_id'        => 0,
+                'network'        => $network_slug,
+                'status'         => 'match',
+                'date_range'     => array(
+					'start' => $date_start,
+					'end'   => $date_end,
+				),
+                'api_total'      => 0,
+                'local_total'    => 0,
+                'matched_count'  => 0,
+                'mismatch_count' => 0,
+                'missing_local'  => array(),
+                'missing_api'    => array(),
+                'mismatched'     => array(),
+                'sums'           => array(
+                    'api_approved'   => 0,
+					'api_pending'    => 0,
+					'api_declined'   => 0,
+                    'local_approved' => 0,
+					'local_pending'  => 0,
+					'local_declined' => 0,
                     'discrepancy'    => 0,
-                ],
-            ];
+                ),
+            );
         }
 
         // ─── Индексы для матчинга ───
         // 1. Основной: по click_id (= API.subid1, наш UUID)
-        $local_by_click_id = [];
+        $local_by_click_id = array();
         // 2. Fallback: по uniq_id (= API.action_id, уникальный ID в рамках CPA-сети)
-        $local_by_uniq_id = [];
+        $local_by_uniq_id = array();
 
         foreach ($local_transactions as $tx) {
             if (!empty($tx['click_id'])) {
-                $local_by_click_id[$tx['click_id']] = $tx;
+                $local_by_click_id[ $tx['click_id'] ] = $tx;
             }
             if (!empty($tx['uniq_id'])) {
-                $local_by_uniq_id[$tx['uniq_id']] = $tx;
+                $local_by_uniq_id[ $tx['uniq_id'] ] = $tx;
             }
         }
 
@@ -1260,11 +1298,11 @@ class Cashback_API_Client
         // Запрашиваем API с subid = 'unregistered' (литеральное значение из партнёрской ссылки).
         $user_field = $network['api_user_field'] ?? 'subid2';
 
-        $api_params = [
+        $api_params = array(
             $user_field  => 'unregistered',
             'date_start' => $date_start,
             'date_end'   => $date_end,
-        ];
+        );
 
         if (!empty($network['api_website_id'])) {
             $api_params['website'] = $network['api_website_id'];
@@ -1272,30 +1310,30 @@ class Cashback_API_Client
 
         $api_result = $this->fetch_all_actions_for_network($network_slug, $network['credentials'], $api_params, 20, $network);
 
-        $api_actions = [];
+        $api_actions = array();
         if ($api_result['success'] && !empty($api_result['actions'])) {
             $api_actions = $api_result['actions'];
         } elseif (!$api_result['success']) {
-            return [
-                'success'    => false,
-                'error'      => 'API error: ' . $api_result['error'],
-                'user_id'    => 0,
-                'network'    => $network_slug,
-            ];
+            return array(
+                'success' => false,
+                'error'   => 'API error: ' . $api_result['error'],
+                'user_id' => 0,
+                'network' => $network_slug,
+            );
         }
 
         // ─── Маппинг статусов и полей ───
-        $status_map = $network['status_map'];
+        $status_map  = $network['status_map'];
         $click_field = $network['api_click_field'] ?? 'subid1';
 
         // Маппинг полей API → локальные колонки (те же переменные что и в registered-блоке)
-        $field_map = $network['field_map'];
-        $fm_payment  = $this->api_field_for('comission', $field_map) ?: 'payment';
-        $fm_cart     = $this->api_field_for('sum_order', $field_map) ?: 'cart';
-        $fm_uniq_id  = $this->api_field_for('uniq_id', $field_map) ?: 'action_id';
-        $fm_order_id = $this->api_field_for('order_number', $field_map) ?: 'order_id';
-        $fm_offer_id = $this->api_field_for('offer_id', $field_map) ?: 'advcampaign_id';
-        $fm_offer_nm = $this->api_field_for('offer_name', $field_map) ?: 'advcampaign_name';
+        $field_map      = $network['field_map'];
+        $fm_payment     = $this->api_field_for('comission', $field_map) ?: 'payment';
+        $fm_cart        = $this->api_field_for('sum_order', $field_map) ?: 'cart';
+        $fm_uniq_id     = $this->api_field_for('uniq_id', $field_map) ?: 'action_id';
+        $fm_order_id    = $this->api_field_for('order_number', $field_map) ?: 'order_id';
+        $fm_offer_id    = $this->api_field_for('offer_id', $field_map) ?: 'advcampaign_id';
+        $fm_offer_nm    = $this->api_field_for('offer_name', $field_map) ?: 'advcampaign_name';
         $fm_currency    = $this->api_field_for('currency', $field_map) ?: 'currency';
         $fm_action_date = $this->api_field_for('action_date', $field_map) ?: 'action_date';
         $fm_click_time  = $this->api_field_for('click_time', $field_map) ?: 'click_date';
@@ -1303,22 +1341,30 @@ class Cashback_API_Client
         $fm_website_id  = $this->api_field_for('website_id', $field_map) ?: 'website_id';
 
         // ─── Сравнение ───
-        $matched       = [];
-        $mismatched    = [];
-        $missing_local = [];
+        $matched       = array();
+        $mismatched    = array();
+        $missing_local = array();
 
-        $api_sums   = ['approved' => 0.0, 'pending' => 0.0, 'declined' => 0.0];
-        $local_sums = ['approved' => 0.0, 'pending' => 0.0, 'declined' => 0.0];
+        $api_sums   = array(
+			'approved' => 0.0,
+			'pending'  => 0.0,
+			'declined' => 0.0,
+		);
+        $local_sums = array(
+			'approved' => 0.0,
+			'pending'  => 0.0,
+			'declined' => 0.0,
+		);
 
-        $matched_click_ids           = [];
-        $api_matched_local_click_ids = [];
+        $matched_click_ids           = array();
+        $api_matched_local_click_ids = array();
 
         foreach ($api_actions as $action) {
-            $api_click_id  = (string) ($action[$click_field] ?? '');
+            $api_click_id  = (string) ( $action[ $click_field ] ?? '' );
             $api_status    = strtolower($action['status'] ?? 'pending');
-            $api_payment   = (float) ($action[$fm_payment] ?? 0);
-            $api_cart      = (float) ($action[$fm_cart] ?? 0);
-            $mapped_status = $status_map[$api_status] ?? 'waiting';
+            $api_payment   = (float) ( $action[ $fm_payment ] ?? 0 );
+            $api_cart      = (float) ( $action[ $fm_cart ] ?? 0 );
+            $mapped_status = $status_map[ $api_status ] ?? 'waiting';
 
             // Подсчёт сумм по API
             if ($mapped_status === 'completed' || $mapped_status === 'balance') {
@@ -1333,52 +1379,52 @@ class Cashback_API_Client
             $local_tx = null;
 
             // 1. Основной ключ: click_id (наш UUID, наиболее надёжный)
-            if ($api_click_id !== '' && isset($local_by_click_id[$api_click_id])) {
-                $local_tx = $local_by_click_id[$api_click_id];
+            if ($api_click_id !== '' && isset($local_by_click_id[ $api_click_id ])) {
+                $local_tx = $local_by_click_id[ $api_click_id ];
             }
 
             // 2. Fallback: uniq_id (уникальный ID в рамках CPA-сети)
             if (!$local_tx) {
-                $action_id_key = (string) ($action[$fm_uniq_id] ?? '');
-                if ($action_id_key !== '' && isset($local_by_uniq_id[$action_id_key])) {
-                    $local_tx = $local_by_uniq_id[$action_id_key];
+                $action_id_key = (string) ( $action[ $fm_uniq_id ] ?? '' );
+                if ($action_id_key !== '' && isset($local_by_uniq_id[ $action_id_key ])) {
+                    $local_tx = $local_by_uniq_id[ $action_id_key ];
                 }
             }
 
             if (!$local_tx) {
-                $missing_local[] = [
-                    'action_id'      => $action[$fm_uniq_id] ?? '',
-                    'click_id'       => $api_click_id,
-                    'order_id'       => $action[$fm_order_id] ?? '',
-                    'status'         => $api_status,
-                    'payment'        => $api_payment,
-                    'cart'           => $api_cart,
-                    'date'           => $action[$fm_action_date] ?? '',
-                    'campaign'       => $action[$fm_offer_nm] ?? '',
-                    'campaign_id'    => $action[$fm_offer_id] ?? '',
-                    'currency'       => $action[$fm_currency] ?? 'RUB',
-                    'click_time'     => $action[$fm_click_time] ?? $action['click_time'] ?? $action['closing_date'] ?? '',
-                    'action_type'    => $action[$fm_action_type] ?? '',
-                    'website_id'     => $action[$fm_website_id] ?? $action['website_name'] ?? $action['website'] ?? ($network['api_website_id'] ?? ''),
-                    'funds_ready'    => $this->resolve_funds_ready($action, $field_map),
-                ];
+                $missing_local[] = array(
+                    'action_id'   => $action[ $fm_uniq_id ] ?? '',
+                    'click_id'    => $api_click_id,
+                    'order_id'    => $action[ $fm_order_id ] ?? '',
+                    'status'      => $api_status,
+                    'payment'     => $api_payment,
+                    'cart'        => $api_cart,
+                    'date'        => $action[ $fm_action_date ] ?? '',
+                    'campaign'    => $action[ $fm_offer_nm ] ?? '',
+                    'campaign_id' => $action[ $fm_offer_id ] ?? '',
+                    'currency'    => $action[ $fm_currency ] ?? 'RUB',
+                    'click_time'  => $action[ $fm_click_time ] ?? $action['click_time'] ?? $action['closing_date'] ?? '',
+                    'action_type' => $action[ $fm_action_type ] ?? '',
+                    'website_id'  => $action[ $fm_website_id ] ?? $action['website_name'] ?? $action['website'] ?? ( $network['api_website_id'] ?? '' ),
+                    'funds_ready' => $this->resolve_funds_ready($action, $field_map),
+                );
                 continue;
             }
 
             // Запоминаем что эта локальная транзакция найдена в API (независимо от расхождений)
             if (!empty($local_tx['click_id'])) {
-                $api_matched_local_click_ids[$local_tx['click_id']] = true;
+                $api_matched_local_click_ids[ $local_tx['click_id'] ] = true;
             }
 
             // Запоминаем что эта локальная транзакция сматчена
             if (!empty($local_tx['click_id'])) {
-                $matched_click_ids[$local_tx['click_id']] = true;
+                $matched_click_ids[ $local_tx['click_id'] ] = true;
             }
 
             // ─── СРАВНЕНИЕ ───
             $local_status     = $local_tx['order_status'];
             $local_commission = (float) $local_tx['comission'];
-            $local_cart       = (float) ($local_tx['sum_order'] ?? 0);
+            $local_cart       = (float) ( $local_tx['sum_order'] ?? 0 );
 
             // Суммы по локальным
             if ($local_status === 'completed' || $local_status === 'balance') {
@@ -1389,43 +1435,43 @@ class Cashback_API_Client
                 $local_sums['declined'] += $local_commission;
             }
 
-            $approved_statuses = ['completed', 'balance'];
-            $status_match = ($local_status === $mapped_status)
-                || (in_array($local_status, $approved_statuses, true)
-                    && in_array($mapped_status, $approved_statuses, true));
+            $approved_statuses = array( 'completed', 'balance' );
+            $status_match      = ( $local_status === $mapped_status )
+                || ( in_array($local_status, $approved_statuses, true)
+                    && in_array($mapped_status, $approved_statuses, true) );
 
             $commission_match = abs($api_payment - $local_commission) < 0.001;
 
-            $cart_match = ($api_cart == 0 || $local_cart == 0)
+            $cart_match = ( $api_cart == 0 || $local_cart == 0 )
                 || abs($api_cart - $local_cart) < 0.001;
 
             if ($status_match && $commission_match && $cart_match) {
-                $matched[] = [
+                $matched[] = array(
                     'local_id'         => (int) $local_tx['id'],
                     'click_id'         => $api_click_id,
                     'api_status'       => $api_status,
                     'local_status'     => $local_status,
                     'api_payment'      => $api_payment,
                     'local_commission' => $local_commission,
-                ];
+                );
             } else {
-                $mismatched[] = [
-                    'uniq_id'            => $local_tx['uniq_id'] ?? '',
-                    'click_id'           => $api_click_id,
-                    'local_id'           => $local_tx['id'],
-                    'api_status'         => $api_status,
-                    'local_status'       => $local_status,
-                    'mapped_api_status'  => $mapped_status,
-                    'api_payment'        => $api_payment,
-                    'local_commission'   => $local_commission,
-                    'api_cart'           => $api_cart,
-                    'local_cart'         => $local_cart,
-                    'status_mismatch'    => !$status_match,
+                $mismatched[] = array(
+                    'uniq_id'             => $local_tx['uniq_id'] ?? '',
+                    'click_id'            => $api_click_id,
+                    'local_id'            => $local_tx['id'],
+                    'api_status'          => $api_status,
+                    'local_status'        => $local_status,
+                    'mapped_api_status'   => $mapped_status,
+                    'api_payment'         => $api_payment,
+                    'local_commission'    => $local_commission,
+                    'api_cart'            => $api_cart,
+                    'local_cart'          => $local_cart,
+                    'status_mismatch'     => !$status_match,
                     'commission_mismatch' => !$commission_match,
-                    'cart_mismatch'      => !$cart_match,
-                    'action_id'          => $action[$fm_uniq_id] ?? '',
-                    'order_id'           => $action[$fm_order_id] ?? '',
-                ];
+                    'cart_mismatch'       => !$cart_match,
+                    'action_id'           => $action[ $fm_uniq_id ] ?? '',
+                    'order_id'            => $action[ $fm_order_id ] ?? '',
+                );
 
                 // Авто-обновляем расхождения — синхронизируем локальные данные с API
                 $dummy_updated = 0;
@@ -1450,10 +1496,10 @@ class Cashback_API_Client
         }
 
         // ─── Обратная проверка: транзакции есть у нас, но нет в API ───
-        $missing_api = [];
+        $missing_api = array();
         foreach ($local_transactions as $tx) {
             // Пропускаем если транзакция найдена в API (полное совпадение или расхождение — неважно)
-            if (!empty($tx['click_id']) && isset($api_matched_local_click_ids[$tx['click_id']])) {
+            if (!empty($tx['click_id']) && isset($api_matched_local_click_ids[ $tx['click_id'] ])) {
                 continue;
             }
             if ($tx['order_status'] === 'balance') {
@@ -1463,16 +1509,16 @@ class Cashback_API_Client
                 continue;
             }
 
-            $missing_api[] = [
+            $missing_api[] = array(
                 'local_id'     => $tx['id'],
                 'uniq_id'      => $tx['uniq_id'] ?? '',
                 'click_id'     => $tx['click_id'],
                 'order_number' => $tx['order_number'],
                 'status'       => $tx['order_status'],
                 'commission'   => (float) $tx['comission'],
-                'sum_order'    => (float) ($tx['sum_order'] ?? 0),
+                'sum_order'    => (float) ( $tx['sum_order'] ?? 0 ),
                 'created'      => $tx['created_at'],
-            ];
+            );
         }
 
         // ─── Обновляем api_verified для всех сматченных транзакций ───
@@ -1494,8 +1540,8 @@ class Cashback_API_Client
         $discrepancy       = abs($api_sums['approved'] - $local_sums['approved']);
 
         // Обновляем чекпоинт (user_id = 0 для незарегистрированных)
-        $this->update_checkpoint(0, $network_slug, [
-            'last_validated_date'      => (new DateTime())->format('Y-m-d'),
+        $this->update_checkpoint(0, $network_slug, array(
+            'last_validated_date'      => ( new DateTime() )->format('Y-m-d'),
             'api_sum_approved'         => $api_sums['approved'],
             'api_sum_pending'          => $api_sums['pending'],
             'api_sum_declined'         => $api_sums['declined'],
@@ -1510,31 +1556,34 @@ class Cashback_API_Client
             'mismatch_count'           => count($mismatched),
             'missing_local_count'      => count($missing_local),
             'missing_api_count'        => count($missing_api),
-        ]);
+        ));
 
-        return [
-            'success'         => true,
-            'user_id'         => 0,
-            'network'         => $network_slug,
-            'status'          => $validation_status,
-            'date_range'      => ['start' => $date_start, 'end' => $date_end],
-            'api_total'       => $total_checked,
-            'local_total'     => count($local_transactions),
-            'matched_count'   => count($matched),
-            'mismatch_count'  => count($mismatched),
-            'missing_local'   => $missing_local,
-            'missing_api'     => $missing_api,
-            'mismatched'      => $mismatched,
-            'sums' => [
-                'api_approved'    => $api_sums['approved'],
-                'api_pending'     => $api_sums['pending'],
-                'api_declined'    => $api_sums['declined'],
-                'local_approved'  => $local_sums['approved'],
-                'local_pending'   => $local_sums['pending'],
-                'local_declined'  => $local_sums['declined'],
-                'discrepancy'     => $discrepancy,
-            ],
-        ];
+        return array(
+            'success'        => true,
+            'user_id'        => 0,
+            'network'        => $network_slug,
+            'status'         => $validation_status,
+            'date_range'     => array(
+				'start' => $date_start,
+				'end'   => $date_end,
+			),
+            'api_total'      => $total_checked,
+            'local_total'    => count($local_transactions),
+            'matched_count'  => count($matched),
+            'mismatch_count' => count($mismatched),
+            'missing_local'  => $missing_local,
+            'missing_api'    => $missing_api,
+            'mismatched'     => $mismatched,
+            'sums'           => array(
+                'api_approved'   => $api_sums['approved'],
+                'api_pending'    => $api_sums['pending'],
+                'api_declined'   => $api_sums['declined'],
+                'local_approved' => $local_sums['approved'],
+                'local_pending'  => $local_sums['pending'],
+                'local_declined' => $local_sums['declined'],
+                'discrepancy'    => $discrepancy,
+            ),
+        );
     }
 
     // =========================================================================
@@ -1552,15 +1601,14 @@ class Cashback_API_Client
      *
      * @return array Результаты синхронизации
      */
-    public function background_sync(): array
-    {
+    public function background_sync(): array {
         global $wpdb;
 
         // Защита от параллельного запуска (двойной cron, ручной + автоматический)
         $lock_acquired = $wpdb->get_var("SELECT GET_LOCK('cashback_sync_global_lock', 30)");
         if (!$lock_acquired) {
             error_log('Cashback background_sync: could not acquire lock, another sync is running');
-            return [];
+            return array();
         }
 
         try {
@@ -1573,16 +1621,15 @@ class Cashback_API_Client
     /**
      * Внутренняя логика фоновой синхронизации (вызывается под GET_LOCK).
      */
-    private function do_background_sync(): array
-    {
+    private function do_background_sync(): array {
         global $wpdb;
 
-        $results = [];
+        $results = array();
 
         $networks = $this->get_all_active_networks();
 
         foreach ($networks as $network) {
-            $slug = $network['slug'];
+            $slug   = $network['slug'];
             $config = $this->get_network_config($slug);
 
             if (!$config || empty($config['credentials'])) {
@@ -1593,22 +1640,22 @@ class Cashback_API_Client
             $last_sync = get_option("cashback_last_sync_{$slug}", '');
 
             if (empty($last_sync)) {
-                $date_start = (new DateTime())->modify('-30 days')->format('d.m.Y');
+                $date_start = ( new DateTime() )->modify('-30 days')->format('d.m.Y');
             } else {
                 $dt = new DateTime($last_sync);
                 $dt->modify('-1 day');
                 $date_start = $dt->format('d.m.Y');
             }
 
-            $date_end = (new DateTime())->format('d.m.Y');
+            $date_end = ( new DateTime() )->format('d.m.Y');
 
             // Запрос по status_updated_start — получаем все действия с обновлёнными статусами
-            $sync_params = [
+            $sync_params = array(
                 'status_updated_start' => $date_start . ' 00:00:00',
                 'status_updated_end'   => $date_end . ' 23:59:59',
                 'date_start'           => '01.01.2020',
                 'date_end'             => $date_end,
-            ];
+            );
 
             if (!empty($config['api_website_id'])) {
                 $sync_params['website'] = $config['api_website_id'];
@@ -1617,7 +1664,10 @@ class Cashback_API_Client
             $api_result = $this->fetch_all_actions_for_network($slug, $config['credentials'], $sync_params, 20, $config);
 
             if (!$api_result['success']) {
-                $results[$slug] = ['success' => false, 'error' => $api_result['error']];
+                $results[ $slug ] = array(
+					'success' => false,
+					'error'   => $api_result['error'],
+				);
                 continue;
             }
 
@@ -1625,8 +1675,8 @@ class Cashback_API_Client
 
             if (empty($api_actions)) {
                 // Проверяем stale транзакции даже если нет свежих обновлений в API
-                $decline_result = $this->decline_stale_missing_transactions($config, $slug);
-                $results[$slug] = [
+                $decline_result   = $this->decline_stale_missing_transactions($config, $slug);
+                $results[ $slug ] = array(
                     'success'               => true,
                     'total'                 => 0,
                     'updated'               => 0,
@@ -1634,10 +1684,10 @@ class Cashback_API_Client
                     'not_found'             => 0,
                     'inserted'              => 0,
                     'insert_errors'         => 0,
-                    'declined_stale'        => ($decline_result['declined_registered'] + $decline_result['declined_unregistered']),
+                    'declined_stale'        => ( $decline_result['declined_registered'] + $decline_result['declined_unregistered'] ),
                     'declined_stale_detail' => $decline_result,
-                ];
-                update_option("cashback_last_sync_{$slug}", (new DateTime())->format('Y-m-d H:i:s'));
+                );
+                update_option("cashback_last_sync_{$slug}", ( new DateTime() )->format('Y-m-d H:i:s'));
                 continue;
             }
 
@@ -1646,20 +1696,20 @@ class Cashback_API_Client
             $network_name = $config['name'] ?? $slug;
 
             // Маппинг полей API → локальные колонки
-            $field_map   = $config['field_map'];
-            $fm_payment  = $this->api_field_for('comission', $field_map) ?: 'payment';
-            $fm_cart     = $this->api_field_for('sum_order', $field_map) ?: 'cart';
-            $fm_uniq_id  = $this->api_field_for('uniq_id', $field_map) ?: 'action_id';
+            $field_map  = $config['field_map'];
+            $fm_payment = $this->api_field_for('comission', $field_map) ?: 'payment';
+            $fm_cart    = $this->api_field_for('sum_order', $field_map) ?: 'cart';
+            $fm_uniq_id = $this->api_field_for('uniq_id', $field_map) ?: 'action_id';
 
             // Собираем click_id и action_id из API-ответа
-            $api_click_ids  = [];
-            $api_action_ids = [];
+            $api_click_ids  = array();
+            $api_action_ids = array();
             foreach ($api_actions as $action) {
-                $cid = (string) ($action[$click_field] ?? '');
+                $cid = (string) ( $action[ $click_field ] ?? '' );
                 if ($cid !== '') {
                     $api_click_ids[] = $cid;
                 }
-                $aid = (string) ($action[$fm_uniq_id] ?? '');
+                $aid = (string) ( $action[ $fm_uniq_id ] ?? '' );
                 if ($aid !== '') {
                     $api_action_ids[] = $aid;
                 }
@@ -1667,11 +1717,11 @@ class Cashback_API_Client
 
             // ─── Batch-запросы: cashback_transactions ───
             // 1. По click_id (наш UUID)
-            $local_map_by_click = [];
+            $local_map_by_click = array();
             if (!empty($api_click_ids)) {
                 $placeholders = implode(',', array_fill(0, count($api_click_ids), '%s'));
-                $query_args = array_merge($api_click_ids, [$slug, $network_name]);
-                $rows = $wpdb->get_results($wpdb->prepare(
+                $query_args   = array_merge($api_click_ids, array( $slug, $network_name ));
+                $rows         = $wpdb->get_results($wpdb->prepare(
                     "SELECT id, click_id, uniq_id, order_status, comission, sum_order, api_verified
                      FROM {$this->transactions_table}
                      WHERE click_id IN ({$placeholders})
@@ -1680,16 +1730,16 @@ class Cashback_API_Client
                 ), ARRAY_A);
 
                 foreach ($rows as $row) {
-                    $local_map_by_click[$row['click_id']] = $row;
+                    $local_map_by_click[ $row['click_id'] ] = $row;
                 }
             }
 
             // 2. По uniq_id (уникальный action_id CPA-сети, надёжный fallback)
-            $local_map_by_uniq = [];
+            $local_map_by_uniq = array();
             if (!empty($api_action_ids)) {
                 $placeholders = implode(',', array_fill(0, count($api_action_ids), '%s'));
-                $query_args = array_merge($api_action_ids, [$slug, $network_name]);
-                $rows = $wpdb->get_results($wpdb->prepare(
+                $query_args   = array_merge($api_action_ids, array( $slug, $network_name ));
+                $rows         = $wpdb->get_results($wpdb->prepare(
                     "SELECT id, click_id, uniq_id, order_status, comission, sum_order, api_verified
                      FROM {$this->transactions_table}
                      WHERE uniq_id IN ({$placeholders})
@@ -1698,19 +1748,19 @@ class Cashback_API_Client
                 ), ARRAY_A);
 
                 foreach ($rows as $row) {
-                    if (!isset($local_map_by_uniq[$row['uniq_id']])) {
-                        $local_map_by_uniq[$row['uniq_id']] = $row;
+                    if (!isset($local_map_by_uniq[ $row['uniq_id'] ])) {
+                        $local_map_by_uniq[ $row['uniq_id'] ] = $row;
                     }
                 }
             }
 
             // ─── Batch-запросы: cashback_unregistered_transactions ───
             // 1. По click_id
-            $unreg_map_by_click = [];
+            $unreg_map_by_click = array();
             if (!empty($api_click_ids)) {
                 $placeholders = implode(',', array_fill(0, count($api_click_ids), '%s'));
-                $query_args = array_merge($api_click_ids, [$slug, $network_name]);
-                $rows = $wpdb->get_results($wpdb->prepare(
+                $query_args   = array_merge($api_click_ids, array( $slug, $network_name ));
+                $rows         = $wpdb->get_results($wpdb->prepare(
                     "SELECT id, click_id, uniq_id, order_status, comission, sum_order, user_id, api_verified
                      FROM {$this->unregistered_table}
                      WHERE click_id IN ({$placeholders})
@@ -1719,16 +1769,16 @@ class Cashback_API_Client
                 ), ARRAY_A);
 
                 foreach ($rows as $row) {
-                    $unreg_map_by_click[$row['click_id']] = $row;
+                    $unreg_map_by_click[ $row['click_id'] ] = $row;
                 }
             }
 
             // 2. По uniq_id
-            $unreg_map_by_uniq = [];
+            $unreg_map_by_uniq = array();
             if (!empty($api_action_ids)) {
                 $placeholders = implode(',', array_fill(0, count($api_action_ids), '%s'));
-                $query_args = array_merge($api_action_ids, [$slug, $network_name]);
-                $rows = $wpdb->get_results($wpdb->prepare(
+                $query_args   = array_merge($api_action_ids, array( $slug, $network_name ));
+                $rows         = $wpdb->get_results($wpdb->prepare(
                     "SELECT id, click_id, uniq_id, order_status, comission, sum_order, user_id, api_verified
                      FROM {$this->unregistered_table}
                      WHERE uniq_id IN ({$placeholders})
@@ -1737,28 +1787,28 @@ class Cashback_API_Client
                 ), ARRAY_A);
 
                 foreach ($rows as $row) {
-                    if (!isset($unreg_map_by_uniq[$row['uniq_id']])) {
-                        $unreg_map_by_uniq[$row['uniq_id']] = $row;
+                    if (!isset($unreg_map_by_uniq[ $row['uniq_id'] ])) {
+                        $unreg_map_by_uniq[ $row['uniq_id'] ] = $row;
                     }
                 }
             }
 
             // ─── Batch-проверка существования пользователей для INSERT ───
             // subid может содержать partner_token (hex, 32 chars) или legacy user_id (numeric)
-            $user_field = $config['api_user_field'] ?? 'subid';
-            $potential_user_ids = [];
-            $potential_tokens = [];
+            $user_field         = $config['api_user_field'] ?? 'subid';
+            $potential_user_ids = array();
+            $potential_tokens   = array();
 
             foreach ($api_actions as $action) {
-                $cid = (string) ($action[$click_field] ?? '');
+                $cid = (string) ( $action[ $click_field ] ?? '' );
 
                 // Проверяем, найдётся ли action в одной из таблиц
-                $aid_check = (string) ($action[$fm_uniq_id] ?? '');
-                $would_match = ($cid !== '' && (isset($local_map_by_click[$cid]) || isset($unreg_map_by_click[$cid])))
-                    || ($aid_check !== '' && (isset($local_map_by_uniq[$aid_check]) || isset($unreg_map_by_uniq[$aid_check])));
+                $aid_check   = (string) ( $action[ $fm_uniq_id ] ?? '' );
+                $would_match = ( $cid !== '' && ( isset($local_map_by_click[ $cid ]) || isset($unreg_map_by_click[ $cid ]) ) )
+                    || ( $aid_check !== '' && ( isset($local_map_by_uniq[ $aid_check ]) || isset($unreg_map_by_uniq[ $aid_check ]) ) );
 
                 if (!$would_match) {
-                    $uid = (string) ($action[$user_field] ?? '');
+                    $uid = (string) ( $action[ $user_field ] ?? '' );
                     if (is_numeric($uid) && (int) $uid > 0) {
                         $potential_user_ids[] = (int) $uid;
                     } elseif (preg_match('/^[0-9a-f]{32}$/', $uid)) {
@@ -1768,7 +1818,7 @@ class Cashback_API_Client
             }
 
             // Batch-резолв partner_token → user_id
-            $token_to_user = [];
+            $token_to_user = array();
             if (!empty($potential_tokens)) {
                 $token_to_user = Mariadb_Plugin::resolve_partner_tokens_batch($potential_tokens);
                 foreach ($token_to_user as $resolved_uid) {
@@ -1776,46 +1826,46 @@ class Cashback_API_Client
                 }
             }
 
-            $existing_user_ids = [];
+            $existing_user_ids = array();
             if (!empty($potential_user_ids)) {
                 $potential_user_ids = array_unique($potential_user_ids);
-                $placeholders = implode(',', array_fill(0, count($potential_user_ids), '%d'));
-                $rows = $wpdb->get_col($wpdb->prepare(
+                $placeholders       = implode(',', array_fill(0, count($potential_user_ids), '%d'));
+                $rows               = $wpdb->get_col($wpdb->prepare(
                     "SELECT ID FROM {$wpdb->users} WHERE ID IN ({$placeholders})",
                     ...$potential_user_ids
                 ));
-                $existing_user_ids = array_flip(array_map('intval', $rows));
+                $existing_user_ids  = array_flip(array_map('intval', $rows));
             }
 
             // ─── Обработка actions ───
-            $status_map     = $config['status_map'];
-            $updated        = 0;
-            $skipped        = 0;
-            $update_errors  = 0;
-            $not_found      = 0;
-            $inserted       = 0;
-            $insert_errors  = 0;
+            $status_map    = $config['status_map'];
+            $updated       = 0;
+            $skipped       = 0;
+            $update_errors = 0;
+            $not_found     = 0;
+            $inserted      = 0;
+            $insert_errors = 0;
 
             foreach ($api_actions as $action) {
-                $api_click_id  = (string) ($action[$click_field] ?? '');
+                $api_click_id  = (string) ( $action[ $click_field ] ?? '' );
                 $api_status    = strtolower($action['status'] ?? 'pending');
-                $mapped_status = $status_map[$api_status] ?? 'waiting';
-                $api_payment   = (float) ($action[$fm_payment] ?? 0);
-                $api_cart      = (float) ($action[$fm_cart] ?? 0);
+                $mapped_status = $status_map[ $api_status ] ?? 'waiting';
+                $api_payment   = (float) ( $action[ $fm_payment ] ?? 0 );
+                $api_cart      = (float) ( $action[ $fm_cart ] ?? 0 );
 
                 // ─── Матчинг: cashback_transactions ───
                 $local = null;
 
                 // 1. Основной: click_id (наш UUID)
-                if ($api_click_id !== '' && isset($local_map_by_click[$api_click_id])) {
-                    $local = $local_map_by_click[$api_click_id];
+                if ($api_click_id !== '' && isset($local_map_by_click[ $api_click_id ])) {
+                    $local = $local_map_by_click[ $api_click_id ];
                 }
 
                 // 2. Fallback: uniq_id (уникальный ID в рамках CPA-сети)
                 if (!$local) {
-                    $action_id_key = (string) ($action[$fm_uniq_id] ?? '');
-                    if ($action_id_key !== '' && isset($local_map_by_uniq[$action_id_key])) {
-                        $local = $local_map_by_uniq[$action_id_key];
+                    $action_id_key = (string) ( $action[ $fm_uniq_id ] ?? '' );
+                    if ($action_id_key !== '' && isset($local_map_by_uniq[ $action_id_key ])) {
+                        $local = $local_map_by_uniq[ $action_id_key ];
                     }
                 }
 
@@ -1829,15 +1879,15 @@ class Cashback_API_Client
                 $unreg = null;
 
                 // 1. Основной: click_id
-                if ($api_click_id !== '' && isset($unreg_map_by_click[$api_click_id])) {
-                    $unreg = $unreg_map_by_click[$api_click_id];
+                if ($api_click_id !== '' && isset($unreg_map_by_click[ $api_click_id ])) {
+                    $unreg = $unreg_map_by_click[ $api_click_id ];
                 }
 
                 // 2. Fallback: uniq_id
                 if (!$unreg) {
-                    $action_id_key = (string) ($action[$fm_uniq_id] ?? '');
-                    if ($action_id_key !== '' && isset($unreg_map_by_uniq[$action_id_key])) {
-                        $unreg = $unreg_map_by_uniq[$action_id_key];
+                    $action_id_key = (string) ( $action[ $fm_uniq_id ] ?? '' );
+                    if ($action_id_key !== '' && isset($unreg_map_by_uniq[ $action_id_key ])) {
+                        $unreg = $unreg_map_by_uniq[ $action_id_key ];
                     }
                 }
 
@@ -1850,7 +1900,7 @@ class Cashback_API_Client
                 // ─── Guard: cross-table UNIQUE KEY check ───
                 // Защита от дубликатов для перенесённых транзакций (click_id=NULL случай):
                 // если батч-карты пропустили строку, последний шанс найти её по UNIQUE KEY (uniq_id, partner).
-                $action_id_guard = (string) ($action[$fm_uniq_id] ?? '');
+                $action_id_guard = (string) ( $action[ $fm_uniq_id ] ?? '' );
                 if ($action_id_guard !== '') {
                     $transferred = $wpdb->get_row($wpdb->prepare(
                         "SELECT id, click_id, uniq_id, order_status, comission, sum_order, api_verified
@@ -1873,12 +1923,12 @@ class Cashback_API_Client
                 $insert_result = $this->insert_missing_transaction($action, $config, $slug, $wpdb, $existing_user_ids);
 
                 if ($insert_result['success']) {
-                    $inserted++;
+                    ++$inserted;
 
                     $this->log_sync_insert(
                         $slug,
                         $insert_result['insert_id'],
-                        (string) ($action[$fm_uniq_id] ?? ''),
+                        (string) ( $action[ $fm_uniq_id ] ?? '' ),
                         $mapped_status,
                         $api_payment,
                         $insert_result['table_type']
@@ -1886,13 +1936,13 @@ class Cashback_API_Client
                 } else {
                     // Дубликат — не ошибка, транзакция уже есть
                     if (strpos($insert_result['error'], 'Duplicate') !== false) {
-                        $skipped++;
+                        ++$skipped;
                     } else {
-                        $insert_errors++;
+                        ++$insert_errors;
                         if (defined('WP_DEBUG') && WP_DEBUG) {
                             error_log(sprintf(
                                 '[Cashback Sync] Insert failed for action_id=%s: %s',
-                                $action[$fm_uniq_id] ?? 'unknown',
+                                $action[ $fm_uniq_id ] ?? 'unknown',
                                 $insert_result['error']
                             ));
                         }
@@ -1904,9 +1954,9 @@ class Cashback_API_Client
             $decline_result = $this->decline_stale_missing_transactions($config, $slug);
 
             // Сохраняем время последней синхронизации
-            update_option("cashback_last_sync_{$slug}", (new DateTime())->format('Y-m-d H:i:s'));
+            update_option("cashback_last_sync_{$slug}", ( new DateTime() )->format('Y-m-d H:i:s'));
 
-            $results[$slug] = [
+            $results[ $slug ] = array(
                 'success'               => true,
                 'total'                 => count($api_actions),
                 'updated'               => $updated,
@@ -1915,9 +1965,9 @@ class Cashback_API_Client
                 'not_found'             => $not_found,
                 'inserted'              => $inserted,
                 'insert_errors'         => $insert_errors,
-                'declined_stale'        => ($decline_result['declined_registered'] + $decline_result['declined_unregistered']),
+                'declined_stale'        => ( $decline_result['declined_registered'] + $decline_result['declined_unregistered'] ),
                 'declined_stale_detail' => $decline_result,
-            ];
+            );
         }
 
         return $results;
@@ -1965,36 +2015,36 @@ class Cashback_API_Client
 
         // Защита: balance — финальный, не трогаем
         if ($local_status === 'balance') {
-            $skipped++;
+            ++$skipped;
             return;
         }
 
         // Защита от понижения: completed не откатываем в waiting
         if ($local_status === 'completed' && $mapped_status === 'waiting') {
-            $skipped++;
+            ++$skipped;
             return;
         }
 
         // Обновляем если статус, комиссия или сумма заказа изменились
-        $status_changed     = ($local_status !== $mapped_status);
+        $status_changed     = ( $local_status !== $mapped_status );
         $commission_changed = abs($api_payment - (float) $local['comission']) >= 0.001;
 
-        $local_cart     = (float) ($local['sum_order'] ?? 0);
-        $cart_changed   = abs($api_cart - $local_cart) >= 0.001;
+        $local_cart   = (float) ( $local['sum_order'] ?? 0 );
+        $cart_changed = abs($api_cart - $local_cart) >= 0.001;
 
         $needs_verify = empty($local['api_verified']);
 
         // funds_ready: определяется через маппинг, fallback — прямое чтение из адаптера
-        $api_funds_ready = $this->resolve_funds_ready($action, $field_map);
-        $needs_funds_ready = ($api_funds_ready === 1 && empty($local['funds_ready']));
+        $api_funds_ready   = $this->resolve_funds_ready($action, $field_map);
+        $needs_funds_ready = ( $api_funds_ready === 1 && empty($local['funds_ready']) );
 
         if (!$status_changed && !$commission_changed && !$cart_changed && !$needs_verify && !$needs_funds_ready) {
-            $skipped++;
+            ++$skipped;
             return;
         }
 
-        $update_data    = [];
-        $update_formats = [];
+        $update_data    = array();
+        $update_formats = array();
 
         if ($status_changed) {
             $update_data['order_status'] = $mapped_status;
@@ -2028,15 +2078,15 @@ class Cashback_API_Client
         if ($status_changed) {
             $validation = Cashback_Trigger_Fallbacks::validate_status_transition($local_status, $mapped_status);
             if ($validation !== true) {
-                $skipped++;
+                ++$skipped;
                 return;
             }
         }
 
         // PHP-фолбэк: пересчёт кешбэка при изменении комиссии
         if ($commission_changed) {
-            $is_registered = ($table === $this->transactions_table);
-            $old_row = (object) $local;
+            $is_registered = ( $table === $this->transactions_table );
+            $old_row       = (object) $local;
             Cashback_Trigger_Fallbacks::recalculate_cashback_on_update($update_data, $old_row, $is_registered);
             if (isset($update_data['cashback'])) {
                 $update_formats[] = '%f'; // cashback
@@ -2046,13 +2096,13 @@ class Cashback_API_Client
         $wpdb->update(
             $table,
             $update_data,
-            ['id' => $local['id']],
+            array( 'id' => $local['id'] ),
             $update_formats,
-            ['%d']
+            array( '%d' )
         );
 
         if ($wpdb->last_error) {
-            $update_errors++;
+            ++$update_errors;
             error_log(sprintf(
                 '[Cashback Sync] UPDATE error for %s id=%d: %s',
                 $table,
@@ -2062,7 +2112,7 @@ class Cashback_API_Client
             return;
         }
 
-        $updated++;
+        ++$updated;
 
         // Запись в очередь уведомлений (вместо MySQL триггера)
         $this->enqueue_notification_on_update(
@@ -2081,7 +2131,7 @@ class Cashback_API_Client
         $this->log_sync_event(
             $slug,
             (int) $local['id'],
-            $api_click_id ?: ($local['uniq_id'] ?? ''),
+            $api_click_id ?: ( $local['uniq_id'] ?? '' ),
             $local_status,
             $mapped_status,
             $api_payment
@@ -2111,11 +2161,11 @@ class Cashback_API_Client
     ): array {
         $user_field   = $config['api_user_field'] ?? 'subid';
         $click_field  = $config['api_click_field'] ?? 'subid1';
-        $status_map   = $config['status_map'] ?? [];
+        $status_map   = $config['status_map'] ?? array();
         $network_name = $config['name'] ?? $slug;
 
         // 1. Определяем user_id (subid может содержать partner_token или legacy user_id)
-        $raw_user_id = (string) ($action[$user_field] ?? '');
+        $raw_user_id = (string) ( $action[ $user_field ] ?? '' );
 
         $is_unregistered = strtolower($raw_user_id) === 'unregistered'
             || $raw_user_id === ''
@@ -2134,7 +2184,7 @@ class Cashback_API_Client
 
         // 2. Для зарегистрированных — проверяем существование WP-пользователя
         if (!$is_unregistered && is_numeric($raw_user_id)) {
-            if (!isset($existing_user_ids[(int) $raw_user_id])) {
+            if (!isset($existing_user_ids[ (int) $raw_user_id ])) {
                 $is_unregistered = true;
             }
         }
@@ -2142,7 +2192,7 @@ class Cashback_API_Client
         // 2a. Фикс B: если всё ещё unregistered, но click_id известен —
         //     проверяем, была ли предыдущая конверсия с тем же click_id уже перенесена
         //     к реальному пользователю. Если да — новую покупку кладём туда же.
-        $click_id_early = (string) ($action[$click_field] ?? '');
+        $click_id_early = (string) ( $action[ $click_field ] ?? '' );
         if ($is_unregistered && $click_id_early !== '') {
             $prior = $wpdb->get_row($wpdb->prepare(
                 "SELECT user_id FROM {$this->transactions_table}
@@ -2162,29 +2212,29 @@ class Cashback_API_Client
 
         // 4. Маппинг статуса
         $api_status    = strtolower($action['status'] ?? 'pending');
-        $mapped_status = $status_map[$api_status] ?? 'waiting';
+        $mapped_status = $status_map[ $api_status ] ?? 'waiting';
 
         // 5. Извлекаем поля через маппинг
         $field_map = $config['field_map'];
         $mapped    = $this->apply_field_map($action, $field_map);
 
         // 6. Парсим даты (через маппинг)
-        $fm_action_date = $this->api_field_for('action_date', $field_map) ?: 'action_date';
-        $fm_click_time  = $this->api_field_for('click_time', $field_map) ?: 'click_date';
-        $action_date_mysql = self::parse_api_date((string) ($action[$fm_action_date] ?? ''));
-        $click_time_raw    = (string) ($action[$fm_click_time] ?? $action['click_time'] ?? $action['closing_date'] ?? '');
+        $fm_action_date    = $this->api_field_for('action_date', $field_map) ?: 'action_date';
+        $fm_click_time     = $this->api_field_for('click_time', $field_map) ?: 'click_date';
+        $action_date_mysql = self::parse_api_date((string) ( $action[ $fm_action_date ] ?? '' ));
+        $click_time_raw    = (string) ( $action[ $fm_click_time ] ?? $action['click_time'] ?? $action['closing_date'] ?? '' );
         $click_time_mysql  = self::parse_api_date($click_time_raw);
 
-        $action_id   = (string) ($mapped['uniq_id'] ?? '');
-        $click_id    = (string) ($action[$click_field] ?? '');
-        $order_id    = (string) ($mapped['order_number'] ?? '');
-        $payment     = (float) ($mapped['comission'] ?? 0);
-        $cart        = (float) ($mapped['sum_order'] ?? 0);
-        $campaign    = (string) ($mapped['offer_name'] ?? '');
+        $action_id   = (string) ( $mapped['uniq_id'] ?? '' );
+        $click_id    = (string) ( $action[ $click_field ] ?? '' );
+        $order_id    = (string) ( $mapped['order_number'] ?? '' );
+        $payment     = (float) ( $mapped['comission'] ?? 0 );
+        $cart        = (float) ( $mapped['sum_order'] ?? 0 );
+        $campaign    = (string) ( $mapped['offer_name'] ?? '' );
         $campaign_id = $mapped['offer_id'] ?? null;
-        $currency    = (string) ($mapped['currency'] ?? $action['currency'] ?? 'RUB');
-        $action_type = (string) ($mapped['action_type'] ?? $action['action_type'] ?? '');
-        $website_id  = (string) ($mapped['website_id'] ?? $action['website_id'] ?? $action['website'] ?? ($config['api_website_id'] ?? ''));
+        $currency    = (string) ( $mapped['currency'] ?? $action['currency'] ?? 'RUB' );
+        $action_type = (string) ( $mapped['action_type'] ?? $action['action_type'] ?? '' );
+        $website_id  = (string) ( $mapped['website_id'] ?? $action['website_id'] ?? $action['website'] ?? ( $config['api_website_id'] ?? '' ) );
 
         // 7. Валидация валюты (ISO 4217)
         if (!preg_match('/^[A-Z]{3}$/', $currency)) {
@@ -2196,17 +2246,27 @@ class Cashback_API_Client
 
         // 8. action_id и network_name обязательны (части UNIQUE KEY unique_uniq_partner)
         if ($action_id === '') {
-            return ['success' => false, 'insert_id' => 0, 'table_type' => $table_type, 'error' => 'Missing action_id'];
+            return array(
+				'success'    => false,
+				'insert_id'  => 0,
+				'table_type' => $table_type,
+				'error'      => 'Missing action_id',
+			);
         }
         if (empty($network_name)) {
-            return ['success' => false, 'insert_id' => 0, 'table_type' => $table_type, 'error' => 'Missing network name (partner)'];
+            return array(
+				'success'    => false,
+				'insert_id'  => 0,
+				'table_type' => $table_type,
+				'error'      => 'Missing network name (partner)',
+			);
         }
 
         // 9. Ключ идемпотентности (детерминистический — один action_id+slug = один ключ)
         $idempotency_key = hash('sha256', 'cron_sync_' . $action_id . '_' . $slug);
 
         // 10. Формируем данные для INSERT
-        $data = [
+        $data = array(
             'user_id'         => $is_unregistered ? $raw_user_id : (int) $raw_user_id,
             'uniq_id'         => $action_id,
             'order_number'    => $order_id,
@@ -2214,20 +2274,20 @@ class Cashback_API_Client
             'comission'       => $payment,
             'sum_order'       => $cart,
             'order_status'    => $mapped_status,
-            'offer_id'        => ($campaign_id !== null && $campaign_id !== '' && $campaign_id !== 0) ? (int) $campaign_id : null,
+            'offer_id'        => ( $campaign_id !== null && $campaign_id !== '' && $campaign_id !== 0 ) ? (int) $campaign_id : null,
             'offer_name'      => $campaign,
             'currency'        => $currency,
             'action_date'     => $action_date_mysql,
             'click_time'      => $click_time_mysql,
             'click_id'        => $click_id !== '' ? $click_id : null,
-            'website_id'      => ($website_id !== '' && $website_id !== '0') ? (int) $website_id : null,
+            'website_id'      => ( $website_id !== '' && $website_id !== '0' ) ? (int) $website_id : null,
             'action_type'     => $action_type !== '' ? $action_type : null,
             'api_verified'    => 1,
             'funds_ready'     => $api_funds_ready,
             'idempotency_key' => $idempotency_key,
-        ];
+        );
 
-        $formats = [
+        $formats = array(
             $is_unregistered ? '%s' : '%d',  // user_id
             '%s',  // uniq_id
             '%s',  // order_number
@@ -2246,7 +2306,7 @@ class Cashback_API_Client
             '%d',  // api_verified
             '%d',  // funds_ready
             '%s',  // idempotency_key
-        ];
+        );
 
         // 11. PHP-фолбэк расчёта кешбэка (идемпотентен при наличии триггеров)
         Cashback_Trigger_Fallbacks::calculate_cashback($data, !$is_unregistered);
@@ -2254,15 +2314,15 @@ class Cashback_API_Client
         $formats[] = '%f'; // cashback
 
         // 12. Убираем NULL-значения (аналогично ajax_add_transaction)
-        $clean_data    = [];
-        $clean_formats = [];
-        $i = 0;
+        $clean_data    = array();
+        $clean_formats = array();
+        $i             = 0;
         foreach ($data as $key => $value) {
             if ($value !== null) {
-                $clean_data[$key] = $value;
-                $clean_formats[]  = $formats[$i];
+                $clean_data[ $key ] = $value;
+                $clean_formats[]    = $formats[ $i ];
             }
-            $i++;
+            ++$i;
         }
 
         // 13. INSERT (UNIQUE KEY на uniq_id+partner защищает от дубликатов)
@@ -2270,29 +2330,39 @@ class Cashback_API_Client
 
         if ($result === false || $wpdb->last_error) {
             $error = $wpdb->last_error;
-            return ['success' => false, 'insert_id' => 0, 'table_type' => $table_type, 'error' => $error ?: 'Unknown insert error'];
+            return array(
+				'success'    => false,
+				'insert_id'  => 0,
+				'table_type' => $table_type,
+				'error'      => $error ?: 'Unknown insert error',
+			);
         }
 
         $insert_id = (int) $wpdb->insert_id;
 
         // Запись в очередь уведомлений (вместо MySQL триггера)
         if ($table_type === 'transactions') {
-            $user_id_int = (int) ($data['user_id'] ?? 0);
+            $user_id_int = (int) ( $data['user_id'] ?? 0 );
             if ($user_id_int > 0) {
                 $wpdb->insert(
                     $wpdb->prefix . 'cashback_notification_queue',
-                    [
+                    array(
                         'event_type'     => 'transaction_new',
                         'transaction_id' => $insert_id,
                         'user_id'        => $user_id_int,
                         'new_status'     => $data['order_status'] ?? 'waiting',
-                    ],
-                    ['%s', '%d', '%d', '%s']
+                    ),
+                    array( '%s', '%d', '%d', '%s' )
                 );
             }
         }
 
-        return ['success' => true, 'insert_id' => $insert_id, 'table_type' => $table_type, 'error' => ''];
+        return array(
+			'success'    => true,
+			'insert_id'  => $insert_id,
+			'table_type' => $table_type,
+			'error'      => '',
+		);
     }
 
     /**
@@ -2315,7 +2385,7 @@ class Cashback_API_Client
     ): void {
         global $wpdb;
 
-        $wpdb->insert($this->sync_log_table, [
+        $wpdb->insert($this->sync_log_table, array(
             'network_slug'   => $network_slug,
             'transaction_id' => $transaction_id,
             'action_id'      => $action_id,
@@ -2324,7 +2394,7 @@ class Cashback_API_Client
             'api_payment'    => $api_payment,
             'sync_type'      => 'cron',
             'synced_at'      => current_time('mysql'),
-        ]);
+        ));
     }
 
     // =========================================================================
@@ -2350,16 +2420,15 @@ class Cashback_API_Client
      * @param string $slug   Slug сети
      * @return array ['declined_registered' => int, 'declined_unregistered' => int, 'checked' => int, 'error' => string|null]
      */
-    public function decline_stale_missing_transactions(array $config, string $slug): array
-    {
+    public function decline_stale_missing_transactions( array $config, string $slug ): array {
         global $wpdb;
 
-        $result = [
+        $result = array(
             'declined_registered'   => 0,
             'declined_unregistered' => 0,
             'checked'               => 0,
             'error'                 => null,
-        ];
+        );
 
         if (empty($config['credentials'])) {
             return $result;
@@ -2417,14 +2486,14 @@ class Cashback_API_Client
         $dt_start = new DateTime($earliest_date);
         $dt_start->modify('-1 day');
         $date_start = $dt_start->format('d.m.Y');
-        $date_end   = (new DateTime())->format('d.m.Y');
+        $date_end   = ( new DateTime() )->format('d.m.Y');
 
         // ─── 3. Запросить API (полный диапазон, без status_updated фильтра) ───
 
-        $api_params = [
+        $api_params = array(
             'date_start' => $date_start,
             'date_end'   => $date_end,
-        ];
+        );
 
         if (!empty($config['api_website_id'])) {
             $api_params['website'] = $config['api_website_id'];
@@ -2450,34 +2519,34 @@ class Cashback_API_Client
 
         // ─── 4. Построить индекс API actions по click_id и order_id ───
 
-        $click_field  = $config['api_click_field'] ?? 'subid1';
-        $api_click_ids = [];
-        $api_order_ids = [];
+        $click_field   = $config['api_click_field'] ?? 'subid1';
+        $api_click_ids = array();
+        $api_order_ids = array();
 
         $fm_order_id_stale = $this->api_field_for('order_number', $config['field_map']) ?: 'order_id';
 
         foreach ($api_actions_list as $action) {
-            $cid = (string) ($action[$click_field] ?? '');
+            $cid = (string) ( $action[ $click_field ] ?? '' );
             if ($cid !== '') {
-                $api_click_ids[$cid] = true;
+                $api_click_ids[ $cid ] = true;
             }
-            $oid = (string) ($action[$fm_order_id_stale] ?? '');
+            $oid = (string) ( $action[ $fm_order_id_stale ] ?? '' );
             if ($oid !== '') {
-                $api_order_ids[$oid] = true;
+                $api_order_ids[ $oid ] = true;
             }
         }
 
         // ─── 5. Защита пагинации ───
         // Если API вернул >= лимита пагинации, данные могут быть неполными.
         // Не отклоняем транзакции с created_at старше самой ранней API-записи.
-        $pagination_limit_hit = (count($api_actions_list) >= $max_pages * $page_limit);
+        $pagination_limit_hit = ( count($api_actions_list) >= $max_pages * $page_limit );
         $earliest_api_date    = null;
 
         if ($pagination_limit_hit && !empty($api_actions_list)) {
             foreach ($api_actions_list as $a) {
-                $ad     = (string) ($a['action_date'] ?? $a['click_time'] ?? '');
+                $ad     = (string) ( $a['action_date'] ?? $a['click_time'] ?? '' );
                 $parsed = self::parse_api_date($ad);
-                if ($parsed !== null && ($earliest_api_date === null || $parsed < $earliest_api_date)) {
+                if ($parsed !== null && ( $earliest_api_date === null || $parsed < $earliest_api_date )) {
                     $earliest_api_date = $parsed;
                 }
             }
@@ -2485,8 +2554,8 @@ class Cashback_API_Client
 
         // ─── 6. Определить какие stale транзакции отсутствуют в API ───
 
-        $to_decline_registered   = [];
-        $to_decline_unregistered = [];
+        $to_decline_registered   = array();
+        $to_decline_unregistered = array();
 
         foreach ($stale_registered as $tx) {
             // Пропускаем если лимит пагинации и транзакция старше ранней API-записи
@@ -2494,10 +2563,10 @@ class Cashback_API_Client
                 continue;
             }
             $found = false;
-            if (!empty($tx['click_id']) && isset($api_click_ids[$tx['click_id']])) {
+            if (!empty($tx['click_id']) && isset($api_click_ids[ $tx['click_id'] ])) {
                 $found = true;
             }
-            if (!$found && !empty($tx['order_number']) && isset($api_order_ids[$tx['order_number']])) {
+            if (!$found && !empty($tx['order_number']) && isset($api_order_ids[ $tx['order_number'] ])) {
                 $found = true;
             }
             if (!$found) {
@@ -2510,10 +2579,10 @@ class Cashback_API_Client
                 continue;
             }
             $found = false;
-            if (!empty($tx['click_id']) && isset($api_click_ids[$tx['click_id']])) {
+            if (!empty($tx['click_id']) && isset($api_click_ids[ $tx['click_id'] ])) {
                 $found = true;
             }
-            if (!$found && !empty($tx['order_number']) && isset($api_order_ids[$tx['order_number']])) {
+            if (!$found && !empty($tx['order_number']) && isset($api_order_ids[ $tx['order_number'] ])) {
                 $found = true;
             }
             if (!$found) {
@@ -2606,7 +2675,7 @@ class Cashback_API_Client
     ): void {
         global $wpdb;
 
-        $wpdb->insert($this->sync_log_table, [
+        $wpdb->insert($this->sync_log_table, array(
             'network_slug'   => $network_slug,
             'transaction_id' => $transaction_id,
             'action_id'      => $click_id,
@@ -2615,7 +2684,7 @@ class Cashback_API_Client
             'api_payment'    => $commission,
             'sync_type'      => 'auto_decline',
             'synced_at'      => current_time('mysql'),
-        ]);
+        ));
     }
 
     // =========================================================================
@@ -2625,8 +2694,7 @@ class Cashback_API_Client
     /**
      * Получить чекпоинт валидации пользователя
      */
-    public function get_checkpoint(int $user_id, string $network_slug): ?array
-    {
+    public function get_checkpoint( int $user_id, string $network_slug ): ?array {
         global $wpdb;
 
         return $wpdb->get_row($wpdb->prepare(
@@ -2639,14 +2707,13 @@ class Cashback_API_Client
     /**
      * Обновить чекпоинт валидации
      */
-    public function update_checkpoint(int $user_id, string $network_slug, array $data): bool
-    {
+    public function update_checkpoint( int $user_id, string $network_slug, array $data ): bool {
         global $wpdb;
 
-        $data['user_id']       = $user_id;
-        $data['network_slug']  = $network_slug;
-        $data['validated_at']  = current_time('mysql');
-        $data['validated_by']  = get_current_user_id() ?: 0;
+        $data['user_id']      = $user_id;
+        $data['network_slug'] = $network_slug;
+        $data['validated_at'] = current_time('mysql');
+        $data['validated_by'] = get_current_user_id() ?: 0;
 
         $existing = $this->get_checkpoint($user_id, $network_slug);
 
@@ -2654,7 +2721,10 @@ class Cashback_API_Client
             $result = $wpdb->update(
                 $this->checkpoints_table,
                 $data,
-                ['user_id' => $user_id, 'network_slug' => $network_slug]
+                array(
+					'user_id'      => $user_id,
+					'network_slug' => $network_slug,
+				)
             );
         } else {
             $result = $wpdb->insert($this->checkpoints_table, $data);
@@ -2683,16 +2753,15 @@ class Cashback_API_Client
      * @param int $limit Максимум строк за один вызов (default: 50)
      * @return array ['transferred' => int, 'skipped_duplicate' => int, 'errors' => int, 'checked' => int]
      */
-    public function auto_transfer_unregistered(int $limit = 50): array
-    {
+    public function auto_transfer_unregistered( int $limit = 50 ): array {
         global $wpdb;
 
-        $result = [
+        $result = array(
             'transferred'       => 0,
             'skipped_duplicate' => 0,
             'errors'            => 0,
             'checked'           => 0,
-        ];
+        );
 
         // Одним JOIN находим кандидатов: unregistered строки, чей click_id уже есть
         // в cashback_transactions с реальным user_id.
@@ -2758,7 +2827,7 @@ class Cashback_API_Client
 
                 if (!$tx) {
                     $wpdb->query('ROLLBACK');
-                    $result['skipped_duplicate']++;
+                    ++$result['skipped_duplicate'];
                     continue;
                 }
 
@@ -2772,15 +2841,15 @@ class Cashback_API_Client
                     ));
                     if ($dup > 0) {
                         // Уже существует — удаляем дубликат из unregistered
-                        $wpdb->delete($this->unregistered_table, ['id' => (int) $candidate['unreg_id']], ['%d']);
+                        $wpdb->delete($this->unregistered_table, array( 'id' => (int) $candidate['unreg_id'] ), array( '%d' ));
                         $wpdb->query('COMMIT');
-                        $result['skipped_duplicate']++;
+                        ++$result['skipped_duplicate'];
                         continue;
                     }
                 }
 
                 // INSERT в cashback_transactions с реальным user_id
-                $insert_data = [
+                $insert_data = array(
                     'user_id'            => (int) $candidate['real_user_id'],
                     'order_number'       => $tx['order_number'],
                     'offer_id'           => $tx['offer_id'] !== null ? (int) $tx['offer_id'] : null,
@@ -2802,10 +2871,10 @@ class Cashback_API_Client
                     'idempotency_key'    => $tx['idempotency_key'],
                     'spam_click'         => (int) $tx['spam_click'],
                     'created_at'         => $tx['created_at'],
-                ];
+                );
 
                 // Убираем NULL-значения, чтобы не переписывать DEFAULT и триггеры
-                $insert_data = array_filter($insert_data, static function ($v) {
+                $insert_data = array_filter($insert_data, static function ( $v ) {
                     return $v !== null;
                 });
 
@@ -2814,7 +2883,7 @@ class Cashback_API_Client
                 if ($inserted === false || $wpdb->last_error) {
                     $err = $wpdb->last_error;
                     $wpdb->query('ROLLBACK');
-                    $result['errors']++;
+                    ++$result['errors'];
                     error_log(sprintf(
                         '[Cashback AutoTransfer] INSERT failed for unreg_id=%d: %s',
                         (int) $candidate['unreg_id'],
@@ -2826,7 +2895,7 @@ class Cashback_API_Client
                 $new_id = (int) $wpdb->insert_id;
 
                 // Удаляем исходную строку
-                $wpdb->delete($this->unregistered_table, ['id' => (int) $candidate['unreg_id']], ['%d']);
+                $wpdb->delete($this->unregistered_table, array( 'id' => (int) $candidate['unreg_id'] ), array( '%d' ));
                 $wpdb->query('COMMIT');
                 $success = true;
 
@@ -2839,23 +2908,23 @@ class Cashback_API_Client
                         0, // системный актор
                         'transaction',
                         $new_id,
-                        [
+                        array(
                             'source_id'   => (int) $candidate['unreg_id'],
                             'target_user' => (int) $candidate['real_user_id'],
                             'click_id'    => $tx['click_id'],
                             'uniq_id'     => $tx['uniq_id'],
                             'partner'     => $tx['partner'],
-                        ]
+                        )
                     );
                 }
 
-                $result['transferred']++;
+                ++$result['transferred'];
 
             } catch (\Throwable $e) {
                 if (!$success) {
                     $wpdb->query('ROLLBACK');
                 }
-                $result['errors']++;
+                ++$result['errors'];
                 error_log(sprintf(
                     '[Cashback AutoTransfer] Exception for unreg_id=%d: %s',
                     (int) $candidate['unreg_id'],
@@ -2896,46 +2965,46 @@ class Cashback_API_Client
         if ($status_changed && $new_status !== 'balance') {
             $wpdb->insert(
                 $queue_table,
-                [
+                array(
                     'event_type'     => 'transaction_status',
                     'transaction_id' => $transaction_id,
                     'user_id'        => $user_id,
                     'old_status'     => $old_status,
                     'new_status'     => $new_status,
-                ],
-                ['%s', '%d', '%d', '%s', '%s']
+                ),
+                array( '%s', '%d', '%d', '%s', '%s' )
             );
             return;
         }
 
         // Изменение комиссии или суммы заказа без смены статуса
-        if (($commission_changed || $cart_changed) && !$status_changed) {
-            $old_comission = (float) ($local['comission'] ?? 0);
+        if (( $commission_changed || $cart_changed ) && !$status_changed) {
+            $old_comission = (float) ( $local['comission'] ?? 0 );
             $new_comission = isset($update_data['comission']) ? (float) $update_data['comission'] : $old_comission;
-            $old_sum_order = (float) ($local['sum_order'] ?? 0);
+            $old_sum_order = (float) ( $local['sum_order'] ?? 0 );
             $new_sum_order = isset($update_data['sum_order']) ? (float) $update_data['sum_order'] : $old_sum_order;
-            $old_cashback  = (float) ($local['cashback'] ?? 0);
+            $old_cashback  = (float) ( $local['cashback'] ?? 0 );
             $new_cashback  = isset($update_data['cashback']) ? (float) $update_data['cashback'] : $old_cashback;
 
-            $extra = wp_json_encode([
+            $extra = wp_json_encode(array(
                 'old_comission' => $old_comission,
                 'new_comission' => $new_comission,
                 'old_sum_order' => $old_sum_order,
                 'new_sum_order' => $new_sum_order,
                 'old_cashback'  => $old_cashback,
                 'new_cashback'  => $new_cashback,
-            ]);
+            ));
 
             $wpdb->insert(
                 $queue_table,
-                [
+                array(
                     'event_type'     => 'transaction_data_changed',
                     'transaction_id' => $transaction_id,
                     'user_id'        => $user_id,
                     'new_status'     => $new_status,
                     'extra_data'     => $extra,
-                ],
-                ['%s', '%d', '%d', '%s', '%s']
+                ),
+                array( '%s', '%d', '%d', '%s', '%s' )
             );
         }
     }
@@ -2953,7 +3022,7 @@ class Cashback_API_Client
     ): void {
         global $wpdb;
 
-        $wpdb->insert($this->sync_log_table, [
+        $wpdb->insert($this->sync_log_table, array(
             'network_slug'   => $network_slug,
             'transaction_id' => $transaction_id,
             'action_id'      => $match_key,
@@ -2961,7 +3030,7 @@ class Cashback_API_Client
             'new_status'     => $new_status,
             'api_payment'    => $api_payment,
             'synced_at'      => current_time('mysql'),
-        ]);
+        ));
     }
 
     // =========================================================================
@@ -2985,16 +3054,15 @@ class Cashback_API_Client
      *
      * @return array Результаты по каждой сети
      */
-    public function check_campaign_statuses(?string $only_slug = null): array
-    {
+    public function check_campaign_statuses( ?string $only_slug = null ): array {
         global $wpdb;
 
-        $results  = [];
+        $results  = array();
         $networks = $this->get_all_active_networks();
 
         foreach ($networks as $network) {
             $slug       = $network['slug'] ?? '';
-            $network_id = (int) ($network['id'] ?? 0);
+            $network_id = (int) ( $network['id'] ?? 0 );
 
             if ($only_slug !== null && $slug !== $only_slug) {
                 continue;
@@ -3006,19 +3074,19 @@ class Cashback_API_Client
 
             $config = $this->get_network_config($slug);
             if (!$config || empty($config['credentials'])) {
-                $results[$slug] = [
+                $results[ $slug ] = array(
                     'success' => false,
                     'error'   => 'No credentials configured',
-                ];
+                );
                 continue;
             }
 
             $adapter = $this->get_adapter($slug);
             if (!$adapter) {
-                $results[$slug] = [
+                $results[ $slug ] = array(
                     'success' => false,
                     'error'   => 'No adapter found for: ' . $slug,
-                ];
+                );
                 continue;
             }
 
@@ -3026,10 +3094,10 @@ class Cashback_API_Client
             $campaign_result = $adapter->fetch_campaigns($config['credentials'], $config);
 
             if (!$campaign_result['success']) {
-                $results[$slug] = [
+                $results[ $slug ] = array(
                     'success' => false,
                     'error'   => $campaign_result['error'],
-                ];
+                );
                 error_log(sprintf(
                     'Cashback Campaign Check [%s]: API error — %s',
                     $slug,
@@ -3039,21 +3107,21 @@ class Cashback_API_Client
             }
 
             // Строим карту: campaign_id => campaign_data
-            $campaign_map = [];
+            $campaign_map = array();
             foreach ($campaign_result['campaigns'] as $campaign) {
                 $cid = (string) $campaign['id'];
                 if ($cid !== '') {
-                    $campaign_map[$cid] = $campaign;
+                    $campaign_map[ $cid ] = $campaign;
                 }
             }
 
             // Защита: если API вернул 0 кампаний — возможна ошибка API, не деактивируем
             if (empty($campaign_map)) {
-                $results[$slug] = [
+                $results[ $slug ] = array(
                     'success' => false,
                     'error'   => 'API вернул 0 кампаний — возможна проблема с API (неверный scope, token или website_id)',
-                ];
-                error_log('Cashback Campaign Check [' . $slug . ']: ' . $results[$slug]['error']);
+                );
+                error_log('Cashback Campaign Check [' . $slug . ']: ' . $results[ $slug ]['error']);
                 continue;
             }
 
@@ -3068,7 +3136,7 @@ class Cashback_API_Client
                    AND p.post_status = 'publish'
                    AND p.post_type = 'product'",
                 $network_id
-            ), ARRAY_A) ?: [];
+            ), ARRAY_A) ?: array();
 
             $deactivated = 0;
             $reactivated = 0;
@@ -3076,14 +3144,14 @@ class Cashback_API_Client
 
             foreach ($published_products as $row) {
                 $product_id       = (int) $row['ID'];
-                $product_offer_id = trim((string) ($row['offer_id'] ?? ''));
+                $product_offer_id = trim((string) ( $row['offer_id'] ?? '' ));
 
                 if ($product_offer_id === '') {
-                    $skipped++;
+                    ++$skipped;
                     continue;
                 }
 
-                $campaign = $campaign_map[$product_offer_id] ?? null;
+                $campaign = $campaign_map[ $product_offer_id ] ?? null;
 
                 if ($campaign === null) {
                     // Кампания не найдена в API — возможно удалена
@@ -3093,7 +3161,7 @@ class Cashback_API_Client
                         $product_offer_id,
                         'Кампания не найдена в API CPA-сети'
                     );
-                    $deactivated++;
+                    ++$deactivated;
                     continue;
                 }
 
@@ -3106,7 +3174,7 @@ class Cashback_API_Client
                         $campaign['connection_status']
                     );
                     $this->deactivate_product($product_id, $slug, $product_offer_id, $reason);
-                    $deactivated++;
+                    ++$deactivated;
                 }
             }
 
@@ -3123,55 +3191,55 @@ class Cashback_API_Client
                    AND p.post_type = 'product'
                    AND pm_deact.meta_value = '1'",
                 $network_id
-            ), ARRAY_A) ?: [];
+            ), ARRAY_A) ?: array();
 
             foreach ($draft_products as $row) {
                 $product_id       = (int) $row['ID'];
-                $product_offer_id = trim((string) ($row['offer_id'] ?? ''));
+                $product_offer_id = trim((string) ( $row['offer_id'] ?? '' ));
 
                 if ($product_offer_id === '') {
                     continue;
                 }
 
-                $campaign = $campaign_map[$product_offer_id] ?? null;
+                $campaign = $campaign_map[ $product_offer_id ] ?? null;
 
                 if ($campaign !== null && $campaign['is_active']) {
                     $this->reactivate_product($product_id, $slug, $product_offer_id, $campaign['name']);
-                    $reactivated++;
+                    ++$reactivated;
                 }
             }
 
             // Сохраняем снимок статусов кампаний для админки
-            update_option("cashback_campaign_status_{$slug}", [
-                'timestamp'  => current_time('mysql'),
-                'total'      => count($campaign_result['campaigns']),
-                'active'     => count(array_filter($campaign_result['campaigns'], fn($c) => $c['is_active'])),
-                'inactive'   => count(array_filter($campaign_result['campaigns'], fn($c) => !$c['is_active'])),
-                'campaigns'  => array_map(function ($c) {
-                    return [
+            update_option("cashback_campaign_status_{$slug}", array(
+                'timestamp' => current_time('mysql'),
+                'total'     => count($campaign_result['campaigns']),
+                'active'    => count(array_filter($campaign_result['campaigns'], fn( $c ) => $c['is_active'])),
+                'inactive'  => count(array_filter($campaign_result['campaigns'], fn( $c ) => !$c['is_active'])),
+                'campaigns' => array_map(function ( $c ) {
+                    return array(
                         'id'                => $c['id'],
                         'name'              => $c['name'],
                         'is_active'         => $c['is_active'],
                         'status'            => $c['status'],
                         'connection_status' => $c['connection_status'],
-                    ];
+                    );
                 }, $campaign_result['campaigns']),
-            ], false);
+            ), false);
 
-            $results[$slug] = [
+            $results[ $slug ] = array(
                 'success'         => true,
                 'total_campaigns' => count($campaign_result['campaigns']),
                 'deactivated'     => $deactivated,
                 'reactivated'     => $reactivated,
                 'skipped'         => $skipped,
-            ];
+            );
         }
 
         // Email-уведомление при деактивации
         $total_deactivated = 0;
         foreach ($results as $r) {
             if ($r['success'] ?? false) {
-                $total_deactivated += ($r['deactivated'] ?? 0);
+                $total_deactivated += ( $r['deactivated'] ?? 0 );
             }
         }
         if ($total_deactivated > 0) {
@@ -3189,17 +3257,16 @@ class Cashback_API_Client
      * @param string $offer_id    ID кампании/оффера
      * @param string $reason      Причина деактивации
      */
-    private function deactivate_product(int $product_id, string $network_slug, string $offer_id, string $reason): void
-    {
+    private function deactivate_product( int $product_id, string $network_slug, string $offer_id, string $reason ): void {
         // Проверяем: не деактивирован ли уже
         if (get_post_meta($product_id, '_cashback_auto_deactivated', true) === '1') {
             return;
         }
 
-        wp_update_post([
+        wp_update_post(array(
             'ID'          => $product_id,
             'post_status' => 'draft',
-        ]);
+        ));
 
         update_post_meta($product_id, '_cashback_auto_deactivated', '1');
         update_post_meta($product_id, '_cashback_deactivation_reason', $reason);
@@ -3213,11 +3280,11 @@ class Cashback_API_Client
                 0,
                 'product',
                 $product_id,
-                [
+                array(
                     'network_slug' => $network_slug,
                     'offer_id'     => $offer_id,
                     'reason'       => $reason,
-                ]
+                )
             );
         }
 
@@ -3238,12 +3305,11 @@ class Cashback_API_Client
      * @param string $offer_id      ID кампании/оффера
      * @param string $campaign_name Название кампании
      */
-    private function reactivate_product(int $product_id, string $network_slug, string $offer_id, string $campaign_name): void
-    {
-        wp_update_post([
+    private function reactivate_product( int $product_id, string $network_slug, string $offer_id, string $campaign_name ): void {
+        wp_update_post(array(
             'ID'          => $product_id,
             'post_status' => 'publish',
-        ]);
+        ));
 
         delete_post_meta($product_id, '_cashback_auto_deactivated');
         delete_post_meta($product_id, '_cashback_deactivation_reason');
@@ -3257,11 +3323,11 @@ class Cashback_API_Client
                 0,
                 'product',
                 $product_id,
-                [
+                array(
                     'network_slug'  => $network_slug,
                     'offer_id'      => $offer_id,
                     'campaign_name' => $campaign_name,
-                ]
+                )
             );
         }
 
@@ -3278,8 +3344,7 @@ class Cashback_API_Client
      *
      * @param array $results Результаты check_campaign_statuses()
      */
-    private function send_campaign_deactivation_notification(array $results): void
-    {
+    private function send_campaign_deactivation_notification( array $results ): void {
         $admin_email = get_option('admin_email');
         if (empty($admin_email)) {
             return;
@@ -3293,10 +3358,10 @@ class Cashback_API_Client
         $body .= sprintf("Дата: %s\n\n", current_time('mysql'));
 
         foreach ($results as $network => $result) {
-            if (!($result['success'] ?? false)) {
+            if (!( $result['success'] ?? false )) {
                 continue;
             }
-            if (($result['deactivated'] ?? 0) === 0 && ($result['reactivated'] ?? 0) === 0) {
+            if (( $result['deactivated'] ?? 0 ) === 0 && ( $result['reactivated'] ?? 0 ) === 0) {
                 continue;
             }
 
@@ -3309,7 +3374,7 @@ class Cashback_API_Client
         }
 
         $body .= str_repeat('-', 50) . "\n";
-        $body .= "Просмотр: " . admin_url('admin.php?page=cashback-api-validation&tab=campaigns') . "\n";
+        $body .= 'Просмотр: ' . admin_url('admin.php?page=cashback-api-validation&tab=campaigns') . "\n";
 
         wp_mail($admin_email, $subject, $body);
     }

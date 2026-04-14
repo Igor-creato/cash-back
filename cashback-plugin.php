@@ -41,24 +41,23 @@ define('CASHBACK_MIN_WC_VERSION', '5.0');
  * @param bool $with_dashes true = стандартный формат (36 символов), false = только hex (32 символа)
  * @return string UUID v7
  */
-function cashback_generate_uuid7(bool $with_dashes = true): string
-{
-    $time  = (int) (microtime(true) * 1000);
+function cashback_generate_uuid7( bool $with_dashes = true ): string {
+    $time  = (int) ( microtime(true) * 1000 );
     $bytes = random_bytes(16);
 
     // 48-bit timestamp (bytes 0-5)
-    $bytes[0] = chr(($time >> 40) & 0xFF);
-    $bytes[1] = chr(($time >> 32) & 0xFF);
-    $bytes[2] = chr(($time >> 24) & 0xFF);
-    $bytes[3] = chr(($time >> 16) & 0xFF);
-    $bytes[4] = chr(($time >> 8) & 0xFF);
+    $bytes[0] = chr(( $time >> 40 ) & 0xFF);
+    $bytes[1] = chr(( $time >> 32 ) & 0xFF);
+    $bytes[2] = chr(( $time >> 24 ) & 0xFF);
+    $bytes[3] = chr(( $time >> 16 ) & 0xFF);
+    $bytes[4] = chr(( $time >> 8 ) & 0xFF);
     $bytes[5] = chr($time & 0xFF);
 
     // Version 7 (bits 48-51)
-    $bytes[6] = chr((ord($bytes[6]) & 0x0F) | 0x70);
+    $bytes[6] = chr(( ord($bytes[6]) & 0x0F ) | 0x70);
 
     // Variant 10xx (bits 64-65)
-    $bytes[8] = chr((ord($bytes[8]) & 0x3F) | 0x80);
+    $bytes[8] = chr(( ord($bytes[8]) & 0x3F ) | 0x80);
 
     $hex = bin2hex($bytes);
 
@@ -81,9 +80,8 @@ function cashback_generate_uuid7(bool $with_dashes = true): string
  *
  * @return void
  */
-function cashback_check_requirements()
-{
-    $errors = [];
+function cashback_check_requirements() {
+    $errors = array();
 
     // Проверка версии PHP
     if (version_compare(PHP_VERSION, CASHBACK_MIN_PHP_VERSION, '<')) {
@@ -119,7 +117,7 @@ function cashback_check_requirements()
     if (!empty($errors)) {
         deactivate_plugins(plugin_basename(__FILE__));
 
-        $error_message = '<h1>' . esc_html__('Plugin Activation Error', 'cashback-plugin') . '</h1>';
+        $error_message  = '<h1>' . esc_html__('Plugin Activation Error', 'cashback-plugin') . '</h1>';
         $error_message .= '<p><strong>' . esc_html__('Cashback Plugin', 'cashback-plugin') . '</strong></p>';
         $error_message .= '<ul>';
         foreach ($errors as $error) {
@@ -130,7 +128,7 @@ function cashback_check_requirements()
         wp_die(
             wp_kses_post($error_message),
             esc_html__('Plugin Activation Error', 'cashback-plugin'),
-            array('back_link' => true)
+            array( 'back_link' => true )
         );
     }
 }
@@ -141,27 +139,26 @@ register_activation_hook(__FILE__, 'cashback_check_requirements');
 /**
  * Основной класс плагина Cashback
  */
-class CashbackPlugin
-{
+class CashbackPlugin {
+
     private const ACTIVATION_ERROR_TITLE = 'Ошибка активации плагина';
 
     /**
      * Конструктор класса
      */
-    public function __construct()
-    {
-        register_activation_hook(__FILE__, array($this, 'activate'));
-        register_deactivation_hook(__FILE__, array($this, 'deactivate'));
-        add_action('plugins_loaded', array($this, 'init'));
-        add_action('init', array($this, 'load_textdomain'));
-        add_action('before_woocommerce_init', array($this, 'declare_woocommerce_compatibility'));
+    public function __construct() {
+        register_activation_hook(__FILE__, array( $this, 'activate' ));
+        register_deactivation_hook(__FILE__, array( $this, 'deactivate' ));
+        add_action('plugins_loaded', array( $this, 'init' ));
+        add_action('init', array( $this, 'load_textdomain' ));
+        add_action('before_woocommerce_init', array( $this, 'declare_woocommerce_compatibility' ));
         // WooCommerce транзакционные письма используют собственный фильтр woocommerce_email_from_name
-        add_filter('woocommerce_email_from_name', function (string $name): string {
+        add_filter('woocommerce_email_from_name', function ( string $name ): string {
             $custom = (string) get_option('cashback_email_sender_name', '');
             return trim($custom) !== '' ? $custom : $name;
         });
         // WordPress core и прочие письма — приоритет 20 перекрывает WC_Emails (приоритет 10)
-        add_filter('wp_mail_from_name', function (string $name): string {
+        add_filter('wp_mail_from_name', function ( string $name ): string {
             $custom = (string) get_option('cashback_email_sender_name', '');
             return trim($custom) !== '' ? $custom : $name;
         }, 20);
@@ -172,8 +169,7 @@ class CashbackPlugin
      *
      * @return void
      */
-    public function load_textdomain()
-    {
+    public function load_textdomain() {
         load_plugin_textdomain(
             'cashback-plugin',
             false,
@@ -186,8 +182,7 @@ class CashbackPlugin
      *
      * @return void
      */
-    public function declare_woocommerce_compatibility()
-    {
+    public function declare_woocommerce_compatibility() {
         if (class_exists(\Automattic\WooCommerce\Utilities\FeaturesUtil::class)) {
             \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('custom_order_tables', __FILE__, true);
             \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('cart_checkout_blocks', __FILE__, true);
@@ -197,8 +192,7 @@ class CashbackPlugin
     /**
      * Метод активации плагина
      */
-    public function activate()
-    {
+    public function activate() {
         // Проверка обязательного расширения BCMath (используется для точных вычислений с балансами)
         if (!extension_loaded('bcmath')) {
             wp_die(
@@ -206,7 +200,7 @@ class CashbackPlugin
                     '<p><strong>Cashback Plugin:</strong> Требуется PHP-расширение <code>bcmath</code>. ' .
                     'Установите его и повторите активацию.</p>',
                 self::ACTIVATION_ERROR_TITLE,
-                ['back_link' => true]
+                array( 'back_link' => true )
             );
         }
 
@@ -232,7 +226,7 @@ class CashbackPlugin
                         '<p><strong>Cashback Plugin:</strong> ' . esc_html($e->getMessage()) . '</p>' .
                         '<p>Проверьте логи ошибок для получения дополнительной информации.</p>',
                     self::ACTIVATION_ERROR_TITLE,
-                    array('back_link' => true)
+                    array( 'back_link' => true )
                 );
             }
         } else {
@@ -240,7 +234,7 @@ class CashbackPlugin
                 '<h1>' . self::ACTIVATION_ERROR_TITLE . '</h1>' .
                     '<p><strong>Cashback Plugin:</strong> Класс Mariadb_Plugin не найден.</p>',
                 self::ACTIVATION_ERROR_TITLE,
-                array('back_link' => true)
+                array( 'back_link' => true )
             );
         }
 
@@ -313,16 +307,15 @@ class CashbackPlugin
     /**
      * Метод деактивации плагина
      */
-    public function deactivate()
-    {
-        $cron_hooks = [
+    public function deactivate() {
+        $cron_hooks = array(
             'cashback_support_auto_delete_cron',
             'cashback_health_check_cron',
             'cashback_fraud_detection_cron',
             'cashback_fraud_cleanup_cron',
             'cashback_api_sync_statuses', // API Валидация: фоновая синхронизация
             'cashback_notification_process_queue', // Обработка очереди уведомлений
-        ];
+        );
 
         foreach ($cron_hooks as $hook) {
             $timestamp = wp_next_scheduled($hook);
@@ -335,8 +328,7 @@ class CashbackPlugin
     /**
      * Инициализация основного функционала плагина
      */
-    public function init()
-    {
+    public function init() {
         // Проверяем, что WooCommerce активирован
         if (class_exists('WooCommerce')) {
             $this->load_dependencies();
@@ -356,23 +348,22 @@ class CashbackPlugin
 
             // Предупреждение если ключ шифрования не настроен
             if (class_exists('Cashback_Encryption') && !Cashback_Encryption::is_configured()) {
-                add_action('admin_notices', array($this, 'encryption_key_missing_notice'));
+                add_action('admin_notices', array( $this, 'encryption_key_missing_notice' ));
             }
 
             // Предупреждение если триггеры не созданы
             if (get_option('cashback_triggers_active') === false) {
-                add_action('admin_notices', array($this, 'triggers_unavailable_notice'));
+                add_action('admin_notices', array( $this, 'triggers_unavailable_notice' ));
             }
         } else {
-            add_action('admin_notices', array($this, 'woocommerce_required_notice'));
+            add_action('admin_notices', array( $this, 'woocommerce_required_notice' ));
         }
     }
 
     /**
      * Загрузка зависимостей плагина
      */
-    public function load_dependencies()
-    {
+    public function load_dependencies() {
         // Подключаем ключ шифрования из wp-content/.cashback-encryption-key.php
         $this->load_encryption_key();
 
@@ -478,8 +469,7 @@ class CashbackPlugin
      * Запуск одноразовых миграций без реактивации плагина.
      * Каждая миграция защищена опцией-флагом (идемпотентно).
      */
-    private function maybe_run_migrations(): void
-    {
+    private function maybe_run_migrations(): void {
         if (!class_exists('Mariadb_Plugin')) {
             return;
         }
@@ -520,8 +510,7 @@ class CashbackPlugin
      *
      * @param string $filename Имя файла для подключения
      */
-    private function require_file($filename)
-    {
+    private function require_file( $filename ) {
         $filepath = plugin_dir_path(__FILE__) . $filename;
         if (file_exists($filepath)) {
             require_once $filepath;
@@ -533,8 +522,7 @@ class CashbackPlugin
     /**
      * Инициализация компонентов плагина
      */
-    private function initialize_components()
-    {
+    private function initialize_components() {
         // Бот-защита: инициализация guard (до других компонентов)
         if (class_exists('Cashback_Bot_Protection')) {
             Cashback_Bot_Protection::init();
@@ -649,16 +637,14 @@ class CashbackPlugin
     /**
      * Путь к файлу с ключом шифрования
      */
-    private function get_encryption_key_path(): string
-    {
+    private function get_encryption_key_path(): string {
         return WP_CONTENT_DIR . '/.cashback-encryption-key.php';
     }
 
     /**
      * Подключает файл с ключом шифрования если он существует
      */
-    private function load_encryption_key(): void
-    {
+    private function load_encryption_key(): void {
         if (defined('CB_ENCRYPTION_KEY')) {
             return;
         }
@@ -674,8 +660,7 @@ class CashbackPlugin
      *
      * @return bool true если ключ уже существует или был успешно создан
      */
-    private function maybe_generate_encryption_key(): bool
-    {
+    private function maybe_generate_encryption_key(): bool {
         // Ключ уже определён (из файла или wp-config.php) — ничего не делаем
         if (defined('CB_ENCRYPTION_KEY')) {
             return true;
@@ -688,7 +673,7 @@ class CashbackPlugin
         }
 
         $key_file = $this->get_encryption_key_path();
-        $key_dir = dirname($key_file);
+        $key_dir  = dirname($key_file);
 
         if (!is_writable($key_dir)) {
             error_log('Cashback Plugin: Directory not writable for encryption key: ' . $key_dir);
@@ -731,8 +716,7 @@ class CashbackPlugin
     /**
      * Уведомление об отсутствии ключа шифрования
      */
-    public function encryption_key_missing_notice()
-    {
+    public function encryption_key_missing_notice() {
         $key_file = $this->get_encryption_key_path();
         printf(
             '<div class="notice notice-error"><p><strong>%s:</strong> %s <code>%s</code></p></div>',
@@ -742,8 +726,7 @@ class CashbackPlugin
         );
     }
 
-    public function triggers_unavailable_notice()
-    {
+    public function triggers_unavailable_notice() {
         printf(
             '<div class="notice notice-warning"><p><strong>%s:</strong> %s</p></div>',
             esc_html__('Cashback Plugin', 'cashback-plugin'),
@@ -754,8 +737,7 @@ class CashbackPlugin
     /**
      * Уведомление о необходимости установки WooCommerce
      */
-    public function woocommerce_required_notice()
-    {
+    public function woocommerce_required_notice() {
         $message = sprintf(
             '<strong>%s</strong> %s',
             esc_html__('Cashback Plugin', 'cashback-plugin'),

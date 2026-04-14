@@ -18,22 +18,20 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base
-{
+class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
+
     /**
      * {@inheritdoc}
      */
-    public function get_slug(): string
-    {
+    public function get_slug(): string {
         return 'admitad';
     }
 
     /**
      * {@inheritdoc}
      */
-    public function get_aliases(): array
-    {
-        return ['adm'];
+    public function get_aliases(): array {
+        return array( 'adm' );
     }
 
     /**
@@ -45,8 +43,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base
      * Один токен с полным набором scope (например "statistics advcampaigns")
      * работает для всех endpoint'ов.
      */
-    public function get_token(array $credentials, array $network_config): ?string
-    {
+    public function get_token( array $credentials, array $network_config ): ?string {
         $client_id     = $credentials['client_id'] ?? '';
         $client_secret = $credentials['client_secret'] ?? '';
         $scope         = $credentials['scope'] ?? 'statistics advcampaigns';
@@ -66,20 +63,20 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base
         }
 
         // Проверяем runtime кеш
-        if (isset($this->token_cache[$cache_key])) {
-            return $this->token_cache[$cache_key];
+        if (isset($this->token_cache[ $cache_key ])) {
+            return $this->token_cache[ $cache_key ];
         }
 
         $token_url = $this->build_api_url($network_config, 'api_token_endpoint', 'https://api.admitad.com/token/');
 
-        $response = $this->http_post($token_url, [
+        $response = $this->http_post($token_url, array(
             'Authorization' => 'Basic ' . base64_encode($client_id . ':' . $client_secret),
             'Content-Type'  => 'application/x-www-form-urlencoded',
-        ], [
+        ), array(
             'grant_type' => 'client_credentials',
             'client_id'  => $client_id,
             'scope'      => $scope,
-        ]);
+        ));
 
         if (is_wp_error($response)) {
             $this->last_token_error = 'Admitad token ошибка сети: ' . $response->get_error_message();
@@ -100,12 +97,12 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base
             return null;
         }
 
-        $token    = $body['access_token'];
-        $expires  = (int) ($body['expires_in'] ?? 3600);
+        $token   = $body['access_token'];
+        $expires = (int) ( $body['expires_in'] ?? 3600 );
 
         // Кешируем с запасом 5 минут
         set_transient($cache_key, $token, max(60, $expires - 300));
-        $this->token_cache[$cache_key] = $token;
+        $this->token_cache[ $cache_key ] = $token;
 
         return $token;
     }
@@ -113,26 +110,24 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base
     /**
      * {@inheritdoc}
      */
-    public function invalidate_token(array $credentials): void
-    {
+    public function invalidate_token( array $credentials ): void {
         $client_id = $credentials['client_id'] ?? '';
         if ($client_id !== '') {
             $cache_key = 'cashback_admitad_token_' . md5($client_id);
             delete_transient($cache_key);
-            unset($this->token_cache[$cache_key]);
+            unset($this->token_cache[ $cache_key ]);
         }
     }
 
     /**
      * {@inheritdoc}
      */
-    public function build_auth_headers(array $credentials, array $network_config): ?array
-    {
+    public function build_auth_headers( array $credentials, array $network_config ): ?array {
         $token = $this->get_token($credentials, $network_config);
         if (!$token) {
             return null;
         }
-        return ['Authorization' => 'Bearer ' . $token];
+        return array( 'Authorization' => 'Bearer ' . $token );
     }
 
     /**
@@ -143,26 +138,25 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base
      * @param array $network_config Конфигурация сети
      * @return array ['success' => bool, 'actions' => [...], 'total' => int, 'error' => string|null]
      */
-    public function fetch_actions(array $credentials, array $params, array $network_config): array
-    {
+    public function fetch_actions( array $credentials, array $params, array $network_config ): array {
         $auth_headers = $this->build_auth_headers($credentials, $network_config);
         if (!$auth_headers) {
             return $this->fetch_error('Failed to authenticate');
         }
 
-        $query_params = [];
+        $query_params = array();
 
         // Поддержка всех subid-вариантов (subid, subid1-subid4)
         foreach ($params as $key => $value) {
             if ($value !== '' && $value !== null && preg_match('/^subid\d?$/', $key)) {
-                $query_params[$key] = $value;
+                $query_params[ $key ] = $value;
             }
         }
 
         // Даты
-        foreach (['date_start', 'date_end', 'status_updated_start', 'status_updated_end'] as $date_key) {
-            if (!empty($params[$date_key])) {
-                $query_params[$date_key] = $params[$date_key];
+        foreach (array( 'date_start', 'date_end', 'status_updated_start', 'status_updated_end' ) as $date_key) {
+            if (!empty($params[ $date_key ])) {
+                $query_params[ $date_key ] = $params[ $date_key ];
             }
         }
 
@@ -171,12 +165,12 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base
             $query_params['website'] = $params['website'];
         }
 
-        $query_params['limit']    = min((int) ($params['limit'] ?? 500), 500);
-        $query_params['offset']   = (int) ($params['offset'] ?? 0);
+        $query_params['limit']    = min((int) ( $params['limit'] ?? 500 ), 500);
+        $query_params['offset']   = (int) ( $params['offset'] ?? 0 );
         $query_params['order_by'] = $params['order_by'] ?? 'datetime';
 
         $actions_url = $this->build_api_url($network_config, 'api_actions_endpoint', 'https://api.admitad.com/statistics/actions/');
-        $url = $actions_url . '?' . http_build_query($query_params);
+        $url         = $actions_url . '?' . http_build_query($query_params);
 
         $response = $this->http_get($url, $auth_headers);
 
@@ -213,23 +207,22 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base
             return $this->fetch_error("HTTP {$code}: " . wp_json_encode($body));
         }
 
-        $results = $body['results'] ?? [];
-        $total   = (int) ($body['_meta']['count'] ?? count($results));
+        $results = $body['results'] ?? array();
+        $total   = (int) ( $body['_meta']['count'] ?? count($results) );
 
-        return [
+        return array(
             'success' => true,
             'actions' => $results,
             'total'   => $total,
             'error'   => null,
-        ];
+        );
     }
 
     /**
      * {@inheritdoc}
      */
-    public function fetch_all_actions(array $credentials, array $params, int $max_pages, array $network_config): array
-    {
-        $all_actions = [];
+    public function fetch_all_actions( array $credentials, array $params, int $max_pages, array $network_config ): array {
+        $all_actions = array();
         $offset      = 0;
         $limit       = 500;
         $total       = 0;
@@ -242,19 +235,19 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base
             $result = $this->fetch_actions($credentials, $params, $network_config);
 
             if (!$result['success']) {
-                return [
+                return array(
                     'success' => false,
                     'actions' => $all_actions,
                     'total'   => $total,
                     'error'   => $result['error'],
-                ];
+                );
             }
 
-            $actions      = $result['actions'];
-            $total        = $result['total'];
-            $all_actions  = array_merge($all_actions, $actions);
-            $offset      += $limit;
-            $page++;
+            $actions     = $result['actions'];
+            $total       = $result['total'];
+            $all_actions = array_merge($all_actions, $actions);
+            $offset     += $limit;
+            ++$page;
 
             // Защита от rate limit — пауза между запросами (100ms)
             if (count($actions) === $limit && $page < $max_pages) {
@@ -262,12 +255,12 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base
             }
         } while (count($actions) === $limit && $page < $max_pages);
 
-        return [
+        return array(
             'success' => true,
             'actions' => $all_actions,
             'total'   => $total,
             'error'   => null,
-        ];
+        );
     }
 
     /**
@@ -277,35 +270,41 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base
      * Требует scope 'advcampaigns' в OAuth2 credentials (через пробел с другими scope).
      * Кампания активна при status=active.
      */
-    public function fetch_campaigns(array $credentials, array $network_config): array
-    {
+    public function fetch_campaigns( array $credentials, array $network_config ): array {
         $auth_headers = $this->build_auth_headers($credentials, $network_config);
         if (!$auth_headers) {
-            return ['success' => false, 'campaigns' => [], 'error' => 'Не удалось получить токен Admitad'];
+            return array(
+				'success'   => false,
+				'campaigns' => array(),
+				'error'     => 'Не удалось получить токен Admitad',
+			);
         }
 
         $base_url = rtrim($network_config['api_base_url'] ?? 'https://api.admitad.com', '/');
         $url      = $base_url . '/advcampaigns/';
 
-        $query = ['limit' => 500, 'offset' => 0];
+        $query = array(
+			'limit'  => 500,
+			'offset' => 0,
+		);
 
-        $all_campaigns = [];
+        $all_campaigns = array();
         $page          = 0;
         $max_pages     = 20;
         $retried       = false;
 
         do {
             $query['offset'] = $page * 500;
-            $full_url = $url . '?' . http_build_query($query);
+            $full_url        = $url . '?' . http_build_query($query);
 
             $response = $this->http_get($full_url, $auth_headers);
 
             if (is_wp_error($response)) {
-                return [
+                return array(
                     'success'   => false,
                     'campaigns' => $all_campaigns,
                     'error'     => 'HTTP error: ' . $response->get_error_message(),
-                ];
+                );
             }
 
             $code = wp_remote_retrieve_response_code($response);
@@ -317,7 +316,11 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base
 
                 $auth_headers = $this->build_auth_headers($credentials, $network_config);
                 if (!$auth_headers) {
-                    return ['success' => false, 'campaigns' => $all_campaigns, 'error' => 'Token refresh failed'];
+                    return array(
+						'success'   => false,
+						'campaigns' => $all_campaigns,
+						'error'     => 'Token refresh failed',
+					);
                 }
                 continue;
             }
@@ -332,7 +335,11 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base
 
                     $auth_headers = $this->build_auth_headers($credentials, $network_config);
                     if (!$auth_headers) {
-                        return ['success' => false, 'campaigns' => $all_campaigns, 'error' => 'Token refresh failed after 403 insufficient_scope'];
+                        return array(
+							'success'   => false,
+							'campaigns' => $all_campaigns,
+							'error'     => 'Token refresh failed after 403 insufficient_scope',
+						);
                     }
                     continue;
                 }
@@ -340,29 +347,29 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base
 
             if ($code !== 200) {
                 $body = json_decode(wp_remote_retrieve_body($response), true);
-                return [
+                return array(
                     'success'   => false,
                     'campaigns' => $all_campaigns,
                     'error'     => "Admitad advcampaigns HTTP {$code}: " . wp_json_encode($body),
-                ];
+                );
             }
 
             $body    = json_decode(wp_remote_retrieve_body($response), true);
-            $results = $body['results'] ?? [];
+            $results = $body['results'] ?? array();
 
             foreach ($results as $campaign) {
-                $status = strtolower((string) ($campaign['status'] ?? ''));
+                $status = strtolower((string) ( $campaign['status'] ?? '' ));
 
-                $all_campaigns[] = [
-                    'id'                => (string) ($campaign['id'] ?? ''),
-                    'name'              => (string) ($campaign['name'] ?? ''),
-                    'is_active'         => ($status === 'active'),
+                $all_campaigns[] = array(
+                    'id'                => (string) ( $campaign['id'] ?? '' ),
+                    'name'              => (string) ( $campaign['name'] ?? '' ),
+                    'is_active'         => ( $status === 'active' ),
                     'status'            => $status,
                     'connection_status' => '',
-                ];
+                );
             }
 
-            $page++;
+            ++$page;
             if (count($results) < 500 || $page >= $max_pages) {
                 break;
             }
@@ -371,19 +378,18 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base
             usleep(100000);
         } while (true);
 
-        return [
+        return array(
             'success'   => true,
             'campaigns' => $all_campaigns,
             'error'     => null,
-        ];
+        );
     }
 
     /**
      * {@inheritdoc}
      */
-    public function get_default_status_map(): array
-    {
-        return [
+    public function get_default_status_map(): array {
+        return array(
             'pending'              => 'waiting',
             'approved'             => 'completed',
             'approved_but_stalled' => 'completed',
@@ -391,6 +397,6 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base
             'rejected'             => 'declined',
             'open'                 => 'waiting',
             'hold'                 => 'waiting',
-        ];
+        );
     }
 }

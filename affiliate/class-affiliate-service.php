@@ -11,8 +11,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class Cashback_Affiliate_Service
-{
+class Cashback_Affiliate_Service {
+
     /** @var self|null */
     private static ?self $instance = null;
 
@@ -20,30 +20,28 @@ class Cashback_Affiliate_Service
     const COOKIE_NAME     = 'cashback_ref';
     const COOKIE_SIG_NAME = 'cashback_ref_sig';
 
-    public static function get_instance(): self
-    {
+    public static function get_instance(): self {
         if (null === self::$instance) {
             self::$instance = new self();
         }
         return self::$instance;
     }
 
-    private function __construct()
-    {
+    private function __construct() {
         if (!Cashback_Affiliate_DB::is_module_enabled()) {
             return;
         }
 
         // Обработка реферальной cookie при визите
-        add_action('template_redirect', [$this, 'handle_referral_visit'], 5);
+        add_action('template_redirect', array( $this, 'handle_referral_visit' ), 5);
 
         // Привязка реферала при регистрации (после Mariadb_Plugin::user_register, приоритет 10)
-        add_action('user_register', [$this, 'bind_referral_on_registration'], 20);
+        add_action('user_register', array( $this, 'bind_referral_on_registration' ), 20);
 
         // WooCommerce может создавать пользователей через wc_create_new_customer()
         // который вызывает wp_insert_user() → user_register. Но на случай если
         // плагины/темы перехватывают процесс, дублируем через woocommerce_created_customer.
-        add_action('woocommerce_created_customer', [$this, 'bind_referral_on_registration'], 20);
+        add_action('woocommerce_created_customer', array( $this, 'bind_referral_on_registration' ), 20);
     }
 
     /* ═══════════════════════════════════════
@@ -54,8 +52,7 @@ class Cashback_Affiliate_Service
      * Обработка визита с ?ref={partner_token}.
      * Устанавливает HMAC-подписанную cookie, логирует клик.
      */
-    public function handle_referral_visit(): void
-    {
+    public function handle_referral_visit(): void {
         if (!isset($_GET['ref'])) {
             return;
         }
@@ -89,7 +86,7 @@ class Cashback_Affiliate_Service
         $click_id = cashback_generate_uuid7(false);
         $ip       = class_exists('Cashback_Encryption')
             ? Cashback_Encryption::get_client_ip()
-            : ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+            : ( $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0' );
 
         // Логирование клика
         $this->log_click($click_id, $referrer_id, $ip);
@@ -110,43 +107,42 @@ class Cashback_Affiliate_Service
     /**
      * Установка HMAC-подписанной cookie.
      */
-    private function set_referral_cookie(int $referrer_id, string $click_id): void
-    {
-        $payload = wp_json_encode([
+    private function set_referral_cookie( int $referrer_id, string $click_id ): void {
+        $payload = wp_json_encode(array(
             'r' => $referrer_id,
             'c' => $click_id,
             't' => time(),
-        ]);
+        ));
 
         $signature = $this->compute_cookie_hmac($payload);
         $ttl       = Cashback_Affiliate_DB::get_cookie_ttl_days();
-        $expire    = time() + ($ttl * DAY_IN_SECONDS);
+        $expire    = time() + ( $ttl * DAY_IN_SECONDS );
         $secure    = is_ssl();
         $path      = COOKIEPATH ?: '/';
         $domain    = COOKIE_DOMAIN ?: '';
 
         // Безопасные параметры: HttpOnly, SameSite=Lax
-        setcookie(self::COOKIE_NAME, $payload, [
+        setcookie(self::COOKIE_NAME, $payload, array(
             'expires'  => $expire,
             'path'     => $path,
             'domain'   => $domain,
             'secure'   => $secure,
-            'httponly'  => true,
+            'httponly' => true,
             'samesite' => 'Lax',
-        ]);
+        ));
 
-        setcookie(self::COOKIE_SIG_NAME, $signature, [
+        setcookie(self::COOKIE_SIG_NAME, $signature, array(
             'expires'  => $expire,
             'path'     => $path,
             'domain'   => $domain,
             'secure'   => $secure,
-            'httponly'  => true,
+            'httponly' => true,
             'samesite' => 'Lax',
-        ]);
+        ));
 
         // Делаем cookie доступной в текущем запросе (setcookie работает только со следующего)
-        $_COOKIE[self::COOKIE_NAME]     = $payload;
-        $_COOKIE[self::COOKIE_SIG_NAME] = $signature;
+        $_COOKIE[ self::COOKIE_NAME ]     = $payload;
+        $_COOKIE[ self::COOKIE_SIG_NAME ] = $signature;
     }
 
     /**
@@ -154,14 +150,13 @@ class Cashback_Affiliate_Service
      *
      * @return array{referrer_id: int, click_id: string, timestamp: int}|null
      */
-    public static function read_referral_cookie(): ?array
-    {
-        if (empty($_COOKIE[self::COOKIE_NAME]) || empty($_COOKIE[self::COOKIE_SIG_NAME])) {
+    public static function read_referral_cookie(): ?array {
+        if (empty($_COOKIE[ self::COOKIE_NAME ]) || empty($_COOKIE[ self::COOKIE_SIG_NAME ])) {
             return null;
         }
 
-        $payload   = wp_unslash($_COOKIE[self::COOKIE_NAME]);
-        $signature = wp_unslash($_COOKIE[self::COOKIE_SIG_NAME]);
+        $payload   = wp_unslash($_COOKIE[ self::COOKIE_NAME ]);
+        $signature = wp_unslash($_COOKIE[ self::COOKIE_SIG_NAME ]);
 
         // Верификация HMAC
         $expected = self::compute_cookie_hmac_static($payload);
@@ -189,38 +184,37 @@ class Cashback_Affiliate_Service
             return null;
         }
 
-        return [
+        return array(
             'referrer_id' => $referrer_id,
             'click_id'    => $click_id,
             'timestamp'   => $timestamp,
-        ];
+        );
     }
 
     /**
      * Удаление реферальных cookie.
      */
-    public static function clear_referral_cookie(): void
-    {
+    public static function clear_referral_cookie(): void {
         $path   = COOKIEPATH ?: '/';
         $domain = COOKIE_DOMAIN ?: '';
 
-        setcookie(self::COOKIE_NAME, '', [
+        setcookie(self::COOKIE_NAME, '', array(
             'expires'  => time() - YEAR_IN_SECONDS,
             'path'     => $path,
             'domain'   => $domain,
             'secure'   => is_ssl(),
-            'httponly'  => true,
+            'httponly' => true,
             'samesite' => 'Lax',
-        ]);
+        ));
 
-        setcookie(self::COOKIE_SIG_NAME, '', [
+        setcookie(self::COOKIE_SIG_NAME, '', array(
             'expires'  => time() - YEAR_IN_SECONDS,
             'path'     => $path,
             'domain'   => $domain,
             'secure'   => is_ssl(),
-            'httponly'  => true,
+            'httponly' => true,
             'samesite' => 'Lax',
-        ]);
+        ));
     }
 
     /* ═══════════════════════════════════════
@@ -231,15 +225,14 @@ class Cashback_Affiliate_Service
      * Сохранение реферальных данных в transient (fallback при отсутствии cookie).
      * Ключ: IP адрес посетителя. TTL синхронизирован с cookie_ttl из настроек.
      */
-    private function store_referral_transient(int $referrer_id, string $click_id, string $ip): void
-    {
+    private function store_referral_transient( int $referrer_id, string $click_id, string $ip ): void {
         $key = self::get_referral_transient_key($ip);
         $ttl = Cashback_Affiliate_DB::get_cookie_ttl_days();
-        set_transient($key, [
+        set_transient($key, array(
             'referrer_id' => $referrer_id,
             'click_id'    => $click_id,
             'timestamp'   => time(),
-        ], $ttl * DAY_IN_SECONDS);
+        ), $ttl * DAY_IN_SECONDS);
     }
 
     /**
@@ -247,8 +240,7 @@ class Cashback_Affiliate_Service
      *
      * @return array{referrer_id: int, click_id: string, timestamp: int}|null
      */
-    private static function read_referral_transient(string $ip): ?array
-    {
+    private static function read_referral_transient( string $ip ): ?array {
         $key  = self::get_referral_transient_key($ip);
         $data = get_transient($key);
 
@@ -263,39 +255,35 @@ class Cashback_Affiliate_Service
             return null;
         }
 
-        return [
+        return array(
             'referrer_id' => (int) $data['referrer_id'],
             'click_id'    => sanitize_text_field($data['click_id']),
             'timestamp'   => (int) $data['timestamp'],
-        ];
+        );
     }
 
     /**
      * Удаление реферального transient.
      */
-    private static function clear_referral_transient(string $ip): void
-    {
+    private static function clear_referral_transient( string $ip ): void {
         delete_transient(self::get_referral_transient_key($ip));
     }
 
     /**
      * Ключ transient: sha256 от IP (безопасный формат ключа).
      */
-    private static function get_referral_transient_key(string $ip): string
-    {
+    private static function get_referral_transient_key( string $ip ): string {
         return 'cb_aff_ref_' . substr(hash('sha256', $ip), 0, 16);
     }
 
     /**
      * HMAC-SHA256 подпись cookie payload.
      */
-    private function compute_cookie_hmac(string $payload): string
-    {
+    private function compute_cookie_hmac( string $payload ): string {
         return self::compute_cookie_hmac_static($payload);
     }
 
-    private static function compute_cookie_hmac_static(string $payload): string
-    {
+    private static function compute_cookie_hmac_static( string $payload ): string {
         $key = defined('CB_ENCRYPTION_KEY') ? CB_ENCRYPTION_KEY : 'fallback-not-secure';
         return hash_hmac('sha256', $payload, $key);
     }
@@ -307,8 +295,7 @@ class Cashback_Affiliate_Service
     /**
      * Запись клика в cashback_affiliate_clicks.
      */
-    private function log_click(string $click_id, int $referrer_id, string $ip): void
-    {
+    private function log_click( string $click_id, int $referrer_id, string $ip ): void {
         global $wpdb;
 
         $user_agent  = isset($_SERVER['HTTP_USER_AGENT'])
@@ -323,15 +310,15 @@ class Cashback_Affiliate_Service
 
         $wpdb->insert(
             $wpdb->prefix . 'cashback_affiliate_clicks',
-            [
+            array(
                 'click_id'    => $click_id,
                 'referrer_id' => $referrer_id,
                 'ip_address'  => $ip,
                 'user_agent'  => $user_agent,
                 'referer_url' => $referer_url,
                 'landing_url' => $landing_url,
-            ],
-            ['%s', '%d', '%s', '%s', '%s', '%s']
+            ),
+            array( '%s', '%d', '%s', '%s', '%s', '%s' )
         );
     }
 
@@ -343,15 +330,14 @@ class Cashback_Affiliate_Service
      * Привязка реферала при регистрации пользователя.
      * Вызывается из user_register hook (priority 20).
      */
-    public function bind_referral_on_registration(int $user_id): void
-    {
+    public function bind_referral_on_registration( int $user_id ): void {
         if (!Cashback_Affiliate_DB::is_module_enabled()) {
             return;
         }
 
         $ip = class_exists('Cashback_Encryption')
             ? Cashback_Encryption::get_client_ip()
-            : ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+            : ( $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0' );
 
         // Приоритет: cookie → серверный transient (fallback по IP)
         $cookie = self::read_referral_cookie();
@@ -413,13 +399,13 @@ class Cashback_Affiliate_Service
             // Обновляем клик — записываем ID зарегистрированного пользователя
             $wpdb->update(
                 $wpdb->prefix . 'cashback_affiliate_clicks',
-                [
+                array(
                     'registered_user_id' => $user_id,
                     'registered_at'      => current_time('mysql'),
-                ],
-                ['click_id' => $click_id],
-                ['%d', '%s'],
-                ['%s']
+                ),
+                array( 'click_id' => $click_id ),
+                array( '%d', '%s' ),
+                array( '%s' )
             );
 
             // Убеждаемся что у реферера тоже есть профиль
@@ -435,11 +421,11 @@ class Cashback_Affiliate_Service
                     0,
                     'user',
                     $user_id,
-                    [
+                    array(
                         'referrer_id' => $referrer_id,
                         'click_id'    => $click_id,
                         'source'      => $source,
-                    ]
+                    )
                 );
             }
         }
@@ -459,12 +445,15 @@ class Cashback_Affiliate_Service
      * @param array  $candidates [{id, user_id, cashback}, ...]
      * @return array{inserted: int, amount: string, errors: string[]}
      */
-    public static function process_affiliate_commissions(array $candidates): array
-    {
+    public static function process_affiliate_commissions( array $candidates ): array {
         global $wpdb;
         $prefix = $wpdb->prefix;
 
-        $result = ['inserted' => 0, 'amount' => '0.00', 'errors' => []];
+        $result = array(
+			'inserted' => 0,
+			'amount'   => '0.00',
+			'errors'   => array(),
+		);
 
         if (empty($candidates)) {
             return $result;
@@ -502,34 +491,34 @@ class Cashback_Affiliate_Service
         }
 
         // Карта: referred_user_id → referrer_id
-        $referral_map = [];
+        $referral_map = array();
         foreach ($referrals as $row) {
-            $referral_map[(int) $row['user_id']] = (int) $row['referred_by_user_id'];
+            $referral_map[ (int) $row['user_id'] ] = (int) $row['referred_by_user_id'];
         }
 
         // Кешируем ставки рефереров
-        $referrer_ids   = array_unique(array_values($referral_map));
-        $rates_cache    = self::batch_get_rates($referrer_ids);
-        $global_rate    = Cashback_Affiliate_DB::get_global_rate();
+        $referrer_ids = array_unique(array_values($referral_map));
+        $rates_cache  = self::batch_get_rates($referrer_ids);
+        $global_rate  = Cashback_Affiliate_DB::get_global_rate();
 
         // Формируем accruals и ledger entries
-        $accrual_values = [];
-        $accrual_args   = [];
-        $ledger_values  = [];
-        $ledger_args    = [];
-        $balance_deltas = []; // referrer_id → total commission
+        $accrual_values = array();
+        $accrual_args   = array();
+        $ledger_values  = array();
+        $ledger_args    = array();
+        $balance_deltas = array(); // referrer_id → total commission
 
         foreach ($candidates as $tx) {
             $user_id  = (int) $tx['user_id'];
             $tx_id    = (int) $tx['id'];
             $cashback = (float) $tx['cashback'];
 
-            if (!isset($referral_map[$user_id]) || $cashback <= 0) {
+            if (!isset($referral_map[ $user_id ]) || $cashback <= 0) {
                 continue;
             }
 
-            $referrer_id     = $referral_map[$user_id];
-            $rate            = $rates_cache[$referrer_id] ?? $global_rate;
+            $referrer_id     = $referral_map[ $user_id ];
+            $rate            = $rates_cache[ $referrer_id ] ?? $global_rate;
             $commission      = round($cashback * (float) $rate / 100, 2);
             $idempotency_key = 'aff_accrual_' . $tx_id;
 
@@ -563,10 +552,10 @@ class Cashback_Affiliate_Service
             $ledger_args[]   = $idempotency_key;
 
             // Balance delta
-            if (!isset($balance_deltas[$referrer_id])) {
-                $balance_deltas[$referrer_id] = 0.0;
+            if (!isset($balance_deltas[ $referrer_id ])) {
+                $balance_deltas[ $referrer_id ] = 0.0;
             }
-            $balance_deltas[$referrer_id] += $commission;
+            $balance_deltas[ $referrer_id ] += $commission;
         }
 
         if (empty($accrual_values)) {
@@ -575,14 +564,14 @@ class Cashback_Affiliate_Service
 
         try {
             // Сначала пробуем UPDATE pending → available (accruals могли быть созданы sync_pending_accruals)
-            $updated_count = 0;
-            $insert_accrual_values = [];
-            $insert_accrual_args   = [];
+            $updated_count         = 0;
+            $insert_accrual_values = array();
+            $insert_accrual_args   = array();
 
             foreach ($accrual_values as $idx => $value_tpl) {
                 // Извлекаем аргументы для этой записи (9 полей на запись)
                 $offset = $idx * 9;
-                $tx_id  = $accrual_args[$offset + 3]; // transaction_id — 4й аргумент
+                $tx_id  = $accrual_args[ $offset + 3 ]; // transaction_id — 4й аргумент
 
                 // Пробуем обновить существующую pending-запись
                 $upd = $wpdb->query($wpdb->prepare(
@@ -593,19 +582,19 @@ class Cashback_Affiliate_Service
                          commission_amount = %s
                      WHERE transaction_id = %d AND status IN ('pending','declined')
                      LIMIT 1",
-                    $accrual_args[$offset + 4], // cashback_amount
-                    $accrual_args[$offset + 5], // commission_rate
-                    $accrual_args[$offset + 6], // commission_amount
+                    $accrual_args[ $offset + 4 ], // cashback_amount
+                    $accrual_args[ $offset + 5 ], // commission_rate
+                    $accrual_args[ $offset + 6 ], // commission_amount
                     $tx_id
                 ));
 
                 if ($upd > 0) {
-                    $updated_count++;
+                    ++$updated_count;
                 } else {
                     // Не было pending-записи — собираем для INSERT
                     $insert_accrual_values[] = $value_tpl;
                     for ($i = 0; $i < 9; $i++) {
-                        $insert_accrual_args[] = $accrual_args[$offset + $i];
+                        $insert_accrual_args[] = $accrual_args[ $offset + $i ];
                     }
                 }
             }
@@ -668,26 +657,26 @@ class Cashback_Affiliate_Service
                 $total_commission += $delta;
             }
 
-            $result['inserted'] = count($accrual_values);
+            $result['inserted']             = count($accrual_values);
             $result['updated_from_pending'] = $updated_count;
-            $result['amount']   = number_format($total_commission, 2, '.', '');
+            $result['amount']               = number_format($total_commission, 2, '.', '');
 
             // Уведомление рефереров о начислении партнёрского вознаграждения
             if (!empty($balance_deltas)) {
-                $accrual_notifications = [];
+                $accrual_notifications = array();
                 foreach ($balance_deltas as $ref_id => $delta) {
-                    $accrual_notifications[$ref_id] = [
+                    $accrual_notifications[ $ref_id ] = array(
                         'total' => $delta,
                         'count' => 0,
-                    ];
+                    );
                 }
                 // Подсчитываем количество начислений на каждого реферера
                 foreach ($candidates as $tx) {
                     $uid = (int) $tx['user_id'];
-                    if (isset($referral_map[$uid])) {
-                        $ref_id = $referral_map[$uid];
-                        if (isset($accrual_notifications[$ref_id])) {
-                            $accrual_notifications[$ref_id]['count']++;
+                    if (isset($referral_map[ $uid ])) {
+                        $ref_id = $referral_map[ $uid ];
+                        if (isset($accrual_notifications[ $ref_id ])) {
+                            ++$accrual_notifications[ $ref_id ]['count'];
                         }
                     }
                 }
@@ -707,13 +696,12 @@ class Cashback_Affiliate_Service
      * @param int[] $referrer_ids
      * @return array<int, string> referrer_id → rate
      */
-    private static function batch_get_rates(array $referrer_ids): array
-    {
+    private static function batch_get_rates( array $referrer_ids ): array {
         global $wpdb;
         $prefix = $wpdb->prefix;
 
         if (empty($referrer_ids)) {
-            return [];
+            return array();
         }
 
         $placeholders = implode(',', array_fill(0, count($referrer_ids), '%d'));
@@ -725,9 +713,9 @@ class Cashback_Affiliate_Service
             ...$referrer_ids
         ), ARRAY_A);
 
-        $rates = [];
+        $rates = array();
         foreach ($rows as $row) {
-            $rates[(int) $row['user_id']] = $row['affiliate_rate'];
+            $rates[ (int) $row['user_id'] ] = $row['affiliate_rate'];
         }
 
         return $rates;
@@ -744,12 +732,15 @@ class Cashback_Affiliate_Service
      *
      * @return array{created: int, updated: int, errors: string[]}
      */
-    public static function sync_pending_accruals(): array
-    {
+    public static function sync_pending_accruals(): array {
         global $wpdb;
         $prefix = $wpdb->prefix;
 
-        $result = ['created' => 0, 'updated' => 0, 'errors' => []];
+        $result = array(
+			'created' => 0,
+			'updated' => 0,
+			'errors'  => array(),
+		);
 
         if (!Cashback_Affiliate_DB::is_module_enabled()) {
             return $result;
@@ -792,7 +783,7 @@ class Cashback_Affiliate_Service
                 continue;
             }
 
-            $status = $row['order_status'] === 'declined' ? 'declined' : 'pending';
+            $status          = $row['order_status'] === 'declined' ? 'declined' : 'pending';
             $reference_id    = Cashback_Affiliate_DB::generate_affiliate_reference_id();
             $idempotency_key = 'aff_accrual_' . $row['tx_id'];
 
@@ -813,13 +804,13 @@ class Cashback_Affiliate_Service
             ));
 
             if ($inserted) {
-                $result['created']++;
+                ++$result['created'];
             }
         }
 
         // 2. Синхронизация статусов: pending ↔ declined
         // pending → declined (транзакция была отклонена)
-        $updated_declined = $wpdb->query(
+        $updated_declined   = $wpdb->query(
             "UPDATE `{$prefix}cashback_affiliate_accruals` aa
              INNER JOIN `{$prefix}cashback_transactions` t ON t.id = aa.transaction_id
              SET aa.status = 'declined'
@@ -828,7 +819,7 @@ class Cashback_Affiliate_Service
         $result['updated'] += (int) $updated_declined;
 
         // declined → pending (транзакция вернулась в активный статус после апелляции)
-        $updated_pending = $wpdb->query(
+        $updated_pending    = $wpdb->query(
             "UPDATE `{$prefix}cashback_affiliate_accruals` aa
              INNER JOIN `{$prefix}cashback_transactions` t ON t.id = aa.transaction_id
              SET aa.status = 'pending'
@@ -861,8 +852,7 @@ class Cashback_Affiliate_Service
      * @param int $admin_id Администратор, выполняющий действие
      * @return bool
      */
-    public static function freeze_affiliate_balance(int $user_id, int $admin_id): bool
-    {
+    public static function freeze_affiliate_balance( int $user_id, int $admin_id ): bool {
         global $wpdb;
         $prefix = $wpdb->prefix;
 
@@ -964,7 +954,7 @@ class Cashback_Affiliate_Service
                     $admin_id,
                     'user',
                     $user_id,
-                    ['frozen_amount' => number_format($freeze_amount, 2, '.', '')]
+                    array( 'frozen_amount' => number_format($freeze_amount, 2, '.', '') )
                 );
             }
 
@@ -983,8 +973,7 @@ class Cashback_Affiliate_Service
      * @param int $admin_id Администратор
      * @return bool
      */
-    public static function unfreeze_affiliate_balance(int $user_id, int $admin_id): bool
-    {
+    public static function unfreeze_affiliate_balance( int $user_id, int $admin_id ): bool {
         global $wpdb;
         $prefix = $wpdb->prefix;
 
@@ -1026,7 +1015,7 @@ class Cashback_Affiliate_Service
                 ), ARRAY_A);
 
                 // Размораживаем не больше чем есть в frozen
-                $unfreeze_amount = min($frozen_amount, (float) ($balance['frozen_balance'] ?? 0));
+                $unfreeze_amount = min($frozen_amount, (float) ( $balance['frozen_balance'] ?? 0 ));
 
                 if ($unfreeze_amount > 0) {
                     $idemp_key = 'aff_unfreeze_' . $user_id . '_' . time();
@@ -1084,7 +1073,7 @@ class Cashback_Affiliate_Service
                     $admin_id,
                     'user',
                     $user_id,
-                    ['unfrozen_amount' => number_format($frozen_amount, 2, '.', '')]
+                    array( 'unfrozen_amount' => number_format($frozen_amount, 2, '.', '') )
                 );
             }
 
@@ -1100,8 +1089,7 @@ class Cashback_Affiliate_Service
      * Повторная заморозка affiliate-части после разбана, если affiliate_status=disabled.
      * Вызывается из users-management.php handle_user_unban().
      */
-    public static function re_freeze_after_unban(int $user_id): void
-    {
+    public static function re_freeze_after_unban( int $user_id ): void {
         global $wpdb;
         $prefix = $wpdb->prefix;
 
@@ -1129,8 +1117,8 @@ class Cashback_Affiliate_Service
             $user_id
         ), ARRAY_A);
 
-        $available     = (float) ($balance['available_balance'] ?? 0);
-        $re_freeze     = min($frozen_amount, $available);
+        $available = (float) ( $balance['available_balance'] ?? 0 );
+        $re_freeze = min($frozen_amount, $available);
 
         if ($re_freeze > 0) {
             $idemp_key = 'aff_refreeze_' . $user_id . '_' . time();
@@ -1166,8 +1154,7 @@ class Cashback_Affiliate_Service
     /**
      * Эффективная ставка реферера (индивидуальная или глобальная).
      */
-    public static function get_effective_rate(int $referrer_id): string
-    {
+    public static function get_effective_rate( int $referrer_id ): string {
         global $wpdb;
 
         $rate = $wpdb->get_var($wpdb->prepare(
@@ -1187,8 +1174,7 @@ class Cashback_Affiliate_Service
     /**
      * Реферальная ссылка пользователя.
      */
-    public static function get_referral_link(int $user_id): string
-    {
+    public static function get_referral_link( int $user_id ): string {
         $token = Mariadb_Plugin::get_partner_token($user_id);
 
         // Fallback на user_id только если профиль не существует (не должно быть в норме)
@@ -1202,8 +1188,7 @@ class Cashback_Affiliate_Service
      *
      * @return array{total_referrals: int, total_earned: string, total_available: string, total_frozen: string, total_pending: string, total_declined: string}
      */
-    public static function get_referrer_stats(int $user_id): array
-    {
+    public static function get_referrer_stats( int $user_id ): array {
         global $wpdb;
         $prefix = $wpdb->prefix;
 
@@ -1249,13 +1234,13 @@ class Cashback_Affiliate_Service
             $user_id
         )) ?: '0.00';
 
-        return [
+        return array(
             'total_referrals' => $total_referrals,
             'total_earned'    => $total_earned,
             'total_available' => $total_available,
             'total_frozen'    => $total_frozen,
             'total_pending'   => $total_pending,
             'total_declined'  => $total_declined,
-        ];
+        );
     }
 }

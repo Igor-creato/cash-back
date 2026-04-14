@@ -18,11 +18,11 @@ if (!defined('ABSPATH')) {
  * Formula: score = (time * 0.25) + (merchant * 0.35) + (user * 0.20) + (consistency * 0.20)
  * Normalized to 0–100.
  */
-class Cashback_Claims_Scoring
-{
-    private const WEIGHT_TIME = 0.25;
-    private const WEIGHT_MERCHANT = 0.35;
-    private const WEIGHT_USER = 0.20;
+class Cashback_Claims_Scoring {
+
+    private const WEIGHT_TIME        = 0.25;
+    private const WEIGHT_MERCHANT    = 0.35;
+    private const WEIGHT_USER        = 0.20;
     private const WEIGHT_CONSISTENCY = 0.20;
 
     /**
@@ -31,36 +31,35 @@ class Cashback_Claims_Scoring
      * @param array $claim_data Claim data with click_id, order_date, order_value, etc.
      * @return array{score: float, label: string, breakdown: array}
      */
-    public static function calculate(array $claim_data): array
-    {
-        $user_id = (int) ($claim_data['user_id'] ?? 0);
-        $click_id = $claim_data['click_id'] ?? '';
-        $order_date = $claim_data['order_date'] ?? '';
-        $order_value = (float) ($claim_data['order_value'] ?? 0);
-        $merchant_id = (int) ($claim_data['merchant_id'] ?? 0);
+    public static function calculate( array $claim_data ): array {
+        $user_id     = (int) ( $claim_data['user_id'] ?? 0 );
+        $click_id    = $claim_data['click_id'] ?? '';
+        $order_date  = $claim_data['order_date'] ?? '';
+        $order_value = (float) ( $claim_data['order_value'] ?? 0 );
+        $merchant_id = (int) ( $claim_data['merchant_id'] ?? 0 );
 
-        $time_score = self::score_time_factor($click_id, $order_date);
-        $merchant_score = self::score_merchant_factor($merchant_id);
-        $user_score = self::score_user_factor($user_id);
+        $time_score        = self::score_time_factor($click_id, $order_date);
+        $merchant_score    = self::score_merchant_factor($merchant_id);
+        $user_score        = self::score_user_factor($user_id);
         $consistency_score = self::score_consistency_factor($claim_data);
 
-        $raw = ($time_score * self::WEIGHT_TIME)
-             + ($merchant_score * self::WEIGHT_MERCHANT)
-             + ($user_score * self::WEIGHT_USER)
-             + ($consistency_score * self::WEIGHT_CONSISTENCY);
+        $raw = ( $time_score * self::WEIGHT_TIME )
+            + ( $merchant_score * self::WEIGHT_MERCHANT )
+            + ( $user_score * self::WEIGHT_USER )
+            + ( $consistency_score * self::WEIGHT_CONSISTENCY );
 
         $score = round(max(0, min(100, $raw * 100)), 2);
 
-        return [
-            'score' => $score,
-            'label' => self::get_label($score),
-            'breakdown' => [
-                'time'         => round($time_score * 100, 2),
-                'merchant'     => round($merchant_score * 100, 2),
-                'user'         => round($user_score * 100, 2),
-                'consistency'  => round($consistency_score * 100, 2),
-            ],
-        ];
+        return array(
+            'score'     => $score,
+            'label'     => self::get_label($score),
+            'breakdown' => array(
+                'time'        => round($time_score * 100, 2),
+                'merchant'    => round($merchant_score * 100, 2),
+                'user'        => round($user_score * 100, 2),
+                'consistency' => round($consistency_score * 100, 2),
+            ),
+        );
     }
 
     /**
@@ -71,8 +70,7 @@ class Cashback_Claims_Scoring
      * @param string $order_date
      * @return float 0–1
      */
-    private static function score_time_factor(string $click_id, string $order_date): float
-    {
+    private static function score_time_factor( string $click_id, string $order_date ): float {
         global $wpdb;
 
         $click = $wpdb->get_row($wpdb->prepare(
@@ -95,7 +93,7 @@ class Cashback_Claims_Scoring
             return 0.0;
         }
 
-        $diff_hours = ($order_time - $click_time) / 3600;
+        $diff_hours = ( $order_time - $click_time ) / 3600;
 
         if ($diff_hours <= 1) {
             return 1.0;
@@ -126,8 +124,7 @@ class Cashback_Claims_Scoring
      * @param int $merchant_id
      * @return float 0–1
      */
-    private static function score_merchant_factor(int $merchant_id): float
-    {
+    private static function score_merchant_factor( int $merchant_id ): float {
         global $wpdb;
 
         if ($merchant_id <= 0) {
@@ -158,8 +155,7 @@ class Cashback_Claims_Scoring
      * @param int $user_id
      * @return float 0–1
      */
-    private static function score_user_factor(int $user_id): float
-    {
+    private static function score_user_factor( int $user_id ): float {
         global $wpdb;
 
         if ($user_id <= 0) {
@@ -180,10 +176,10 @@ class Cashback_Claims_Scoring
             return 0.5;
         }
 
-        $approval_rate = (float) $stats['approved'] / (float) $stats['total'];
+        $approval_rate   = (float) $stats['approved'] / (float) $stats['total'];
         $suspicious_rate = (float) $stats['suspicious'] / (float) $stats['total'];
 
-        $score = $approval_rate * 0.7 + (1 - $suspicious_rate) * 0.3;
+        $score = $approval_rate * 0.7 + ( 1 - $suspicious_rate ) * 0.3;
 
         return max(0.1, min(1.0, $score));
     }
@@ -194,14 +190,13 @@ class Cashback_Claims_Scoring
      * @param array $claim_data
      * @return float 0–1
      */
-    private static function score_consistency_factor(array $claim_data): float
-    {
-        $score = 0.0;
+    private static function score_consistency_factor( array $claim_data ): float {
+        $score   = 0.0;
         $factors = 0;
 
-        $click_id = $claim_data['click_id'] ?? '';
-        $order_date = $claim_data['order_date'] ?? '';
-        $order_value = (float) ($claim_data['order_value'] ?? 0);
+        $click_id    = $claim_data['click_id'] ?? '';
+        $order_date  = $claim_data['order_date'] ?? '';
+        $order_value = (float) ( $claim_data['order_value'] ?? 0 );
 
         global $wpdb;
 
@@ -213,23 +208,23 @@ class Cashback_Claims_Scoring
         ), ARRAY_A);
 
         if ($click) {
-            $factors++;
+            ++$factors;
 
             if ($order_date && strtotime($order_date) >= strtotime($click['created_at'])) {
                 $score += 1.0;
             }
 
-            $factors++;
+            ++$factors;
             if ($order_value > 0) {
                 $score += 1.0;
             }
 
-            $factors++;
+            ++$factors;
             if (!empty($claim_data['comment'])) {
                 $score += 1.0;
             }
 
-            $factors++;
+            ++$factors;
             $current_ip = self::get_client_ip();
             if ($current_ip && $current_ip === $click['ip_address']) {
                 $score += 1.0;
@@ -245,8 +240,7 @@ class Cashback_Claims_Scoring
      * @param float $score
      * @return string
      */
-    private static function get_label(float $score): string
-    {
+    private static function get_label( float $score ): string {
         if ($score >= 70) {
             return __('Высокая вероятность', 'cashback-plugin');
         }
@@ -263,8 +257,7 @@ class Cashback_Claims_Scoring
      *
      * @return string
      */
-    private static function get_client_ip(): string
-    {
+    private static function get_client_ip(): string {
         if (class_exists('Cashback_Encryption')) {
             return Cashback_Encryption::get_client_ip();
         }

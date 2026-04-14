@@ -16,10 +16,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-abstract class Cashback_Network_Adapter_Base implements Cashback_Network_Adapter_Interface
-{
+abstract class Cashback_Network_Adapter_Base implements Cashback_Network_Adapter_Interface {
+
     /** @var array Кеш токенов в рамках одного запроса (runtime) */
-    protected array $token_cache = [];
+    protected array $token_cache = array();
 
     /** @var string Последняя ошибка получения токена */
     protected string $last_token_error = '';
@@ -27,25 +27,22 @@ abstract class Cashback_Network_Adapter_Base implements Cashback_Network_Adapter
     /**
      * {@inheritdoc}
      */
-    public function get_aliases(): array
-    {
-        return [];
+    public function get_aliases(): array {
+        return array();
     }
 
     /**
      * {@inheritdoc}
      */
-    public function get_last_token_error(): string
-    {
+    public function get_last_token_error(): string {
         return $this->last_token_error;
     }
 
     /**
      * {@inheritdoc}
      */
-    public function invalidate_token(array $credentials): void
-    {
-        $this->token_cache = [];
+    public function invalidate_token( array $credentials ): void {
+        $this->token_cache = array();
     }
 
     /**
@@ -54,13 +51,12 @@ abstract class Cashback_Network_Adapter_Base implements Cashback_Network_Adapter
      * Дефолтная реализация — возвращает ошибку.
      * Адаптеры, поддерживающие проверку кампаний, переопределяют этот метод.
      */
-    public function fetch_campaigns(array $credentials, array $network_config): array
-    {
-        return [
+    public function fetch_campaigns( array $credentials, array $network_config ): array {
+        return array(
             'success'   => false,
-            'campaigns' => [],
+            'campaigns' => array(),
             'error'     => 'fetch_campaigns not implemented for adapter: ' . $this->get_slug(),
-        ];
+        );
     }
 
     /**
@@ -71,10 +67,9 @@ abstract class Cashback_Network_Adapter_Base implements Cashback_Network_Adapter
      * @param string $fallback_url   URL по умолчанию
      * @return string
      */
-    protected function build_api_url(array $network_config, string $endpoint_key, string $fallback_url): string
-    {
+    protected function build_api_url( array $network_config, string $endpoint_key, string $fallback_url ): string {
         $base     = rtrim($network_config['api_base_url'] ?? '', '/');
-        $endpoint = $network_config[$endpoint_key] ?? '';
+        $endpoint = $network_config[ $endpoint_key ] ?? '';
 
         if ($endpoint !== '' && preg_match('#^https?://#i', $endpoint)) {
             return $endpoint;
@@ -95,12 +90,11 @@ abstract class Cashback_Network_Adapter_Base implements Cashback_Network_Adapter
      * @param int    $timeout Таймаут (секунды)
      * @return array|\WP_Error
      */
-    protected function http_get(string $url, array $headers, int $timeout = 60)
-    {
-        $args = [
+    protected function http_get( string $url, array $headers, int $timeout = 60 ) {
+        $args = array(
             'timeout' => $timeout,
             'headers' => $headers,
-        ];
+        );
 
         // wp_remote_get использует отдельный параметр user-agent,
         // который перезаписывает заголовок User-Agent из headers.
@@ -121,13 +115,12 @@ abstract class Cashback_Network_Adapter_Base implements Cashback_Network_Adapter
      * @param int          $timeout Таймаут (секунды)
      * @return array|\WP_Error
      */
-    protected function http_post(string $url, array $headers, $body, int $timeout = 30)
-    {
-        return wp_remote_post($url, [
+    protected function http_post( string $url, array $headers, $body, int $timeout = 30 ) {
+        return wp_remote_post($url, array(
             'timeout' => $timeout,
             'headers' => $headers,
             'body'    => $body,
-        ]);
+        ));
     }
 
     /**
@@ -136,14 +129,13 @@ abstract class Cashback_Network_Adapter_Base implements Cashback_Network_Adapter
      * @param string $error Текст ошибки
      * @return array
      */
-    protected function fetch_error(string $error): array
-    {
-        return [
+    protected function fetch_error( string $error ): array {
+        return array(
             'success'  => false,
-            'actions'  => [],
+            'actions'  => array(),
             'total'    => 0,
             'has_next' => false,
             'error'    => $error,
-        ];
+        );
     }
 }

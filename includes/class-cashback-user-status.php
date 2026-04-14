@@ -15,19 +15,18 @@ if (!defined('ABSPATH')) {
 /**
  * Класс Cashback_User_Status
  */
-class Cashback_User_Status
-{
+class Cashback_User_Status {
+
     /**
      * Проверяет, забанен ли пользователь
      *
      * @param int $user_id ID пользователя
      * @return bool true если забанен
      */
-    public static function is_user_banned(int $user_id): bool
-    {
+    public static function is_user_banned( int $user_id ): bool {
         global $wpdb;
 
-        $table = $wpdb->prefix . 'cashback_user_profile';
+        $table  = $wpdb->prefix . 'cashback_user_profile';
         $status = $wpdb->get_var($wpdb->prepare(
             "SELECT status FROM {$table} WHERE user_id = %d",
             $user_id
@@ -42,12 +41,11 @@ class Cashback_User_Status
      * @param int $user_id ID пользователя
      * @return array|null Массив с полями ['banned_at' => datetime, 'ban_reason' => string] или null
      */
-    public static function get_ban_info(int $user_id): ?array
-    {
+    public static function get_ban_info( int $user_id ): ?array {
         global $wpdb;
 
         $table = $wpdb->prefix . 'cashback_user_profile';
-        $info = $wpdb->get_row($wpdb->prepare(
+        $info  = $wpdb->get_row($wpdb->prepare(
             "SELECT banned_at, ban_reason FROM {$table}
              WHERE user_id = %d AND status = 'banned'",
             $user_id
@@ -62,8 +60,7 @@ class Cashback_User_Status
      * @param array|null $ban_info Информация о бане из get_ban_info()
      * @return string Сообщение для пользователя
      */
-    public static function get_banned_message(?array $ban_info = null): string
-    {
+    public static function get_banned_message( ?array $ban_info = null ): string {
         if ($ban_info && !empty($ban_info['ban_reason'])) {
             return sprintf(
                 __('Ваш аккаунт заблокирован. Причина: %s. Для разблокировки обратитесь к администратору.', 'cashback-plugin'),

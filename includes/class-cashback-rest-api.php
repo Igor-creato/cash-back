@@ -18,12 +18,12 @@ if (!defined('ABSPATH')) {
  *
  * @since 5.0.0
  */
-class Cashback_REST_API
-{
-    private const NAMESPACE = 'cashback/v1';
-    private const STORES_CACHE_KEY = 'cashback_ext_stores_cache';
-    private const STORES_CACHE_TTL = 6 * HOUR_IN_SECONDS;
-    private const ACTIVATION_WINDOW = 30 * MINUTE_IN_SECONDS;
+class Cashback_REST_API {
+
+    private const NAMESPACE             = 'cashback/v1';
+    private const STORES_CACHE_KEY      = 'cashback_ext_stores_cache';
+    private const STORES_CACHE_TTL      = 6 * HOUR_IN_SECONDS;
+    private const ACTIVATION_WINDOW     = 30 * MINUTE_IN_SECONDS;
     private const TRANSACTIONS_PER_PAGE = 10;
 
     // Rate limiting (аналогично WC_Affiliate_URL_Params)
@@ -35,32 +35,29 @@ class Cashback_REST_API
 
     private static ?self $instance = null;
 
-    public static function get_instance(): self
-    {
+    public static function get_instance(): self {
         if (null === self::$instance) {
             self::$instance = new self();
         }
         return self::$instance;
     }
 
-    private function __construct()
-    {
-        add_action('rest_api_init', [$this, 'register_routes']);
-        add_filter('rest_authentication_errors', [$this, 'authenticate_extension_cookie'], 99);
-        add_filter('rest_pre_dispatch', [$this, 'block_user_enumeration'], 10, 3);
-        add_action('template_redirect', [$this, 'block_author_enumeration']);
-        add_action('template_redirect', [$this, 'handle_activation_page'], 1);
+    private function __construct() {
+        add_action('rest_api_init', array( $this, 'register_routes' ));
+        add_filter('rest_authentication_errors', array( $this, 'authenticate_extension_cookie' ), 99);
+        add_filter('rest_pre_dispatch', array( $this, 'block_user_enumeration' ), 10, 3);
+        add_action('template_redirect', array( $this, 'block_author_enumeration' ));
+        add_action('template_redirect', array( $this, 'handle_activation_page' ), 1);
         // Сброс кеша магазинов при сохранении или удалении товара
-        add_action('save_post_product', [$this, 'flush_stores_cache']);
-        add_action('delete_post', [$this, 'flush_stores_cache']);
-        add_action('woocommerce_update_product', [$this, 'flush_stores_cache']);
+        add_action('save_post_product', array( $this, 'flush_stores_cache' ));
+        add_action('delete_post', array( $this, 'flush_stores_cache' ));
+        add_action('woocommerce_update_product', array( $this, 'flush_stores_cache' ));
     }
 
     /**
      * Сброс transient-кеша списка магазинов.
      */
-    public function flush_stores_cache(): void
-    {
+    public function flush_stores_cache(): void {
         delete_transient(self::STORES_CACHE_KEY);
     }
 
@@ -75,8 +72,7 @@ class Cashback_REST_API
      * @param \WP_REST_Request $request Request used to generate the response.
      * @return mixed|\WP_Error
      */
-    public function block_user_enumeration($result, \WP_REST_Server $server, \WP_REST_Request $request)
-    {
+    public function block_user_enumeration( $result, \WP_REST_Server $server, \WP_REST_Request $request ) {
         if (null !== $result) {
             return $result;
         }
@@ -87,7 +83,7 @@ class Cashback_REST_API
             return new \WP_Error(
                 'rest_user_cannot_view',
                 'Доступ запрещён.',
-                ['status' => 403]
+                array( 'status' => 403 )
             );
         }
 
@@ -100,8 +96,7 @@ class Cashback_REST_API
      * WordPress редиректит /?author=1 на /author/username/, раскрывая логин.
      * Для неаутентифицированных — редирект на главную.
      */
-    public function block_author_enumeration(): void
-    {
+    public function block_author_enumeration(): void {
         if (isset($_GET['author']) && !is_user_logged_in()) {
             wp_safe_redirect(home_url(), 301);
             exit;
@@ -111,79 +106,78 @@ class Cashback_REST_API
     /**
      * Регистрация REST-маршрутов.
      */
-    public function register_routes(): void
-    {
+    public function register_routes(): void {
         // Публичный: список магазинов с кэшбэком
-        register_rest_route(self::NAMESPACE, '/stores', [
+        register_rest_route(self::NAMESPACE, '/stores', array(
             'methods'             => 'GET',
-            'callback'            => [$this, 'get_stores'],
+            'callback'            => array( $this, 'get_stores' ),
             'permission_callback' => '__return_true',
-        ]);
+        ));
 
         // Профиль и баланс текущего пользователя
-        register_rest_route(self::NAMESPACE, '/me', [
+        register_rest_route(self::NAMESPACE, '/me', array(
             'methods'             => 'GET',
-            'callback'            => [$this, 'get_me'],
-            'permission_callback' => [$this, 'check_user_logged_in'],
-        ]);
+            'callback'            => array( $this, 'get_me' ),
+            'permission_callback' => array( $this, 'check_user_logged_in' ),
+        ));
 
         // Транзакции текущего пользователя
-        register_rest_route(self::NAMESPACE, '/me/transactions', [
+        register_rest_route(self::NAMESPACE, '/me/transactions', array(
             'methods'             => 'GET',
-            'callback'            => [$this, 'get_transactions'],
-            'permission_callback' => [$this, 'check_user_logged_in'],
-            'args'                => [
-                'page' => [
+            'callback'            => array( $this, 'get_transactions' ),
+            'permission_callback' => array( $this, 'check_user_logged_in' ),
+            'args'                => array(
+                'page'     => array(
                     'type'              => 'integer',
                     'default'           => 1,
                     'minimum'           => 1,
                     'sanitize_callback' => 'absint',
-                ],
-                'per_page' => [
+                ),
+                'per_page' => array(
                     'type'              => 'integer',
                     'default'           => self::TRANSACTIONS_PER_PAGE,
                     'minimum'           => 1,
                     'maximum'           => 50,
                     'sanitize_callback' => 'absint',
-                ],
-            ],
-        ]);
+                ),
+            ),
+        ));
 
         // Активация кэшбэка (генерация redirect URL).
         // POST — т.к. эндпоинт создаёт записи в click_log (побочный эффект).
         // GET для state-changing операций уязвим к CSRF через <img>, prefetch и т.д.
-        register_rest_route(self::NAMESPACE, '/activate', [
+        register_rest_route(self::NAMESPACE, '/activate', array(
             'methods'             => 'POST',
-            'callback'            => [$this, 'activate_cashback'],
-            'permission_callback' => [$this, 'check_user_logged_in'],
-            'args'                => [
-                'product_id' => [
+            'callback'            => array( $this, 'activate_cashback' ),
+            'permission_callback' => array( $this, 'check_user_logged_in' ),
+            'args'                => array(
+                'product_id' => array(
                     'type'              => 'integer',
                     'required'          => true,
                     'minimum'           => 1,
                     'sanitize_callback' => 'absint',
-                ],
-            ],
-        ]);
+                ),
+            ),
+        ));
 
         // Статус активации для домена или по click_id
-        register_rest_route(self::NAMESPACE, '/session-status', [
+        register_rest_route(self::NAMESPACE, '/session-status', array(
             'methods'             => 'GET',
-            'callback'            => [$this, 'get_session_status'],
-            'permission_callback' => [$this, 'check_user_logged_in'],
-            'args'                => [
-                'domain' => [
+            'callback'            => array( $this, 'get_session_status' ),
+            'permission_callback' => array( $this, 'check_user_logged_in' ),
+            'args'                => array(
+                'domain'   => array(
                     'type'              => 'string',
                     'required'          => false,
                     'sanitize_callback' => 'sanitize_text_field',
-                ],
-                'click_id' => [
+                ),
+                'click_id' => array(
                     'type'              => 'string',
                     'required'          => false,
                     'sanitize_callback' => 'sanitize_text_field',
-                ],
-            ],
-        ]);
+                ),
+            ),
+        ));
     }
 
     /**
@@ -205,8 +199,7 @@ class Cashback_REST_API
      * @param \WP_Error|null|true $result Результат аутентификации от предыдущих фильтров.
      * @return \WP_Error|null|true
      */
-    public function authenticate_extension_cookie($result)
-    {
+    public function authenticate_extension_cookie( $result ) {
         if (null !== $result) {
             return $result;
         }
@@ -237,8 +230,7 @@ class Cashback_REST_API
      * Обычные сайты отправляют Origin: https://evil-site.com — такие запросы не должны
      * обходить nonce-проверку WordPress.
      */
-    private function is_extension_origin(): bool
-    {
+    private function is_extension_origin(): bool {
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 
         // Расширения Chrome и Firefox
@@ -262,7 +254,7 @@ class Cashback_REST_API
         // Запросы с того же домена (same-origin) — допускаются,
         // т.к. same-origin запросы не являются CSRF
         if (!empty($origin)) {
-            $site_url = site_url();
+            $site_url    = site_url();
             $site_origin = rtrim($site_url, '/');
             if ($origin === $site_origin) {
                 return true;
@@ -275,8 +267,7 @@ class Cashback_REST_API
     /**
      * Permission callback: пользователь авторизован.
      */
-    public function check_user_logged_in(): bool
-    {
+    public function check_user_logged_in(): bool {
         return is_user_logged_in();
     }
 
@@ -286,8 +277,7 @@ class Cashback_REST_API
      * Кешируется в transient на 6 часов.
      * Домены берутся из post_meta `_store_domain` (заполняется в админке товара).
      */
-    public function get_stores(\WP_REST_Request $request): \WP_REST_Response
-    {
+    public function get_stores( \WP_REST_Request $request ): \WP_REST_Response {
         $cached = get_transient(self::STORES_CACHE_KEY);
         if (false !== $cached) {
             // Инвалидируем устаревший кеш, построенный до добавления поля product_id.
@@ -332,12 +322,12 @@ class Cashback_REST_API
         );
 
         if (empty($products)) {
-            $stores = [];
+            $stores = array();
             set_transient(self::STORES_CACHE_KEY, $stores, self::STORES_CACHE_TTL);
             return new \WP_REST_Response($stores, 200);
         }
 
-        $stores = [];
+        $stores = array();
         foreach ($products as $product) {
             $domain = $product['store_domain'] ?? '';
             if (empty($domain)) {
@@ -353,15 +343,15 @@ class Cashback_REST_API
                 continue;
             }
 
-            $stores[] = [
+            $stores[] = array(
                 'domain'         => $domain,
-                'store_name'     => $product['post_title'] ?: ($product['network_name'] ?: $domain),
+                'store_name'     => $product['post_title'] ?: ( $product['network_name'] ?: $domain ),
                 'cashback_label' => $product['cashback_label'] ?: 'Кэшбэк',
                 'cashback_value' => $product['cashback_value'] ?: '',
                 'product_id'     => (int) $product['ID'],
                 'network_slug'   => $product['network_slug'] ?: '',
                 'popup_mode'     => $product['popup_mode'] ?: 'show',
-            ];
+            );
         }
 
         set_transient(self::STORES_CACHE_KEY, $stores, self::STORES_CACHE_TTL);
@@ -372,12 +362,11 @@ class Cashback_REST_API
     /**
      * GET /me — Баланс и профиль текущего пользователя.
      */
-    public function get_me(\WP_REST_Request $request): \WP_REST_Response
-    {
+    public function get_me( \WP_REST_Request $request ): \WP_REST_Response {
         global $wpdb;
 
         $user_id = get_current_user_id();
-        $user = wp_get_current_user();
+        $user    = wp_get_current_user();
 
         $balance_table = $wpdb->prefix . 'cashback_user_balance';
         $profile_table = $wpdb->prefix . 'cashback_user_profile';
@@ -395,30 +384,29 @@ class Cashback_REST_API
             $user_id
         ), ARRAY_A);
 
-        return new \WP_REST_Response([
-            'user_id'      => $user_id,
-            'display_name' => $user->display_name,
-            'balance'      => [
-                'available' => (float) ($balance['available_balance'] ?? 0),
-                'pending'   => (float) ($balance['pending_balance'] ?? 0),
-                'paid'      => (float) ($balance['paid_balance'] ?? 0),
-            ],
-            'cashback_rate' => (float) ($profile['cashback_rate'] ?? 60),
+        return new \WP_REST_Response(array(
+            'user_id'       => $user_id,
+            'display_name'  => $user->display_name,
+            'balance'       => array(
+                'available' => (float) ( $balance['available_balance'] ?? 0 ),
+                'pending'   => (float) ( $balance['pending_balance'] ?? 0 ),
+                'paid'      => (float) ( $balance['paid_balance'] ?? 0 ),
+            ),
+            'cashback_rate' => (float) ( $profile['cashback_rate'] ?? 60 ),
             'status'        => $profile['status'] ?? 'active',
-        ], 200);
+        ), 200);
     }
 
     /**
      * GET /me/transactions — Последние транзакции пользователя.
      */
-    public function get_transactions(\WP_REST_Request $request): \WP_REST_Response
-    {
+    public function get_transactions( \WP_REST_Request $request ): \WP_REST_Response {
         global $wpdb;
 
         $user_id  = get_current_user_id();
         $page     = $request->get_param('page');
         $per_page = $request->get_param('per_page');
-        $offset   = ($page - 1) * $per_page;
+        $offset   = ( $page - 1 ) * $per_page;
 
         $table = $wpdb->prefix . 'cashback_transactions';
 
@@ -440,9 +428,9 @@ class Cashback_REST_API
             $offset
         ), ARRAY_A);
 
-        $formatted = [];
+        $formatted = array();
         foreach ($items as $item) {
-            $formatted[] = [
+            $formatted[] = array(
                 'offer_name'   => $item['offer_name'],
                 'cashback'     => (float) $item['cashback'],
                 'currency'     => $item['currency'] ?: 'RUB',
@@ -450,15 +438,15 @@ class Cashback_REST_API
                 'partner'      => $item['partner'],
                 'action_date'  => $item['action_date'],
                 'created_at'   => $item['created_at'],
-            ];
+            );
         }
 
-        return new \WP_REST_Response([
+        return new \WP_REST_Response(array(
             'items' => $formatted,
             'total' => $total,
             'pages' => (int) ceil($total / $per_page),
             'page'  => $page,
-        ], 200);
+        ), 200);
     }
 
     /**
@@ -467,26 +455,25 @@ class Cashback_REST_API
      * Генерирует click_id, логирует клик, возвращает redirect URL.
      * Использует rate limiting аналогично WC_Affiliate_URL_Params.
      */
-    public function activate_cashback(\WP_REST_Request $request): \WP_REST_Response
-    {
+    public function activate_cashback( \WP_REST_Request $request ): \WP_REST_Response {
         $product_id = $request->get_param('product_id');
         $user_id    = get_current_user_id();
 
         // Проверяем, что товар существует и является external
         $product = wc_get_product($product_id);
         if (!$product || $product->get_type() !== 'external') {
-            return new \WP_REST_Response([
+            return new \WP_REST_Response(array(
                 'code'    => 'invalid_product',
                 'message' => 'Товар не найден или не является внешним.',
-            ], 404);
+            ), 404);
         }
 
         $base_url = $product->get_product_url();
         if (empty($base_url)) {
-            return new \WP_REST_Response([
+            return new \WP_REST_Response(array(
                 'code'    => 'no_url',
                 'message' => 'У товара отсутствует партнёрская ссылка.',
-            ], 400);
+            ), 400);
         }
 
         // Rate limiting
@@ -494,10 +481,10 @@ class Cashback_REST_API
         $rate_status = $this->get_click_rate_status($ip_address, $product_id);
 
         if ($rate_status === 'blocked') {
-            return new \WP_REST_Response([
+            return new \WP_REST_Response(array(
                 'code'    => 'rate_limited',
                 'message' => 'Слишком много запросов. Попробуйте позже.',
-            ], 429);
+            ), 429);
         }
 
         // Генерация click_id через UUID v7 (time-ordered, лучшая индексация в БД)
@@ -516,7 +503,7 @@ class Cashback_REST_API
         $user_agent = $request->get_header('user_agent');
 
         // Логирование клика
-        $this->log_click([
+        $this->log_click(array(
             'click_id'      => $click_id,
             'user_id'       => $user_id,
             'product_id'    => $product_id,
@@ -526,7 +513,7 @@ class Cashback_REST_API
             'user_agent'    => $user_agent ? sanitize_text_field($user_agent) : null,
             'spam_click'    => $rate_status === 'spam' ? 1 : 0,
             'referer'       => get_permalink($product_id) ?: null,
-        ]);
+        ));
 
         $expires_at = gmdate('Y-m-d H:i:s', time() + self::ACTIVATION_WINDOW);
 
@@ -537,19 +524,22 @@ class Cashback_REST_API
 
         // Формируем URL активации на базе permalink товара, чтобы CPA-сеть
         // видела Referer: yoursite.com/product/название/ вместо /?cashback_go=1
-        $product_permalink    = get_permalink($product_id) ?: home_url('/');
-        $activation_page_url  = add_query_arg(
-            ['cashback_go' => '1', 'click_id' => $click_id],
+        $product_permalink   = get_permalink($product_id) ?: home_url('/');
+        $activation_page_url = add_query_arg(
+            array(
+				'cashback_go' => '1',
+				'click_id'    => $click_id,
+			),
             $product_permalink
         );
 
-        return new \WP_REST_Response([
+        return new \WP_REST_Response(array(
             'redirect_url'        => $affiliate_url,
             'activation_page_url' => $activation_page_url,
             'click_id'            => $click_id,
             'expires_at'          => $expires_at,
             'domain'              => $store_domain,
-        ], 200);
+        ), 200);
     }
 
     /**
@@ -557,8 +547,7 @@ class Cashback_REST_API
      *
      * Проверяет cashback_click_log на наличие клика за последние 30 минут.
      */
-    public function get_session_status(\WP_REST_Request $request): \WP_REST_Response
-    {
+    public function get_session_status( \WP_REST_Request $request ): \WP_REST_Response {
         global $wpdb;
 
         $user_id  = get_current_user_id();
@@ -586,29 +575,29 @@ class Cashback_REST_API
                 $click_time  = strtotime($click['created_at']);
                 $expires_at  = gmdate('Y-m-d H:i:s', $click_time + self::ACTIVATION_WINDOW);
 
-                return new \WP_REST_Response([
+                return new \WP_REST_Response(array(
                     'activated'    => true,
                     'domain'       => $dest_domain,
                     'activated_at' => $click['created_at'],
                     'expires_at'   => $expires_at,
                     'click_id'     => $click['click_id'],
-                ], 200);
+                ), 200);
             }
 
-            return new \WP_REST_Response([
+            return new \WP_REST_Response(array(
                 'activated'    => false,
                 'activated_at' => null,
                 'expires_at'   => null,
-            ], 200);
+            ), 200);
         }
 
         $domain = $request->get_param('domain');
         if (empty($domain)) {
-            return new \WP_REST_Response([
+            return new \WP_REST_Response(array(
                 'activated'    => false,
                 'activated_at' => null,
                 'expires_at'   => null,
-            ], 200);
+            ), 200);
         }
 
         // Нормализация: удаляем протокол, www., trailing slash
@@ -631,19 +620,19 @@ class Cashback_REST_API
         ));
 
         if (empty($product_ids)) {
-            return new \WP_REST_Response([
+            return new \WP_REST_Response(array(
                 'activated'    => false,
                 'activated_at' => null,
                 'expires_at'   => null,
-            ], 200);
+            ), 200);
         }
 
         $click_log_table = $wpdb->prefix . 'cashback_click_log';
-        $threshold = gmdate('Y-m-d H:i:s', time() - self::ACTIVATION_WINDOW);
+        $threshold       = gmdate('Y-m-d H:i:s', time() - self::ACTIVATION_WINDOW);
 
         // Ищем последний клик пользователя на товары этого домена
         $placeholders = implode(',', array_fill(0, count($product_ids), '%d'));
-        $query_args = array_merge([$user_id], array_map('intval', $product_ids), [$threshold]);
+        $query_args   = array_merge(array( $user_id ), array_map('intval', $product_ids), array( $threshold ));
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         $click = $wpdb->get_row($wpdb->prepare(
@@ -659,22 +648,22 @@ class Cashback_REST_API
 
         if ($click) {
             $activated_at = $click['created_at'];
-            $click_time = strtotime($activated_at);
-            $expires_at = gmdate('Y-m-d H:i:s', $click_time + self::ACTIVATION_WINDOW);
+            $click_time   = strtotime($activated_at);
+            $expires_at   = gmdate('Y-m-d H:i:s', $click_time + self::ACTIVATION_WINDOW);
 
-            return new \WP_REST_Response([
+            return new \WP_REST_Response(array(
                 'activated'    => true,
                 'activated_at' => $activated_at,
                 'expires_at'   => $expires_at,
                 'click_id'     => $click['click_id'],
-            ], 200);
+            ), 200);
         }
 
-        return new \WP_REST_Response([
+        return new \WP_REST_Response(array(
             'activated'    => false,
             'activated_at' => null,
             'expires_at'   => null,
-        ], 200);
+        ), 200);
     }
 
     // ─── Промежуточная страница активации ───
@@ -693,8 +682,7 @@ class Cashback_REST_API
      * HTTP Referer из заголовка запроса (URL магазина, с которого пришёл пользователь)
      * сохраняется в click_log — клик логируется ранее (в REST API), без referer.
      */
-    public function handle_activation_page(): void
-    {
+    public function handle_activation_page(): void {
         if (!isset($_GET['cashback_go']) || '1' !== $_GET['cashback_go']) {
             return;
         }
@@ -737,15 +725,15 @@ class Cashback_REST_API
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
             $wpdb->update(
                 $table,
-                ['referer' => $product_page_url],
-                ['click_id' => $click_id],
-                ['%s'],
-                ['%s']
+                array( 'referer' => $product_page_url ),
+                array( 'click_id' => $click_id ),
+                array( '%s' ),
+                array( '%s' )
             );
         }
 
         $product    = wc_get_product($product_id);
-        $store_name = ($product && $product->get_name()) ? $product->get_name() : 'Магазин';
+        $store_name = ( $product && $product->get_name() ) ? $product->get_name() : 'Магазин';
         $cb_label   = (string) get_post_meta($product_id, '_cashback_display_label', true);
         $cb_value   = (string) get_post_meta($product_id, '_cashback_display_value', true);
 
@@ -762,7 +750,7 @@ class Cashback_REST_API
 
         // Подключаем стили карточки в <head> активной темы
         $card_styles = $this->get_activation_card_styles();
-        add_action('wp_head', static function () use ($card_styles): void {
+        add_action('wp_head', static function () use ( $card_styles ): void {
             echo '<style id="cashback-go-styles">' . $card_styles . '</style>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
         }, 100);
 
@@ -872,8 +860,7 @@ HTML;
      *
      * @return string
      */
-    private function get_activation_card_styles(): string
-    {
+    private function get_activation_card_styles(): string {
         return '
 .cashback-go-wrap {
     display: flex;
@@ -961,8 +948,7 @@ HTML;
     /**
      * Проверка, что текущий запрос направлен к REST-маршрутам cashback/v1.
      */
-    private function is_cashback_rest_request(): bool
-    {
+    private function is_cashback_rest_request(): bool {
         $request_uri = $_SERVER['REQUEST_URI'] ?? '';
         $rest_prefix = rest_get_url_prefix();
 
@@ -983,8 +969,7 @@ HTML;
     /**
      * Rate limiting (двухуровневый, аналогично WC_Affiliate_URL_Params).
      */
-    private function get_click_rate_status(string $ip_address, int $product_id): string
-    {
+    private function get_click_rate_status( string $ip_address, int $product_id ): string {
         $window = self::RATE_LIMIT_WINDOW;
 
         $pp_hash = substr(md5($ip_address . '|' . $product_id), 0, 12);
@@ -1007,8 +992,8 @@ HTML;
         set_transient($gl_key, $gl_count + 1, $window);
 
         if (
-            ($pp_count + 1) > self::RATE_PER_PRODUCT_SPAM ||
-            ($gl_count + 1) > self::RATE_GLOBAL_SPAM
+            ( $pp_count + 1 ) > self::RATE_PER_PRODUCT_SPAM ||
+            ( $gl_count + 1 ) > self::RATE_GLOBAL_SPAM
         ) {
             return 'spam';
         }
@@ -1019,8 +1004,7 @@ HTML;
     /**
      * Построение affiliate URL с подстановкой параметров.
      */
-    private function build_affiliate_url(int $product_id, int $user_id, string $click_id): ?string
-    {
+    private function build_affiliate_url( int $product_id, int $user_id, string $click_id ): ?string {
         global $wpdb;
 
         $product = wc_get_product($product_id);
@@ -1049,14 +1033,14 @@ HTML;
             $network_id
         ), ARRAY_A);
 
-        $merged = [];
-        $key_to_index = [];
+        $merged       = array();
+        $key_to_index = array();
         foreach ($network_rows as $i => $row) {
-            $merged[$i] = [
+            $merged[ $i ]                       = array(
                 'key'   => $row['param_name'],
                 'value' => $row['param_type'],
-            ];
-            $key_to_index[$row['param_name']] = $i;
+            );
+            $key_to_index[ $row['param_name'] ] = $i;
         }
 
         // Мерж индивидуальных параметров товара: переопределяют или дополняют сетевые
@@ -1066,13 +1050,13 @@ HTML;
                 if (empty($pp['key'])) {
                     continue;
                 }
-                if (isset($key_to_index[$pp['key']])) {
-                    $merged[$key_to_index[$pp['key']]]['value'] = $pp['value'];
+                if (isset($key_to_index[ $pp['key'] ])) {
+                    $merged[ $key_to_index[ $pp['key'] ] ]['value'] = $pp['value'];
                 } else {
-                    $merged[] = [
+                    $merged[] = array(
                         'key'   => $pp['key'],
                         'value' => $pp['value'],
-                    ];
+                    );
                 }
             }
         }
@@ -1087,7 +1071,7 @@ HTML;
             $partner_token = Mariadb_Plugin::get_partner_token($user_id);
         }
 
-        $params = [];
+        $params = array();
         foreach ($merged as $param) {
             if (empty($param['key']) || empty($param['value'])) {
                 continue;
@@ -1097,11 +1081,11 @@ HTML;
 
             if ($param_type === 'user') {
                 // partner_token вместо user_id — защита от IDOR и перебора
-                $params[$param['key']] = $partner_token !== null ? $partner_token : 'unregistered';
+                $params[ $param['key'] ] = $partner_token !== null ? $partner_token : 'unregistered';
             } elseif ($param_type === 'uuid') {
-                $params[$param['key']] = $click_id;
+                $params[ $param['key'] ] = $click_id;
             } else {
-                $params[$param['key']] = $param['value'];
+                $params[ $param['key'] ] = $param['value'];
             }
         }
 
@@ -1111,8 +1095,7 @@ HTML;
     /**
      * Получение slug CPA-сети для товара.
      */
-    private function get_network_slug(int $product_id): ?string
-    {
+    private function get_network_slug( int $product_id ): ?string {
         global $wpdb;
 
         $network_id = (int) get_post_meta($product_id, '_affiliate_network_id', true);
@@ -1133,8 +1116,7 @@ HTML;
     /**
      * Нормализация домена магазина: убирает протокол, www., путь.
      */
-    private function normalize_store_domain(string $domain): string
-    {
+    private function normalize_store_domain( string $domain ): string {
         $domain = preg_replace('#^https?://#i', '', $domain);
         $domain = preg_replace('#^www\.#i', '', $domain);
         return strtolower(explode('/', $domain)[0]);
@@ -1143,8 +1125,7 @@ HTML;
     /**
      * Получение нормализованного домена магазина по product_id.
      */
-    private function get_store_domain(int $product_id): string
-    {
+    private function get_store_domain( int $product_id ): string {
         $raw = (string) get_post_meta($product_id, '_store_domain', true);
         return $this->normalize_store_domain($raw);
     }
@@ -1152,12 +1133,11 @@ HTML;
     /**
      * Логирование клика в cashback_click_log.
      */
-    private function log_click(array $data): bool
-    {
+    private function log_click( array $data ): bool {
         global $wpdb;
 
-        $table = $wpdb->prefix . 'cashback_click_log';
-        $created_at = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('Y-m-d H:i:s.u');
+        $table      = $wpdb->prefix . 'cashback_click_log';
+        $created_at = ( new \DateTimeImmutable('now', new \DateTimeZone('UTC')) )->format('Y-m-d H:i:s.u');
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
         $result = $wpdb->query($wpdb->prepare(

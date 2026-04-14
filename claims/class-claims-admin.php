@@ -16,41 +16,38 @@ if (!defined('ABSPATH')) {
  * - Claim detail card with event history
  * - Actions: approve, decline, send to network, add note
  */
-class Cashback_Claims_Admin
-{
+class Cashback_Claims_Admin {
+
     private const PER_PAGE = 20;
 
-    public function __construct()
-    {
-        add_action('admin_menu', [$this, 'add_admin_menu']);
-        add_action('admin_enqueue_scripts', [$this, 'enqueue_scripts']);
-        add_action('wp_ajax_claims_admin_transition', [$this, 'ajax_transition']);
-        add_action('wp_ajax_claims_admin_add_note', [$this, 'ajax_add_note']);
-        add_action('wp_ajax_claims_admin_get_detail', [$this, 'ajax_get_detail']);
-        add_action('wp_ajax_claims_admin_stats', [$this, 'ajax_stats']);
+    public function __construct() {
+        add_action('admin_menu', array( $this, 'add_admin_menu' ));
+        add_action('admin_enqueue_scripts', array( $this, 'enqueue_scripts' ));
+        add_action('wp_ajax_claims_admin_transition', array( $this, 'ajax_transition' ));
+        add_action('wp_ajax_claims_admin_add_note', array( $this, 'ajax_add_note' ));
+        add_action('wp_ajax_claims_admin_get_detail', array( $this, 'ajax_get_detail' ));
+        add_action('wp_ajax_claims_admin_stats', array( $this, 'ajax_stats' ));
 
         // Invalidate pending count cache on claim creation or status change
-        add_action('cashback_claim_created', [__CLASS__, 'invalidate_pending_count_cache']);
-        add_action('cashback_claim_status_changed', [__CLASS__, 'invalidate_pending_count_cache']);
+        add_action('cashback_claim_created', array( __CLASS__, 'invalidate_pending_count_cache' ));
+        add_action('cashback_claim_status_changed', array( __CLASS__, 'invalidate_pending_count_cache' ));
     }
 
-    public function add_admin_menu(): void
-    {
+    public function add_admin_menu(): void {
         add_submenu_page(
             'cashback-overview',
             __('Заявки кэшбэка', 'cashback-plugin'),
             $this->get_menu_title(),
             'manage_options',
             'cashback-claims-admin',
-            [$this, 'render_page']
+            array( $this, 'render_page' )
         );
     }
 
     /**
      * Menu title with pending claims badge.
      */
-    private function get_menu_title(): string
-    {
+    private function get_menu_title(): string {
         $title = __('Заявки кэшбэка', 'cashback-plugin');
 
         $count = self::get_pending_claims_count();
@@ -68,8 +65,7 @@ class Cashback_Claims_Admin
     /**
      * Get count of new (submitted) claims that haven't been reviewed.
      */
-    public static function get_pending_claims_count(): int
-    {
+    public static function get_pending_claims_count(): int {
         $cached = get_transient('cashback_claims_pending_count');
         if ($cached !== false) {
             return (int) $cached;
@@ -88,63 +84,60 @@ class Cashback_Claims_Admin
     /**
      * Invalidate pending count cache (call after status transitions).
      */
-    public static function invalidate_pending_count_cache(): void
-    {
+    public static function invalidate_pending_count_cache(): void {
         delete_transient('cashback_claims_pending_count');
     }
 
-    public function enqueue_scripts(string $hook): void
-    {
-        $is_target = (isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-claims-admin');
+    public function enqueue_scripts( string $hook ): void {
+        $is_target = ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-claims-admin' );
 
         if (!$is_target) {
             return;
         }
 
-        $plugin_dir_url = plugin_dir_url(dirname(__FILE__));
+        $plugin_dir_url = plugin_dir_url(__DIR__);
 
         wp_enqueue_style(
             'cashback-admin-claims-css',
             $plugin_dir_url . 'assets/css/admin-claims.css',
-            [],
+            array(),
             '1.0.0'
         );
 
         wp_enqueue_script(
             'cashback-admin-claims-js',
             $plugin_dir_url . 'assets/js/admin-claims.js',
-            ['jquery'],
+            array( 'jquery' ),
             '1.0.0',
             true
         );
 
-        wp_localize_script('cashback-admin-claims-js', 'cashbackAdminClaimsData', [
+        wp_localize_script('cashback-admin-claims-js', 'cashbackAdminClaimsData', array(
             'transitionNonce' => wp_create_nonce('claims_admin_transition'),
             'noteNonce'       => wp_create_nonce('claims_admin_note'),
             'detailNonce'     => wp_create_nonce('claims_admin_detail'),
             'statsNonce'      => wp_create_nonce('claims_admin_stats'),
             'ajaxUrl'         => admin_url('admin-ajax.php'),
-        ]);
+        ));
     }
 
-    public function render_page(): void
-    {
+    public function render_page(): void {
         if (!current_user_can('manage_options')) {
             wp_die(__('У вас недостаточно прав.', 'cashback-plugin'));
         }
 
         global $wpdb;
 
-        $status_filter = isset($_GET['status']) ? sanitize_text_field(wp_unslash($_GET['status'])) : '';
+        $status_filter     = isset($_GET['status']) ? sanitize_text_field(wp_unslash($_GET['status'])) : '';
         $suspicious_filter = isset($_GET['suspicious']) ? sanitize_text_field(wp_unslash($_GET['suspicious'])) : '';
-        $search = isset($_GET['search']) ? sanitize_text_field(wp_unslash($_GET['search'])) : '';
-        $date_from = isset($_GET['date_from']) ? sanitize_text_field(wp_unslash($_GET['date_from'])) : '';
-        $date_to = isset($_GET['date_to']) ? sanitize_text_field(wp_unslash($_GET['date_to'])) : '';
-        $orderby = isset($_GET['orderby']) ? sanitize_text_field(wp_unslash($_GET['orderby'])) : 'created_at';
-        $order = isset($_GET['order']) ? sanitize_text_field(wp_unslash($_GET['order'])) : 'DESC';
-        $page = max(1, absint($_GET['paged'] ?? 1));
+        $search            = isset($_GET['search']) ? sanitize_text_field(wp_unslash($_GET['search'])) : '';
+        $date_from         = isset($_GET['date_from']) ? sanitize_text_field(wp_unslash($_GET['date_from'])) : '';
+        $date_to           = isset($_GET['date_to']) ? sanitize_text_field(wp_unslash($_GET['date_to'])) : '';
+        $orderby           = isset($_GET['orderby']) ? sanitize_text_field(wp_unslash($_GET['orderby'])) : 'created_at';
+        $order             = isset($_GET['order']) ? sanitize_text_field(wp_unslash($_GET['order'])) : 'DESC';
+        $page              = max(1, absint($_GET['paged'] ?? 1));
 
-        $result = Cashback_Claims_Manager::get_claims_admin([
+        $result = Cashback_Claims_Manager::get_claims_admin(array(
             'status'     => $status_filter,
             'suspicious' => $suspicious_filter !== '' ? (int) $suspicious_filter : '',
             'search'     => $search,
@@ -154,7 +147,7 @@ class Cashback_Claims_Admin
             'order'      => $order,
             'page'       => $page,
             'per_page'   => self::PER_PAGE,
-        ]);
+        ));
 
         $stats = Cashback_Claims_Manager::get_admin_stats();
 
@@ -195,13 +188,13 @@ class Cashback_Claims_Admin
                 <select name="status">
                     <option value=""><?php esc_html_e('Все статусы', 'cashback-plugin'); ?></option>
                     <?php
-                    $statuses = [
+                    $statuses = array(
                         'draft'           => __('Черновик', 'cashback-plugin'),
                         'submitted'       => __('Отправлена', 'cashback-plugin'),
                         'sent_to_network' => __('Отправлена партнёру', 'cashback-plugin'),
                         'approved'        => __('Одобрена', 'cashback-plugin'),
                         'declined'        => __('Отклонена', 'cashback-plugin'),
-                    ];
+                    );
                     foreach ($statuses as $slug => $label) {
                         printf('<option value="%s" %s>%s</option>', esc_attr($slug), selected($status_filter, $slug, false), esc_html($label));
                     }
@@ -235,9 +228,9 @@ class Cashback_Claims_Admin
                 <a href="<?php echo esc_url(admin_url('admin.php?page=cashback-claims-admin')); ?>" class="button"><?php esc_html_e('Сбросить', 'cashback-plugin'); ?></a>
             </form>
 
-            <?php if (empty($result['claims'])): ?>
+            <?php if (empty($result['claims'])) : ?>
                 <p><?php esc_html_e('Заявок не найдено.', 'cashback-plugin'); ?></p>
-            <?php else: ?>
+            <?php else : ?>
                 <table class="wp-list-table widefat fixed striped">
                     <thead>
                         <tr>
@@ -254,7 +247,7 @@ class Cashback_Claims_Admin
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($result['claims'] as $claim): ?>
+                        <?php foreach ($result['claims'] as $claim) : ?>
                             <tr>
                                 <td><?php echo esc_html($claim['claim_id']); ?></td>
                                 <td>
@@ -276,7 +269,7 @@ class Cashback_Claims_Admin
                                     </span>
                                 </td>
                                 <td>
-                                    <?php if ((int) $claim['is_suspicious']): ?>
+                                    <?php if ((int) $claim['is_suspicious']) : ?>
                                         <?php
                                         $reasons_text = '';
                                         if (!empty($claim['suspicious_reasons'])) {
@@ -303,8 +296,8 @@ class Cashback_Claims_Admin
                 </table>
 
                 <?php
-                $base_url = admin_url('admin.php');
-                $query_args = [
+                $base_url   = admin_url('admin.php');
+                $query_args = array(
                     'page'       => 'cashback-claims-admin',
                     'status'     => $status_filter,
                     'suspicious' => $suspicious_filter,
@@ -314,17 +307,17 @@ class Cashback_Claims_Admin
                     'orderby'    => $orderby,
                     'order'      => $order,
                     'paged'      => '%#%',
-                ];
+                );
                 // Remove empty values but keep '0' (strict filter)
-                $query_args = array_filter($query_args, static function ($v) {
+                $query_args      = array_filter($query_args, static function ( $v ) {
                     return $v !== '' && $v !== null;
                 });
-                $pagination_args = [
+                $pagination_args = array(
                     'base'    => add_query_arg($query_args, $base_url),
                     'format'  => '',
                     'total'   => $result['pages'],
                     'current' => $page,
-                ];
+                );
                 echo paginate_links($pagination_args);
                 ?>
             <?php endif; ?>
@@ -342,20 +335,19 @@ class Cashback_Claims_Admin
     /**
      * AJAX: Transition claim status.
      */
-    public function ajax_transition(): void
-    {
+    public function ajax_transition(): void {
         check_ajax_referer('claims_admin_transition', 'nonce');
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => __('Недостаточно прав.', 'cashback-plugin')]);
+            wp_send_json_error(array( 'message' => __('Недостаточно прав.', 'cashback-plugin') ));
         }
 
-        $claim_id = absint($_POST['claim_id'] ?? 0);
+        $claim_id   = absint($_POST['claim_id'] ?? 0);
         $new_status = sanitize_text_field(wp_unslash($_POST['new_status'] ?? ''));
-        $note = sanitize_textarea_field(wp_unslash($_POST['note'] ?? ''));
+        $note       = sanitize_textarea_field(wp_unslash($_POST['note'] ?? ''));
 
         if (!$claim_id || !$new_status) {
-            wp_send_json_error(['message' => __('Неверные параметры.', 'cashback-plugin')]);
+            wp_send_json_error(array( 'message' => __('Неверные параметры.', 'cashback-plugin') ));
         }
 
         $result = Cashback_Claims_Manager::transition_status(
@@ -367,78 +359,75 @@ class Cashback_Claims_Admin
         );
 
         if ($result['success']) {
-            wp_send_json_success(['message' => __('Статус обновлён.', 'cashback-plugin')]);
+            wp_send_json_success(array( 'message' => __('Статус обновлён.', 'cashback-plugin') ));
         } else {
-            wp_send_json_error(['message' => $result['error']]);
+            wp_send_json_error(array( 'message' => $result['error'] ));
         }
     }
 
     /**
      * AJAX: Add admin note.
      */
-    public function ajax_add_note(): void
-    {
+    public function ajax_add_note(): void {
         check_ajax_referer('claims_admin_note', 'nonce');
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => __('Недостаточно прав.', 'cashback-plugin')]);
+            wp_send_json_error(array( 'message' => __('Недостаточно прав.', 'cashback-plugin') ));
         }
 
         $claim_id = absint($_POST['claim_id'] ?? 0);
-        $note = sanitize_textarea_field(wp_unslash($_POST['note'] ?? ''));
+        $note     = sanitize_textarea_field(wp_unslash($_POST['note'] ?? ''));
 
         if (!$claim_id || empty($note)) {
-            wp_send_json_error(['message' => __('Неверные параметры.', 'cashback-plugin')]);
+            wp_send_json_error(array( 'message' => __('Неверные параметры.', 'cashback-plugin') ));
         }
 
         $result = Cashback_Claims_Manager::add_note($claim_id, $note, get_current_user_id());
 
         if ($result['success']) {
-            wp_send_json_success(['message' => __('Комментарий добавлен.', 'cashback-plugin')]);
+            wp_send_json_success(array( 'message' => __('Комментарий добавлен.', 'cashback-plugin') ));
         } else {
-            wp_send_json_error(['message' => $result['error']]);
+            wp_send_json_error(array( 'message' => $result['error'] ));
         }
     }
 
     /**
      * AJAX: Get claim detail.
      */
-    public function ajax_get_detail(): void
-    {
+    public function ajax_get_detail(): void {
         check_ajax_referer('claims_admin_detail', 'nonce');
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => __('Недостаточно прав.', 'cashback-plugin')]);
+            wp_send_json_error(array( 'message' => __('Недостаточно прав.', 'cashback-plugin') ));
         }
 
         $claim_id = absint($_POST['claim_id'] ?? 0);
 
         if (!$claim_id) {
-            wp_send_json_error(['message' => __('Неверный параметр.', 'cashback-plugin')]);
+            wp_send_json_error(array( 'message' => __('Неверный параметр.', 'cashback-plugin') ));
         }
 
         $claim = Cashback_Claims_Manager::get_claim($claim_id);
 
         if (!$claim) {
-            wp_send_json_error(['message' => __('Заявка не найдена.', 'cashback-plugin')]);
+            wp_send_json_error(array( 'message' => __('Заявка не найдена.', 'cashback-plugin') ));
         }
 
         ob_start();
         $this->render_claim_detail($claim);
         $html = ob_get_clean();
 
-        wp_send_json_success(['html' => $html]);
+        wp_send_json_success(array( 'html' => $html ));
     }
 
     /**
      * AJAX: Get stats.
      */
-    public function ajax_stats(): void
-    {
+    public function ajax_stats(): void {
         check_ajax_referer('claims_admin_stats', 'nonce');
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => __('Недостаточно прав.', 'cashback-plugin')]);
+            wp_send_json_error(array( 'message' => __('Недостаточно прав.', 'cashback-plugin') ));
         }
 
         wp_send_json_success(Cashback_Claims_Manager::get_admin_stats());
@@ -447,8 +436,7 @@ class Cashback_Claims_Admin
     /**
      * Render claim detail in modal.
      */
-    private function render_claim_detail(array $claim): void
-    {
+    private function render_claim_detail( array $claim ): void {
         ?>
         <h2><?php esc_html_e('Заявка #', 'cashback-plugin'); ?><?php echo esc_html($claim['claim_id']); ?></h2>
 
@@ -471,15 +459,15 @@ class Cashback_Claims_Admin
                     <tr><th><?php esc_html_e('Создана', 'cashback-plugin'); ?></th><td><?php echo esc_html(gmdate('d.m.Y H:i:s', strtotime($claim['created_at']))); ?></td></tr>
                 </table>
 
-                <?php if (!empty($claim['comment'])): ?>
+                <?php if (!empty($claim['comment'])) : ?>
                     <h3><?php esc_html_e('Комментарий пользователя', 'cashback-plugin'); ?></h3>
                     <p><?php echo esc_html($claim['comment']); ?></p>
                 <?php endif; ?>
 
-                <?php if (!empty($claim['suspicious_reasons_decoded'])): ?>
+                <?php if (!empty($claim['suspicious_reasons_decoded'])) : ?>
                     <h3><?php esc_html_e('Причины подозрения', 'cashback-plugin'); ?></h3>
                     <ul>
-                        <?php foreach ($claim['suspicious_reasons_decoded'] as $reason): ?>
+                        <?php foreach ($claim['suspicious_reasons_decoded'] as $reason) : ?>
                             <li><?php echo esc_html($reason); ?></li>
                         <?php endforeach; ?>
                     </ul>
@@ -488,7 +476,7 @@ class Cashback_Claims_Admin
 
             <div class="claim-detail-section">
                 <h3><?php esc_html_e('История событий', 'cashback-plugin'); ?></h3>
-                <?php if (!empty($claim['events'])): ?>
+                <?php if (!empty($claim['events'])) : ?>
                     <table class="widefat">
                         <thead>
                             <tr>
@@ -499,17 +487,17 @@ class Cashback_Claims_Admin
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($claim['events'] as $event): ?>
+                            <?php foreach ($claim['events'] as $event) : ?>
                                 <tr>
                                     <td><?php echo esc_html(gmdate('d.m.Y H:i', strtotime($event['created_at']))); ?></td>
                                     <td><?php echo esc_html($event['status']); ?></td>
-                                    <td><?php echo esc_html($event['actor_type'] . ($event['actor_name'] ? ': ' . $event['actor_name'] : '')); ?></td>
+                                    <td><?php echo esc_html($event['actor_type'] . ( $event['actor_name'] ? ': ' . $event['actor_name'] : '' )); ?></td>
                                     <td><?php echo esc_html($event['note'] ?? ''); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
                     </table>
-                <?php else: ?>
+                <?php else : ?>
                     <p><?php esc_html_e('Нет событий.', 'cashback-plugin'); ?></p>
                 <?php endif; ?>
             </div>
@@ -519,7 +507,7 @@ class Cashback_Claims_Admin
             <h3><?php esc_html_e('Действия', 'cashback-plugin'); ?></h3>
 
             <div class="claim-action-buttons">
-                <?php if ($claim['status'] === 'submitted'): ?>
+                <?php if ($claim['status'] === 'submitted') : ?>
                     <button class="button button-primary claims-action-btn" data-action="sent_to_network" data-claim-id="<?php echo esc_attr($claim['claim_id']); ?>">
                         <?php esc_html_e('Отправить партнёру', 'cashback-plugin'); ?>
                     </button>
@@ -529,7 +517,7 @@ class Cashback_Claims_Admin
                     <button class="button button-danger claims-action-btn" data-action="declined" data-claim-id="<?php echo esc_attr($claim['claim_id']); ?>">
                         <?php esc_html_e('Отклонить', 'cashback-plugin'); ?>
                     </button>
-                <?php elseif ($claim['status'] === 'sent_to_network'): ?>
+                <?php elseif ($claim['status'] === 'sent_to_network') : ?>
                     <button class="button button-success claims-action-btn" data-action="approved" data-claim-id="<?php echo esc_attr($claim['claim_id']); ?>">
                         <?php esc_html_e('Одобрить', 'cashback-plugin'); ?>
                     </button>
@@ -549,15 +537,14 @@ class Cashback_Claims_Admin
         <?php
     }
 
-    private function get_status_label(string $status): string
-    {
-        $labels = [
+    private function get_status_label( string $status ): string {
+        $labels = array(
             'draft'           => __('Черновик', 'cashback-plugin'),
             'submitted'       => __('Отправлена', 'cashback-plugin'),
             'sent_to_network' => __('Отправлена партнёру', 'cashback-plugin'),
             'approved'        => __('Одобрена', 'cashback-plugin'),
             'declined'        => __('Отклонена', 'cashback-plugin'),
-        ];
-        return $labels[$status] ?? $status;
+        );
+        return $labels[ $status ] ?? $status;
     }
 }

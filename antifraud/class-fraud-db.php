@@ -11,15 +11,14 @@ if (!defined('ABSPATH')) {
  *
  * @since 1.2.0
  */
-class Cashback_Fraud_DB
-{
+class Cashback_Fraud_DB {
+
     /**
      * Создание всех таблиц антифрод-модуля
      *
      * @return void
      */
-    public static function create_tables(): void
-    {
+    public static function create_tables(): void {
         global $wpdb;
 
         $charset_collate = $wpdb->get_charset_collate();
@@ -96,35 +95,34 @@ class Cashback_Fraud_DB
      *
      * @return void
      */
-    private static function add_foreign_keys(): void
-    {
+    private static function add_foreign_keys(): void {
         global $wpdb;
 
-        $fk_map = [
-            'fk_fraud_alert_user' => [
+        $fk_map = array(
+            'fk_fraud_alert_user' => array(
                 'table' => $wpdb->prefix . 'cashback_fraud_alerts',
-                'sql' => "ALTER TABLE `{$wpdb->prefix}cashback_fraud_alerts`
+                'sql'   => "ALTER TABLE `{$wpdb->prefix}cashback_fraud_alerts`
                           ADD CONSTRAINT `fk_fraud_alert_user`
                           FOREIGN KEY (`user_id`) REFERENCES `{$wpdb->prefix}users` (`ID`) ON DELETE CASCADE",
-            ],
-            'fk_signal_alert' => [
+            ),
+            'fk_signal_alert'     => array(
                 'table' => $wpdb->prefix . 'cashback_fraud_signals',
-                'sql' => "ALTER TABLE `{$wpdb->prefix}cashback_fraud_signals`
+                'sql'   => "ALTER TABLE `{$wpdb->prefix}cashback_fraud_signals`
                           ADD CONSTRAINT `fk_signal_alert`
                           FOREIGN KEY (`alert_id`) REFERENCES `{$wpdb->prefix}cashback_fraud_alerts` (`id`) ON DELETE CASCADE",
-            ],
-            'fk_fingerprint_user' => [
+            ),
+            'fk_fingerprint_user' => array(
                 'table' => $wpdb->prefix . 'cashback_user_fingerprints',
-                'sql' => "ALTER TABLE `{$wpdb->prefix}cashback_user_fingerprints`
+                'sql'   => "ALTER TABLE `{$wpdb->prefix}cashback_user_fingerprints`
                           ADD CONSTRAINT `fk_fingerprint_user`
                           FOREIGN KEY (`user_id`) REFERENCES `{$wpdb->prefix}users` (`ID`) ON DELETE CASCADE",
-            ],
-        ];
+            ),
+        );
 
         foreach ($fk_map as $fk_name => $info) {
             $exists = $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
-                 WHERE CONSTRAINT_NAME = %s AND TABLE_SCHEMA = DATABASE()",
+                'SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+                 WHERE CONSTRAINT_NAME = %s AND TABLE_SCHEMA = DATABASE()',
                 $fk_name
             ));
 
@@ -143,8 +141,7 @@ class Cashback_Fraud_DB
      *
      * @return void
      */
-    public static function cleanup_old_data(): void
-    {
+    public static function cleanup_old_data(): void {
         global $wpdb;
 
         $retention_days = 180;

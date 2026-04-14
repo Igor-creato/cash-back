@@ -11,8 +11,8 @@ if (!defined('ABSPATH')) {
  *
  * Handles the cashback withdrawal functionality in WooCommerce My Account.
  */
-class CashbackWithdrawal
-{
+class CashbackWithdrawal {
+
 
     /**
      * Instance of the class (singleton pattern)
@@ -24,8 +24,7 @@ class CashbackWithdrawal
      *
      * @return CashbackWithdrawal
      */
-    public static function get_instance(): self
-    {
+    public static function get_instance(): self {
         if (null === self::$instance) {
             self::$instance = new self();
         }
@@ -35,36 +34,33 @@ class CashbackWithdrawal
     /**
      * Constructor
      */
-    private function __construct()
-    {
-        add_action('init', array($this, 'register_endpoint'));
-        add_filter('woocommerce_account_menu_items', array($this, 'add_menu_item'));
-        add_action('woocommerce_account_cashback-withdrawal_endpoint', array($this, 'endpoint_content'));
-        add_action('wp_enqueue_scripts', array($this, 'enqueue_styles'));
+    private function __construct() {
+        add_action('init', array( $this, 'register_endpoint' ));
+        add_filter('woocommerce_account_menu_items', array( $this, 'add_menu_item' ));
+        add_action('woocommerce_account_cashback-withdrawal_endpoint', array( $this, 'endpoint_content' ));
+        add_action('wp_enqueue_scripts', array( $this, 'enqueue_styles' ));
         // AJAX обработчики для вывода кэшбэка (только для авторизованных пользователей)
-        add_action('wp_ajax_process_cashback_withdrawal', array($this, 'process_cashback_withdrawal'));
+        add_action('wp_ajax_process_cashback_withdrawal', array( $this, 'process_cashback_withdrawal' ));
         // AJAX обработчик для обновления баланса (только для авторизованных пользователей)
-        add_action('wp_ajax_get_user_balance', array($this, 'get_user_balance_ajax'));
+        add_action('wp_ajax_get_user_balance', array( $this, 'get_user_balance_ajax' ));
         // AJAX обработчик для сохранения настроек вывода (только для авторизованных пользователей)
-        add_action('wp_ajax_save_payout_settings', array($this, 'save_payout_settings'));
+        add_action('wp_ajax_save_payout_settings', array( $this, 'save_payout_settings' ));
         // AJAX обработчик для поиска банков (только для авторизованных пользователей)
-        add_action('wp_ajax_search_banks', array($this, 'search_banks_ajax'));
+        add_action('wp_ajax_search_banks', array( $this, 'search_banks_ajax' ));
     }
 
     /**
      * Register the custom endpoint
      */
-    public function register_endpoint()
-    {
+    public function register_endpoint() {
         add_rewrite_endpoint('cashback-withdrawal', EP_ROOT | EP_PAGES);
-        add_filter('query_vars', array($this, 'add_query_vars'));
+        add_filter('query_vars', array( $this, 'add_query_vars' ));
     }
 
     /**
      * Add query vars
      */
-    public function add_query_vars($vars)
-    {
+    public function add_query_vars( $vars ) {
         $vars[] = 'cashback-withdrawal';
         return $vars;
     }
@@ -75,10 +71,9 @@ class CashbackWithdrawal
      * @param array $items
      * @return array
      */
-    public function add_menu_item($items)
-    {
+    public function add_menu_item( $items ) {
         // Insert after 'orders'
-        $new_items = array();
+        $new_items                        = array();
         $new_items['cashback-withdrawal'] = __('Вывод кэшбэка', 'cashback-plugin');
 
         return $this->insert_after_helper($items, $new_items, 'orders');
@@ -92,14 +87,13 @@ class CashbackWithdrawal
      * @param string $after
      * @return array
      */
-    private function insert_after_helper($items, $new_items, $after)
-    {
+    private function insert_after_helper( $items, $new_items, $after ) {
         $position = array_search($after, array_keys($items), true);
         if ($position === false) {
             return $items + $new_items;
         }
-        $position++;
-        $array = array_slice($items, 0, $position, true);
+        ++$position;
+        $array  = array_slice($items, 0, $position, true);
         $array += $new_items;
         $array += array_slice($items, $position, count($items) - $position, true);
         return $array;
@@ -111,21 +105,20 @@ class CashbackWithdrawal
      * @param int $user_id
      * @return array{available: float, pending: float, paid: float}
      */
-    private function get_all_balances(int $user_id): array
-    {
+    private function get_all_balances( int $user_id ): array {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_user_balance';
-        $row = $wpdb->get_row($wpdb->prepare(
+        $row        = $wpdb->get_row($wpdb->prepare(
             "SELECT available_balance, pending_balance, paid_balance FROM {$table_name} WHERE user_id = %d",
             $user_id
         ));
 
-        return [
-            'available' => (float) ($row->available_balance ?? 0.0),
-            'pending'   => (float) ($row->pending_balance ?? 0.0),
-            'paid'      => (float) ($row->paid_balance ?? 0.0),
-        ];
+        return array(
+            'available' => (float) ( $row->available_balance ?? 0.0 ),
+            'pending'   => (float) ( $row->pending_balance ?? 0.0 ),
+            'paid'      => (float) ( $row->paid_balance ?? 0.0 ),
+        );
     }
 
     /**
@@ -134,17 +127,16 @@ class CashbackWithdrawal
      * @param int $user_id
      * @return float
      */
-    private function get_available_balance(int $user_id): float
-    {
+    private function get_available_balance( int $user_id ): float {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_user_balance';
-        $balance = $wpdb->get_var($wpdb->prepare(
+        $balance    = $wpdb->get_var($wpdb->prepare(
             "SELECT available_balance FROM {$table_name} WHERE user_id = %d",
             $user_id
         ));
 
-        return (float) ($balance ?: 0.0);
+        return (float) ( $balance ?: 0.0 );
     }
 
     /**
@@ -152,8 +144,7 @@ class CashbackWithdrawal
      *
      * @return array
      */
-    private function get_payout_methods(): array
-    {
+    private function get_payout_methods(): array {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_payout_methods';
@@ -187,12 +178,11 @@ class CashbackWithdrawal
      *
      * @return array
      */
-    private function get_banks(): array
-    {
+    private function get_banks(): array {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_banks';
-        $banks = $wpdb->get_results(
+        $banks      = $wpdb->get_results(
             $wpdb->prepare(
                 "SELECT id, name FROM {$table_name} WHERE is_active = %d ORDER BY sort_order ASC, name ASC LIMIT 10",
                 1
@@ -209,12 +199,11 @@ class CashbackWithdrawal
      * @param int $user_id
      * @return bool
      */
-    private function has_payout_settings(int $user_id): bool
-    {
+    private function has_payout_settings( int $user_id ): bool {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_user_profile';
-        $result = $wpdb->get_row($wpdb->prepare(
+        $result     = $wpdb->get_row($wpdb->prepare(
             "SELECT payout_method_id, payout_account, encrypted_details, bank_id FROM {$table_name} WHERE user_id = %d",
             $user_id
         ), ARRAY_A);
@@ -226,12 +215,12 @@ class CashbackWithdrawal
         // Реквизиты считаются заполненными если есть зашифрованные данные или plaintext
         $has_account = !empty($result['encrypted_details']) || !empty($result['payout_account']);
 
-        $method_id = (int) $result['payout_method_id'];
+        $method_id   = (int) $result['payout_method_id'];
         $bank_needed = $method_id > 0 ? $this->is_bank_required_for_method($method_id) : true;
 
         return !empty($result['payout_method_id']) &&
             $has_account &&
-            (!$bank_needed || !empty($result['bank_id']));
+            ( !$bank_needed || !empty($result['bank_id']) );
     }
 
     /**
@@ -240,11 +229,10 @@ class CashbackWithdrawal
      * @param int $user_id
      * @return int
      */
-    private function get_user_payout_method_id(int $user_id): int
-    {
+    private function get_user_payout_method_id( int $user_id ): int {
         global $wpdb;
 
-        $table_name = $wpdb->prefix . 'cashback_user_profile';
+        $table_name       = $wpdb->prefix . 'cashback_user_profile';
         $payout_method_id = $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT payout_method_id FROM {$table_name} WHERE user_id = %d",
@@ -261,11 +249,10 @@ class CashbackWithdrawal
      * @param int $method_id
      * @return string
      */
-    private function get_payout_method_name(int $method_id): string
-    {
+    private function get_payout_method_name( int $method_id ): string {
         global $wpdb;
 
-        $table_name = $wpdb->prefix . 'cashback_payout_methods';
+        $table_name  = $wpdb->prefix . 'cashback_payout_methods';
         $method_name = $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT name FROM {$table_name} WHERE id = %d",
@@ -282,12 +269,11 @@ class CashbackWithdrawal
      * @param int $bank_id
      * @return string
      */
-    private function get_bank_name(int $bank_id): string
-    {
+    private function get_bank_name( int $bank_id ): string {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_banks';
-        $bank_name = $wpdb->get_var(
+        $bank_name  = $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT name FROM {$table_name} WHERE id = %d",
                 $bank_id
@@ -303,12 +289,11 @@ class CashbackWithdrawal
      * @param int $user_id
      * @return int
      */
-    private function get_user_bank_id(int $user_id): int
-    {
+    private function get_user_bank_id( int $user_id ): int {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_user_profile';
-        $bank_id = $wpdb->get_var(
+        $bank_id    = $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT bank_id FROM {$table_name} WHERE user_id = %d",
                 $user_id
@@ -324,17 +309,16 @@ class CashbackWithdrawal
      * @param int $user_id
      * @return float
      */
-    private function get_min_payout_amount(int $user_id): float
-    {
+    private function get_min_payout_amount( int $user_id ): float {
         global $wpdb;
 
-        $table_name = $wpdb->prefix . 'cashback_user_profile';
+        $table_name        = $wpdb->prefix . 'cashback_user_profile';
         $min_payout_amount = $wpdb->get_var($wpdb->prepare(
             "SELECT min_payout_amount FROM {$table_name} WHERE user_id = %d",
             $user_id
         ));
 
-        return (float) ($min_payout_amount ?: 100.00); // Default to 100.00 if not set
+        return (float) ( $min_payout_amount ?: 100.00 ); // Default to 100.00 if not set
     }
 
     /**
@@ -343,8 +327,7 @@ class CashbackWithdrawal
      * @param int $user_id
      * @return string|null
      */
-    private function get_payout_method(int $user_id): ?string
-    {
+    private function get_payout_method( int $user_id ): ?string {
         global $wpdb;
 
         $table_profile = $wpdb->prefix . 'cashback_user_profile';
@@ -367,12 +350,11 @@ class CashbackWithdrawal
      * @param int $user_id
      * @return array|null Array containing bank id, code and name
      */
-    private function get_user_bank_info(int $user_id): ?array
-    {
+    private function get_user_bank_info( int $user_id ): ?array {
         global $wpdb;
 
         $table_profile = $wpdb->prefix . 'cashback_user_profile';
-        $table_banks = $wpdb->prefix . 'cashback_banks';
+        $table_banks   = $wpdb->prefix . 'cashback_banks';
 
         $bank_info = $wpdb->get_row($wpdb->prepare(
             "SELECT b.id, b.bank_code, b.name
@@ -391,12 +373,11 @@ class CashbackWithdrawal
      * @param int $user_id
      * @return string|null
      */
-    private function get_payout_account(int $user_id): ?string
-    {
+    private function get_payout_account( int $user_id ): ?string {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_user_profile';
-        $row = $wpdb->get_row($wpdb->prepare(
+        $row        = $wpdb->get_row($wpdb->prepare(
             "SELECT payout_account, encrypted_details FROM {$table_name} WHERE user_id = %d",
             $user_id
         ), ARRAY_A);
@@ -423,11 +404,10 @@ class CashbackWithdrawal
      * Получает маскированный номер счёта из профиля пользователя.
      * Fallback на маскирование plaintext payout_account.
      */
-    private function get_user_masked_account(int $user_id, ?string $fallback_payout_account = null): string
-    {
+    private function get_user_masked_account( int $user_id, ?string $fallback_payout_account = null ): string {
         global $wpdb;
 
-        $table_name = $wpdb->prefix . 'cashback_user_profile';
+        $table_name     = $wpdb->prefix . 'cashback_user_profile';
         $masked_details = $wpdb->get_var($wpdb->prepare(
             "SELECT masked_details FROM {$table_name} WHERE user_id = %d",
             $user_id
@@ -445,20 +425,19 @@ class CashbackWithdrawal
      *
      * @return array{encrypted_details: string|null, masked_details: string|null}
      */
-    private function get_user_encryption_data(int $user_id): array
-    {
+    private function get_user_encryption_data( int $user_id ): array {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_user_profile';
-        $row = $wpdb->get_row($wpdb->prepare(
+        $row        = $wpdb->get_row($wpdb->prepare(
             "SELECT encrypted_details, masked_details FROM {$table_name} WHERE user_id = %d",
             $user_id
         ), ARRAY_A);
 
-        return [
+        return array(
             'encrypted_details' => $row['encrypted_details'] ?? null,
-            'masked_details' => $row['masked_details'] ?? null,
-        ];
+            'masked_details'    => $row['masked_details'] ?? null,
+        );
     }
 
     /**
@@ -467,12 +446,11 @@ class CashbackWithdrawal
      * @param string $method
      * @return string
      */
-    private function get_payout_method_label(string $method): string
-    {
+    private function get_payout_method_label( string $method ): string {
         global $wpdb;
 
         // Получаем название способа вывода из базы данных
-        $table_name = $wpdb->prefix . 'cashback_payout_methods';
+        $table_name  = $wpdb->prefix . 'cashback_payout_methods';
         $method_name = $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT name FROM {$table_name} WHERE slug = %s",
@@ -486,19 +464,18 @@ class CashbackWithdrawal
 
         // Если не найдено в базе, используем старую логику
         $labels = array(
-            'sbp' => __('Система быстрых платежей (СБП)', 'cashback-plugin'),
-            'mir' => __('Карта МИР', 'cashback-plugin'),
-            'yoomoney' => __('ЮMoney', 'cashback-plugin')
+            'sbp'      => __('Система быстрых платежей (СБП)', 'cashback-plugin'),
+            'mir'      => __('Карта МИР', 'cashback-plugin'),
+            'yoomoney' => __('ЮMoney', 'cashback-plugin'),
         );
 
-        return isset($labels[$method]) ? $labels[$method] : ucfirst($method);
+        return isset($labels[ $method ]) ? $labels[ $method ] : ucfirst($method);
     }
 
     /**
      * Display content for the endpoint
      */
-    public function endpoint_content()
-    {
+    public function endpoint_content() {
         $user_id = get_current_user_id();
 
         // Проверка статуса "banned"
@@ -542,30 +519,30 @@ class CashbackWithdrawal
             return;
         }
 
-        $balances = $this->get_all_balances($user_id);
-        $balance = $balances['available'];
-        $pending_balance = $balances['pending'];
-        $paid_balance = $balances['paid'];
+        $balances          = $this->get_all_balances($user_id);
+        $balance           = $balances['available'];
+        $pending_balance   = $balances['pending'];
+        $paid_balance      = $balances['paid'];
         $min_payout_amount = $this->get_min_payout_amount($user_id);
 
         // Получаем информацию о способе вывода и номере счета
         $payout_method_id = $this->get_user_payout_method_id($user_id);
-        $payout_account = $this->get_payout_account($user_id);
-        $masked_account = $this->get_user_masked_account($user_id, $payout_account);
-        $bank_id = $this->get_user_bank_id($user_id);
+        $payout_account   = $this->get_payout_account($user_id);
+        $masked_account   = $this->get_user_masked_account($user_id, $payout_account);
+        $bank_id          = $this->get_user_bank_id($user_id);
 
         // Проверяем, есть ли у пользователя сохраненные настройки
         $has_settings = $this->has_payout_settings($user_id);
 
         // Проверяем активность сохраненных платежных данных
-        $settings_inactive = false;
+        $settings_inactive       = false;
         $payout_method_is_active = true;
-        $bank_is_active = true;
+        $bank_is_active          = true;
 
         if ($has_settings) {
             $payout_method_is_active = $this->is_payout_method_active($payout_method_id);
-            $bank_required_flag = $this->is_bank_required_for_method($payout_method_id);
-            $bank_is_active = ($bank_required_flag && $bank_id > 0) ? $this->is_bank_active($bank_id) : true;
+            $bank_required_flag      = $this->is_bank_required_for_method($payout_method_id);
+            $bank_is_active          = ( $bank_required_flag && $bank_id > 0 ) ? $this->is_bank_active($bank_id) : true;
 
             if (!$payout_method_is_active || !$bank_is_active) {
                 $settings_inactive = true;
@@ -574,7 +551,7 @@ class CashbackWithdrawal
 
         // Получаем доступные способы вывода и банки
         $payout_methods = $this->get_payout_methods();
-        $banks = $this->get_banks();
+        $banks          = $this->get_banks();
 
         echo '<div class="cashback-withdrawal-container">';
         echo '<h2>' . __('Вывод кэшбэка', 'cashback-plugin') . '</h2>';
@@ -593,17 +570,17 @@ class CashbackWithdrawal
 
         echo '<div class="balance-info-card">';
         echo '<span class="balance-info-label">' . __('Доступный баланс', 'cashback-plugin') . '</span>';
-        echo '<span id="cashback-balance-amount" class="balance-info-value ' . ($balance > 0 ? 'balance-green' : 'balance-gray') . '">' . wc_price($balance) . '</span>';
+        echo '<span id="cashback-balance-amount" class="balance-info-value ' . ( $balance > 0 ? 'balance-green' : 'balance-gray' ) . '">' . wc_price($balance) . '</span>';
         echo '</div>';
 
         echo '<div class="balance-info-card">';
         echo '<span class="balance-info-label">' . __('В обработке', 'cashback-plugin') . '</span>';
-        echo '<span id="cashback-pending-amount" class="balance-info-value ' . ($pending_balance > 0 ? 'balance-pending' : 'balance-gray') . '">' . wc_price($pending_balance) . '</span>';
+        echo '<span id="cashback-pending-amount" class="balance-info-value ' . ( $pending_balance > 0 ? 'balance-pending' : 'balance-gray' ) . '">' . wc_price($pending_balance) . '</span>';
         echo '</div>';
 
         echo '<div class="balance-info-card">';
         echo '<span class="balance-info-label">' . __('Заработано', 'cashback-plugin') . '</span>';
-        echo '<span id="cashback-paid-amount" class="balance-info-value ' . ($paid_balance > 0 ? 'balance-paid' : 'balance-gray') . '">' . wc_price($paid_balance) . '</span>';
+        echo '<span id="cashback-paid-amount" class="balance-info-value ' . ( $paid_balance > 0 ? 'balance-paid' : 'balance-gray' ) . '">' . wc_price($paid_balance) . '</span>';
         echo '</div>';
 
         echo '</div>'; // .balance-info-grid
@@ -615,7 +592,7 @@ class CashbackWithdrawal
         echo '<form id="withdrawal-form" data-cb-protected="1">';
         echo '<p class="form-row">';
         echo '<label for="withdrawal-amount">' . __('Сумма вывода', 'cashback-plugin') . ' <span class="required">*</span></label>';
-        echo '<input type="number" class="input-text" name="withdrawal_amount" id="withdrawal-amount" placeholder="' . esc_attr__('Введите сумму', 'cashback-plugin') . '" value="" step="0.01" min="' . esc_attr((string)$min_payout_amount) . '" />';
+        echo '<input type="number" class="input-text" name="withdrawal_amount" id="withdrawal-amount" placeholder="' . esc_attr__('Введите сумму', 'cashback-plugin') . '" value="" step="0.01" min="' . esc_attr((string) $min_payout_amount) . '" />';
         echo '</p>';
         // CAPTCHA контейнер для серых IP
         if (class_exists('Cashback_Captcha')) {
@@ -646,11 +623,11 @@ class CashbackWithdrawal
         }
 
         // Получаем название банка один раз для использования в обоих блоках
-        $bank_name = ($bank_id > 0) ? $this->get_bank_name($bank_id) : '';
+        $bank_name = ( $bank_id > 0 ) ? $this->get_bank_name($bank_id) : '';
 
         if ($has_settings && !$settings_inactive) {
             // Если настройки есть и активны - показываем их в виде текста
-            $method_name = $this->get_payout_method_name($payout_method_id);
+            $method_name               = $this->get_payout_method_name($payout_method_id);
             $bank_required_for_display = $this->is_bank_required_for_method($payout_method_id);
 
             echo '<div id="payout_settings_display" class="payout-settings-display">';
@@ -675,7 +652,7 @@ class CashbackWithdrawal
         }
 
         // Форма редактирования (скрыта, если настройки активны; показана, если неактивны или нет настроек)
-        $form_class = ($has_settings && !$settings_inactive) ? 'payout-settings-form-hidden' : '';
+        $form_class = ( $has_settings && !$settings_inactive ) ? 'payout-settings-form-hidden' : '';
         echo '<div id="payout_settings_form" class="payout-settings-form ' . $form_class . '">';
         echo '<form id="payout-settings-form">';
 
@@ -684,9 +661,9 @@ class CashbackWithdrawal
         echo '<select name="payout_method_id" id="payout_method_id" class="woocommerce-Input woocommerce-Input--text input-text">';
         echo '<option value="">' . __('Выберите платежную систему', 'cashback-plugin') . '</option>';
         foreach ($payout_methods as $method) {
-            $selected = ($payout_method_id === intval($method['id'])) ? 'selected' : '';
+            $selected      = ( $payout_method_id === intval($method['id']) ) ? 'selected' : '';
             $bank_req_attr = isset($method['bank_required']) ? intval($method['bank_required']) : 1;
-            echo '<option value="' . esc_attr((string)$method['id']) . '" data-slug="' . esc_attr($method['slug']) . '" data-bank-required="' . esc_attr((string)$bank_req_attr) . '" ' . $selected . '>' . esc_html($method['name']) . '</option>';
+            echo '<option value="' . esc_attr((string) $method['id']) . '" data-slug="' . esc_attr($method['slug']) . '" data-bank-required="' . esc_attr((string) $bank_req_attr) . '" ' . $selected . '>' . esc_html($method['name']) . '</option>';
         }
         echo '</select>';
         echo '</p>';
@@ -698,10 +675,10 @@ class CashbackWithdrawal
 
         // Кастомный компонент поиска банков с autocomplete
         $bank_required_for_current = $this->is_bank_required_for_method($payout_method_id);
-        $bank_row_style = $bank_required_for_current ? '' : ' style="display:none"';
+        $bank_row_style            = $bank_required_for_current ? '' : ' style="display:none"';
         echo '<div class="woocommerce-form-row woocommerce-form-row--wide form-row form-row-wide"' . $bank_row_style . '>';
         echo '<label for="bank_search_input" id="bank_search_label">' . __('Банк', 'cashback-plugin') . ' <span class="required">*</span></label>';
-        echo '<input type="hidden" name="bank_id" id="bank_id" value="' . esc_attr((string)$bank_id) . '" />';
+        echo '<input type="hidden" name="bank_id" id="bank_id" value="' . esc_attr((string) $bank_id) . '" />';
         echo '<div class="bank-search-wrapper" role="combobox" aria-expanded="false" aria-owns="bank_search_results" aria-haspopup="listbox">';
         // Используем ранее полученное название банка
         $current_bank_name = $bank_name;
@@ -709,7 +686,7 @@ class CashbackWithdrawal
         echo '<ul id="bank_search_results" class="bank-search-results" role="listbox" aria-label="' . esc_attr__('Список банков', 'cashback-plugin') . '">';
         // Первый элемент — показ начальных 10 банков при фокусе
         foreach ($banks as $idx => $bank) {
-            echo '<li class="bank-search-item" role="option" aria-selected="' . ($bank_id === intval($bank['id']) ? 'true' : 'false') . '" data-bank-id="' . esc_attr($bank['id']) . '" data-bank-name="' . esc_attr($bank['name']) . '" tabindex="-1">' . esc_html($bank['name']) . '</li>';
+            echo '<li class="bank-search-item" role="option" aria-selected="' . ( $bank_id === intval($bank['id']) ? 'true' : 'false' ) . '" data-bank-id="' . esc_attr($bank['id']) . '" data-bank-name="' . esc_attr($bank['name']) . '" tabindex="-1">' . esc_html($bank['name']) . '</li>';
         }
         echo '</ul>';
         echo '</div>';
@@ -765,8 +742,7 @@ class CashbackWithdrawal
      * 6. ЛЕДЖЕР: пишется в той же транзакции. ON DUPLICATE KEY UPDATE id = id
      *    обеспечивает идемпотентность записи.
      */
-    public function process_cashback_withdrawal()
-    {
+    public function process_cashback_withdrawal() {
         // === 1. Безопасность: nonce и аутентификация ===
         if (!wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'] ?? '')), 'cashback_withdrawal_submit_nonce')) {
             wp_send_json_error(__('Ошибка безопасности.', 'cashback-plugin'));
@@ -799,14 +775,14 @@ class CashbackWithdrawal
                 $user_data = get_userdata($user_id);
                 if ($user_data) {
                     $seconds_since = time() - strtotime($user_data->user_registered);
-                    if ($seconds_since < ($cooling_days * DAY_IN_SECONDS)) {
-                        $remaining = (int) ceil(($cooling_days * DAY_IN_SECONDS - $seconds_since) / DAY_IN_SECONDS);
-                        wp_send_json_error([
+                    if ($seconds_since < ( $cooling_days * DAY_IN_SECONDS )) {
+                        $remaining = (int) ceil(( $cooling_days * DAY_IN_SECONDS - $seconds_since ) / DAY_IN_SECONDS);
+                        wp_send_json_error(array(
                             'message' => sprintf(
                                 __('Вывод средств будет доступен через %d дн. после регистрации.', 'cashback-plugin'),
                                 $remaining
                             ),
-                        ]);
+                        ));
                         return;
                     }
                 }
@@ -848,25 +824,25 @@ class CashbackWithdrawal
         }
 
         // 2.3. Проверка реквизитов (без блокировок — только чтение)
-        $payout_method = $this->get_payout_method($user_id);
+        $payout_method  = $this->get_payout_method($user_id);
         $payout_account = $this->get_payout_account($user_id);
 
         if (empty($payout_method) || empty($payout_account)) {
             wp_send_json_error(array(
-                'message' => __('Для вывода средств пожалуйста, заполните способ вывода и номер счета в вашем профиле.', 'cashback-plugin'),
-                'show_form' => true
+                'message'   => __('Для вывода средств пожалуйста, заполните способ вывода и номер счета в вашем профиле.', 'cashback-plugin'),
+                'show_form' => true,
             ));
             return;
         }
 
         $user_payout_method_id = $this->get_user_payout_method_id($user_id);
-        $user_bank_id = $this->get_user_bank_id($user_id);
+        $user_bank_id          = $this->get_user_bank_id($user_id);
 
         if ($user_payout_method_id > 0 && !$this->is_payout_method_active($user_payout_method_id)) {
             $method_name = $this->get_payout_method_name($user_payout_method_id);
             wp_send_json_error(array(
-                'message' => sprintf(__('Через %s сейчас выплаты не производятся, выберите другую', 'cashback-plugin'), $method_name),
-                'show_form' => true
+                'message'   => sprintf(__('Через %s сейчас выплаты не производятся, выберите другую', 'cashback-plugin'), $method_name),
+                'show_form' => true,
             ));
             return;
         }
@@ -874,8 +850,8 @@ class CashbackWithdrawal
         if ($user_bank_id > 0 && !$this->is_bank_active($user_bank_id)) {
             $bank_name = $this->get_bank_name($user_bank_id);
             wp_send_json_error(array(
-                'message' => sprintf(__('Через %s сейчас выплаты не производятся, выберите другой', 'cashback-plugin'), $bank_name),
-                'show_form' => true
+                'message'   => sprintf(__('Через %s сейчас выплаты не производятся, выберите другой', 'cashback-plugin'), $bank_name),
+                'show_form' => true,
             ));
             return;
         }
@@ -884,7 +860,7 @@ class CashbackWithdrawal
         // Если заявка с этим ключом уже существует — возвращаем её данные.
         // Это дешёвый SELECT по UNIQUE INDEX, избегаем открытия транзакции при retry.
         $table_requests = $wpdb->prefix . 'cashback_payout_requests';
-        $existing = $wpdb->get_row($wpdb->prepare(
+        $existing       = $wpdb->get_row($wpdb->prepare(
             "SELECT id, reference_id, total_amount, status FROM {$table_requests} WHERE idempotency_key = %s",
             $idempotency_key
         ));
@@ -892,7 +868,7 @@ class CashbackWithdrawal
         if ($existing) {
             // Retry от клиента — заявка уже создана. Возвращаем успех с теми же данными.
             wp_send_json_success(sprintf(
-                __('Заявка на вывод кэшбэка на сумму %s руб. успешно добавлена. Номер заявки: %s', 'cashback-plugin'),
+                __('Заявка на вывод кэшбэка на сумму %1$s руб. успешно добавлена. Номер заявки: %2$s', 'cashback-plugin'),
                 number_format((float) $existing->total_amount, 2, '.', ' '),
                 $existing->reference_id
             ));
@@ -901,7 +877,7 @@ class CashbackWithdrawal
 
         // === 4. Транзакция: атомарное создание заявки + списание баланса + леджер ===
         $table_balance = $wpdb->prefix . 'cashback_user_balance';
-        $ledger_table = $wpdb->prefix . 'cashback_balance_ledger';
+        $ledger_table  = $wpdb->prefix . 'cashback_balance_ledger';
 
         $wpdb->query('START TRANSACTION');
 
@@ -928,7 +904,7 @@ class CashbackWithdrawal
             // захватил FOR UPDATE первым, триггер заблокирован и бан ещё не применён.
             // Читаем статус профиля здесь — под защитой транзакции.
             $profile_table = $wpdb->prefix . 'cashback_user_profile';
-            $user_status = $wpdb->get_var($wpdb->prepare(
+            $user_status   = $wpdb->get_var($wpdb->prepare(
                 "SELECT status FROM {$profile_table} WHERE user_id = %d FOR UPDATE",
                 $user_id
             ));
@@ -956,7 +932,7 @@ class CashbackWithdrawal
 
             // 4.3. Валидация баланса под блокировкой (исключает TOCTOU)
             $min_payout_amount = $this->get_min_payout_amount($user_id);
-            $min_payout_str = (string) $min_payout_amount;
+            $min_payout_str    = (string) $min_payout_amount;
 
             if (bccomp($balance_str, $min_payout_str, 2) < 0) {
                 throw new \Exception('balance_below_min');
@@ -975,41 +951,41 @@ class CashbackWithdrawal
             // чтобы исключить рассогласование с encrypted_details
             // при параллельном save_payout_settings (race condition:
             // pre-tx reads видят старый метод, а in-tx reads — новые encrypted_details).
-            $payout_method = $this->get_payout_method($user_id);
+            $payout_method  = $this->get_payout_method($user_id);
             $payout_account = $this->get_payout_account($user_id);
             if (empty($payout_method) || empty($payout_account)) {
                 throw new \Exception('payout_details_missing');
             }
-            $bank_info = $this->get_user_bank_info($user_id);
-            $bank_code = $bank_info['bank_code'] ?? '';
+            $bank_info       = $this->get_user_bank_info($user_id);
+            $bank_code       = $bank_info['bank_code'] ?? '';
             $encryption_data = $this->get_user_encryption_data($user_id);
-            $has_encrypted = !empty($encryption_data['encrypted_details']);
+            $has_encrypted   = !empty($encryption_data['encrypted_details']);
 
             // 4.5. INSERT-FIRST с retry по reference_id коллизии
             // reference_id генерируется здесь, не заранее — минимизирует окно коллизии.
             // UNIQUE KEY на idempotency_key — финальная защита от дублей.
             $reference_id = Mariadb_Plugin::generate_reference_id();
 
-            $insert_data = array(
-                'user_id' => $user_id,
-                'reference_id' => $reference_id,
-                'total_amount' => $withdrawal_amount,
-                'payout_method' => $payout_method,
-                'payout_account' => $has_encrypted ? '' : ($payout_account ?: ''),
-                'provider' => $bank_code,
+            $insert_data    = array(
+                'user_id'         => $user_id,
+                'reference_id'    => $reference_id,
+                'total_amount'    => $withdrawal_amount,
+                'payout_method'   => $payout_method,
+                'payout_account'  => $has_encrypted ? '' : ( $payout_account ?: '' ),
+                'provider'        => $bank_code,
                 'idempotency_key' => $idempotency_key,
-                'status' => 'waiting',
+                'status'          => 'waiting',
             );
-            $insert_formats = array('%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s');
+            $insert_formats = array( '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s' );
 
             if ($has_encrypted) {
                 $insert_data['encrypted_details'] = $encryption_data['encrypted_details'];
-                $insert_data['masked_details'] = $encryption_data['masked_details'];
-                $insert_formats[] = '%s';
-                $insert_formats[] = '%s';
+                $insert_data['masked_details']    = $encryption_data['masked_details'];
+                $insert_formats[]                 = '%s';
+                $insert_formats[]                 = '%s';
             }
 
-            $inserted = false;
+            $inserted           = false;
             $max_insert_retries = 3;
 
             for ($attempt = 0; $attempt < $max_insert_retries; $attempt++) {
@@ -1024,7 +1000,7 @@ class CashbackWithdrawal
 
                 // Коллизия reference_id — перегенерировать и повторить
                 if (strpos($db_error, 'uk_reference_id') !== false || strpos($db_error, 'reference_id') !== false) {
-                    $reference_id = Mariadb_Plugin::generate_reference_id();
+                    $reference_id                = Mariadb_Plugin::generate_reference_id();
                     $insert_data['reference_id'] = $reference_id;
                     continue;
                 }
@@ -1112,7 +1088,7 @@ class CashbackWithdrawal
             ));
 
             wp_send_json_success(sprintf(
-                __('Заявка на вывод кэшбэка на сумму %s руб. успешно добавлена. Номер заявки: %s', 'cashback-plugin'),
+                __('Заявка на вывод кэшбэка на сумму %1$s руб. успешно добавлена. Номер заявки: %2$s', 'cashback-plugin'),
                 number_format((float) $withdrawal_amount, 2, '.', ' '),
                 $reference_id
             ));
@@ -1121,13 +1097,13 @@ class CashbackWithdrawal
             $error_message = $e->getMessage();
 
             // Логируем неожиданные ошибки (пропускаем ожидаемые валидационные)
-            $expected_errors = [
+            $expected_errors = array(
                 'Insufficient available balance after lock',
                 'balance_below_min',
                 'amount_below_min',
                 'payout_details_missing',
                 'Duplicate payout request detected',
-            ];
+            );
             if (!in_array($error_message, $expected_errors, true)) {
                 wc_get_logger()->error(sprintf(
                     'CashbackWithdrawal error for user %d: %s. Amount: %s. Idempotency: %s',
@@ -1148,8 +1124,8 @@ class CashbackWithdrawal
                 wp_send_json_error(sprintf(__('Введите сумму больше или равно %s', 'cashback-plugin'), wc_price($min_amt)));
             } elseif ($error_message === 'payout_details_missing') {
                 wp_send_json_error(array(
-                    'message' => __('Для вывода средств пожалуйста, заполните способ вывода и номер счета в вашем профиле.', 'cashback-plugin'),
-                    'show_form' => true
+                    'message'   => __('Для вывода средств пожалуйста, заполните способ вывода и номер счета в вашем профиле.', 'cashback-plugin'),
+                    'show_form' => true,
                 ));
             } elseif ($error_message === 'Duplicate payout request detected') {
                 // Параллельный запрос с тем же ключом — найдём созданную заявку
@@ -1159,7 +1135,7 @@ class CashbackWithdrawal
                 ));
                 if ($dup) {
                     wp_send_json_success(sprintf(
-                        __('Заявка на вывод кэшбэка на сумму %s руб. успешно добавлена. Номер заявки: %s', 'cashback-plugin'),
+                        __('Заявка на вывод кэшбэка на сумму %1$s руб. успешно добавлена. Номер заявки: %2$s', 'cashback-plugin'),
                         number_format((float) $dup->total_amount, 2, '.', ' '),
                         $dup->reference_id
                     ));
@@ -1179,8 +1155,7 @@ class CashbackWithdrawal
     /**
      * Enqueue custom styles and scripts
      */
-    public function enqueue_styles()
-    {
+    public function enqueue_styles() {
         if (is_user_logged_in() && !is_admin() && function_exists('is_account_page') && is_account_page()) {
             wp_enqueue_style(
                 'cashback-withdrawal-styles',
@@ -1193,16 +1168,16 @@ class CashbackWithdrawal
             wp_enqueue_script(
                 'cashback-withdrawal-js',
                 plugins_url('assets/js/cashback-withdrawal.js', __FILE__),
-                array('jquery'),
+                array( 'jquery' ),
                 '1.5.0',
                 true
             );
 
             // Передаем AJAX URL в JavaScript
             wp_localize_script('cashback-withdrawal-js', 'cashback_ajax', array(
-                'ajax_url' => admin_url('admin-ajax.php'),
-                'nonce' => wp_create_nonce('cashback_withdrawal_nonce'),
-                'withdrawal_submit_nonce' => wp_create_nonce('cashback_withdrawal_submit_nonce')
+                'ajax_url'                => admin_url('admin-ajax.php'),
+                'nonce'                   => wp_create_nonce('cashback_withdrawal_nonce'),
+                'withdrawal_submit_nonce' => wp_create_nonce('cashback_withdrawal_submit_nonce'),
             ));
         }
     }
@@ -1210,24 +1185,23 @@ class CashbackWithdrawal
     /**
      * AJAX обработчик для сохранения настроек вывода
      */
-    public function save_payout_settings()
-    {
+    public function save_payout_settings() {
         // Проверяем nonce
         if (!wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['security'] ?? '')), 'cashback_withdrawal_nonce')) {
-            wp_send_json_error(array('message' => __('Неверный nonce.', 'cashback-plugin')));
+            wp_send_json_error(array( 'message' => __('Неверный nonce.', 'cashback-plugin') ));
             return;
         }
 
         // Проверяем авторизацию пользователя
         if (!is_user_logged_in()) {
-            wp_send_json_error(array('message' => __('Пользователь не авторизован.', 'cashback-plugin')));
+            wp_send_json_error(array( 'message' => __('Пользователь не авторизован.', 'cashback-plugin') ));
             return;
         }
 
         $user_id = get_current_user_id();
 
         if (!$user_id) {
-            wp_send_json_error(array('message' => __('Пользователь не найден.', 'cashback-plugin')));
+            wp_send_json_error(array( 'message' => __('Пользователь не найден.', 'cashback-plugin') ));
             return;
         }
 
@@ -1235,43 +1209,43 @@ class CashbackWithdrawal
         if (Cashback_User_Status::is_user_banned($user_id)) {
             $ban_info = Cashback_User_Status::get_ban_info($user_id);
             wp_send_json_error(array(
-                'message' => Cashback_User_Status::get_banned_message($ban_info)
+                'message' => Cashback_User_Status::get_banned_message($ban_info),
             ));
             return;
         }
 
         // Rate limiting: max 3 settings saves per 24 hours
-        $settings_rate_key = 'cb_settings_rate_' . $user_id;
+        $settings_rate_key   = 'cb_settings_rate_' . $user_id;
         $settings_rate_count = (int) get_transient($settings_rate_key);
         if ($settings_rate_count >= 3) {
-            wp_send_json_error(array('message' => __('Слишком частое сохранение настроек. Попробуйте через 24 часа.', 'cashback-plugin')));
+            wp_send_json_error(array( 'message' => __('Слишком частое сохранение настроек. Попробуйте через 24 часа.', 'cashback-plugin') ));
             return;
         }
 
         $payout_method_id = intval($_POST['payout_method_id'] ?? 0);
-        $payout_account = sanitize_text_field(wp_unslash($_POST['payout_account'] ?? ''));
-        $bank_id = intval($_POST['bank_id'] ?? 0);
+        $payout_account   = sanitize_text_field(wp_unslash($_POST['payout_account'] ?? ''));
+        $bank_id          = intval($_POST['bank_id'] ?? 0);
 
         // Валидация данных
         if (empty($payout_method_id)) {
-            wp_send_json_error(array('message' => __('Пожалуйста, выберите способ вывода.', 'cashback-plugin')));
+            wp_send_json_error(array( 'message' => __('Пожалуйста, выберите способ вывода.', 'cashback-plugin') ));
             return;
         }
 
         if (empty($payout_account)) {
-            wp_send_json_error(array('message' => __('Пожалуйста, введите номер счета или телефона.', 'cashback-plugin')));
+            wp_send_json_error(array( 'message' => __('Пожалуйста, введите номер счета или телефона.', 'cashback-plugin') ));
             return;
         }
 
         if (mb_strlen($payout_account) > 50) {
-            wp_send_json_error(array('message' => __('Номер счета слишком длинный (максимум 50 символов).', 'cashback-plugin')));
+            wp_send_json_error(array( 'message' => __('Номер счета слишком длинный (максимум 50 символов).', 'cashback-plugin') ));
             return;
         }
 
         // Проверяем, что способ вывода существует и активен
         $valid_method = $this->validate_payout_method($payout_method_id);
         if (!$valid_method) {
-            wp_send_json_error(array('message' => __('Недопустимый способ вывода.', 'cashback-plugin')));
+            wp_send_json_error(array( 'message' => __('Недопустимый способ вывода.', 'cashback-plugin') ));
             return;
         }
 
@@ -1280,14 +1254,14 @@ class CashbackWithdrawal
 
         if ($bank_required) {
             if (!$bank_id || $bank_id <= 0) {
-                wp_send_json_error(array('message' => __('Пожалуйста, выберите банк.', 'cashback-plugin')));
+                wp_send_json_error(array( 'message' => __('Пожалуйста, выберите банк.', 'cashback-plugin') ));
                 return;
             }
 
             // Проверяем, что банк существует и активен
             $valid_bank = $this->validate_bank($bank_id);
             if (!$valid_bank) {
-                wp_send_json_error(array('message' => __('Недопустимый банк.', 'cashback-plugin')));
+                wp_send_json_error(array( 'message' => __('Недопустимый банк.', 'cashback-plugin') ));
                 return;
             }
         } else {
@@ -1299,29 +1273,29 @@ class CashbackWithdrawal
         if ($method_slug) {
             $format_error = $this->validate_payout_account_format($method_slug, $payout_account);
             if (!empty($format_error)) {
-                wp_send_json_error(array('message' => $format_error));
+                wp_send_json_error(array( 'message' => $format_error ));
                 return;
             }
         }
 
         // Шифрование реквизитов
         $encrypted_details = null;
-        $masked_details = null;
-        $details_hash = null;
+        $masked_details    = null;
+        $details_hash      = null;
 
         if (class_exists('Cashback_Encryption') && Cashback_Encryption::is_configured()) {
             try {
-                $bank_name = $bank_required ? $this->get_bank_name($bank_id) : '';
-                $enc_result = Cashback_Encryption::encrypt_details([
-                    'account' => $payout_account,
+                $bank_name         = $bank_required ? $this->get_bank_name($bank_id) : '';
+                $enc_result        = Cashback_Encryption::encrypt_details(array(
+                    'account'   => $payout_account,
                     'full_name' => '',
-                    'bank' => $bank_name ?: '',
-                ]);
+                    'bank'      => $bank_name ?: '',
+                ));
                 $encrypted_details = $enc_result['encrypted_details'];
-                $masked_details = $enc_result['masked_details'];
-                $details_hash = $enc_result['details_hash'];
+                $masked_details    = $enc_result['masked_details'];
+                $details_hash      = $enc_result['details_hash'];
             } catch (\Exception $e) {
-                wp_send_json_error(array('message' => __('Ошибка шифрования данных.', 'cashback-plugin')));
+                wp_send_json_error(array( 'message' => __('Ошибка шифрования данных.', 'cashback-plugin') ));
                 return;
             }
         }
@@ -1343,10 +1317,10 @@ class CashbackWithdrawal
             set_transient($settings_rate_key, $settings_rate_count + 1, DAY_IN_SECONDS);
 
             wp_send_json_success(array(
-                'message' => __('Настройки успешно сохранены.', 'cashback-plugin')
+                'message' => __('Настройки успешно сохранены.', 'cashback-plugin'),
             ));
         } else {
-            wp_send_json_error(array('message' => __('Ошибка при сохранении данных.', 'cashback-plugin')));
+            wp_send_json_error(array( 'message' => __('Ошибка при сохранении данных.', 'cashback-plugin') ));
         }
     }
 
@@ -1356,12 +1330,11 @@ class CashbackWithdrawal
      * @param int $method_id
      * @return bool
      */
-    private function validate_payout_method(int $method_id): bool
-    {
+    private function validate_payout_method( int $method_id ): bool {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_payout_methods';
-        $method = $wpdb->get_row(
+        $method     = $wpdb->get_row(
             $wpdb->prepare(
                 "SELECT id FROM {$table_name} WHERE id = %d AND is_active = %d",
                 $method_id,
@@ -1379,12 +1352,11 @@ class CashbackWithdrawal
      * @param int $bank_id
      * @return bool
      */
-    private function validate_bank(int $bank_id): bool
-    {
+    private function validate_bank( int $bank_id ): bool {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_banks';
-        $bank = $wpdb->get_row(
+        $bank       = $wpdb->get_row(
             $wpdb->prepare(
                 "SELECT id FROM {$table_name} WHERE id = %d AND is_active = %d",
                 $bank_id,
@@ -1402,12 +1374,11 @@ class CashbackWithdrawal
      * @param int $method_id
      * @return string|null
      */
-    private function get_payout_method_slug_by_id(int $method_id): ?string
-    {
+    private function get_payout_method_slug_by_id( int $method_id ): ?string {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_payout_methods';
-        $slug = $wpdb->get_var(
+        $slug       = $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT slug FROM {$table_name} WHERE id = %d AND is_active = %d",
                 $method_id,
@@ -1425,8 +1396,7 @@ class CashbackWithdrawal
      * @param string $payout_account
      * @return string Error message if invalid, empty string if valid
      */
-    private function validate_payout_account_format(string $slug, string $payout_account): string
-    {
+    private function validate_payout_account_format( string $slug, string $payout_account ): string {
         switch ($slug) {
             case 'sbp':
                 return $this->validate_phone_number($payout_account);
@@ -1446,8 +1416,7 @@ class CashbackWithdrawal
      * @param string $phone
      * @return string Error message if invalid, empty string if valid
      */
-    private function validate_phone_number(string $phone): string
-    {
+    private function validate_phone_number( string $phone ): string {
         $cleaned = preg_replace('/[\s\-\(\)]/', '', $phone);
 
         if (empty($cleaned) || $cleaned[0] !== '+') {
@@ -1475,8 +1444,7 @@ class CashbackWithdrawal
      * @param string $card
      * @return string Error message if invalid, empty string if valid
      */
-    private function validate_mir_card(string $card): string
-    {
+    private function validate_mir_card( string $card ): string {
         $cleaned = preg_replace('/[\s\-]/', '', $card);
 
         if (!ctype_digit($cleaned)) {
@@ -1505,14 +1473,13 @@ class CashbackWithdrawal
      * @param string $number Digits-only string
      * @return bool
      */
-    private function luhn_check(string $number): bool
-    {
-        $sum = 0;
+    private function luhn_check( string $number ): bool {
+        $sum    = 0;
         $length = strlen($number);
         $parity = $length % 2;
 
         for ($i = 0; $i < $length; $i++) {
-            $digit = (int) $number[$i];
+            $digit = (int) $number[ $i ];
 
             if ($i % 2 === $parity) {
                 $digit *= 2;
@@ -1524,7 +1491,7 @@ class CashbackWithdrawal
             $sum += $digit;
         }
 
-        return ($sum % 10) === 0;
+        return ( $sum % 10 ) === 0;
     }
 
     /**
@@ -1533,12 +1500,11 @@ class CashbackWithdrawal
      * @param int $method_id
      * @return bool
      */
-    private function is_payout_method_active(int $method_id): bool
-    {
+    private function is_payout_method_active( int $method_id ): bool {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_payout_methods';
-        $is_active = $wpdb->get_var(
+        $is_active  = $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT is_active FROM {$table_name} WHERE id = %d",
                 $method_id
@@ -1554,12 +1520,11 @@ class CashbackWithdrawal
      * @param int $bank_id
      * @return bool
      */
-    private function is_bank_active(int $bank_id): bool
-    {
+    private function is_bank_active( int $bank_id ): bool {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_banks';
-        $is_active = $wpdb->get_var(
+        $is_active  = $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT is_active FROM {$table_name} WHERE id = %d",
                 $bank_id
@@ -1575,8 +1540,7 @@ class CashbackWithdrawal
      * @param int $method_id
      * @return bool True if bank is required (default), false if not
      */
-    private function is_bank_required_for_method(int $method_id): bool
-    {
+    private function is_bank_required_for_method( int $method_id ): bool {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_payout_methods';
@@ -1631,29 +1595,29 @@ class CashbackWithdrawal
                 )
             );
 
-            $data = array(
-                'payout_method_id' => $payout_method_id,
+            $data    = array(
+                'payout_method_id'          => $payout_method_id,
                 'payout_details_updated_at' => current_time('mysql'),
             );
-            $formats = array('%d', '%s');
+            $formats = array( '%d', '%s' );
 
             if ($bank_id > 0) {
                 $data['bank_id'] = $bank_id;
-                $formats[] = '%d';
+                $formats[]       = '%d';
             }
 
             // Если шифрование настроено — сохраняем только зашифрованные данные, plaintext очищаем
             if ($encrypted_details !== null) {
                 $data['encrypted_details'] = $encrypted_details;
-                $data['masked_details'] = $masked_details;
-                $data['details_hash'] = $details_hash;
-                $data['payout_account'] = '';
-                $data['payout_full_name'] = '';
-                $formats = array_merge($formats, ['%s', '%s', '%s', '%s', '%s']);
+                $data['masked_details']    = $masked_details;
+                $data['details_hash']      = $details_hash;
+                $data['payout_account']    = '';
+                $data['payout_full_name']  = '';
+                $formats                   = array_merge($formats, array( '%s', '%s', '%s', '%s', '%s' ));
             } else {
                 // Fallback: если шифрование не настроено, сохраняем plaintext
                 $data['payout_account'] = $payout_account;
-                $formats[] = '%s';
+                $formats[]              = '%s';
             }
 
             if ($existing_record) {
@@ -1661,9 +1625,9 @@ class CashbackWithdrawal
                 $result = $wpdb->update(
                     $table_name,
                     $data,
-                    array('user_id' => $user_id),
+                    array( 'user_id' => $user_id ),
                     $formats,
-                    array('%d')
+                    array( '%d' )
                 );
             } else {
                 // Создаем новую запись
@@ -1702,26 +1666,25 @@ class CashbackWithdrawal
      * AJAX обработчик для поиска банков
      * Защита: nonce, авторизация, подготовленные запросы (SQL-инъекции), XSS (esc_html)
      */
-    public function search_banks_ajax()
-    {
+    public function search_banks_ajax() {
         // Проверяем nonce
         if (!check_ajax_referer('cashback_withdrawal_nonce', 'security', false)) {
-            wp_send_json_error(array('message' => __('Ошибка безопасности.', 'cashback-plugin')));
+            wp_send_json_error(array( 'message' => __('Ошибка безопасности.', 'cashback-plugin') ));
             return;
         }
 
         // Запрещаем анонимный доступ
         if (!is_user_logged_in()) {
-            wp_send_json_error(array('message' => __('Пользователь не авторизован.', 'cashback-plugin')));
+            wp_send_json_error(array( 'message' => __('Пользователь не авторизован.', 'cashback-plugin') ));
             return;
         }
 
         // Rate limiting: максимум 30 запросов в минуту
-        $user_id = get_current_user_id();
-        $rate_key = 'cb_bank_search_rate_' . $user_id;
+        $user_id    = get_current_user_id();
+        $rate_key   = 'cb_bank_search_rate_' . $user_id;
         $rate_count = (int) get_transient($rate_key);
         if ($rate_count >= 30) {
-            wp_send_json_error(array('message' => __('Слишком много запросов. Попробуйте через минуту.', 'cashback-plugin')));
+            wp_send_json_error(array( 'message' => __('Слишком много запросов. Попробуйте через минуту.', 'cashback-plugin') ));
             return;
         }
         set_transient($rate_key, $rate_count + 1, MINUTE_IN_SECONDS);
@@ -1734,7 +1697,7 @@ class CashbackWithdrawal
         if (mb_strlen($search_term) < 1) {
             // Если менее 1 символа, возвращаем первые 10 активных банков
             $table_name = $wpdb->prefix . 'cashback_banks';
-            $banks = $wpdb->get_results(
+            $banks      = $wpdb->get_results(
                 $wpdb->prepare(
                     "SELECT id, name FROM {$table_name} WHERE is_active = %d ORDER BY sort_order ASC, name ASC LIMIT 10",
                     1
@@ -1742,7 +1705,7 @@ class CashbackWithdrawal
                 ARRAY_A
             );
 
-            wp_send_json_success(array('banks' => $banks ?: array()));
+            wp_send_json_success(array( 'banks' => $banks ?: array() ));
             return;
         }
 
@@ -1761,14 +1724,13 @@ class CashbackWithdrawal
             ARRAY_A
         );
 
-        wp_send_json_success(array('banks' => $banks ?: array()));
+        wp_send_json_success(array( 'banks' => $banks ?: array() ));
     }
 
     /**
      * AJAX обработчик для получения баланса пользователя
      */
-    public function get_user_balance_ajax()
-    {
+    public function get_user_balance_ajax() {
         // Проверяем nonce
         if (!check_ajax_referer('cashback_withdrawal_nonce', 'nonce', false)) {
             wp_send_json_error(__('Ошибка безопасности.', 'cashback-plugin'));
@@ -1782,8 +1744,8 @@ class CashbackWithdrawal
         }
 
         // Rate limiting: максимум 30 запросов в минуту
-        $user_id = get_current_user_id();
-        $rate_key = 'cb_balance_rate_' . $user_id;
+        $user_id    = get_current_user_id();
+        $rate_key   = 'cb_balance_rate_' . $user_id;
         $rate_count = (int) get_transient($rate_key);
         if ($rate_count >= 30) {
             wp_send_json_error(__('Слишком много запросов. Попробуйте через минуту.', 'cashback-plugin'));
@@ -1794,12 +1756,12 @@ class CashbackWithdrawal
         $balances = $this->get_all_balances($user_id);
 
         wp_send_json_success(array(
-            'balance' => $balances['available'],
+            'balance'           => $balances['available'],
             'formatted_balance' => wc_price($balances['available']),
-            'pending_balance' => $balances['pending'],
+            'pending_balance'   => $balances['pending'],
             'formatted_pending' => wc_price($balances['pending']),
-            'paid_balance' => $balances['paid'],
-            'formatted_paid' => wc_price($balances['paid']),
+            'paid_balance'      => $balances['paid'],
+            'formatted_paid'    => wc_price($balances['paid']),
         ));
     }
 }

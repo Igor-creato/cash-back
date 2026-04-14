@@ -22,35 +22,33 @@ if (!defined('ABSPATH')) {
  *
  * @since 2.1.0
  */
-class Cashback_Bot_Protection
-{
+class Cashback_Bot_Protection {
+
     /** Минимальное время от загрузки формы до отправки (секунды). */
     private const MIN_SUBMIT_TIME = 2;
 
     /** Тиры, требующие CAPTCHA для серых IP. */
-    private const CAPTCHA_TIERS = ['critical', 'write'];
+    private const CAPTCHA_TIERS = array( 'critical', 'write' );
 
     /**
      * Инициализация бот-защиты.
      */
-    public static function init(): void
-    {
+    public static function init(): void {
         if (!(bool) get_option('cashback_bot_protection_enabled', true)) {
             return;
         }
 
         // Guard AJAX-запросов (приоритет 1 — до обработчиков)
-        add_action('admin_init', [__CLASS__, 'guard_ajax_requests'], 1);
+        add_action('admin_init', array( __CLASS__, 'guard_ajax_requests' ), 1);
 
         // Фронтенд скрипты и стили
-        add_action('wp_enqueue_scripts', [__CLASS__, 'enqueue_frontend_assets']);
+        add_action('wp_enqueue_scripts', array( __CLASS__, 'enqueue_frontend_assets' ));
     }
 
     /**
      * Центральный guard для всех AJAX-запросов плагина.
      */
-    public static function guard_ajax_requests(): void
-    {
+    public static function guard_ajax_requests(): void {
         if (!wp_doing_ajax()) {
             return;
         }
@@ -71,10 +69,10 @@ class Cashback_Bot_Protection
         // 1. IP заблокирован (score ≥ 80)
         if (Cashback_Rate_Limiter::is_blocked_ip($ip)) {
             wp_send_json_error(
-                [
+                array(
                     'code'    => 'blocked',
                     'message' => 'Слишком много подозрительных запросов. Попробуйте позже.',
-                ],
+                ),
                 429
             );
         }
@@ -83,10 +81,10 @@ class Cashback_Bot_Protection
         if (self::is_bot_user_agent()) {
             Cashback_Rate_Limiter::record_violation($ip, 'bot_ua');
             wp_send_json_error(
-                [
+                array(
                     'code'    => 'blocked',
                     'message' => 'Запрос отклонён.',
-                ],
+                ),
                 403
             );
         }
@@ -96,18 +94,18 @@ class Cashback_Bot_Protection
             Cashback_Rate_Limiter::record_violation($ip, 'honeypot');
             // Тихий reject — бот не должен знать что его поймали
             wp_send_json_error(
-                [
+                array(
                     'code'    => 'error',
                     'message' => 'Произошла ошибка. Попробуйте ещё раз.',
-                ]
+                )
             );
         }
 
         // 4. Timing check (если поле передано)
         if (isset($_POST['cb_form_ts'])) {
             $form_ts = (int) $_POST['cb_form_ts'];
-            $now_ms  = (int) (microtime(true) * 1000);
-            $delta_s = ($now_ms - $form_ts) / 1000;
+            $now_ms  = (int) ( microtime(true) * 1000 );
+            $delta_s = ( $now_ms - $form_ts ) / 1000;
 
             if ($form_ts > 0 && $delta_s < self::MIN_SUBMIT_TIME) {
                 Cashback_Rate_Limiter::record_violation($ip, 'timing');
@@ -120,11 +118,11 @@ class Cashback_Bot_Protection
 
         if (!$rate_result['allowed']) {
             wp_send_json_error(
-                [
+                array(
                     'code'        => 'rate_limited',
                     'message'     => 'Слишком много запросов. Попробуйте через минуту.',
                     'retry_after' => $rate_result['retry_after'],
-                ],
+                ),
                 429
             );
         }
@@ -141,20 +139,20 @@ class Cashback_Bot_Protection
             if ($captcha_token === '') {
                 // Токена нет — запрашиваем CAPTCHA
                 wp_send_json_error(
-                    [
+                    array(
                         'code'       => 'captcha_required',
                         'message'    => 'Пожалуйста, пройдите проверку.',
                         'client_key' => Cashback_Captcha::get_client_key(),
-                    ]
+                    )
                 );
             }
 
             if (!Cashback_Captcha::verify_token($captcha_token, $ip)) {
                 wp_send_json_error(
-                    [
+                    array(
                         'code'    => 'captcha_failed',
                         'message' => 'Проверка не пройдена. Попробуйте ещё раз.',
-                    ]
+                    )
                 );
             }
         }
@@ -165,38 +163,37 @@ class Cashback_Bot_Protection
     /**
      * Подключение frontend-скриптов и стилей.
      */
-    public static function enqueue_frontend_assets(): void
-    {
+    public static function enqueue_frontend_assets(): void {
         if (!is_user_logged_in()) {
             return;
         }
 
-        $plugin_url = plugin_dir_url(dirname(__FILE__));
+        $plugin_url = plugin_dir_url(__DIR__);
         $version    = '2.1.0';
 
         wp_enqueue_style(
             'cashback-bot-protection',
             $plugin_url . 'assets/css/cashback-bot-protection.css',
-            [],
+            array(),
             $version
         );
 
         wp_enqueue_script(
             'cashback-bot-protection',
             $plugin_url . 'assets/js/cashback-bot-protection.js',
-            ['jquery'],
+            array( 'jquery' ),
             $version,
             true
         );
 
         $ip = self::get_ip();
 
-        wp_localize_script('cashback-bot-protection', 'cbBotProtection', [
-            'ajaxUrl'         => admin_url('admin-ajax.php'),
-            'captchaRequired' => Cashback_Captcha::should_require($ip),
+        wp_localize_script('cashback-bot-protection', 'cbBotProtection', array(
+            'ajaxUrl'          => admin_url('admin-ajax.php'),
+            'captchaRequired'  => Cashback_Captcha::should_require($ip),
             'captchaClientKey' => Cashback_Captcha::get_client_key(),
-            'captchaJsUrl'    => 'https://smartcaptcha.yandexcloud.net/captcha.js',
-        ]);
+            'captchaJsUrl'     => 'https://smartcaptcha.yandexcloud.net/captcha.js',
+        ));
     }
 
     /**
@@ -204,8 +201,7 @@ class Cashback_Bot_Protection
      *
      * @return string
      */
-    private static function get_ip(): string
-    {
+    private static function get_ip(): string {
         if (class_exists('Cashback_Encryption') && method_exists('Cashback_Encryption', 'get_client_ip')) {
             return Cashback_Encryption::get_client_ip();
         }
@@ -220,8 +216,7 @@ class Cashback_Bot_Protection
      *
      * @return bool true если User-Agent похож на бота.
      */
-    private static function is_bot_user_agent(): bool
-    {
+    private static function is_bot_user_agent(): bool {
         $user_agent = isset($_SERVER['HTTP_USER_AGENT'])
             ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT']))
             : '';
@@ -234,7 +229,7 @@ class Cashback_Bot_Protection
             return true;
         }
 
-        $bot_signatures = [
+        $bot_signatures = array(
             'curl/',
             'wget/',
             'python-requests',
@@ -259,7 +254,7 @@ class Cashback_Bot_Protection
             'selenium',
             'puppeteer',
             'playwright',
-        ];
+        );
 
         $ua_lower = strtolower($user_agent);
 

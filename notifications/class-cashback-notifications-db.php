@@ -9,16 +9,15 @@ if (!defined('ABSPATH')) {
 /**
  * Notifications DB — таблица предпочтений уведомлений пользователей
  */
-class Cashback_Notifications_DB
-{
+class Cashback_Notifications_DB {
+
     /**
      * Создание таблицы предпочтений уведомлений
      */
-    public static function create_tables(): void
-    {
+    public static function create_tables(): void {
         global $wpdb;
         $charset_collate = $wpdb->get_charset_collate();
-        $prefix = $wpdb->prefix;
+        $prefix          = $wpdb->prefix;
 
         $sql_prefs = "CREATE TABLE IF NOT EXISTS `{$prefix}cashback_notification_preferences` (
             id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -59,8 +58,7 @@ class Cashback_Notifications_DB
      * @param string $notification_type Тип уведомления
      * @return bool true если включено (по умолчанию — включено)
      */
-    public static function is_enabled(int $user_id, string $notification_type): bool
-    {
+    public static function is_enabled( int $user_id, string $notification_type ): bool {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_notification_preferences';
 
@@ -84,8 +82,7 @@ class Cashback_Notifications_DB
      * @param int $user_id ID пользователя
      * @return array<string, bool> [notification_type => enabled]
      */
-    public static function get_user_preferences(int $user_id): array
-    {
+    public static function get_user_preferences( int $user_id ): array {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_notification_preferences';
 
@@ -94,10 +91,10 @@ class Cashback_Notifications_DB
             $user_id
         ), ARRAY_A);
 
-        $prefs = [];
+        $prefs = array();
         if ($rows) {
             foreach ($rows as $row) {
-                $prefs[$row['notification_type']] = (bool) (int) $row['enabled'];
+                $prefs[ $row['notification_type'] ] = (bool) (int) $row['enabled'];
             }
         }
 
@@ -111,8 +108,7 @@ class Cashback_Notifications_DB
      * @param string $notification_type Тип уведомления
      * @param bool   $enabled           Включено/выключено
      */
-    public static function set_preference(int $user_id, string $notification_type, bool $enabled): void
-    {
+    public static function set_preference( int $user_id, string $notification_type, bool $enabled ): void {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_notification_preferences';
 
@@ -132,8 +128,7 @@ class Cashback_Notifications_DB
      * @param int                $user_id ID пользователя
      * @param array<string,bool> $prefs   [notification_type => enabled]
      */
-    public static function save_preferences(int $user_id, array $prefs): void
-    {
+    public static function save_preferences( int $user_id, array $prefs ): void {
         foreach ($prefs as $type => $enabled) {
             self::set_preference($user_id, $type, $enabled);
         }
@@ -144,18 +139,17 @@ class Cashback_Notifications_DB
      *
      * @return array<string, string> [slug => label]
      */
-    public static function get_user_notification_types(): array
-    {
-        return [
-            'transaction_new'    => __('Новая транзакция (покупка через партнёра)', 'cashback-plugin'),
-            'transaction_status' => __('Изменение статуса транзакции', 'cashback-plugin'),
-            'cashback_credited'  => __('Начисление кэшбэка на баланс', 'cashback-plugin'),
-            'ticket_reply'       => __('Ответ на тикет поддержки', 'cashback-plugin'),
-            'claim_created'      => __('Заявка на неначисленный кэшбэк', 'cashback-plugin'),
-            'claim_status'       => __('Изменение статуса заявки', 'cashback-plugin'),
-            'affiliate_referral' => __('Регистрация нового реферала', 'cashback-plugin'),
+    public static function get_user_notification_types(): array {
+        return array(
+            'transaction_new'      => __('Новая транзакция (покупка через партнёра)', 'cashback-plugin'),
+            'transaction_status'   => __('Изменение статуса транзакции', 'cashback-plugin'),
+            'cashback_credited'    => __('Начисление кэшбэка на баланс', 'cashback-plugin'),
+            'ticket_reply'         => __('Ответ на тикет поддержки', 'cashback-plugin'),
+            'claim_created'        => __('Заявка на неначисленный кэшбэк', 'cashback-plugin'),
+            'claim_status'         => __('Изменение статуса заявки', 'cashback-plugin'),
+            'affiliate_referral'   => __('Регистрация нового реферала', 'cashback-plugin'),
             'affiliate_commission' => __('Начисление партнёрского вознаграждения', 'cashback-plugin'),
-        ];
+        );
     }
 
     /**
@@ -163,15 +157,14 @@ class Cashback_Notifications_DB
      *
      * @return array<string, string> [slug => label]
      */
-    public static function get_all_notification_types(): array
-    {
+    public static function get_all_notification_types(): array {
         return array_merge(
             self::get_user_notification_types(),
-            [
+            array(
                 'user_registered'    => __('Регистрация нового пользователя', 'cashback-plugin'),
                 'ticket_admin_alert' => __('Уведомления администратору о тикетах', 'cashback-plugin'),
                 'claim_admin_alert'  => __('Уведомления администратору о заявках', 'cashback-plugin'),
-            ]
+            )
         );
     }
 
@@ -181,8 +174,7 @@ class Cashback_Notifications_DB
      * @param string $notification_type Тип уведомления
      * @return bool
      */
-    public static function is_globally_enabled(string $notification_type): bool
-    {
+    public static function is_globally_enabled( string $notification_type ): bool {
         $val = get_option('cashback_notify_' . $notification_type, '');
 
         // Если опция не существует (пустая строка при default='') — считаем включённой

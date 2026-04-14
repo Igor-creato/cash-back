@@ -6,9 +6,9 @@ if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
 
-class HistoryPayout
-{
-    private const PER_PAGE = 10;
+class HistoryPayout {
+
+    private const PER_PAGE          = 10;
     private const MAX_ALLOWED_PAGES = 1000; // Защита от DoS (макс. 10 000 записей)
 
     private static $instance = null;
@@ -17,41 +17,36 @@ class HistoryPayout
 
     private $bank_names = null;
 
-    public static function get_instance()
-    {
+    public static function get_instance() {
         if (null === self::$instance) {
             self::$instance = new self();
         }
         return self::$instance;
     }
 
-    private function __construct()
-    {
-        add_action('init', array($this, 'register_endpoint'));
-        add_filter('query_vars', array($this, 'add_query_vars'));
-        add_filter('woocommerce_account_menu_items', array($this, 'add_menu_item'));
-        add_action('woocommerce_account_history-payout_endpoint', array($this, 'content'));
-        add_action('wp_ajax_load_page_payouts', array($this, 'ajax_load_page'));
-        add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'));
+    private function __construct() {
+        add_action('init', array( $this, 'register_endpoint' ));
+        add_filter('query_vars', array( $this, 'add_query_vars' ));
+        add_filter('woocommerce_account_menu_items', array( $this, 'add_menu_item' ));
+        add_action('woocommerce_account_history-payout_endpoint', array( $this, 'content' ));
+        add_action('wp_ajax_load_page_payouts', array( $this, 'ajax_load_page' ));
+        add_action('wp_enqueue_scripts', array( $this, 'enqueue_scripts' ));
     }
 
-    public function register_endpoint()
-    {
+    public function register_endpoint() {
         add_rewrite_endpoint('history-payout', EP_ROOT | EP_PAGES);
     }
 
-    public function add_query_vars($vars)
-    {
+    public function add_query_vars( $vars ) {
         $vars[] = 'history-payout';
         return $vars;
     }
 
-    public function add_menu_item($items)
-    {
+    public function add_menu_item( $items ) {
         if (isset($items['customer-logout'])) {
             $logout = $items['customer-logout'];
             unset($items['customer-logout']);
-            $items['history-payout'] = __('История выплат', 'cashback-plugin');
+            $items['history-payout']  = __('История выплат', 'cashback-plugin');
             $items['customer-logout'] = $logout;
         } else {
             $items['history-payout'] = __('История выплат', 'cashback-plugin');
@@ -59,8 +54,7 @@ class HistoryPayout
         return $items;
     }
 
-    public function content()
-    {
+    public function content() {
         $user_id = get_current_user_id();
         if (!$user_id) {
             echo '<p>' . esc_html__('Вы должны быть авторизованы.', 'cashback-plugin') . '</p>';
@@ -74,14 +68,14 @@ class HistoryPayout
             echo '</div>';
         }
 
-        $per_page = self::PER_PAGE;
-        $total = $this->get_total_payouts($user_id);
+        $per_page    = self::PER_PAGE;
+        $total       = $this->get_total_payouts($user_id);
         $total_pages = $total > 0 ? ceil($total / $per_page) : 1;
         $total_pages = min($total_pages, self::MAX_ALLOWED_PAGES);
 
-        $page = isset($_GET['page']) ? intval($_GET['page']) : 1;
-        $page = max(1, min($page, $total_pages));
-        $offset = ($page - 1) * $per_page;
+        $page   = isset($_GET['page']) ? intval($_GET['page']) : 1;
+        $page   = max(1, min($page, $total_pages));
+        $offset = ( $page - 1 ) * $per_page;
 
         $payouts = $this->get_payouts($user_id, $per_page, $offset);
 
@@ -150,8 +144,7 @@ class HistoryPayout
      * @param array $payouts Array of payout objects.
      * @return void
      */
-    private function render_payouts_table(array $payouts): void
-    {
+    private function render_payouts_table( array $payouts ): void {
         echo '<table id="payouts-table" class="wd-table shop_table_responsive">';
         echo '<thead>';
         echo '<tr>';
@@ -182,17 +175,16 @@ class HistoryPayout
         echo '</table>';
     }
 
-    private function render_pagination($current_page, $total_pages)
-    {
+    private function render_pagination( $current_page, $total_pages ) {
         if ($total_pages <= 1) {
             return;
         }
 
         $range = 2; // соседние страницы вокруг текущей
-        $edge = 2;  // крайние страницы с каждой стороны
+        $edge  = 2;  // крайние страницы с каждой стороны
 
         // Собираем номера страниц для отображения
-        $pages = [];
+        $pages = array();
         for ($i = 1; $i <= min($edge, $total_pages); $i++) {
             $pages[] = $i;
         }
@@ -211,7 +203,7 @@ class HistoryPayout
 
         // Кнопка «Назад»
         if ($current_page > 1) {
-            echo '<li><a href="#" class="page-numbers prev" data-page="' . esc_attr((string)($current_page - 1)) . '">&lsaquo;</a></li>';
+            echo '<li><a href="#" class="page-numbers prev" data-page="' . esc_attr((string) ( $current_page - 1 )) . '">&lsaquo;</a></li>';
         }
 
         $prev = 0;
@@ -219,27 +211,26 @@ class HistoryPayout
             if ($prev && $page - $prev > 1) {
                 echo '<li><span class="page-numbers dots">&hellip;</span></li>';
             }
-            $class = ($page == $current_page) ? 'current' : '';
-            echo '<li><a href="#" class="page-numbers ' . esc_attr($class) . '" data-page="' . esc_attr((string)$page) . '">' . esc_html((string)$page) . '</a></li>';
+            $class = ( $page == $current_page ) ? 'current' : '';
+            echo '<li><a href="#" class="page-numbers ' . esc_attr($class) . '" data-page="' . esc_attr((string) $page) . '">' . esc_html((string) $page) . '</a></li>';
             $prev = $page;
         }
 
         // Кнопка «Вперёд»
         if ($current_page < $total_pages) {
-            echo '<li><a href="#" class="page-numbers next" data-page="' . esc_attr((string)($current_page + 1)) . '">&rsaquo;</a></li>';
+            echo '<li><a href="#" class="page-numbers next" data-page="' . esc_attr((string) ( $current_page + 1 )) . '">&rsaquo;</a></li>';
         }
 
         echo '</ul>';
         echo '</nav>';
     }
 
-    private function get_payouts($user_id, $limit, $offset, array $filters = [])
-    {
+    private function get_payouts( $user_id, $limit, $offset, array $filters = array() ) {
         global $wpdb;
         $table_name = $wpdb->prefix . 'cashback_payout_requests';
 
-        $where = 'WHERE user_id = %d';
-        $params = [$user_id];
+        $where  = 'WHERE user_id = %d';
+        $params = array( $user_id );
 
         $this->apply_payout_filters($where, $params, $filters);
 
@@ -249,17 +240,16 @@ class HistoryPayout
              {$where}
              ORDER BY created_at DESC
              LIMIT %d OFFSET %d",
-            array_merge($params, [$limit, $offset])
+            array_merge($params, array( $limit, $offset ))
         ));
     }
 
-    private function get_total_payouts($user_id, array $filters = [])
-    {
+    private function get_total_payouts( $user_id, array $filters = array() ) {
         global $wpdb;
         $table_name = $wpdb->prefix . 'cashback_payout_requests';
 
-        $where = 'WHERE user_id = %d';
-        $params = [$user_id];
+        $where  = 'WHERE user_id = %d';
+        $params = array( $user_id );
 
         $this->apply_payout_filters($where, $params, $filters);
 
@@ -277,32 +267,30 @@ class HistoryPayout
      * @param array  $filters Filter values.
      * @return void
      */
-    private function apply_payout_filters(string &$where, array &$params, array $filters): void
-    {
+    private function apply_payout_filters( string &$where, array &$params, array $filters ): void {
         if (!empty($filters['date_from'])) {
-            $where .= ' AND created_at >= %s';
+            $where   .= ' AND created_at >= %s';
             $params[] = $filters['date_from'] . ' 00:00:00';
         }
 
         if (!empty($filters['date_to'])) {
-            $where .= ' AND created_at <= %s';
+            $where   .= ' AND created_at <= %s';
             $params[] = $filters['date_to'] . ' 23:59:59';
         }
 
         if (!empty($filters['search'])) {
-            $where .= ' AND reference_id LIKE %s';
+            $where   .= ' AND reference_id LIKE %s';
             $params[] = '%' . $GLOBALS['wpdb']->esc_like($filters['search']) . '%';
         }
 
-        $allowed_statuses = ['waiting', 'processing', 'paid', 'failed', 'declined', 'needs_retry'];
+        $allowed_statuses = array( 'waiting', 'processing', 'paid', 'failed', 'declined', 'needs_retry' );
         if (!empty($filters['status']) && in_array($filters['status'], $allowed_statuses, true)) {
-            $where .= ' AND status = %s';
+            $where   .= ' AND status = %s';
             $params[] = $filters['status'];
         }
     }
 
-    public function ajax_load_page()
-    {
+    public function ajax_load_page() {
         if (!check_ajax_referer('load_page_payouts_nonce', 'nonce', false)) {
             wp_send_json_error(esc_html__('Ошибка безопасности: неверный nonce.', 'cashback-plugin'));
         }
@@ -313,7 +301,7 @@ class HistoryPayout
         }
 
         // Rate limiting: максимум 30 запросов в минуту
-        $rate_key = 'cb_payout_page_rate_' . $user_id;
+        $rate_key   = 'cb_payout_page_rate_' . $user_id;
         $rate_count = (int) get_transient($rate_key);
         if ($rate_count >= 30) {
             wp_send_json_error(esc_html__('Слишком много запросов. Попробуйте через минуту.', 'cashback-plugin'));
@@ -324,21 +312,21 @@ class HistoryPayout
             wp_send_json_error(esc_html__('Некорректный запрос.', 'cashback-plugin'));
         }
 
-        $filters = [
+        $filters = array(
             'date_from' => sanitize_text_field(wp_unslash($_POST['date_from'] ?? '')),
             'date_to'   => sanitize_text_field(wp_unslash($_POST['date_to'] ?? '')),
             'search'    => sanitize_text_field(wp_unslash($_POST['search'] ?? '')),
             'status'    => sanitize_text_field(wp_unslash($_POST['status'] ?? '')),
-        ];
+        );
 
-        $per_page = self::PER_PAGE;
-        $total = $this->get_total_payouts($user_id, $filters);
+        $per_page    = self::PER_PAGE;
+        $total       = $this->get_total_payouts($user_id, $filters);
         $total_pages = $total > 0 ? ceil($total / $per_page) : 1;
         $total_pages = min($total_pages, self::MAX_ALLOWED_PAGES);
 
-        $page = intval($_POST['page']);
-        $page = max(1, min($page, $total_pages));
-        $offset = ($page - 1) * $per_page;
+        $page   = intval($_POST['page']);
+        $page   = max(1, min($page, $total_pages));
+        $offset = ( $page - 1 ) * $per_page;
 
         $payouts = $this->get_payouts($user_id, $per_page, $offset, $filters);
 
@@ -351,14 +339,13 @@ class HistoryPayout
         $html = ob_get_clean();
 
         wp_send_json_success(array(
-            'html' => $html,
+            'html'         => $html,
             'current_page' => $page,
-            'total_pages' => $total_pages
+            'total_pages'  => $total_pages,
         ));
     }
 
-    public function enqueue_scripts()
-    {
+    public function enqueue_scripts() {
         if (function_exists('is_account_page') && is_account_page() && $this->is_history_payout_page()) {
             wp_enqueue_style(
                 'history-payout-css',
@@ -370,25 +357,23 @@ class HistoryPayout
             wp_enqueue_script(
                 'history-payout-ajax',
                 plugin_dir_url(__FILE__) . 'assets/js/history-payout.js',
-                array('jquery'),
+                array( 'jquery' ),
                 '1.1.0',
                 true
             );
             wp_localize_script('history-payout-ajax', 'payout_ajax', array(
                 'ajax_url' => admin_url('admin-ajax.php'),
-                'nonce' => wp_create_nonce('load_page_payouts_nonce')
+                'nonce'    => wp_create_nonce('load_page_payouts_nonce'),
             ));
         }
     }
 
-    private function is_history_payout_page()
-    {
+    private function is_history_payout_page() {
         global $wp;
         return isset($wp->query_vars['history-payout']);
     }
 
-    private function get_status_label($status)
-    {
+    private function get_status_label( $status ) {
         switch ($status) {
             case 'waiting':
                 return __('В ожидании', 'cashback-plugin');
@@ -410,8 +395,7 @@ class HistoryPayout
     /**
      * Безопасное форматирование даты с защитой от некорректных значений
      */
-    private function format_date($date_string)
-    {
+    private function format_date( $date_string ) {
         if (empty($date_string) || $date_string === '0000-00-00 00:00:00') {
             return esc_html__('Н/Д', 'cashback-plugin');
         }
@@ -430,38 +414,36 @@ class HistoryPayout
      * @param string $method
      * @return string
      */
-    private function get_payout_method_label($method)
-    {
+    private function get_payout_method_label( $method ) {
         // Load payout method labels from database if not already loaded
         if ($this->payout_method_labels === null) {
             $this->load_payout_method_labels();
         }
 
         // Return the label from the cached array
-        if (isset($this->payout_method_labels[$method])) {
-            return $this->payout_method_labels[$method];
+        if (isset($this->payout_method_labels[ $method ])) {
+            return $this->payout_method_labels[ $method ];
         }
 
         // Fallback to hardcoded labels for backward compatibility
         $fallback_labels = array(
-            'sbp' => __('Система быстрых платежей (СБП)', 'cashback-plugin'),
-            'mir' => __('Карта МИР', 'cashback-plugin'),
+            'sbp'      => __('Система быстрых платежей (СБП)', 'cashback-plugin'),
+            'mir'      => __('Карта МИР', 'cashback-plugin'),
             'yoomoney' => __('ЮMoney', 'cashback-plugin'),
-            'ppl' => __('Paypal', 'cashback-plugin')
+            'ppl'      => __('Paypal', 'cashback-plugin'),
         );
 
-        return isset($fallback_labels[$method]) ? $fallback_labels[$method] : ucfirst($method);
+        return isset($fallback_labels[ $method ]) ? $fallback_labels[ $method ] : ucfirst($method);
     }
 
     /**
      * Load payout method labels from database
      */
-    private function load_payout_method_labels()
-    {
+    private function load_payout_method_labels() {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_payout_methods';
-        $methods = $wpdb->get_results(
+        $methods    = $wpdb->get_results(
             $wpdb->prepare("SELECT slug, name FROM {$table_name} WHERE is_active = %d", 1),
             ARRAY_A
         );
@@ -469,7 +451,7 @@ class HistoryPayout
         $this->payout_method_labels = array();
 
         foreach ($methods as $method) {
-            $this->payout_method_labels[$method['slug']] = $method['name'];
+            $this->payout_method_labels[ $method['slug'] ] = $method['name'];
         }
     }
 
@@ -477,8 +459,7 @@ class HistoryPayout
      * Получает маскированный номер счёта для отображения.
      * Использует masked_details если доступен, иначе fallback на payout_account.
      */
-    private function get_display_account($payout): string
-    {
+    private function get_display_account( $payout ): string {
         if (class_exists('Cashback_Encryption')) {
             return Cashback_Encryption::get_masked_account(
                 $payout->masked_details ?? null,
@@ -491,20 +472,19 @@ class HistoryPayout
     /**
      * Load all bank names into cache (one query instead of N+1).
      */
-    private function load_bank_names(): void
-    {
+    private function load_bank_names(): void {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_banks';
-        $rows = $wpdb->get_results(
+        $rows       = $wpdb->get_results(
             "SELECT bank_code, name FROM {$table_name}",
             ARRAY_A
         );
 
-        $this->bank_names = [];
+        $this->bank_names = array();
         if ($rows) {
             foreach ($rows as $row) {
-                $this->bank_names[$row['bank_code']] = $row['name'];
+                $this->bank_names[ $row['bank_code'] ] = $row['name'];
             }
         }
     }
@@ -515,8 +495,7 @@ class HistoryPayout
      * @param string $bank_code Bank code
      * @return string Bank name or empty string
      */
-    private function get_bank_name_by_code($bank_code)
-    {
+    private function get_bank_name_by_code( $bank_code ) {
         if (empty($bank_code)) {
             return '';
         }
@@ -525,7 +504,7 @@ class HistoryPayout
             $this->load_bank_names();
         }
 
-        return $this->bank_names[$bank_code] ?? '';
+        return $this->bank_names[ $bank_code ] ?? '';
     }
 }
 

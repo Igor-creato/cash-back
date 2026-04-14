@@ -12,29 +12,26 @@ if (!defined('ABSPATH')) {
  * Подменю: Кэшбэк → Уведомления
  * Глобальное управление: вкл/выкл по типам
  */
-class Cashback_Notifications_Admin
-{
-    public function __construct()
-    {
-        add_action('admin_menu', [$this, 'add_menu_page']);
-        add_action('wp_ajax_cashback_admin_save_notification_settings', [$this, 'handle_save_settings']);
-        add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
+class Cashback_Notifications_Admin {
+
+    public function __construct() {
+        add_action('admin_menu', array( $this, 'add_menu_page' ));
+        add_action('wp_ajax_cashback_admin_save_notification_settings', array( $this, 'handle_save_settings' ));
+        add_action('admin_enqueue_scripts', array( $this, 'enqueue_assets' ));
     }
 
-    public function add_menu_page(): void
-    {
+    public function add_menu_page(): void {
         add_submenu_page(
             'cashback-overview',
             __('Уведомления', 'cashback-plugin'),
             __('Уведомления', 'cashback-plugin'),
             'manage_options',
             'cashback-notifications',
-            [$this, 'render_page']
+            array( $this, 'render_page' )
         );
     }
 
-    public function enqueue_assets(string $hook): void
-    {
+    public function enqueue_assets( string $hook ): void {
         if ($hook !== 'cashback_page_cashback-notifications' && strpos($hook, 'cashback-notifications') === false) {
             return;
         }
@@ -43,30 +40,29 @@ class Cashback_Notifications_Admin
 
         wp_enqueue_style(
             'cashback-admin-notifications',
-            plugins_url('assets/css/admin-notifications.css', dirname(__FILE__)),
-            [],
+            plugins_url('assets/css/admin-notifications.css', __DIR__),
+            array(),
             $ver
         );
 
         wp_enqueue_script(
             'cashback-admin-notifications',
-            plugins_url('assets/js/admin-notifications.js', dirname(__FILE__)),
-            ['jquery'],
+            plugins_url('assets/js/admin-notifications.js', __DIR__),
+            array( 'jquery' ),
             $ver,
             true
         );
 
-        wp_localize_script('cashback-admin-notifications', 'cashbackAdminNotifications', [
+        wp_localize_script('cashback-admin-notifications', 'cashbackAdminNotifications', array(
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('cashback_admin_notification_settings_nonce'),
-        ]);
+        ));
     }
 
     /**
      * Рендер страницы настроек
      */
-    public function render_page(): void
-    {
+    public function render_page(): void {
         if (!current_user_can('manage_options')) {
             wp_die(__('Недостаточно прав.', 'cashback-plugin'));
         }
@@ -74,7 +70,7 @@ class Cashback_Notifications_Admin
         $all_types = Cashback_Notifications_DB::get_all_notification_types();
 
         // Группируем типы для удобства
-        $user_types = Cashback_Notifications_DB::get_user_notification_types();
+        $user_types  = Cashback_Notifications_DB::get_user_notification_types();
         $admin_types = array_diff_key($all_types, $user_types);
 
         ?>
@@ -98,7 +94,8 @@ class Cashback_Notifications_Admin
                             </tr>
                         </thead>
                         <tbody>
-                        <?php foreach ($user_types as $slug => $label) :
+                        <?php
+                        foreach ($user_types as $slug => $label) :
                             $enabled = Cashback_Notifications_DB::is_globally_enabled($slug);
                             ?>
                             <tr>
@@ -113,9 +110,11 @@ class Cashback_Notifications_Admin
                                         />
                                         <span class="cashback-admin-toggle-slider"></span>
                                         <span class="cashback-admin-toggle-label">
-                                            <?php echo $enabled
+                                            <?php
+                                            echo $enabled
                                                 ? esc_html__('Включено', 'cashback-plugin')
-                                                : esc_html__('Выключено', 'cashback-plugin'); ?>
+                                                : esc_html__('Выключено', 'cashback-plugin');
+                                                ?>
                                         </span>
                                     </label>
                                 </td>
@@ -140,7 +139,8 @@ class Cashback_Notifications_Admin
                             </tr>
                         </thead>
                         <tbody>
-                        <?php foreach ($admin_types as $slug => $label) :
+                        <?php
+                        foreach ($admin_types as $slug => $label) :
                             $enabled = Cashback_Notifications_DB::is_globally_enabled($slug);
                             ?>
                             <tr>
@@ -155,9 +155,11 @@ class Cashback_Notifications_Admin
                                         />
                                         <span class="cashback-admin-toggle-slider"></span>
                                         <span class="cashback-admin-toggle-label">
-                                            <?php echo $enabled
+                                            <?php
+                                            echo $enabled
                                                 ? esc_html__('Включено', 'cashback-plugin')
-                                                : esc_html__('Выключено', 'cashback-plugin'); ?>
+                                                : esc_html__('Выключено', 'cashback-plugin');
+                                                ?>
                                         </span>
                                     </label>
                                 </td>
@@ -210,7 +212,7 @@ class Cashback_Notifications_Admin
                                     <?php esc_html_e('Email-адрес в поле «От кого». Должен быть рабочим ящиком на вашем сервере. Если не задан — используется email администратора WordPress.', 'cashback-plugin'); ?>
                                 </p>
                                 <?php
-                                $admin_email = get_option('admin_email', '');
+                                $admin_email  = get_option('admin_email', '');
                                 $sender_email = get_option('cashback_email_sender_email', '');
                                 $current_from = $sender_email ?: $admin_email;
                                 ?>
@@ -237,23 +239,22 @@ class Cashback_Notifications_Admin
     /**
      * AJAX: сохранение настроек
      */
-    public function handle_save_settings(): void
-    {
+    public function handle_save_settings(): void {
         if (!check_ajax_referer('cashback_admin_notification_settings_nonce', 'nonce', false)) {
-            wp_send_json_error(['message' => __('Ошибка безопасности.', 'cashback-plugin')]);
+            wp_send_json_error(array( 'message' => __('Ошибка безопасности.', 'cashback-plugin') ));
             return;
         }
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => __('Недостаточно прав.', 'cashback-plugin')]);
+            wp_send_json_error(array( 'message' => __('Недостаточно прав.', 'cashback-plugin') ));
             return;
         }
 
         $all_types = Cashback_Notifications_DB::get_all_notification_types();
 
         foreach (array_keys($all_types) as $slug) {
-            $key = 'notify_' . $slug;
-            $enabled = !empty($_POST[$key]);
+            $key     = 'notify_' . $slug;
+            $enabled = !empty($_POST[ $key ]);
             update_option('cashback_notify_' . $slug, $enabled ? 1 : 0);
         }
 
@@ -269,6 +270,6 @@ class Cashback_Notifications_Admin
             update_option('cashback_email_sender_email', $sender_email);
         }
 
-        wp_send_json_success(['message' => __('Настройки сохранены.', 'cashback-plugin')]);
+        wp_send_json_success(array( 'message' => __('Настройки сохранены.', 'cashback-plugin') ));
     }
 }

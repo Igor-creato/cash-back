@@ -11,25 +11,24 @@ if (!defined('ABSPATH')) {
  *
  * @since 1.2.0
  */
-class Cashback_Fraud_Detector
-{
+class Cashback_Fraud_Detector {
+
     /**
      * Запуск всех проверок. Вызывается из WP Cron (hourly).
      *
      * @return void
      */
-    public static function run_all_checks(): void
-    {
+    public static function run_all_checks(): void {
         if (!Cashback_Fraud_Settings::is_enabled()) {
             return;
         }
 
-        $new_alert_ids = [];
+        $new_alert_ids = array();
 
         // GROUP_CONCAT по умолчанию ограничен 1024 байтами — увеличиваем для корректного
         // формирования списков user_id при большом количестве пользователей на одном IP/fingerprint
         global $wpdb;
-        $wpdb->query("SET SESSION group_concat_max_len = 65535");
+        $wpdb->query('SET SESSION group_concat_max_len = 65535');
 
         $new_alert_ids = array_merge($new_alert_ids, self::check_shared_ip());
         $new_alert_ids = array_merge($new_alert_ids, self::check_shared_fingerprint());
@@ -56,12 +55,11 @@ class Cashback_Fraud_Detector
      *
      * @return int[] Массив ID созданных алертов
      */
-    private static function check_shared_ip(): array
-    {
+    private static function check_shared_ip(): array {
         global $wpdb;
         $threshold = Cashback_Fraud_Settings::get_max_users_per_ip();
-        $fp_table = $wpdb->prefix . 'cashback_user_fingerprints';
-        $alert_ids = [];
+        $fp_table  = $wpdb->prefix . 'cashback_user_fingerprints';
+        $alert_ids = array();
 
         $results = $wpdb->get_results($wpdb->prepare(
             "SELECT ip_address, GROUP_CONCAT(DISTINCT user_id ORDER BY user_id) as user_ids,
@@ -99,21 +97,21 @@ class Cashback_Fraud_Detector
                         $row->user_count,
                         $row->user_ids
                     ),
-                    [
-                        'ip_address' => $row->ip_address,
+                    array(
+                        'ip_address'      => $row->ip_address,
                         'shared_user_ids' => $user_ids,
-                        'user_count' => (int) $row->user_count,
-                    ],
-                    [
-                        [
+                        'user_count'      => (int) $row->user_count,
+                    ),
+                    array(
+                        array(
                             'signal_type' => 'ip_match',
-                            'weight' => 15.0,
-                            'evidence' => [
-                                'ip' => $row->ip_address,
+                            'weight'      => 15.0,
+                            'evidence'    => array(
+                                'ip'       => $row->ip_address,
                                 'user_ids' => $user_ids,
-                            ],
-                        ],
-                    ]
+                            ),
+                        ),
+                    )
                 );
 
                 if ($alert_id) {
@@ -130,12 +128,11 @@ class Cashback_Fraud_Detector
      *
      * @return int[]
      */
-    private static function check_shared_fingerprint(): array
-    {
+    private static function check_shared_fingerprint(): array {
         global $wpdb;
         $threshold = Cashback_Fraud_Settings::get_max_users_per_fingerprint();
-        $fp_table = $wpdb->prefix . 'cashback_user_fingerprints';
-        $alert_ids = [];
+        $fp_table  = $wpdb->prefix . 'cashback_user_fingerprints';
+        $alert_ids = array();
 
         $results = $wpdb->get_results($wpdb->prepare(
             "SELECT fingerprint_hash, GROUP_CONCAT(DISTINCT user_id ORDER BY user_id) as user_ids,
@@ -169,21 +166,21 @@ class Cashback_Fraud_Detector
                         $row->user_count,
                         $row->user_ids
                     ),
-                    [
+                    array(
                         'fingerprint_hash' => $row->fingerprint_hash,
-                        'shared_user_ids' => $user_ids,
-                        'user_count' => (int) $row->user_count,
-                    ],
-                    [
-                        [
+                        'shared_user_ids'  => $user_ids,
+                        'user_count'       => (int) $row->user_count,
+                    ),
+                    array(
+                        array(
                             'signal_type' => 'fingerprint_match',
-                            'weight' => 30.0,
-                            'evidence' => [
+                            'weight'      => 30.0,
+                            'evidence'    => array(
                                 'fingerprint' => $row->fingerprint_hash,
-                                'user_ids' => $user_ids,
-                            ],
-                        ],
-                    ]
+                                'user_ids'    => $user_ids,
+                            ),
+                        ),
+                    )
                 );
 
                 if ($alert_id) {
@@ -200,12 +197,11 @@ class Cashback_Fraud_Detector
      *
      * @return int[]
      */
-    private static function check_shared_payment_details(): array
-    {
+    private static function check_shared_payment_details(): array {
         global $wpdb;
-        $threshold = Cashback_Fraud_Settings::get_max_accounts_per_details_hash();
+        $threshold     = Cashback_Fraud_Settings::get_max_accounts_per_details_hash();
         $profile_table = $wpdb->prefix . 'cashback_user_profile';
-        $alert_ids = [];
+        $alert_ids     = array();
 
         $results = $wpdb->get_results($wpdb->prepare(
             "SELECT details_hash, GROUP_CONCAT(user_id ORDER BY user_id) as user_ids,
@@ -240,21 +236,21 @@ class Cashback_Fraud_Detector
                         $row->user_count,
                         $row->user_ids
                     ),
-                    [
-                        'details_hash' => $row->details_hash,
+                    array(
+                        'details_hash'    => $row->details_hash,
                         'shared_user_ids' => $user_ids,
-                        'user_count' => (int) $row->user_count,
-                    ],
-                    [
-                        [
+                        'user_count'      => (int) $row->user_count,
+                    ),
+                    array(
+                        array(
                             'signal_type' => 'shared_details',
-                            'weight' => 40.0,
-                            'evidence' => [
+                            'weight'      => 40.0,
+                            'evidence'    => array(
                                 'details_hash' => $row->details_hash,
-                                'user_ids' => $user_ids,
-                            ],
-                        ],
-                    ]
+                                'user_ids'     => $user_ids,
+                            ),
+                        ),
+                    )
                 );
 
                 if ($alert_id) {
@@ -271,13 +267,12 @@ class Cashback_Fraud_Detector
      *
      * @return int[]
      */
-    private static function check_cancellation_rate(): array
-    {
+    private static function check_cancellation_rate(): array {
         global $wpdb;
         $threshold = Cashback_Fraud_Settings::get_cancellation_rate_threshold();
-        $min_tx = Cashback_Fraud_Settings::get_cancellation_min_transactions();
-        $tx_table = $wpdb->prefix . 'cashback_transactions';
-        $alert_ids = [];
+        $min_tx    = Cashback_Fraud_Settings::get_cancellation_min_transactions();
+        $tx_table  = $wpdb->prefix . 'cashback_transactions';
+        $alert_ids = array();
 
         // Ограничиваем анализ 90 днями — достаточно для выявления актуальных паттернов,
         // при этом не сканирует всю историю (важно при 1M+ транзакций)
@@ -312,22 +307,22 @@ class Cashback_Fraud_Detector
                     $row->declined,
                     $row->total
                 ),
-                [
-                    'total_transactions' => (int) $row->total,
+                array(
+                    'total_transactions'    => (int) $row->total,
                     'declined_transactions' => (int) $row->declined,
-                    'decline_rate' => (float) $row->decline_rate,
-                ],
-                [
-                    [
+                    'decline_rate'          => (float) $row->decline_rate,
+                ),
+                array(
+                    array(
                         'signal_type' => 'cancellation_rate',
-                        'weight' => $score,
-                        'evidence' => [
-                            'total' => (int) $row->total,
+                        'weight'      => $score,
+                        'evidence'    => array(
+                            'total'    => (int) $row->total,
                             'declined' => (int) $row->declined,
-                            'rate' => (float) $row->decline_rate,
-                        ],
-                    ],
-                ]
+                            'rate'     => (float) $row->decline_rate,
+                        ),
+                    ),
+                )
             );
 
             if ($alert_id) {
@@ -343,13 +338,12 @@ class Cashback_Fraud_Detector
      *
      * @return int[]
      */
-    private static function check_withdrawal_velocity(): array
-    {
+    private static function check_withdrawal_velocity(): array {
         global $wpdb;
-        $max_day = Cashback_Fraud_Settings::get_max_withdrawals_per_day();
-        $max_week = Cashback_Fraud_Settings::get_max_withdrawals_per_week();
+        $max_day   = Cashback_Fraud_Settings::get_max_withdrawals_per_day();
+        $max_week  = Cashback_Fraud_Settings::get_max_withdrawals_per_week();
         $req_table = $wpdb->prefix . 'cashback_payout_requests';
-        $alert_ids = [];
+        $alert_ids = array();
 
         // Per day
         $daily = $wpdb->get_results($wpdb->prepare(
@@ -377,24 +371,24 @@ class Cashback_Fraud_Detector
                     $row->req_date,
                     $max_day
                 ),
-                [
-                    'date' => $row->req_date,
+                array(
+                    'date'          => $row->req_date,
                     'request_count' => (int) $row->req_count,
-                    'limit_day' => $max_day,
-                    'type' => 'daily',
-                ],
-                [
-                    [
+                    'limit_day'     => $max_day,
+                    'type'          => 'daily',
+                ),
+                array(
+                    array(
                         'signal_type' => 'velocity',
-                        'weight' => 20.0,
-                        'evidence' => [
+                        'weight'      => 20.0,
+                        'evidence'    => array(
                             'period' => 'day',
-                            'date' => $row->req_date,
-                            'count' => (int) $row->req_count,
-                            'limit' => $max_day,
-                        ],
-                    ],
-                ]
+                            'date'   => $row->req_date,
+                            'count'  => (int) $row->req_count,
+                            'limit'  => $max_day,
+                        ),
+                    ),
+                )
             );
 
             if ($alert_id) {
@@ -428,24 +422,24 @@ class Cashback_Fraud_Detector
                     $row->req_week,
                     $max_week
                 ),
-                [
-                    'week' => $row->req_week,
+                array(
+                    'week'          => $row->req_week,
                     'request_count' => (int) $row->req_count,
-                    'limit_week' => $max_week,
-                    'type' => 'weekly',
-                ],
-                [
-                    [
+                    'limit_week'    => $max_week,
+                    'type'          => 'weekly',
+                ),
+                array(
+                    array(
                         'signal_type' => 'velocity',
-                        'weight' => 20.0,
-                        'evidence' => [
+                        'weight'      => 20.0,
+                        'evidence'    => array(
                             'period' => 'week',
-                            'week' => $row->req_week,
-                            'count' => (int) $row->req_count,
-                            'limit' => $max_week,
-                        ],
-                    ],
-                ]
+                            'week'   => $row->req_week,
+                            'count'  => (int) $row->req_count,
+                            'limit'  => $max_week,
+                        ),
+                    ),
+                )
             );
 
             if ($alert_id) {
@@ -461,12 +455,11 @@ class Cashback_Fraud_Detector
      *
      * @return int[]
      */
-    private static function check_amount_anomalies(): array
-    {
+    private static function check_amount_anomalies(): array {
         global $wpdb;
         $multiplier = Cashback_Fraud_Settings::get_amount_anomaly_multiplier();
-        $tx_table = $wpdb->prefix . 'cashback_transactions';
-        $alert_ids = [];
+        $tx_table   = $wpdb->prefix . 'cashback_transactions';
+        $alert_ids  = array();
 
         $results = $wpdb->get_results($wpdb->prepare(
             "SELECT t.user_id, t.id as transaction_id, t.cashback as current_amount,
@@ -503,24 +496,24 @@ class Cashback_Fraud_Detector
                     $row->avg_cashback,
                     $row->current_amount / max(0.01, (float) $row->avg_cashback)
                 ),
-                [
+                array(
                     'transaction_id' => (int) $row->transaction_id,
                     'current_amount' => (float) $row->current_amount,
-                    'avg_amount' => (float) $row->avg_cashback,
-                    'multiplier' => $row->current_amount / max(0.01, (float) $row->avg_cashback),
-                    'history_count' => (int) $row->tx_count,
-                ],
-                [
-                    [
+                    'avg_amount'     => (float) $row->avg_cashback,
+                    'multiplier'     => $row->current_amount / max(0.01, (float) $row->avg_cashback),
+                    'history_count'  => (int) $row->tx_count,
+                ),
+                array(
+                    array(
                         'signal_type' => 'amount_spike',
-                        'weight' => 20.0,
-                        'evidence' => [
+                        'weight'      => 20.0,
+                        'evidence'    => array(
                             'transaction_id' => (int) $row->transaction_id,
-                            'amount' => (float) $row->current_amount,
-                            'average' => (float) $row->avg_cashback,
-                        ],
-                    ],
-                ]
+                            'amount'         => (float) $row->current_amount,
+                            'average'        => (float) $row->avg_cashback,
+                        ),
+                    ),
+                )
             );
 
             if ($alert_id) {
@@ -536,16 +529,15 @@ class Cashback_Fraud_Detector
      *
      * @return int[]
      */
-    private static function check_new_account_withdrawals(): array
-    {
+    private static function check_new_account_withdrawals(): array {
         global $wpdb;
         $cooling_days = Cashback_Fraud_Settings::get_new_account_cooling_days();
         if ($cooling_days <= 0) {
-            return [];
+            return array();
         }
 
         $req_table = $wpdb->prefix . 'cashback_payout_requests';
-        $alert_ids = [];
+        $alert_ids = array();
 
         $results = $wpdb->get_results($wpdb->prepare(
             "SELECT r.user_id, u.user_registered, r.id as request_id, r.total_amount,
@@ -573,24 +565,24 @@ class Cashback_Fraud_Detector
                     $row->days_since_reg,
                     $cooling_days
                 ),
-                [
-                    'user_registered' => $row->user_registered,
+                array(
+                    'user_registered'         => $row->user_registered,
                     'days_since_registration' => (int) $row->days_since_reg,
-                    'cooling_days' => $cooling_days,
-                    'request_id' => (int) $row->request_id,
-                    'amount' => (float) $row->total_amount,
-                ],
-                [
-                    [
+                    'cooling_days'            => $cooling_days,
+                    'request_id'              => (int) $row->request_id,
+                    'amount'                  => (float) $row->total_amount,
+                ),
+                array(
+                    array(
                         'signal_type' => 'new_account_withdrawal',
-                        'weight' => 15.0,
-                        'evidence' => [
+                        'weight'      => 15.0,
+                        'evidence'    => array(
                             'registered' => $row->user_registered,
-                            'days' => (int) $row->days_since_reg,
-                            'amount' => (float) $row->total_amount,
-                        ],
-                    ],
-                ]
+                            'days'       => (int) $row->days_since_reg,
+                            'amount'     => (float) $row->total_amount,
+                        ),
+                    ),
+                )
             );
 
             if ($alert_id) {
@@ -611,8 +603,7 @@ class Cashback_Fraud_Detector
      * @param int $user_id ID пользователя
      * @return float Скор 0-100
      */
-    public static function calculate_user_risk_score(int $user_id): float
-    {
+    public static function calculate_user_risk_score( int $user_id ): float {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_fraud_alerts';
 
@@ -633,8 +624,7 @@ class Cashback_Fraud_Detector
      * @param string $alert_type Тип алерта
      * @return bool
      */
-    private static function alert_exists(int $user_id, string $alert_type): bool
-    {
+    private static function alert_exists( int $user_id, string $alert_type ): bool {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_fraud_alerts';
 
@@ -673,7 +663,7 @@ class Cashback_Fraud_Detector
         array $signals
     ): ?int {
         global $wpdb;
-        $alerts_table = $wpdb->prefix . 'cashback_fraud_alerts';
+        $alerts_table  = $wpdb->prefix . 'cashback_fraud_alerts';
         $signals_table = $wpdb->prefix . 'cashback_fraud_signals';
 
         // Атомарная проверка дубликатов: транзакция + FOR UPDATE предотвращает
@@ -699,7 +689,7 @@ class Cashback_Fraud_Detector
 
         $wpdb->insert(
             $alerts_table,
-            [
+            array(
                 'user_id'    => $user_id,
                 'alert_type' => $alert_type,
                 'severity'   => $severity,
@@ -709,8 +699,8 @@ class Cashback_Fraud_Detector
                 'details'    => wp_json_encode($details, JSON_UNESCAPED_UNICODE),
                 'created_at' => current_time('mysql'),
                 'updated_at' => current_time('mysql'),
-            ],
-            ['%d', '%s', '%s', '%f', '%s', '%s', '%s', '%s', '%s']
+            ),
+            array( '%d', '%s', '%s', '%f', '%s', '%s', '%s', '%s', '%s' )
         );
 
         if ($wpdb->last_error) {
@@ -725,14 +715,14 @@ class Cashback_Fraud_Detector
         foreach ($signals as $signal) {
             $wpdb->insert(
                 $signals_table,
-                [
+                array(
                     'alert_id'    => $alert_id,
                     'signal_type' => $signal['signal_type'],
                     'weight'      => $signal['weight'],
                     'evidence'    => wp_json_encode($signal['evidence'], JSON_UNESCAPED_UNICODE),
                     'created_at'  => current_time('mysql'),
-                ],
-                ['%d', '%s', '%f', '%s', '%s']
+                ),
+                array( '%d', '%s', '%f', '%s', '%s' )
             );
         }
 
@@ -745,7 +735,11 @@ class Cashback_Fraud_Detector
                 0, // system actor
                 'fraud_alert',
                 $alert_id,
-                ['alert_type' => $alert_type, 'user_id' => $user_id, 'severity' => $severity]
+                array(
+					'alert_type' => $alert_type,
+					'user_id'    => $user_id,
+					'severity'   => $severity,
+				)
             );
         }
 
@@ -758,8 +752,7 @@ class Cashback_Fraud_Detector
      * @param float $score Скор
      * @return string low|medium|high|critical
      */
-    private static function score_to_severity(float $score): string
-    {
+    private static function score_to_severity( float $score ): string {
         if ($score >= 76) {
             return 'critical';
         }
@@ -778,14 +771,13 @@ class Cashback_Fraud_Detector
      * @param int[] $alert_ids Массив ID новых алертов
      * @return void
      */
-    private static function notify_admin(array $alert_ids): void
-    {
+    private static function notify_admin( array $alert_ids ): void {
         if (!Cashback_Fraud_Settings::is_email_notification_enabled()) {
             return;
         }
 
         global $wpdb;
-        $table = $wpdb->prefix . 'cashback_fraud_alerts';
+        $table        = $wpdb->prefix . 'cashback_fraud_alerts';
         $placeholders = implode(',', array_fill(0, count($alert_ids), '%d'));
 
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -802,15 +794,15 @@ class Cashback_Fraud_Detector
         }
 
         $admin_email = get_option('admin_email');
-        $site_name = get_bloginfo('name');
-        $admin_url = admin_url('admin.php?page=cashback-antifraud');
+        $site_name   = get_bloginfo('name');
+        $admin_url   = admin_url('admin.php?page=cashback-antifraud');
 
-        $critical_count = count(array_filter($alerts, fn($a) => $a->severity === 'critical' || $a->severity === 'high'));
-        $subject = $critical_count > 0
+        $critical_count = count(array_filter($alerts, fn( $a ) => $a->severity === 'critical' || $a->severity === 'high'));
+        $subject        = $critical_count > 0
             ? "[FRAUD] {$site_name}: {$critical_count} критических алертов"
             : "[FRAUD] {$site_name}: " . count($alerts) . ' новых алертов';
 
-        $body = "Cashback Antifraud Report\n";
+        $body  = "Cashback Antifraud Report\n";
         $body .= str_repeat('=', 50) . "\n";
         $body .= sprintf("Дата: %s\n", current_time('mysql'));
         $body .= sprintf("Новых алертов: %d\n", count($alerts));
