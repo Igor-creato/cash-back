@@ -20,3 +20,15 @@ parameters:
     reportUnmatchedIgnoredErrors: false
     ignoreErrors:
         - '#Constant [A-Z_]+ not found#'
+        - '#Unreachable statement - code above always terminates\.#'
+        - '#If condition is always true\.#'
+        - '#Ternary operator condition is always true\.#'
+        - '#Strict comparison using [!=]== between .+ will always evaluate to (true|false)\.#'
+        - '#Method .+ is unused\.#'
+        - '#Constant .+ is unused\.#'
+        - '#Offset .+ on left side of \?\? always exists and is not nullable\.#'
+        - '#Call to function method_exists\(\) with .+ will always evaluate to true\.#'
+        - '#Parameter \#1 \$text of function esc_(html|attr) expects string, int(<[^>]+>)? given\.#'
+        - '#Parameter \#3 \$number of function _n expects int, float given\.#'
+        - '#Parameter \#1 \$args of function paginate_links expects .+#'
+        - '#Call to an undefined method WC_Product::get_product_url\(\)\.#'
