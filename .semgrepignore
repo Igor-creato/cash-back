@@ -1,0 +1,8 @@
+vendor/
+node_modules/
+obsidian/
+context/
+development/
+wp-plugin-tests/
+languages/
+assets/js/**/*.min.js

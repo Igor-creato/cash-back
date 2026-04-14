@@ -1,0 +1,230 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  php-lint:
+    name: PHP syntax lint (matrix)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.2', '8.3', '8.4']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: php -l on all PHP files
+        run: |
+          set -e
+          ERRORS=0
+          while IFS= read -r file; do
+            if ! php -l "$file" > /dev/null 2>&1; then
+              echo "::error file=$file::PHP syntax error"
+              php -l "$file" || true
+              ERRORS=$((ERRORS+1))
+            fi
+          done < <(find . -type f -name '*.php' \
+            -not -path './vendor/*' \
+            -not -path './node_modules/*' \
+            -not -path './wp-plugin-tests/*' \
+            -not -path './obsidian/*' \
+            -not -path './context/*' \
+            -not -path './development/*')
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "PHP syntax errors: $ERRORS"
+            exit 1
+          fi
+
+  php-tools:
+    name: PHPStan + PHPCS + composer audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer, cs2pr
+          coverage: none
+
+      - name: Composer cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer
+          key: composer-${{ hashFiles('composer.json') }}
+          restore-keys: composer-
+
+      - name: Install PHP dev tooling
+        run: composer update --no-interaction --no-progress --prefer-dist
+
+      - name: Composer audit (CVE check)
+        run: composer audit --no-interaction --format=plain
+
+      - name: PHPStan (level 5)
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=2G --error-format=github
+
+      - name: PHPCS (WordPress + VIP + PHPCompatibilityWP)
+        run: vendor/bin/phpcs -q --report=checkstyle --report-file=phpcs-report.xml || true
+
+      - name: Annotate PHPCS results
+        if: always()
+        run: cat phpcs-report.xml | cs2pr
+
+      - name: Fail on PHPCS errors
+        run: vendor/bin/phpcs -q --report=summary --runtime-set ignore_warnings_on_exit 1
+
+  js-lint:
+    name: JS syntax + ESLint + npm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install JS tooling
+        run: npm install --no-audit --no-fund
+
+      - name: Node syntax check
+        run: |
+          set -e
+          ERRORS=0
+          while IFS= read -r file; do
+            if ! node --check "$file" 2>/dev/null; then
+              echo "::error file=$file::JS syntax error"
+              node --check "$file" || true
+              ERRORS=$((ERRORS+1))
+            fi
+          done < <(find assets/js -type f -name '*.js' ! -name '*.min.js' 2>/dev/null || true)
+          if [ "$ERRORS" -gt 0 ]; then exit 1; fi
+
+      - name: ESLint
+        run: npx eslint "assets/js/**/*.js" --ignore-pattern "**/*.min.js"
+
+      - name: npm audit (high+)
+        run: npm audit --audit-level=high
+
+  sql-and-injection-scan:
+    name: SQL lint + $wpdb inline-concat scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install sqlfluff
+        run: pip install --upgrade sqlfluff
+
+      - name: Lint .sql files (if any)
+        run: |
+          set -e
+          mapfile -t SQL_FILES < <(find . -type f -name '*.sql' \
+            -not -path './vendor/*' \
+            -not -path './node_modules/*' \
+            -not -path './obsidian/*' \
+            -not -path './context/*' \
+            -not -path './development/*' \
+            -not -path './wp-plugin-tests/*')
+          if [ ${#SQL_FILES[@]} -eq 0 ]; then
+            echo "No .sql files in repo — skipping sqlfluff."
+            exit 0
+          fi
+          sqlfluff lint --dialect mysql "${SQL_FILES[@]}"
+
+      - name: Scan for unsafe $wpdb concatenated queries
+        run: |
+          set +e
+          MATCHES=$(grep -RInE '\$wpdb->(query|get_(results|row|col|var)|prepare)\s*\(\s*"[^"]*"\s*\.' \
+            --include='*.php' \
+            --exclude-dir=vendor \
+            --exclude-dir=node_modules \
+            --exclude-dir=obsidian \
+            --exclude-dir=context \
+            --exclude-dir=development \
+            --exclude-dir=wp-plugin-tests .)
+          if [ -n "$MATCHES" ]; then
+            echo "::error::Potentially unsafe concatenated SQL detected. Use \$wpdb->prepare() with placeholders."
+            echo "$MATCHES"
+            exit 1
+          fi
+          echo "No obvious unsafe concatenated \$wpdb queries found."
+
+  semgrep:
+    name: Semgrep (OWASP / WP / JS / PHP / secrets)
+    runs-on: ubuntu-latest
+    container:
+      image: returntocorp/semgrep:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep scan
+        run: |
+          semgrep ci \
+            --config p/php \
+            --config p/javascript \
+            --config p/wordpress \
+            --config p/security-audit \
+            --config p/owasp-top-ten \
+            --config p/sql-injection \
+            --config p/xss \
+            --config p/secrets \
+            --error
+
+  gitleaks:
+    name: Gitleaks (secret scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['javascript']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended,security-and-quality
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  ci-success:
+    name: CI gate
+    needs:
+      - php-lint
+      - php-tools
+      - js-lint
+      - sql-and-injection-scan
+      - semgrep
+      - gitleaks
+      - codeql
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All CI checks passed."

@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <ruleset name="Cashback Plugin">
-    <description>Coding standards for Cashback Plugin</description>
+    <description>Coding &amp; security standards for Cashback Plugin (WordPress/WooCommerce).</description>
 
     <file>.</file>
 
@@ -15,8 +15,10 @@
     <arg name="extensions" value="php"/>
     <arg name="colors"/>
     <arg value="sp"/>
+    <arg name="parallel" value="8"/>
 
-    <rule ref="WordPress-Core">
+    <!-- WordPress core + extras (security/db/xss/nonce sniffs live here). -->
+    <rule ref="WordPress">
         <exclude name="Generic.Commenting.DocComment.MissingShort"/>
         <exclude name="Squiz.Commenting"/>
         <exclude name="WordPress.Files.FileName"/>
@@ -26,6 +28,40 @@
         <exclude name="PEAR.Functions.FunctionCallSignature"/>
     </rule>
 
-    <config name="minimum_supported_wp_version" value="6.0"/>
-    <config name="testVersion" value="8.4-"/>
+    <rule ref="WordPress-Extra">
+        <exclude name="Generic.Commenting.DocComment"/>
+        <exclude name="Squiz.Commenting"/>
+    </rule>
+
+    <!-- VIP minimum: security-focused sniffs (from automattic/vipwpcs). -->
+    <rule ref="WordPress-VIP-Go">
+        <exclude name="WordPressVIPMinimum.Files.IncludingFile"/>
+        <exclude name="WordPressVIPMinimum.Functions.RestrictedFunctions"/>
+    </rule>
+
+    <!-- Force critical security sniffs to be errors, not warnings. -->
+    <rule ref="WordPress.DB.PreparedSQL">
+        <type>error</type>
+    </rule>
+    <rule ref="WordPress.DB.PreparedSQLPlaceholders">
+        <type>error</type>
+    </rule>
+    <rule ref="WordPress.DB.DirectDatabaseQuery">
+        <type>error</type>
+    </rule>
+    <rule ref="WordPress.Security.EscapeOutput">
+        <type>error</type>
+    </rule>
+    <rule ref="WordPress.Security.NonceVerification">
+        <type>error</type>
+    </rule>
+    <rule ref="WordPress.Security.ValidatedSanitizedInput">
+        <type>error</type>
+    </rule>
+
+    <!-- PHP 8.1..8.4 compatibility. -->
+    <rule ref="PHPCompatibilityWP"/>
+
+    <config name="minimum_supported_wp_version" value="6.5"/>
+    <config name="testVersion" value="8.1-"/>
 </ruleset>

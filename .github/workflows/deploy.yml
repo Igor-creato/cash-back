@@ -1,89 +1,18 @@
 name: Deploy to server
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
-  checks:
-    name: Code checks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.4'
-          tools: composer, cs2pr
-          coverage: none
-
-      - name: PHP syntax lint
-        run: |
-          set -e
-          ERRORS=0
-          while IFS= read -r file; do
-            if ! php -l "$file" > /dev/null 2>&1; then
-              echo "Syntax error in: $file"
-              php -l "$file" || true
-              ERRORS=$((ERRORS+1))
-            fi
-          done < <(find . -type f -name '*.php' \
-            -not -path './vendor/*' \
-            -not -path './node_modules/*' \
-            -not -path './wp-plugin-tests/*' \
-            -not -path './obsidian/*' \
-            -not -path './context/*' \
-            -not -path './development/*')
-          if [ "$ERRORS" -gt 0 ]; then
-            echo "PHP syntax errors: $ERRORS"
-            exit 1
-          fi
-
-      - name: Install PHP tooling
-        run: |
-          composer init --quiet --no-interaction --name="cashback/ci" --stability=dev
-          composer config --no-interaction allow-plugins.dealerdirect/phpcodesniffer-composer-installer true
-          composer require --dev --no-interaction --no-progress \
-            phpstan/phpstan:^1.11 \
-            szepeviktor/phpstan-wordpress:^1.3 \
-            php-stubs/woocommerce-stubs:^9.0 \
-            squizlabs/php_codesniffer:^3.10 \
-            wp-coding-standards/wpcs:^3.1 \
-            dealerdirect/phpcodesniffer-composer-installer:^1.0
-
-      - name: PHPStan
-        run: vendor/bin/phpstan analyse --no-progress --memory-limit=2G
-
-      - name: PHPCS
-        run: vendor/bin/phpcs -q --report=checkstyle | cs2pr
-        continue-on-error: true
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: JS syntax check
-        run: |
-          set -e
-          ERRORS=0
-          while IFS= read -r file; do
-            if ! node --check "$file" 2>/dev/null; then
-              echo "Syntax error in: $file"
-              node --check "$file" || true
-              ERRORS=$((ERRORS+1))
-            fi
-          done < <(find assets/js -type f -name '*.js' 2>/dev/null || true)
-          if [ "$ERRORS" -gt 0 ]; then
-            echo "JS syntax errors: $ERRORS"
-            exit 1
-          fi
-
   deploy:
-    name: Deploy
-    needs: checks
+    name: Deploy via SSH
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
     runs-on: ubuntu-latest
     steps:
       - name: Execute remote SSH commands
@@ -94,9 +23,10 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
           script: |
+            set -e
             cd /home/igor/site/volumes/wordpress/wp-content/plugins/cash-back
             git remote -v
             git branch
             git log --oneline -3
-            git pull origin main
+            git pull --ff-only origin main
             git log --oneline -3
