@@ -177,20 +177,81 @@
         grid-template-columns: repeat(2, 1fr);
     }
 
-    .cashback-affiliate-table {
-        font-size: 12px;
-    }
-
-    .cashback-affiliate-table th,
-    .cashback-affiliate-table td {
-        padding: 6px 8px;
-    }
-
     .cashback-affiliate-link-box {
         flex-direction: column;
     }
 
     .cashback-affiliate-link-input {
         width: 100%;
+    }
+}
+
+@media (max-width: 768px) {
+    .cashback-affiliate-page .cashback-affiliate-table thead {
+        display: none !important;
+    }
+
+    .cashback-affiliate-page .cashback-affiliate-table,
+    .cashback-affiliate-page .cashback-affiliate-table tbody,
+    .cashback-affiliate-page .cashback-affiliate-table tr,
+    .cashback-affiliate-page .cashback-affiliate-table td {
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    .cashback-affiliate-page .cashback-affiliate-table {
+        border: none !important;
+        border-collapse: collapse !important;
+        background: transparent !important;
+    }
+
+    .cashback-affiliate-page .cashback-affiliate-table tbody {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 12px !important;
+    }
+
+    .cashback-affiliate-page .cashback-affiliate-table tbody tr {
+        background: #fff !important;
+        border: 1px solid #e0e0e0 !important;
+        border-radius: 8px !important;
+        padding: 14px 16px !important;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06) !important;
+    }
+
+    .cashback-affiliate-page .cashback-affiliate-table tbody tr td {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        padding: 6px 0 !important;
+        border: none !important;
+        border-bottom: 1px solid #f0f0f0 !important;
+        font-size: 14px !important;
+        text-align: right !important;
+    }
+
+    .cashback-affiliate-page .cashback-affiliate-table tbody tr td:last-child {
+        border-bottom: none !important;
+        padding-bottom: 0 !important;
+    }
+
+    .cashback-affiliate-page .cashback-affiliate-table tbody tr td:first-child {
+        padding-top: 0 !important;
+        font-weight: 700 !important;
+        font-size: 15px !important;
+        padding-bottom: 8px !important;
+        margin-bottom: 2px !important;
+        border-bottom: 2px solid #2271b1 !important;
+    }
+
+    .cashback-affiliate-page .cashback-affiliate-table tbody tr td::before {
+        content: attr(data-title);
+        font-weight: 600;
+        color: #555;
+        font-size: 13px;
+        flex-shrink: 0;
+        margin-right: 12px;
+        text-align: left;
     }
 }

@@ -83,7 +83,7 @@ class Cashback_Affiliate_Frontend {
             'cashback-affiliate-frontend',
             plugins_url('../assets/css/affiliate-frontend.css', __FILE__),
             array( 'cashback-frontend' ),
-            '1.0.0'
+            '1.1.0'
         );
 
         wp_enqueue_script(
@@ -293,13 +293,13 @@ class Cashback_Affiliate_Frontend {
             $status_label = $status_labels[ $row['display_status'] ] ?? $row['display_status'];
 
             echo '<tr>';
-            echo '<td>' . esc_html(wp_date('d.m.Y H:i', strtotime($row['created_at']))) . '</td>';
-            echo '<td><code>' . esc_html($row['reference_id']) . '</code></td>';
-            echo '<td>' . esc_html($row['referred_name'] ?: '—') . '</td>';
-            echo '<td>' . esc_html(number_format_i18n((float) $row['cashback_amount'], 2)) . ' ₽</td>';
-            echo '<td>' . esc_html($row['commission_rate']) . '%</td>';
-            echo '<td><strong>' . esc_html(number_format_i18n((float) $row['commission_amount'], 2)) . ' ₽</strong></td>';
-            echo '<td><span class="cashback-affiliate-status ' . $status_class . '">'
+            echo '<td data-title="' . esc_attr__('Дата', 'cashback-plugin') . '">' . esc_html(wp_date('d.m.Y H:i', strtotime($row['created_at']))) . '</td>';
+            echo '<td data-title="' . esc_attr__('ID', 'cashback-plugin') . '"><code>' . esc_html($row['reference_id']) . '</code></td>';
+            echo '<td data-title="' . esc_attr__('Реферал', 'cashback-plugin') . '">' . esc_html($row['referred_name'] ?: '—') . '</td>';
+            echo '<td data-title="' . esc_attr__('Кешбэк', 'cashback-plugin') . '">' . esc_html(number_format_i18n((float) $row['cashback_amount'], 2)) . ' ₽</td>';
+            echo '<td data-title="' . esc_attr__('Ставка', 'cashback-plugin') . '">' . esc_html($row['commission_rate']) . '%</td>';
+            echo '<td data-title="' . esc_attr__('Комиссия', 'cashback-plugin') . '"><strong>' . esc_html(number_format_i18n((float) $row['commission_amount'], 2)) . ' ₽</strong></td>';
+            echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '"><span class="cashback-affiliate-status ' . $status_class . '">'
                 . esc_html($status_label) . '</span></td>';
             echo '</tr>';
         }
@@ -402,10 +402,10 @@ class Cashback_Affiliate_Frontend {
                 : '—';
 
             echo '<tr>';
-            echo '<td>' . esc_html($row['display_name'] ?: '—') . '</td>';
-            echo '<td>' . esc_html($registered) . '</td>';
-            echo '<td>' . esc_html($referred_at) . '</td>';
-            echo '<td>' . esc_html(number_format_i18n((float) $row['total_earned'], 2)) . ' ₽</td>';
+            echo '<td data-title="' . esc_attr__('Имя', 'cashback-plugin') . '">' . esc_html($row['display_name'] ?: '—') . '</td>';
+            echo '<td data-title="' . esc_attr__('Дата регистрации', 'cashback-plugin') . '">' . esc_html($registered) . '</td>';
+            echo '<td data-title="' . esc_attr__('Дата привязки', 'cashback-plugin') . '">' . esc_html($referred_at) . '</td>';
+            echo '<td data-title="' . esc_attr__('Заработано', 'cashback-plugin') . '">' . esc_html(number_format_i18n((float) $row['total_earned'], 2)) . ' ₽</td>';
             echo '</tr>';
         }
 
