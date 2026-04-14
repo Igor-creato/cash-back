@@ -748,5 +748,13 @@ class CashbackPlugin {
     }
 }
 
+// Скрытие боковой навигации "Мой аккаунт" на мобильных устройствах
+add_action('wp_head', static function (): void {
+    if (!function_exists('is_account_page') || !is_account_page()) {
+        return;
+    }
+    echo '<style id="cashback-hide-myaccount-nav-mobile">@media (max-width: 768px){.woocommerce-MyAccount-navigation{display:none!important;}}</style>';
+}, 99);
+
 // Инициализация плагина
 new CashbackPlugin();
