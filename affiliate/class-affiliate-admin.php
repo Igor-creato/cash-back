@@ -158,7 +158,6 @@ class Cashback_Affiliate_Admin
 
     private function render_settings_tab(): void
     {
-        $global_rate       = Cashback_Affiliate_DB::get_global_rate();
         $cookie_ttl        = Cashback_Affiliate_DB::get_cookie_ttl_days();
         $rules_url         = Cashback_Affiliate_DB::get_rules_page_url();
         $antifraud_enabled = Cashback_Affiliate_DB::is_antifraud_enabled();
@@ -166,13 +165,6 @@ class Cashback_Affiliate_Admin
         echo '<form id="affiliate-settings-form" class="cashback-affiliate-form">';
 
         echo '<table class="form-table">';
-
-        // Глобальная ставка
-        echo '<tr>';
-        echo '<th><label for="aff-global-rate">' . esc_html__('Глобальная ставка (%)', 'cashback-plugin') . '</label></th>';
-        echo '<td><input type="number" id="aff-global-rate" name="global_rate" value="' . esc_attr($global_rate) . '" min="0" max="100" step="0.01" class="small-text">';
-        echo '<p class="description">' . esc_html__('Процент от кешбэка, начисляемый рефереру.', 'cashback-plugin') . '</p></td>';
-        echo '</tr>';
 
         // Срок cookie
         echo '<tr>';
@@ -605,26 +597,6 @@ class Cashback_Affiliate_Admin
             return;
         }
 
-        if (isset($_POST['global_rate'])) {
-            $old_global_rate = Cashback_Affiliate_DB::get_global_rate();
-            $new_global_rate = sanitize_text_field(wp_unslash($_POST['global_rate']));
-            Cashback_Affiliate_DB::set_global_rate($new_global_rate);
-
-            if (class_exists('Cashback_Rate_History_Admin') && $old_global_rate !== $new_global_rate) {
-                $logged = Cashback_Rate_History_Admin::log_rate_change(
-                    'affiliate_global',
-                    null,
-                    $old_global_rate !== '' ? (float) $old_global_rate : null,
-                    (float) $new_global_rate,
-                    0,
-                    'manual',
-                    ['setting' => 'cashback_affiliate_global_rate']
-                );
-                if (!$logged) {
-                    error_log('[Cashback Affiliate] Failed to log global rate change from ' . $old_global_rate . ' to ' . $new_global_rate);
-                }
-            }
-        }
         if (isset($_POST['cookie_ttl'])) {
             Cashback_Affiliate_DB::set_cookie_ttl_days((int) $_POST['cookie_ttl']);
         }
