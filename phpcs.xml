@@ -27,5 +27,5 @@
     </rule>
 
     <config name="minimum_supported_wp_version" value="6.0"/>
-    <config name="testVersion" value="8.1-"/>
+    <config name="testVersion" value="8.4-"/>
 </ruleset>
