@@ -1,3 +1,6 @@
+includes:
+    - vendor/szepeviktor/phpstan-wordpress/extension.neon
+
 parameters:
     level: 0
     phpVersion: 80400
@@ -11,10 +14,7 @@ parameters:
         - context
         - development
         - languages
-    bootstrapFiles:
-        - %rootDir%/../../szepeviktor/phpstan-wordpress/bootstrap.php
     scanDirectories:
-        - %rootDir%/../../php-stubs/woocommerce-stubs
+        - vendor/php-stubs/woocommerce-stubs
     ignoreErrors:
         - '#Constant [A-Z_]+ not found#'
-        - '#Function (apply_filters|do_action) invoked with#'
