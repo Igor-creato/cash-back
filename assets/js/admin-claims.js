@@ -367,6 +367,7 @@ jQuery(function($) {
     // View claim detail
     $(document).on('click', '.claims-view-btn', function() {
         var claimId = $(this).data('claim-id');
+        var $row = $(this).closest('tr');
 
         $.post(ajaxUrl, {
             action: 'claims_admin_get_detail',
@@ -376,6 +377,7 @@ jQuery(function($) {
             if (res.success) {
                 $('#claim-detail-body').html(res.data.html);
                 $('#claim-detail-modal').show();
+                $row.removeClass('claim-row-unread').find('.claims-tab-badge').remove();
             }
         });
     });

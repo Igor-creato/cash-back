@@ -247,9 +247,16 @@ class Cashback_Claims_Admin {
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($result['claims'] as $claim) : ?>
-                            <tr>
-                                <td><?php echo esc_html($claim['claim_id']); ?></td>
+                        <?php foreach ($result['claims'] as $claim) :
+                            $unread = (int) ( $claim['unread_count'] ?? 0 );
+                        ?>
+                            <tr class="<?php echo $unread > 0 ? 'claim-row-unread' : ''; ?>">
+                                <td>
+                                    <?php echo esc_html($claim['claim_id']); ?>
+                                    <?php if ($unread > 0) : ?>
+                                        <span class="claims-tab-badge"><?php echo absint($unread); ?></span>
+                                    <?php endif; ?>
+                                </td>
                                 <td>
                                     <?php echo esc_html($claim['user_display_name'] ?? '—'); ?><br>
                                     <small><?php echo esc_html($claim['user_email'] ?? ''); ?></small>
@@ -412,6 +419,8 @@ class Cashback_Claims_Admin {
         if (!$claim) {
             wp_send_json_error(array( 'message' => __('Заявка не найдена.', 'cashback-plugin') ));
         }
+
+        Cashback_Claims_DB::mark_admin_events_read($claim_id);
 
         ob_start();
         $this->render_claim_detail($claim);

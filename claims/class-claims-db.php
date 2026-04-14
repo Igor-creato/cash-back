@@ -62,13 +62,15 @@ class Cashback_Claims_DB {
             `actor_id` bigint(20) unsigned DEFAULT NULL COMMENT 'ID пользователя (0 = система, NULL = админ)',
             `actor_type` enum('user','admin','system') NOT NULL DEFAULT 'system',
             `is_read` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = прочитано пользователем',
+            `is_read_admin` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = прочитано администратором',
             `created_at` datetime NOT NULL DEFAULT current_timestamp(),
             PRIMARY KEY (`event_id`),
             KEY `idx_claim_id` (`claim_id`),
             KEY `idx_status` (`status`),
             KEY `idx_created_at` (`created_at`),
             KEY `idx_claim_created` (`claim_id`, `created_at` DESC),
-            KEY `idx_unread` (`is_read`, `actor_type`)
+            KEY `idx_unread` (`is_read`, `actor_type`),
+            KEY `idx_unread_admin` (`is_read_admin`, `actor_type`)
         ) ENGINE=InnoDB {$charset_collate} COMMENT='История изменений заявок на кэшбэк';";
 
         $tables = array(
@@ -135,6 +137,51 @@ class Cashback_Claims_DB {
             $wpdb->query("UPDATE `{$table}` SET `is_read` = 1");
             error_log('[Claims] Migration: added is_read column to claim_events');
         }
+    }
+
+    /**
+     * Add is_read_admin column if missing (migration for existing installs).
+     */
+    public static function migrate_add_is_read_admin(): void {
+        global $wpdb;
+
+        $table = "{$wpdb->prefix}cashback_claim_events";
+        $col   = $wpdb->get_results("SHOW COLUMNS FROM `{$table}` LIKE 'is_read_admin'");
+
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE `{$table}` ADD COLUMN `is_read_admin` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = прочитано администратором' AFTER `is_read`");
+            $wpdb->query("ALTER TABLE `{$table}` ADD KEY `idx_unread_admin` (`is_read_admin`, `actor_type`)");
+            // Mark user-authored events from the last 30 days as unread; older ones stay read
+            $wpdb->query("UPDATE `{$table}` SET `is_read_admin` = 0 WHERE `actor_type` = 'user' AND `created_at` >= (NOW() - INTERVAL 30 DAY)");
+            error_log('[Claims] Migration: added is_read_admin column to claim_events');
+        }
+    }
+
+    /**
+     * Get count of unread user events for admin across a set of claims.
+     */
+    public static function get_unread_events_count_admin(): int {
+        global $wpdb;
+
+        return (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+             FROM `{$wpdb->prefix}cashback_claim_events`
+             WHERE actor_type = 'user' AND is_read_admin = 0"
+        );
+    }
+
+    /**
+     * Mark all user events of a claim as read by admin.
+     */
+    public static function mark_admin_events_read( int $claim_id ): int {
+        global $wpdb;
+
+        return (int) $wpdb->query($wpdb->prepare(
+            "UPDATE `{$wpdb->prefix}cashback_claim_events`
+             SET is_read_admin = 1
+             WHERE claim_id = %d AND actor_type = 'user' AND is_read_admin = 0",
+            $claim_id
+        ));
     }
 
     /**

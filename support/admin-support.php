@@ -259,6 +259,7 @@ class Cashback_Support_Admin {
             LEFT JOIN `{$wpdb->users}` u ON t.user_id = u.ID
             {$where_clause}
             ORDER BY
+                (unread_count > 0) DESC,
                 CASE t.status WHEN 'open' THEN 0 WHEN 'answered' THEN 1 WHEN 'closed' THEN 2 END,
                 CASE t.priority WHEN 'urgent' THEN 0 WHEN 'normal' THEN 1 WHEN 'not_urgent' THEN 2 END,
                 t.updated_at DESC
