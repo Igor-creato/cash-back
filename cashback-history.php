@@ -11,9 +11,9 @@ if (!defined('ABSPATH')) {
  *
  * Displays user's cashback transaction history with AJAX pagination.
  */
-class CashbackHistory
-{
-    private const PER_PAGE = 10;
+class CashbackHistory {
+
+    private const PER_PAGE          = 10;
     private const MAX_ALLOWED_PAGES = 1000; // Защита от DoS (макс. 10 000 записей)
 
     private static $instance = null;
@@ -23,22 +23,20 @@ class CashbackHistory
      *
      * @return self
      */
-    public static function get_instance()
-    {
+    public static function get_instance() {
         if (null === self::$instance) {
             self::$instance = new self();
         }
         return self::$instance;
     }
 
-    private function __construct()
-    {
-        add_action('init', array($this, 'register_endpoint'));
-        add_filter('query_vars', array($this, 'add_query_vars'));
-        add_filter('woocommerce_account_menu_items', array($this, 'add_menu_item'));
-        add_action('woocommerce_account_cashback-history_endpoint', array($this, 'content'));
-        add_action('wp_ajax_load_page_transactions', array($this, 'ajax_load_page'));
-        add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'));
+    private function __construct() {
+        add_action('init', array( $this, 'register_endpoint' ));
+        add_filter('query_vars', array( $this, 'add_query_vars' ));
+        add_filter('woocommerce_account_menu_items', array( $this, 'add_menu_item' ));
+        add_action('woocommerce_account_cashback-history_endpoint', array( $this, 'content' ));
+        add_action('wp_ajax_load_page_transactions', array( $this, 'ajax_load_page' ));
+        add_action('wp_enqueue_scripts', array( $this, 'enqueue_scripts' ));
     }
 
     /**
@@ -46,8 +44,7 @@ class CashbackHistory
      *
      * @return void
      */
-    public function register_endpoint()
-    {
+    public function register_endpoint() {
         add_rewrite_endpoint('cashback-history', EP_ROOT | EP_PAGES);
     }
 
@@ -57,8 +54,7 @@ class CashbackHistory
      * @param array $vars Query vars.
      * @return array Modified query vars.
      */
-    public function add_query_vars($vars)
-    {
+    public function add_query_vars( $vars ) {
         $vars[] = 'cashback-history';
         return $vars;
     }
@@ -69,13 +65,12 @@ class CashbackHistory
      * @param array $items Menu items.
      * @return array Modified menu items.
      */
-    public function add_menu_item($items)
-    {
+    public function add_menu_item( $items ) {
         if (isset($items['customer-logout'])) {
             $logout = $items['customer-logout'];
             unset($items['customer-logout']);
             $items['cashback-history'] = __('История покупок', 'cashback-plugin');
-            $items['customer-logout'] = $logout;
+            $items['customer-logout']  = $logout;
         } else {
             $items['cashback-history'] = __('История покупок', 'cashback-plugin');
         }
@@ -87,8 +82,7 @@ class CashbackHistory
      *
      * @return void
      */
-    public function content()
-    {
+    public function content() {
         $user_id = get_current_user_id();
         if (!$user_id) {
             echo '<p>' . esc_html__('Вы должны быть авторизованы.', 'cashback-plugin') . '</p>';
@@ -102,14 +96,14 @@ class CashbackHistory
             echo '</div>';
         }
 
-        $per_page = self::PER_PAGE;
-        $total = $this->get_total_transactions($user_id);
+        $per_page    = self::PER_PAGE;
+        $total       = $this->get_total_transactions($user_id);
         $total_pages = $total > 0 ? ceil($total / $per_page) : 1;
         $total_pages = min($total_pages, self::MAX_ALLOWED_PAGES);
 
-        $page = isset($_GET['page']) ? intval($_GET['page']) : 1;
-        $page = max(1, min($page, $total_pages));
-        $offset = ($page - 1) * $per_page;
+        $page   = isset($_GET['page']) ? intval($_GET['page']) : 1;
+        $page   = max(1, min($page, $total_pages));
+        $offset = ( $page - 1 ) * $per_page;
 
         $transactions = $this->get_transactions($user_id, $per_page, $offset);
 
@@ -178,8 +172,7 @@ class CashbackHistory
      * @param array $transactions Array of transaction objects.
      * @return void
      */
-    private function render_transactions_table(array $transactions): void
-    {
+    private function render_transactions_table( array $transactions ): void {
         echo '<table id="transactions-table" class="wd-table shop_table_responsive">';
         echo '<thead>';
         echo '<tr>';
@@ -215,17 +208,16 @@ class CashbackHistory
      * @param int $total_pages  Total number of pages.
      * @return void
      */
-    private function render_pagination($current_page, $total_pages)
-    {
+    private function render_pagination( $current_page, $total_pages ) {
         if ($total_pages <= 1) {
             return;
         }
 
         $range = 2; // соседние страницы вокруг текущей
-        $edge = 2;  // крайние страницы с каждой стороны
+        $edge  = 2;  // крайние страницы с каждой стороны
 
         // Собираем номера страниц для отображения
-        $pages = [];
+        $pages = array();
         for ($i = 1; $i <= min($edge, $total_pages); $i++) {
             $pages[] = $i;
         }
@@ -244,7 +236,7 @@ class CashbackHistory
 
         // Кнопка «Назад»
         if ($current_page > 1) {
-            echo '<li><a href="#" class="page-numbers prev" data-page="' . esc_attr((string)($current_page - 1)) . '">&lsaquo;</a></li>';
+            echo '<li><a href="#" class="page-numbers prev" data-page="' . esc_attr((string) ( $current_page - 1 )) . '">&lsaquo;</a></li>';
         }
 
         $prev = 0;
@@ -252,14 +244,14 @@ class CashbackHistory
             if ($prev && $page - $prev > 1) {
                 echo '<li><span class="page-numbers dots">&hellip;</span></li>';
             }
-            $class = ($page == $current_page) ? 'current' : '';
-            echo '<li><a href="#" class="page-numbers ' . esc_attr($class) . '" data-page="' . esc_attr((string)$page) . '">' . esc_html((string)$page) . '</a></li>';
+            $class = ( $page == $current_page ) ? 'current' : '';
+            echo '<li><a href="#" class="page-numbers ' . esc_attr($class) . '" data-page="' . esc_attr((string) $page) . '">' . esc_html((string) $page) . '</a></li>';
             $prev = $page;
         }
 
         // Кнопка «Вперёд»
         if ($current_page < $total_pages) {
-            echo '<li><a href="#" class="page-numbers next" data-page="' . esc_attr((string)($current_page + 1)) . '">&rsaquo;</a></li>';
+            echo '<li><a href="#" class="page-numbers next" data-page="' . esc_attr((string) ( $current_page + 1 )) . '">&rsaquo;</a></li>';
         }
 
         echo '</ul>';
@@ -274,13 +266,12 @@ class CashbackHistory
      * @param int $offset  Offset for pagination.
      * @return array Array of transaction objects.
      */
-    private function get_transactions($user_id, $limit, $offset, array $filters = [])
-    {
+    private function get_transactions( $user_id, $limit, $offset, array $filters = array() ) {
         global $wpdb;
         $table_name = $wpdb->prefix . 'cashback_transactions';
 
-        $where = 'WHERE user_id = %d';
-        $params = [$user_id];
+        $where  = 'WHERE user_id = %d';
+        $params = array( $user_id );
 
         $this->apply_filters($where, $params, $filters);
 
@@ -290,7 +281,7 @@ class CashbackHistory
              {$where}
              ORDER BY created_at DESC
              LIMIT %d OFFSET %d",
-            array_merge($params, [$limit, $offset])
+            array_merge($params, array( $limit, $offset ))
         ));
     }
 
@@ -301,13 +292,12 @@ class CashbackHistory
      * @param array $filters Optional filters.
      * @return int Total transaction count.
      */
-    private function get_total_transactions($user_id, array $filters = [])
-    {
+    private function get_total_transactions( $user_id, array $filters = array() ) {
         global $wpdb;
         $table_name = $wpdb->prefix . 'cashback_transactions';
 
-        $where = 'WHERE user_id = %d';
-        $params = [$user_id];
+        $where  = 'WHERE user_id = %d';
+        $params = array( $user_id );
 
         $this->apply_filters($where, $params, $filters);
 
@@ -325,26 +315,25 @@ class CashbackHistory
      * @param array  $filters Filter values.
      * @return void
      */
-    private function apply_filters(string &$where, array &$params, array $filters): void
-    {
+    private function apply_filters( string &$where, array &$params, array $filters ): void {
         if (!empty($filters['date_from'])) {
-            $where .= ' AND created_at >= %s';
+            $where   .= ' AND created_at >= %s';
             $params[] = $filters['date_from'] . ' 00:00:00';
         }
 
         if (!empty($filters['date_to'])) {
-            $where .= ' AND created_at <= %s';
+            $where   .= ' AND created_at <= %s';
             $params[] = $filters['date_to'] . ' 23:59:59';
         }
 
         if (!empty($filters['search'])) {
-            $where .= ' AND offer_name LIKE %s';
+            $where   .= ' AND offer_name LIKE %s';
             $params[] = '%' . $GLOBALS['wpdb']->esc_like($filters['search']) . '%';
         }
 
-        $allowed_statuses = ['waiting', 'completed', 'hold', 'declined', 'balance'];
+        $allowed_statuses = array( 'waiting', 'completed', 'hold', 'declined', 'balance' );
         if (!empty($filters['status']) && in_array($filters['status'], $allowed_statuses, true)) {
-            $where .= ' AND order_status = %s';
+            $where   .= ' AND order_status = %s';
             $params[] = $filters['status'];
         }
     }
@@ -354,8 +343,7 @@ class CashbackHistory
      *
      * @return void
      */
-    public function ajax_load_page(): void
-    {
+    public function ajax_load_page(): void {
         // Verify nonce
         if (!isset($_POST['nonce']) || !check_ajax_referer('load_page_transactions_nonce', 'nonce', false)) {
             wp_send_json_error(esc_html__('Ошибка безопасности: неверный nonce.', 'cashback-plugin'));
@@ -367,7 +355,7 @@ class CashbackHistory
         }
 
         // Rate limiting: максимум 30 запросов в минуту
-        $rate_key = 'cb_hist_page_rate_' . $user_id;
+        $rate_key   = 'cb_hist_page_rate_' . $user_id;
         $rate_count = (int) get_transient($rate_key);
         if ($rate_count >= 30) {
             wp_send_json_error(esc_html__('Слишком много запросов. Попробуйте через минуту.', 'cashback-plugin'));
@@ -378,21 +366,21 @@ class CashbackHistory
             wp_send_json_error(esc_html__('Некорректный запрос.', 'cashback-plugin'));
         }
 
-        $filters = [
+        $filters = array(
             'date_from' => sanitize_text_field(wp_unslash($_POST['date_from'] ?? '')),
             'date_to'   => sanitize_text_field(wp_unslash($_POST['date_to'] ?? '')),
             'search'    => sanitize_text_field(wp_unslash($_POST['search'] ?? '')),
             'status'    => sanitize_text_field(wp_unslash($_POST['status'] ?? '')),
-        ];
+        );
 
-        $per_page = self::PER_PAGE;
-        $total = $this->get_total_transactions($user_id, $filters);
+        $per_page    = self::PER_PAGE;
+        $total       = $this->get_total_transactions($user_id, $filters);
         $total_pages = $total > 0 ? ceil($total / $per_page) : 1;
         $total_pages = min($total_pages, self::MAX_ALLOWED_PAGES);
 
-        $page = intval($_POST['page']);
-        $page = max(1, min($page, $total_pages));
-        $offset = ($page - 1) * $per_page;
+        $page   = intval($_POST['page']);
+        $page   = max(1, min($page, $total_pages));
+        $offset = ( $page - 1 ) * $per_page;
 
         $transactions = $this->get_transactions($user_id, $per_page, $offset, $filters);
 
@@ -405,9 +393,9 @@ class CashbackHistory
         $html = ob_get_clean();
 
         wp_send_json_success(array(
-            'html' => $html,
+            'html'         => $html,
             'current_page' => $page,
-            'total_pages' => $total_pages
+            'total_pages'  => $total_pages,
         ));
     }
 
@@ -416,9 +404,8 @@ class CashbackHistory
      *
      * @return void
      */
-    public function enqueue_scripts(): void
-    {
-        $is_account_page = function_exists('is_account_page') && is_account_page();
+    public function enqueue_scripts(): void {
+        $is_account_page  = function_exists('is_account_page') && is_account_page();
         $is_cashback_page = $this->is_cashback_history_page();
 
         // Load script on account page
@@ -435,16 +422,16 @@ class CashbackHistory
             wp_enqueue_script(
                 'cashback-history-ajax',
                 plugin_dir_url(__FILE__) . 'assets/js/cashback-history.js',
-                array('jquery'),
+                array( 'jquery' ),
                 '1.1.0',
                 true
             );
 
             // Use unique object name to avoid conflicts with other plugin scripts
             wp_localize_script('cashback-history-ajax', 'cashback_history_ajax', array(
-                'ajax_url' => admin_url('admin-ajax.php'),
-                'nonce' => wp_create_nonce('load_page_transactions_nonce'),
-                'is_cashback_page' => $is_cashback_page ? 'true' : 'false'
+                'ajax_url'         => admin_url('admin-ajax.php'),
+                'nonce'            => wp_create_nonce('load_page_transactions_nonce'),
+                'is_cashback_page' => $is_cashback_page ? 'true' : 'false',
             ));
         }
     }
@@ -454,8 +441,7 @@ class CashbackHistory
      *
      * @return bool True if on cashback history page, false otherwise.
      */
-    private function is_cashback_history_page(): bool
-    {
+    private function is_cashback_history_page(): bool {
         global $wp;
 
         // Check if query var is set (even if empty, it means we're on the endpoint)
@@ -472,8 +458,7 @@ class CashbackHistory
      * @param string|null $status Order status.
      * @return string Translated status label.
      */
-    private function get_status_label($status)
-    {
+    private function get_status_label( $status ) {
         switch ($status) {
             case 'waiting':
                 return __('В ожидании', 'cashback-plugin');
@@ -496,8 +481,7 @@ class CashbackHistory
      * @param string|null $date_string Date string to format.
      * @return string Formatted date or fallback text.
      */
-    private function format_date($date_string)
-    {
+    private function format_date( $date_string ) {
         if (empty($date_string) || $date_string === '0000-00-00 00:00:00') {
             return esc_html__('Н/Д', 'cashback-plugin');
         }

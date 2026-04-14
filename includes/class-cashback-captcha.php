@@ -17,8 +17,8 @@ if (!defined('ABSPATH')) {
  *
  * @since 2.1.0
  */
-class Cashback_Captcha
-{
+class Cashback_Captcha {
+
     /** URL клиентского скрипта SmartCaptcha. */
     private const JS_URL = 'https://smartcaptcha.yandexcloud.net/captcha.js';
 
@@ -36,8 +36,7 @@ class Cashback_Captcha
      *
      * @return bool
      */
-    public static function is_configured(): bool
-    {
+    public static function is_configured(): bool {
         $client_key = get_option('cashback_captcha_client_key', '');
         $server_key = get_option('cashback_captcha_server_key', '');
 
@@ -52,8 +51,7 @@ class Cashback_Captcha
      * @param string $ip IP-адрес.
      * @return bool
      */
-    public static function should_require(string $ip): bool
-    {
+    public static function should_require( string $ip ): bool {
         if (!self::is_configured()) {
             return false;
         }
@@ -80,8 +78,7 @@ class Cashback_Captcha
      *
      * @return string
      */
-    public static function get_client_key(): string
-    {
+    public static function get_client_key(): string {
         return (string) get_option('cashback_captcha_client_key', '');
     }
 
@@ -93,8 +90,7 @@ class Cashback_Captcha
      * @param string $container_id Уникальный ID контейнера.
      * @return string HTML.
      */
-    public static function render_container(string $container_id): string
-    {
+    public static function render_container( string $container_id ): string {
         return sprintf(
             '<div id="%s" class="cb-captcha-container" style="display:none;"></div>',
             esc_attr($container_id)
@@ -108,8 +104,7 @@ class Cashback_Captcha
      * @param string $ip    IP-адрес пользователя.
      * @return bool true если верификация пройдена.
      */
-    public static function verify_token(string $token, string $ip): bool
-    {
+    public static function verify_token( string $token, string $ip ): bool {
         if ($token === '') {
             return false;
         }
@@ -122,17 +117,17 @@ class Cashback_Captcha
 
         $response = wp_remote_get(
             add_query_arg(
-                [
+                array(
                     'secret' => $server_key,
                     'token'  => $token,
                     'ip'     => $ip,
-                ],
+                ),
                 self::VALIDATE_URL
             ),
-            [
+            array(
                 'timeout'   => self::API_TIMEOUT,
                 'sslverify' => true,
-            ]
+            )
         );
 
         if (is_wp_error($response)) {
@@ -170,8 +165,7 @@ class Cashback_Captcha
      * @param string $ip IP-адрес.
      * @return bool
      */
-    public static function is_verified(string $ip): bool
-    {
+    public static function is_verified( string $ip ): bool {
         return (bool) get_transient(self::cache_key($ip));
     }
 
@@ -180,8 +174,7 @@ class Cashback_Captcha
      *
      * @param string $ip IP-адрес.
      */
-    private static function cache_verification(string $ip): void
-    {
+    private static function cache_verification( string $ip ): void {
         set_transient(self::cache_key($ip), 1, self::VERIFY_CACHE_TTL);
     }
 
@@ -191,8 +184,7 @@ class Cashback_Captcha
      * @param string $ip IP-адрес.
      * @return string
      */
-    private static function cache_key(string $ip): string
-    {
+    private static function cache_key( string $ip ): string {
         return 'cb_cap_' . substr(md5($ip), 0, 12);
     }
 }

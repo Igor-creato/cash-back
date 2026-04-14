@@ -15,8 +15,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class Cashback_API_Cron
-{
+class Cashback_API_Cron {
+
     /** @var string Имя cron-хука */
     const HOOK_NAME = 'cashback_api_sync_statuses';
 
@@ -29,24 +29,22 @@ class Cashback_API_Cron
     /**
      * Инициализация: регистрация хуков и расписания
      */
-    public static function init(): void
-    {
+    public static function init(): void {
         // Регистрация кастомного интервала
-        add_filter('cron_schedules', [self::class, 'add_cron_interval']);
+        add_filter('cron_schedules', array( self::class, 'add_cron_interval' ));
 
         // Регистрация обработчика
-        add_action(self::HOOK_NAME, [self::class, 'run_sync']);
+        add_action(self::HOOK_NAME, array( self::class, 'run_sync' ));
 
         // Планирование откладываем до init — иначе cron_schedules фильтр
         // вызывает __() с textdomain до его загрузки (WP 6.7+ notice).
-        add_action('init', [self::class, 'maybe_schedule']);
+        add_action('init', array( self::class, 'maybe_schedule' ));
     }
 
     /**
      * Планирование cron если не запланировано (вызывается на init)
      */
-    public static function maybe_schedule(): void
-    {
+    public static function maybe_schedule(): void {
         if (!wp_next_scheduled(self::HOOK_NAME)) {
             wp_schedule_event(time(), self::INTERVAL_NAME, self::HOOK_NAME);
         }
@@ -58,12 +56,11 @@ class Cashback_API_Cron
      * @param array $schedules
      * @return array
      */
-    public static function add_cron_interval(array $schedules): array
-    {
-        $schedules[self::INTERVAL_NAME] = [
+    public static function add_cron_interval( array $schedules ): array {
+        $schedules[ self::INTERVAL_NAME ] = array(
             'interval' => 2 * HOUR_IN_SECONDS,
             'display'  => __('Каждые 2 часа (кэшбэк синхронизация)', 'cashback-plugin'),
-        ];
+        );
         return $schedules;
     }
 
@@ -75,8 +72,7 @@ class Cashback_API_Cron
      *
      * Вызывается WP Cron или вручную из админки.
      */
-    public static function run_sync(): void
-    {
+    public static function run_sync(): void {
         $start = microtime(true);
 
         error_log('Cashback API Cron: Starting background sync');
@@ -182,7 +178,7 @@ class Cashback_API_Cron
 
                 foreach ($campaign_results as $network => $cresult) {
                     if ($cresult['success'] ?? false) {
-                        if (($cresult['deactivated'] ?? 0) > 0 || ($cresult['reactivated'] ?? 0) > 0) {
+                        if (( $cresult['deactivated'] ?? 0 ) > 0 || ( $cresult['reactivated'] ?? 0 ) > 0) {
                             error_log(sprintf(
                                 'Cashback API Cron [%s] campaigns: total=%d, deactivated=%d, reactivated=%d, skipped=%d',
                                 $network,
@@ -207,14 +203,14 @@ class Cashback_API_Cron
             $elapsed = round(microtime(true) - $start, 2);
 
             // Сохраняем результат последней синхронизации для отображения в админке
-            update_option('cashback_last_sync_result', [
+            update_option('cashback_last_sync_result', array(
                 'timestamp'        => current_time('mysql'),
                 'elapsed'          => $elapsed,
                 'results'          => $results,
                 'auto_transferred' => $transfer_result,
                 'accrual'          => $accrual_result,
                 'campaign_check'   => $campaign_results,
-            ]);
+            ));
         } catch (Exception $e) {
             error_log('Cashback API Cron: Exception — ' . $e->getMessage());
         } finally {
@@ -226,8 +222,7 @@ class Cashback_API_Cron
     /**
      * Деактивация: снять cron при деактивации плагина
      */
-    public static function deactivate(): void
-    {
+    public static function deactivate(): void {
         $timestamp = wp_next_scheduled(self::HOOK_NAME);
         if ($timestamp) {
             wp_unschedule_event($timestamp, self::HOOK_NAME);
@@ -241,11 +236,13 @@ class Cashback_API_Cron
      *
      * @return array Результаты синхронизации
      */
-    public static function manual_sync(): array
-    {
+    public static function manual_sync(): array {
         // Проверяем lock через Cashback_Lock (заменяет transient)
         if (Cashback_Lock::is_lock_active()) {
-            return ['locked' => true, 'message' => 'Синхронизация уже выполняется'];
+            return array(
+				'locked'  => true,
+				'message' => 'Синхронизация уже выполняется',
+			);
         }
 
         // Запоминаем timestamp до sync для проверки что результат свежий
@@ -254,11 +251,14 @@ class Cashback_API_Cron
         // run_sync() сам захватывает и освобождает lock
         self::run_sync();
 
-        $result = get_option('cashback_last_sync_result', []);
+        $result = get_option('cashback_last_sync_result', array());
 
         // Проверяем что sync реально отработал (lock мог не захватиться из-за race condition)
         if (empty($result['timestamp']) || strtotime($result['timestamp']) < $before_sync) {
-            return ['locked' => true, 'message' => 'Не удалось запустить синхронизацию — повторите попытку'];
+            return array(
+				'locked'  => true,
+				'message' => 'Не удалось запустить синхронизацию — повторите попытку',
+			);
         }
 
         return $result;

@@ -10,33 +10,29 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class Cashback_Affiliate_DB
-{
+class Cashback_Affiliate_DB {
+
     /* ───────── Настройки модуля ───────── */
 
     /**
      * Включён ли модуль партнёрской программы.
      */
-    public static function is_module_enabled(): bool
-    {
+    public static function is_module_enabled(): bool {
         return (bool) get_option('cashback_affiliate_module_enabled', 0);
     }
 
-    public static function set_module_enabled(bool $enabled): void
-    {
+    public static function set_module_enabled( bool $enabled ): void {
         update_option('cashback_affiliate_module_enabled', $enabled ? 1 : 0);
     }
 
     /**
      * Глобальная ставка комиссии (% от кешбэка).
      */
-    public static function get_global_rate(): string
-    {
+    public static function get_global_rate(): string {
         return (string) get_option('cashback_affiliate_global_rate', '10.00');
     }
 
-    public static function set_global_rate(string $rate): void
-    {
+    public static function set_global_rate( string $rate ): void {
         $rate = max(0, min(100, (float) $rate));
         update_option('cashback_affiliate_global_rate', number_format($rate, 2, '.', ''));
     }
@@ -44,39 +40,33 @@ class Cashback_Affiliate_DB
     /**
      * Срок жизни cookie (дни).
      */
-    public static function get_cookie_ttl_days(): int
-    {
+    public static function get_cookie_ttl_days(): int {
         return (int) get_option('cashback_affiliate_cookie_ttl', 30);
     }
 
-    public static function set_cookie_ttl_days(int $days): void
-    {
+    public static function set_cookie_ttl_days( int $days ): void {
         update_option('cashback_affiliate_cookie_ttl', max(1, min(365, $days)));
     }
 
     /**
      * Включена ли антифрод-проверка при привязке рефералов.
      */
-    public static function is_antifraud_enabled(): bool
-    {
+    public static function is_antifraud_enabled(): bool {
         return (bool) get_option('cashback_affiliate_antifraud_enabled', 1);
     }
 
-    public static function set_antifraud_enabled(bool $enabled): void
-    {
+    public static function set_antifraud_enabled( bool $enabled ): void {
         update_option('cashback_affiliate_antifraud_enabled', $enabled ? 1 : 0);
     }
 
     /**
      * URL страницы правил партнёрской программы.
      */
-    public static function get_rules_page_url(): string
-    {
+    public static function get_rules_page_url(): string {
         return (string) get_option('cashback_affiliate_rules_url', '');
     }
 
-    public static function set_rules_page_url(string $url): void
-    {
+    public static function set_rules_page_url( string $url ): void {
         update_option('cashback_affiliate_rules_url', esc_url_raw($url));
     }
 
@@ -85,8 +75,7 @@ class Cashback_Affiliate_DB
     /**
      * Генерация уникального ID начисления: AF-XXXXXXXX
      */
-    public static function generate_affiliate_reference_id(): string
-    {
+    public static function generate_affiliate_reference_id(): string {
         $charset     = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
         $charset_len = 31;
         $id_length   = 8;
@@ -95,7 +84,7 @@ class Cashback_Affiliate_DB
         $result       = 'AF-';
 
         for ($i = 0; $i < $id_length; $i++) {
-            $result .= $charset[ord($random_bytes[$i]) % $charset_len];
+            $result .= $charset[ ord($random_bytes[ $i ]) % $charset_len ];
         }
 
         return $result;
@@ -107,8 +96,7 @@ class Cashback_Affiliate_DB
      * Создаёт 4 таблицы модуля.
      * Вызывается из CashbackPlugin::activate().
      */
-    public static function create_tables(): void
-    {
+    public static function create_tables(): void {
         global $wpdb;
         $prefix          = $wpdb->prefix;
         $charset_collate = $wpdb->get_charset_collate();
@@ -186,7 +174,7 @@ class Cashback_Affiliate_DB
         // Фаза 2: FK constraints (ошибки подавляются — constraint может уже существовать)
         $suppress = $wpdb->suppress_errors(true);
 
-        $constraints = [
+        $constraints = array(
             "ALTER TABLE `{$prefix}cashback_affiliate_profiles`
                 ADD CONSTRAINT `fk_aff_profile_user` FOREIGN KEY (`user_id`)
                 REFERENCES `{$prefix}users` (`ID`) ON DELETE CASCADE",
@@ -217,7 +205,7 @@ class Cashback_Affiliate_DB
                 ADD CONSTRAINT `chk_aff_commission_rate` CHECK (`commission_rate` BETWEEN 0.00 AND 100.00)",
             "ALTER TABLE `{$prefix}cashback_affiliate_accruals`
                 ADD CONSTRAINT `chk_aff_commission_amount` CHECK (`commission_amount` >= 0)",
-        ];
+        );
 
         foreach ($constraints as $sql) {
             $wpdb->query($sql); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
@@ -230,8 +218,7 @@ class Cashback_Affiliate_DB
      * Миграция: добавление статусов pending/declined в ENUM.
      * Безопасна для повторного запуска.
      */
-    public static function migrate_accruals_pending_statuses(): void
-    {
+    public static function migrate_accruals_pending_statuses(): void {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_affiliate_accruals';
 
@@ -258,8 +245,7 @@ class Cashback_Affiliate_DB
      * Инициализация affiliate-профиля для нового пользователя.
      * Вызывается при регистрации (user_register hook).
      */
-    public static function ensure_profile(int $user_id): void
-    {
+    public static function ensure_profile( int $user_id ): void {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_affiliate_profiles';
 
@@ -271,8 +257,8 @@ class Cashback_Affiliate_DB
         if (!$exists) {
             $wpdb->insert(
                 $table,
-                ['user_id' => $user_id],
-                ['%d']
+                array( 'user_id' => $user_id ),
+                array( '%d' )
             );
         }
     }

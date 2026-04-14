@@ -9,51 +9,48 @@ if (!defined('ABSPATH')) {
 /**
  * Класс управления поддержкой в админ-панели
  */
-class Cashback_Support_Admin
-{
+class Cashback_Support_Admin {
+
     private string $tickets_table;
     private string $messages_table;
 
-    public function __construct()
-    {
+    public function __construct() {
         global $wpdb;
-        $this->tickets_table = $wpdb->prefix . 'cashback_support_tickets';
+        $this->tickets_table  = $wpdb->prefix . 'cashback_support_tickets';
         $this->messages_table = $wpdb->prefix . 'cashback_support_messages';
 
-        add_action('admin_menu', [$this, 'add_admin_menu']);
+        add_action('admin_menu', array( $this, 'add_admin_menu' ));
 
         // AJAX обработчики (регистрируем всегда для работы кнопки toggle)
-        add_action('wp_ajax_support_toggle_module', [$this, 'handle_toggle_module']);
-        add_action('wp_ajax_support_admin_reply', [$this, 'handle_admin_reply']);
-        add_action('wp_ajax_support_change_status', [$this, 'handle_change_status']);
-        add_action('wp_ajax_support_admin_unread_count', [$this, 'handle_get_unread_count']);
-        add_action('wp_ajax_support_save_attachment_settings', [$this, 'handle_save_attachment_settings']);
-        add_action('wp_ajax_support_admin_download_file', [$this, 'handle_admin_download_file']);
+        add_action('wp_ajax_support_toggle_module', array( $this, 'handle_toggle_module' ));
+        add_action('wp_ajax_support_admin_reply', array( $this, 'handle_admin_reply' ));
+        add_action('wp_ajax_support_change_status', array( $this, 'handle_change_status' ));
+        add_action('wp_ajax_support_admin_unread_count', array( $this, 'handle_get_unread_count' ));
+        add_action('wp_ajax_support_save_attachment_settings', array( $this, 'handle_save_attachment_settings' ));
+        add_action('wp_ajax_support_admin_download_file', array( $this, 'handle_admin_download_file' ));
 
-        add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
-        add_action('admin_footer', [$this, 'render_badge_updater_script']);
+        add_action('admin_enqueue_scripts', array( $this, 'enqueue_admin_scripts' ));
+        add_action('admin_footer', array( $this, 'render_badge_updater_script' ));
     }
 
     /**
      * Регистрация подменю "Поддержка" в меню "Кэшбэк"
      */
-    public function add_admin_menu(): void
-    {
+    public function add_admin_menu(): void {
         add_submenu_page(
             'cashback-overview',
             'Поддержка',
             $this->get_menu_title(),
             'manage_options',
             'cashback-support',
-            [$this, 'render_support_page']
+            array( $this, 'render_support_page' )
         );
     }
 
     /**
      * Подключение DOMPurify и safe-html на странице поддержки
      */
-    public function enqueue_admin_scripts(string $hook): void
-    {
+    public function enqueue_admin_scripts( string $hook ): void {
         $page = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';
         if ($page !== 'cashback-support') {
             return;
@@ -62,7 +59,7 @@ class Cashback_Support_Admin
         wp_enqueue_script(
             'dompurify',
             plugins_url('assets/js/purify.min.js', __FILE__),
-            [],
+            array(),
             '3.3.2',
             false
         );
@@ -70,7 +67,7 @@ class Cashback_Support_Admin
         wp_enqueue_script(
             'cashback-safe-html',
             plugins_url('assets/js/safe-html.js', __FILE__),
-            ['dompurify'],
+            array( 'dompurify' ),
             '1.0.0',
             false
         );
@@ -79,8 +76,7 @@ class Cashback_Support_Admin
     /**
      * Получить заголовок меню с бейджем непрочитанных
      */
-    private function get_menu_title(): string
-    {
+    private function get_menu_title(): string {
         $title = 'Поддержка';
 
         if (!Cashback_Support_DB::is_module_enabled()) {
@@ -102,8 +98,7 @@ class Cashback_Support_Admin
     /**
      * Главная страница рендеринга
      */
-    public function render_support_page(): void
-    {
+    public function render_support_page(): void {
         if (!current_user_can('manage_options')) {
             wp_die('У вас недостаточно прав для просмотра этой страницы.');
         }
@@ -119,7 +114,7 @@ class Cashback_Support_Admin
         }
 
         // Определяем текущее действие
-        $action = sanitize_text_field(wp_unslash($_GET['action'] ?? ''));
+        $action    = sanitize_text_field(wp_unslash($_GET['action'] ?? ''));
         $ticket_id = absint($_GET['ticket_id'] ?? 0);
 
         if ($action === 'view' && $ticket_id > 0) {
@@ -136,8 +131,7 @@ class Cashback_Support_Admin
     /**
      * Вывод контейнера уведомлений и JS-функции showAdminNotice
      */
-    private function render_admin_notice_container(): void
-    {
+    private function render_admin_notice_container(): void {
         ?>
         <div id="support-admin-notice"></div>
         <script>
@@ -164,8 +158,7 @@ class Cashback_Support_Admin
     /**
      * Рендеринг состояния "модуль выключен"
      */
-    private function render_module_disabled(): void
-    {
+    private function render_module_disabled(): void {
         $nonce = wp_create_nonce('support_toggle_module_nonce');
         ?>
         <h1 class="wp-heading-inline">Поддержка</h1>
@@ -210,35 +203,34 @@ class Cashback_Support_Admin
     /**
      * Рендеринг списка тикетов
      */
-    private function render_ticket_list(): void
-    {
+    private function render_ticket_list(): void {
         global $wpdb;
 
         $nonce = wp_create_nonce('support_toggle_module_nonce');
 
         // Фильтры
-        $filter_status = sanitize_text_field(wp_unslash($_GET['filter_status'] ?? ''));
+        $filter_status   = sanitize_text_field(wp_unslash($_GET['filter_status'] ?? ''));
         $filter_priority = sanitize_text_field(wp_unslash($_GET['filter_priority'] ?? ''));
-        $filter_unread = sanitize_text_field(wp_unslash($_GET['filter_unread'] ?? ''));
+        $filter_unread   = sanitize_text_field(wp_unslash($_GET['filter_unread'] ?? ''));
 
         // Пагинация
         $current_page = max(1, absint($_GET['paged'] ?? 1));
-        $per_page = 10;
-        $offset = ($current_page - 1) * $per_page;
+        $per_page     = 10;
+        $offset       = ( $current_page - 1 ) * $per_page;
 
         // Построение WHERE
-        $where_conditions = [];
-        $where_params = [];
+        $where_conditions = array();
+        $where_params     = array();
         $need_unread_join = false;
 
-        if (!empty($filter_status) && in_array($filter_status, ['open', 'answered', 'closed'], true)) {
+        if (!empty($filter_status) && in_array($filter_status, array( 'open', 'answered', 'closed' ), true)) {
             $where_conditions[] = 't.status = %s';
-            $where_params[] = $filter_status;
+            $where_params[]     = $filter_status;
         }
 
-        if (!empty($filter_priority) && in_array($filter_priority, ['urgent', 'normal', 'not_urgent'], true)) {
+        if (!empty($filter_priority) && in_array($filter_priority, array( 'urgent', 'normal', 'not_urgent' ), true)) {
             $where_conditions[] = 't.priority = %s';
-            $where_params[] = $filter_priority;
+            $where_params[]     = $filter_priority;
         }
 
         if ($filter_unread === '1') {
@@ -252,7 +244,7 @@ class Cashback_Support_Admin
 
         // Подсчёт общего количества
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; where_clause built from whitelisted conditions only
-        $count_sql = "SELECT COUNT(*) FROM `{$this->tickets_table}` t {$where_clause}";
+        $count_sql   = "SELECT COUNT(*) FROM `{$this->tickets_table}` t {$where_clause}";
         $total_items = !empty($where_params)
             ? (int) $wpdb->get_var($wpdb->prepare($count_sql, $where_params))
             : (int) $wpdb->get_var($count_sql);
@@ -272,8 +264,8 @@ class Cashback_Support_Admin
                 t.updated_at DESC
             LIMIT %d OFFSET %d";
 
-        $query_params = array_merge($where_params, [$per_page, $offset]);
-        $tickets = $wpdb->get_results($wpdb->prepare($select_sql, $query_params));
+        $query_params = array_merge($where_params, array( $per_page, $offset ));
+        $tickets      = $wpdb->get_results($wpdb->prepare($select_sql, $query_params));
 
         ?>
         <style>
@@ -355,15 +347,15 @@ class Cashback_Support_Admin
                 </tr>
             </thead>
             <tbody>
-                <?php if (!empty($tickets)): ?>
-                    <?php foreach ($tickets as $ticket): ?>
+                <?php if (!empty($tickets)) : ?>
+                    <?php foreach ($tickets as $ticket) : ?>
                         <tr<?php echo $ticket->unread_count > 0 ? ' style="font-weight: bold;"' : ''; ?>>
                             <td><?php echo esc_html(Cashback_Support_DB::format_ticket_number((int) $ticket->id)); ?></td>
                             <td><?php echo esc_html($ticket->subject); ?></td>
                             <td><?php echo esc_html((string) $ticket->user_id); ?></td>
                             <td>
                                 <?php echo esc_html($ticket->user_login ?? 'Удалён'); ?>
-                                <?php if ($ticket->user_email): ?>
+                                <?php if ($ticket->user_email) : ?>
                                     <br><small><?php echo esc_html($ticket->user_email); ?></small>
                                 <?php endif; ?>
                             </td>
@@ -378,7 +370,7 @@ class Cashback_Support_Admin
                                 </span>
                             </td>
                             <td>
-                                <?php if ($ticket->unread_count > 0): ?>
+                                <?php if ($ticket->unread_count > 0) : ?>
                                     <span class="awaiting-mod count-<?php echo (int) $ticket->unread_count; ?>">
                                         <span class="pending-count"><?php echo (int) $ticket->unread_count; ?></span>
                                     </span>
@@ -387,13 +379,21 @@ class Cashback_Support_Admin
                             <td><?php echo esc_html(date_i18n('d.m.Y H:i', strtotime($ticket->created_at))); ?></td>
                             <td><?php echo esc_html(date_i18n('d.m.Y H:i', strtotime($ticket->updated_at))); ?></td>
                             <td>
-                                <a href="<?php echo esc_url(add_query_arg(['page' => 'cashback-support', 'action' => 'view', 'ticket_id' => $ticket->id], admin_url('admin.php'))); ?>" class="button button-small">
+                                <a href="
+                                <?php
+                                echo esc_url(add_query_arg(array(
+									'page'      => 'cashback-support',
+									'action'    => 'view',
+									'ticket_id' => $ticket->id,
+								), admin_url('admin.php')));
+?>
+" class="button button-small">
                                     Ответить
                                 </a>
                             </td>
                         </tr>
                     <?php endforeach; ?>
-                <?php else: ?>
+                <?php else : ?>
                     <tr>
                         <td colspan="10">Тикеты не найдены.</td>
                     </tr>
@@ -404,21 +404,21 @@ class Cashback_Support_Admin
         <?php
         // Пагинация
         if ($total_pages > 1) {
-            $base_url = remove_query_arg('paged', add_query_arg('page', 'cashback-support', admin_url('admin.php')));
-            $pagination_links = paginate_links([
+            $base_url         = remove_query_arg('paged', add_query_arg('page', 'cashback-support', admin_url('admin.php')));
+            $pagination_links = paginate_links(array(
                 'base'      => add_query_arg('paged', '%#%', $base_url),
                 'format'    => '',
                 'total'     => $total_pages,
                 'current'   => $current_page,
-                'add_args'  => array_filter([
-                    'filter_status' => $filter_status,
+                'add_args'  => array_filter(array(
+                    'filter_status'   => $filter_status,
                     'filter_priority' => $filter_priority,
-                    'filter_unread' => $filter_unread,
-                ]),
+                    'filter_unread'   => $filter_unread,
+                )),
                 'type'      => 'plain',
                 'prev_text' => '&lsaquo; Предыдущая',
                 'next_text' => 'Следующая &rsaquo;',
-            ]);
+            ));
 
             if ($pagination_links) {
                 echo '<div class="tablenav bottom">';
@@ -460,8 +460,7 @@ class Cashback_Support_Admin
     /**
      * Рендеринг просмотра тикета
      */
-    private function render_ticket_view(int $ticket_id): void
-    {
+    private function render_ticket_view( int $ticket_id ): void {
         global $wpdb;
 
         // Получаем тикет
@@ -481,10 +480,14 @@ class Cashback_Support_Admin
         // Помечаем сообщения пользователя как прочитанные
         $wpdb->update(
             $this->messages_table,
-            ['is_read' => 1],
-            ['ticket_id' => $ticket_id, 'is_admin' => 0, 'is_read' => 0],
-            ['%d'],
-            ['%d', '%d', '%d']
+            array( 'is_read' => 1 ),
+            array(
+				'ticket_id' => $ticket_id,
+				'is_admin'  => 0,
+				'is_read'   => 0,
+			),
+            array( '%d' ),
+            array( '%d', '%d', '%d' )
         );
 
         // Получаем все сообщения
@@ -498,13 +501,13 @@ class Cashback_Support_Admin
         ));
 
         // Batch-загрузка вложений
-        $message_ids = array_map(function ($m) {
+        $message_ids     = array_map(function ( $m ) {
             return (int) $m->id;
         }, $messages);
         $attachments_map = Cashback_Support_DB::get_attachments_for_messages($message_ids);
 
-        $is_closed = ($ticket->status === 'closed');
-        $reply_nonce = wp_create_nonce('support_admin_reply_nonce');
+        $is_closed    = ( $ticket->status === 'closed' );
+        $reply_nonce  = wp_create_nonce('support_admin_reply_nonce');
         $status_nonce = wp_create_nonce('support_change_status_nonce');
 
         ?>
@@ -525,7 +528,7 @@ class Cashback_Support_Admin
                 <th>Пользователь</th>
                 <td>
                     <?php echo esc_html($ticket->user_login ?? 'Удалён'); ?>
-                    <?php if ($ticket->user_email): ?>
+                    <?php if ($ticket->user_email) : ?>
                         (<?php echo esc_html($ticket->user_email); ?>)
                     <?php endif; ?>
                 </td>
@@ -550,7 +553,7 @@ class Cashback_Support_Admin
                 <th>Создан</th>
                 <td><?php echo esc_html(date_i18n('d.m.Y H:i', strtotime($ticket->created_at))); ?></td>
             </tr>
-            <?php if ($ticket->closed_at): ?>
+            <?php if ($ticket->closed_at) : ?>
             <tr>
                 <th>Закрыт</th>
                 <td><?php echo esc_html(date_i18n('d.m.Y H:i', strtotime($ticket->closed_at))); ?></td>
@@ -564,20 +567,20 @@ class Cashback_Support_Admin
 
         <!-- Лента сообщений -->
         <div id="support-messages" style="max-width: 800px;">
-            <?php foreach ($messages as $msg): ?>
+            <?php foreach ($messages as $msg) : ?>
                 <?php
-                $msg_attachments = $attachments_map[(int) $msg->id] ?? [];
+                $msg_attachments = $attachments_map[ (int) $msg->id ] ?? array();
                 echo $this->render_message_html($msg, $msg_attachments);
                 ?>
             <?php endforeach; ?>
         </div>
 
-        <?php if (!$is_closed): ?>
+        <?php if (!$is_closed) : ?>
         <!-- Форма ответа и управление -->
         <div id="support-reply-section" style="max-width: 800px; margin-top: 20px;">
             <h3>Ответить</h3>
             <textarea id="support-admin-message" rows="5" class="large-text" placeholder="Введите ваш ответ..."></textarea>
-            <?php if (Cashback_Support_DB::is_attachments_enabled()): ?>
+            <?php if (Cashback_Support_DB::is_attachments_enabled()) : ?>
             <div style="margin-top: 10px;">
                 <input type="file" id="support-admin-files" name="support_files[]" multiple>
                 <p class="description">Макс. <?php echo absint(Cashback_Support_DB::get_max_files_per_message()); ?> файлов, до <?php echo esc_html(number_format_i18n(Cashback_Support_DB::get_max_file_size())); ?> КБ каждый</p>
@@ -588,7 +591,7 @@ class Cashback_Support_Admin
                 <button type="button" class="button" id="support-close-ticket" style="margin-left: 10px; color: #a00;">Закрыть тикет</button>
             </p>
         </div>
-        <?php else: ?>
+        <?php else : ?>
         <div class="notice notice-warning" style="max-width: 800px; margin-top: 20px;">
             <p>Тикет закрыт. Ответить невозможно.</p>
         </div>
@@ -699,18 +702,17 @@ class Cashback_Support_Admin
      *
      * @param object[] $attachments
      */
-    private function render_message_html(object $msg, array $attachments = []): string
-    {
+    private function render_message_html( object $msg, array $attachments = array() ): string {
         $is_admin = (int) $msg->is_admin === 1;
         $bg_color = $is_admin ? '#e8f4f8' : '#f9f9f9';
-        $sender = $is_admin ? 'Администратор' : ($msg->user_login ?? 'Пользователь');
-        $date = date_i18n('d.m.Y H:i', strtotime($msg->created_at));
+        $sender   = $is_admin ? 'Администратор' : ( $msg->user_login ?? 'Пользователь' );
+        $date     = date_i18n('d.m.Y H:i', strtotime($msg->created_at));
 
         $attachments_html = '';
         if (!empty($attachments)) {
             $attachments_html .= '<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e0e0e0;">';
             foreach ($attachments as $att) {
-                $size = size_format($att->file_size);
+                $size              = size_format($att->file_size);
                 $attachments_html .= sprintf(
                     '<div>'
                     . '<form method="post" action="%s" style="display:inline;">'
@@ -753,19 +755,18 @@ class Cashback_Support_Admin
     /**
      * Включение/выключение модуля
      */
-    public function handle_toggle_module(): void
-    {
+    public function handle_toggle_module(): void {
         if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'support_toggle_module_nonce')) {
-            wp_send_json_error(['message' => 'Неверный токен безопасности.']);
+            wp_send_json_error(array( 'message' => 'Неверный токен безопасности.' ));
             return;
         }
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => 'Недостаточно прав.']);
+            wp_send_json_error(array( 'message' => 'Недостаточно прав.' ));
             return;
         }
 
-        $enabled = (int) ($_POST['enabled'] ?? 0) === 1;
+        $enabled = (int) ( $_POST['enabled'] ?? 0 ) === 1;
         Cashback_Support_DB::set_module_enabled($enabled);
 
         if ($enabled) {
@@ -777,60 +778,59 @@ class Cashback_Support_Admin
         // зарегистрирован (при включении) или снят (при отключении)
         set_transient('cashback_support_flush_rules', 1, 60);
 
-        wp_send_json_success(['enabled' => $enabled]);
+        wp_send_json_success(array( 'enabled' => $enabled ));
     }
 
     /**
      * Ответ администратора на тикет
      */
-    public function handle_admin_reply(): void
-    {
+    public function handle_admin_reply(): void {
         if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'support_admin_reply_nonce')) {
-            wp_send_json_error(['message' => 'Неверный токен безопасности.']);
+            wp_send_json_error(array( 'message' => 'Неверный токен безопасности.' ));
             return;
         }
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => 'Недостаточно прав.']);
+            wp_send_json_error(array( 'message' => 'Недостаточно прав.' ));
             return;
         }
 
         global $wpdb;
 
         $ticket_id = absint($_POST['ticket_id'] ?? 0);
-        $message = sanitize_textarea_field($_POST['message'] ?? '');
+        $message   = sanitize_textarea_field($_POST['message'] ?? '');
 
         if (!$ticket_id || empty($message)) {
-            wp_send_json_error(['message' => 'Заполните все поля.']);
+            wp_send_json_error(array( 'message' => 'Заполните все поля.' ));
             return;
         }
 
         if (mb_strlen($message) > 5000) {
-            wp_send_json_error(['message' => 'Сообщение слишком длинное (максимум 5000 символов).']);
+            wp_send_json_error(array( 'message' => 'Сообщение слишком длинное (максимум 5000 символов).' ));
             return;
         }
 
         // Ранняя проверка числа файлов — ДО любых изменений в БД
-        $upload_errors = [];
-        $files_to_process = [];
+        $upload_errors    = array();
+        $files_to_process = array();
         if (Cashback_Support_DB::is_attachments_enabled() && !empty($_FILES['support_files']['name'][0])) {
             $files_count = count($_FILES['support_files']['name']);
-            $max_files = Cashback_Support_DB::get_max_files_per_message();
+            $max_files   = Cashback_Support_DB::get_max_files_per_message();
 
             if ($files_count > $max_files) {
-                wp_send_json_error(['message' => sprintf('Максимум %d файлов.', $max_files)]);
+                wp_send_json_error(array( 'message' => sprintf('Максимум %d файлов.', $max_files) ));
                 return;
             }
 
             for ($i = 0; $i < $files_count; $i++) {
-                if ($_FILES['support_files']['error'][$i] !== UPLOAD_ERR_NO_FILE) {
-                    $files_to_process[] = [
-                        'name'     => $_FILES['support_files']['name'][$i],
-                        'type'     => $_FILES['support_files']['type'][$i],
-                        'tmp_name' => $_FILES['support_files']['tmp_name'][$i],
-                        'error'    => $_FILES['support_files']['error'][$i],
-                        'size'     => $_FILES['support_files']['size'][$i],
-                    ];
+                if ($_FILES['support_files']['error'][ $i ] !== UPLOAD_ERR_NO_FILE) {
+                    $files_to_process[] = array(
+                        'name'     => $_FILES['support_files']['name'][ $i ],
+                        'type'     => $_FILES['support_files']['type'][ $i ],
+                        'tmp_name' => $_FILES['support_files']['tmp_name'][ $i ],
+                        'error'    => $_FILES['support_files']['error'][ $i ],
+                        'size'     => $_FILES['support_files']['size'][ $i ],
+                    );
                 }
             }
         }
@@ -845,32 +845,32 @@ class Cashback_Support_Admin
 
         if (!$ticket) {
             $wpdb->query('ROLLBACK');
-            wp_send_json_error(['message' => 'Тикет не найден.']);
+            wp_send_json_error(array( 'message' => 'Тикет не найден.' ));
             return;
         }
 
         if ($ticket->status === 'closed') {
             $wpdb->query('ROLLBACK');
-            wp_send_json_error(['message' => 'Невозможно ответить на закрытый тикет.']);
+            wp_send_json_error(array( 'message' => 'Невозможно ответить на закрытый тикет.' ));
             return;
         }
 
         // Вставляем сообщение
         $inserted = $wpdb->insert(
             $this->messages_table,
-            [
+            array(
                 'ticket_id' => $ticket_id,
-                'user_id' => get_current_user_id(),
-                'message' => $message,
-                'is_admin' => 1,
-                'is_read' => 0,
-            ],
-            ['%d', '%d', '%s', '%d', '%d']
+                'user_id'   => get_current_user_id(),
+                'message'   => $message,
+                'is_admin'  => 1,
+                'is_read'   => 0,
+            ),
+            array( '%d', '%d', '%s', '%d', '%d' )
         );
 
         if (!$inserted) {
             $wpdb->query('ROLLBACK');
-            wp_send_json_error(['message' => 'Ошибка при сохранении сообщения.']);
+            wp_send_json_error(array( 'message' => 'Ошибка при сохранении сообщения.' ));
             return;
         }
 
@@ -879,18 +879,18 @@ class Cashback_Support_Admin
         // Обновляем статус тикета
         $updated = $wpdb->update(
             $this->tickets_table,
-            [
-                'status' => 'answered',
+            array(
+                'status'     => 'answered',
                 'updated_at' => current_time('mysql'),
-            ],
-            ['id' => $ticket_id],
-            ['%s', '%s'],
-            ['%d']
+            ),
+            array( 'id' => $ticket_id ),
+            array( '%s', '%s' ),
+            array( '%d' )
         );
 
         if ($updated === false) {
             $wpdb->query('ROLLBACK');
-            wp_send_json_error(['message' => 'Ошибка при обновлении статуса тикета.']);
+            wp_send_json_error(array( 'message' => 'Ошибка при обновлении статуса тикета.' ));
             return;
         }
 
@@ -913,18 +913,18 @@ class Cashback_Support_Admin
         }
 
         // Генерируем HTML нового сообщения
-        $msg = (object) [
-            'is_admin' => 1,
+        $msg = (object) array(
+            'is_admin'   => 1,
             'user_login' => wp_get_current_user()->user_login,
-            'message' => $message,
+            'message'    => $message,
             'created_at' => current_time('mysql'),
-        ];
+        );
 
         // Получаем вложения для нового сообщения
-        $msg_attachments_map = Cashback_Support_DB::get_attachments_for_messages([$message_id]);
-        $msg_attachments = $msg_attachments_map[$message_id] ?? [];
+        $msg_attachments_map = Cashback_Support_DB::get_attachments_for_messages(array( $message_id ));
+        $msg_attachments     = $msg_attachments_map[ $message_id ] ?? array();
 
-        $response = ['html' => $this->render_message_html($msg, $msg_attachments)];
+        $response = array( 'html' => $this->render_message_html($msg, $msg_attachments) );
         if (!empty($upload_errors)) {
             $response['upload_warnings'] = $upload_errors;
         }
@@ -935,25 +935,24 @@ class Cashback_Support_Admin
     /**
      * Смена статуса тикета
      */
-    public function handle_change_status(): void
-    {
+    public function handle_change_status(): void {
         if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'support_change_status_nonce')) {
-            wp_send_json_error(['message' => 'Неверный токен безопасности.']);
+            wp_send_json_error(array( 'message' => 'Неверный токен безопасности.' ));
             return;
         }
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => 'Недостаточно прав.']);
+            wp_send_json_error(array( 'message' => 'Недостаточно прав.' ));
             return;
         }
 
         global $wpdb;
 
-        $ticket_id = absint($_POST['ticket_id'] ?? 0);
+        $ticket_id  = absint($_POST['ticket_id'] ?? 0);
         $new_status = sanitize_text_field(wp_unslash($_POST['status'] ?? ''));
 
-        if (!$ticket_id || !in_array($new_status, ['open', 'answered', 'closed'], true)) {
-            wp_send_json_error(['message' => 'Некорректные данные.']);
+        if (!$ticket_id || !in_array($new_status, array( 'open', 'answered', 'closed' ), true)) {
+            wp_send_json_error(array( 'message' => 'Некорректные данные.' ));
             return;
         }
 
@@ -967,53 +966,52 @@ class Cashback_Support_Admin
 
         if (!$ticket) {
             $wpdb->query('ROLLBACK');
-            wp_send_json_error(['message' => 'Тикет не найден.']);
+            wp_send_json_error(array( 'message' => 'Тикет не найден.' ));
             return;
         }
 
         if ($ticket->status === 'closed') {
             $wpdb->query('ROLLBACK');
-            wp_send_json_error(['message' => 'Невозможно изменить статус закрытого тикета.']);
+            wp_send_json_error(array( 'message' => 'Невозможно изменить статус закрытого тикета.' ));
             return;
         }
 
-        $update_data = [
-            'status' => $new_status,
+        $update_data   = array(
+            'status'     => $new_status,
             'updated_at' => current_time('mysql'),
-        ];
-        $update_format = ['%s', '%s'];
+        );
+        $update_format = array( '%s', '%s' );
 
         if ($new_status === 'closed') {
             $update_data['closed_at'] = current_time('mysql');
-            $update_format[] = '%s';
+            $update_format[]          = '%s';
         }
 
         $updated = $wpdb->update(
             $this->tickets_table,
             $update_data,
-            ['id' => $ticket_id],
+            array( 'id' => $ticket_id ),
             $update_format,
-            ['%d']
+            array( '%d' )
         );
 
         if ($updated === false) {
             $wpdb->query('ROLLBACK');
-            wp_send_json_error(['message' => 'Ошибка при обновлении статуса.']);
+            wp_send_json_error(array( 'message' => 'Ошибка при обновлении статуса.' ));
             return;
         }
 
         $wpdb->query('COMMIT');
 
-        wp_send_json_success(['status' => $new_status]);
+        wp_send_json_success(array( 'status' => $new_status ));
     }
 
     /**
      * Получение количества непрочитанных тикетов (для AJAX-обновления бейджа)
      */
-    public function handle_get_unread_count(): void
-    {
+    public function handle_get_unread_count(): void {
         if (!check_ajax_referer('support_admin_unread_count_nonce', 'nonce', false)) {
-            wp_send_json_error(['message' => 'Неверный токен безопасности.']);
+            wp_send_json_error(array( 'message' => 'Неверный токен безопасности.' ));
             return;
         }
 
@@ -1022,14 +1020,13 @@ class Cashback_Support_Admin
             return;
         }
 
-        wp_send_json_success(['count' => Cashback_Support_DB::get_unread_tickets_count()]);
+        wp_send_json_success(array( 'count' => Cashback_Support_DB::get_unread_tickets_count() ));
     }
 
     /**
      * Скрипт автообновления бейджа в меню
      */
-    public function render_badge_updater_script(): void
-    {
+    public function render_badge_updater_script(): void {
         if (!Cashback_Support_DB::is_module_enabled()) {
             return;
         }
@@ -1063,24 +1060,23 @@ class Cashback_Support_Admin
     /**
      * Сохранение настроек вложений
      */
-    public function handle_save_attachment_settings(): void
-    {
+    public function handle_save_attachment_settings(): void {
         if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'support_save_attachment_settings_nonce')) {
-            wp_send_json_error(['message' => 'Неверный токен безопасности.']);
+            wp_send_json_error(array( 'message' => 'Неверный токен безопасности.' ));
             return;
         }
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => 'Недостаточно прав.']);
+            wp_send_json_error(array( 'message' => 'Недостаточно прав.' ));
             return;
         }
 
-        Cashback_Support_DB::save_attachment_settings([
+        Cashback_Support_DB::save_attachment_settings(array(
             'enabled'               => absint($_POST['enabled'] ?? 0),
             'max_file_size'         => absint($_POST['max_file_size'] ?? 5120),
             'max_files_per_message' => absint($_POST['max_files_per_message'] ?? 3),
             'allowed_extensions'    => sanitize_text_field(wp_unslash($_POST['allowed_extensions'] ?? '')),
-        ]);
+        ));
 
         wp_send_json_success();
     }
@@ -1088,19 +1084,18 @@ class Cashback_Support_Admin
     /**
      * Скачивание файла вложения (админ)
      */
-    public function handle_admin_download_file(): void
-    {
+    public function handle_admin_download_file(): void {
         if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'support_admin_download_file_nonce')) {
-            wp_die('Неверный токен безопасности.', 'Ошибка', ['response' => 403]);
+            wp_die('Неверный токен безопасности.', 'Ошибка', array( 'response' => 403 ));
         }
 
         if (!current_user_can('manage_options')) {
-            wp_die('Недостаточно прав.', 'Ошибка', ['response' => 403]);
+            wp_die('Недостаточно прав.', 'Ошибка', array( 'response' => 403 ));
         }
 
         $attachment_id = absint($_POST['id'] ?? 0);
         if (!$attachment_id) {
-            wp_die('Не указан файл.', 'Ошибка', ['response' => 400]);
+            wp_die('Не указан файл.', 'Ошибка', array( 'response' => 400 ));
         }
 
         // Аудит-лог: фиксируем скачивание вложения администратором
@@ -1119,12 +1114,11 @@ class Cashback_Support_Admin
     /**
      * Страница настроек вложений
      */
-    private function render_settings_page(): void
-    {
-        $nonce = wp_create_nonce('support_save_attachment_settings_nonce');
-        $enabled = Cashback_Support_DB::is_attachments_enabled();
-        $max_size = Cashback_Support_DB::get_max_file_size();
-        $max_files = Cashback_Support_DB::get_max_files_per_message();
+    private function render_settings_page(): void {
+        $nonce      = wp_create_nonce('support_save_attachment_settings_nonce');
+        $enabled    = Cashback_Support_DB::is_attachments_enabled();
+        $max_size   = Cashback_Support_DB::get_max_file_size();
+        $max_files  = Cashback_Support_DB::get_max_files_per_message();
         $extensions = implode(',', Cashback_Support_DB::get_allowed_extensions());
 
         ?>
@@ -1206,8 +1200,7 @@ class Cashback_Support_Admin
     /**
      * Отправка email уведомления пользователю
      */
-    private function send_user_notification(int $ticket_id, string $subject, int $user_id, string $admin_message): void
-    {
+    private function send_user_notification( int $ticket_id, string $subject, int $user_id, string $admin_message ): void {
         $user = get_userdata($user_id);
         if (!$user) {
             return;
@@ -1233,44 +1226,40 @@ class Cashback_Support_Admin
         wp_mail($user->user_email, $email_subject, $body);
     }
 
-    private function get_priority_label(string $priority): string
-    {
-        $labels = [
-            'urgent' => 'Срочный',
-            'normal' => 'Обычный',
+    private function get_priority_label( string $priority ): string {
+        $labels = array(
+            'urgent'     => 'Срочный',
+            'normal'     => 'Обычный',
             'not_urgent' => 'Не срочный',
-        ];
-        return $labels[$priority] ?? $priority;
+        );
+        return $labels[ $priority ] ?? $priority;
     }
 
-    private function get_status_label(string $status): string
-    {
-        $labels = [
-            'open' => 'Открыт',
+    private function get_status_label( string $status ): string {
+        $labels = array(
+            'open'     => 'Открыт',
             'answered' => 'Отвечен',
-            'closed' => 'Закрыт',
-        ];
-        return $labels[$status] ?? $status;
+            'closed'   => 'Закрыт',
+        );
+        return $labels[ $status ] ?? $status;
     }
 
-    private function get_status_css_class(string $status): string
-    {
-        $classes = [
-            'open' => 'status-open',
+    private function get_status_css_class( string $status ): string {
+        $classes = array(
+            'open'     => 'status-open',
             'answered' => 'status-answered',
-            'closed' => 'status-closed',
-        ];
-        return $classes[$status] ?? '';
+            'closed'   => 'status-closed',
+        );
+        return $classes[ $status ] ?? '';
     }
 
-    private function get_priority_css_class(string $priority): string
-    {
-        $classes = [
-            'urgent' => 'priority-urgent',
-            'normal' => 'priority-normal',
+    private function get_priority_css_class( string $priority ): string {
+        $classes = array(
+            'urgent'     => 'priority-urgent',
+            'normal'     => 'priority-normal',
             'not_urgent' => 'priority-not_urgent',
-        ];
-        return $classes[$priority] ?? '';
+        );
+        return $classes[ $priority ] ?? '';
     }
 }
 

@@ -9,18 +9,17 @@ if (!defined('ABSPATH')) {
 /**
  * Класс для работы с базой данных модуля поддержки
  */
-class Cashback_Support_DB
-{
+class Cashback_Support_DB {
+
     /**
      * Создание таблиц модуля поддержки
      */
-    public static function create_tables(): void
-    {
+    public static function create_tables(): void {
         global $wpdb;
 
         $charset_collate = 'ENGINE=InnoDB ' . $wpdb->get_charset_collate();
-        $tickets_table = $wpdb->prefix . 'cashback_support_tickets';
-        $messages_table = $wpdb->prefix . 'cashback_support_messages';
+        $tickets_table   = $wpdb->prefix . 'cashback_support_tickets';
+        $messages_table  = $wpdb->prefix . 'cashback_support_messages';
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -119,16 +118,14 @@ class Cashback_Support_DB
     /**
      * Проверить, включен ли модуль поддержки
      */
-    public static function is_module_enabled(): bool
-    {
+    public static function is_module_enabled(): bool {
         return (bool) get_option('cashback_support_module_enabled', 0);
     }
 
     /**
      * Включить/выключить модуль поддержки
      */
-    public static function set_module_enabled(bool $enabled): void
-    {
+    public static function set_module_enabled( bool $enabled ): void {
         update_option('cashback_support_module_enabled', $enabled ? 1 : 0);
     }
 
@@ -137,24 +134,21 @@ class Cashback_Support_DB
     /**
      * Включены ли вложения
      */
-    public static function is_attachments_enabled(): bool
-    {
+    public static function is_attachments_enabled(): bool {
         return (bool) get_option('cashback_support_attachments_enabled', 1);
     }
 
     /**
      * Максимальный размер файла в КБ
      */
-    public static function get_max_file_size(): int
-    {
+    public static function get_max_file_size(): int {
         return (int) get_option('cashback_support_max_file_size', 5120);
     }
 
     /**
      * Максимальное количество файлов на одно сообщение
      */
-    public static function get_max_files_per_message(): int
-    {
+    public static function get_max_files_per_message(): int {
         return (int) get_option('cashback_support_max_files_per_message', 3);
     }
 
@@ -163,8 +157,7 @@ class Cashback_Support_DB
      *
      * @return string[]
      */
-    public static function get_allowed_extensions(): array
-    {
+    public static function get_allowed_extensions(): array {
         $raw = get_option('cashback_support_allowed_extensions', 'jpg,jpeg,png,gif,pdf,doc,docx,txt');
         return array_map('trim', explode(',', strtolower((string) $raw)));
     }
@@ -174,8 +167,7 @@ class Cashback_Support_DB
      *
      * @param array<string, mixed> $settings
      */
-    public static function save_attachment_settings(array $settings): void
-    {
+    public static function save_attachment_settings( array $settings ): void {
         if (isset($settings['enabled'])) {
             update_option('cashback_support_attachments_enabled', $settings['enabled'] ? 1 : 0);
         }
@@ -199,12 +191,11 @@ class Cashback_Support_DB
      *
      * @param array<string, mixed> $data
      */
-    public static function record_attachment(array $data): int
-    {
+    public static function record_attachment( array $data ): int {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_support_attachments';
 
-        $wpdb->insert($table, [
+        $wpdb->insert($table, array(
             'message_id'  => $data['message_id'],
             'ticket_id'   => $data['ticket_id'],
             'user_id'     => $data['user_id'],
@@ -212,7 +203,7 @@ class Cashback_Support_DB
             'stored_name' => $data['stored_name'],
             'file_size'   => $data['file_size'],
             'mime_type'   => $data['mime_type'],
-        ], ['%d', '%d', '%d', '%s', '%s', '%d', '%s']);
+        ), array( '%d', '%d', '%d', '%s', '%s', '%d', '%s' ));
 
         return (int) $wpdb->insert_id;
     }
@@ -220,8 +211,7 @@ class Cashback_Support_DB
     /**
      * Получить одно вложение по ID
      */
-    public static function get_attachment(int $attachment_id): ?object
-    {
+    public static function get_attachment( int $attachment_id ): ?object {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_support_attachments';
 
@@ -239,24 +229,23 @@ class Cashback_Support_DB
      * @param int[] $message_ids
      * @return array<int, object[]>
      */
-    public static function get_attachments_for_messages(array $message_ids): array
-    {
+    public static function get_attachments_for_messages( array $message_ids ): array {
         if (empty($message_ids)) {
-            return [];
+            return array();
         }
 
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_support_attachments';
 
         $placeholders = implode(',', array_fill(0, count($message_ids), '%d'));
-        $results = $wpdb->get_results($wpdb->prepare(
+        $results      = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM `{$table}` WHERE message_id IN ({$placeholders}) ORDER BY message_id, id ASC",
             ...$message_ids
         ));
 
-        $grouped = [];
+        $grouped = array();
         foreach ($results as $row) {
-            $grouped[(int) $row->message_id][] = $row;
+            $grouped[ (int) $row->message_id ][] = $row;
         }
         return $grouped;
     }
@@ -266,8 +255,7 @@ class Cashback_Support_DB
     /**
      * Путь к директории загрузок для тикета
      */
-    public static function get_upload_dir(int $ticket_id): string
-    {
+    public static function get_upload_dir( int $ticket_id ): string {
         $upload_dir = wp_upload_dir();
         return $upload_dir['basedir'] . '/cashback-support/' . $ticket_id;
     }
@@ -276,8 +264,7 @@ class Cashback_Support_DB
      * Создать базовую директорию для вложений и защитить её.
      * Вызывается при активации плагина.
      */
-    public static function ensure_upload_dir(): void
-    {
+    public static function ensure_upload_dir(): void {
         $upload_dir = wp_upload_dir();
         $base_dir   = $upload_dir['basedir'] . '/cashback-support';
 
@@ -291,8 +278,7 @@ class Cashback_Support_DB
     /**
      * Удалить файлы тикета с диска
      */
-    public static function delete_ticket_files(int $ticket_id): void
-    {
+    public static function delete_ticket_files( int $ticket_id ): void {
         $dir = self::get_upload_dir($ticket_id);
         if (!is_dir($dir)) {
             return;
@@ -323,8 +309,7 @@ class Cashback_Support_DB
      * - index.php + index.html (предотвращение листинга директорий)
      * - Файлы хранятся без расширений (nginx и др. не определят MIME)
      */
-    private static function protect_upload_directory(string $dir): void
-    {
+    private static function protect_upload_directory( string $dir ): void {
         self::write_protection_files($dir);
 
         // Защита родительской директории
@@ -335,8 +320,7 @@ class Cashback_Support_DB
     /**
      * Записать защитные файлы в указанную директорию
      */
-    private static function write_protection_files(string $dir): void
-    {
+    private static function write_protection_files( string $dir ): void {
         // Apache: запрет доступа
         $htaccess = $dir . '/.htaccess';
         if (!file_exists($htaccess)) {
@@ -374,18 +358,17 @@ class Cashback_Support_DB
      *
      * @return array<string, string[]>
      */
-    private static function get_allowed_mimes(): array
-    {
-        return [
-            'jpg'  => ['image/jpeg'],
-            'jpeg' => ['image/jpeg'],
-            'png'  => ['image/png'],
-            'gif'  => ['image/gif'],
-            'pdf'  => ['application/pdf'],
-            'doc'  => ['application/msword'],
-            'docx' => ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-            'txt'  => ['text/plain'],
-        ];
+    private static function get_allowed_mimes(): array {
+        return array(
+            'jpg'  => array( 'image/jpeg' ),
+            'jpeg' => array( 'image/jpeg' ),
+            'png'  => array( 'image/png' ),
+            'gif'  => array( 'image/gif' ),
+            'pdf'  => array( 'application/pdf' ),
+            'doc'  => array( 'application/msword' ),
+            'docx' => array( 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ),
+            'txt'  => array( 'text/plain' ),
+        );
     }
 
     /**
@@ -394,8 +377,7 @@ class Cashback_Support_DB
      * @param array<string, mixed> $file Элемент из $_FILES
      * @return true|string true если OK, строка с ошибкой если нет
      */
-    public static function validate_file(array $file)
-    {
+    public static function validate_file( array $file ) {
         if ($file['error'] !== UPLOAD_ERR_OK) {
             return 'Ошибка загрузки файла.';
         }
@@ -413,7 +395,7 @@ class Cashback_Support_DB
             );
         }
 
-        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        $ext     = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
         $allowed = self::get_allowed_extensions();
         if (!in_array($ext, $allowed, true)) {
             return sprintf(
@@ -433,13 +415,13 @@ class Cashback_Support_DB
         finfo_close($finfo);
 
         $allowed_mimes = self::get_allowed_mimes();
-        if (!isset($allowed_mimes[$ext])) {
+        if (!isset($allowed_mimes[ $ext ])) {
             return sprintf(
                 'Расширение "%s" не поддерживается системой загрузки.',
                 esc_html($ext)
             );
         }
-        if (!in_array($detected_mime, $allowed_mimes[$ext], true)) {
+        if (!in_array($detected_mime, $allowed_mimes[ $ext ], true)) {
             return sprintf('Тип файла "%s" не соответствует расширению.', esc_html($file['name']));
         }
 
@@ -452,15 +434,14 @@ class Cashback_Support_DB
      * @param array<string, mixed> $file Элемент из $_FILES
      * @return int|string ID вложения или строка ошибки
      */
-    public static function handle_file_upload(array $file, int $ticket_id, int $message_id, int $user_id)
-    {
+    public static function handle_file_upload( array $file, int $ticket_id, int $message_id, int $user_id ) {
         // Defense-in-depth: проверяем что тикет существует и принадлежит пользователю (или это админ)
         if ($ticket_id <= 0) {
             return 'Некорректный ID тикета.';
         }
         global $wpdb;
         $tickets_table = $wpdb->prefix . 'cashback_support_tickets';
-        $ticket_owner = $wpdb->get_var($wpdb->prepare(
+        $ticket_owner  = $wpdb->get_var($wpdb->prepare(
             "SELECT user_id FROM `{$tickets_table}` WHERE id = %d",
             $ticket_id
         ));
@@ -488,7 +469,7 @@ class Cashback_Support_DB
         // Файлы хранятся БЕЗ расширений — универсальная защита от прямого доступа:
         // nginx/IIS не смогут определить MIME-тип и не исполнят PHP/не отрендерят HTML
         $stored_name = bin2hex(random_bytes(16));
-        $dest_path = $dir . '/' . $stored_name;
+        $dest_path   = $dir . '/' . $stored_name;
 
         if (!move_uploaded_file($file['tmp_name'], $dest_path)) {
             return 'Не удалось сохранить файл.';
@@ -496,7 +477,7 @@ class Cashback_Support_DB
 
         // MIME-тип определяем через finfo (по содержимому файла), а не из $_FILES['type'] (браузер)
         $detected_mime = '';
-        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $finfo         = finfo_open(FILEINFO_MIME_TYPE);
         if ($finfo) {
             $detected_mime = finfo_file($finfo, $dest_path);
             finfo_close($finfo);
@@ -506,7 +487,7 @@ class Cashback_Support_DB
             return 'Не удалось определить тип файла. Убедитесь, что расширение fileinfo включено.';
         }
 
-        $attachment_id = self::record_attachment([
+        $attachment_id = self::record_attachment(array(
             'message_id'  => $message_id,
             'ticket_id'   => $ticket_id,
             'user_id'     => $user_id,
@@ -514,7 +495,7 @@ class Cashback_Support_DB
             'stored_name' => $stored_name,
             'file_size'   => $file['size'],
             'mime_type'   => sanitize_text_field($detected_mime),
-        ]);
+        ));
 
         if (!$attachment_id) {
             @unlink($dest_path);
@@ -527,53 +508,54 @@ class Cashback_Support_DB
     /**
      * Отдача файла с проверкой прав доступа
      */
-    public static function serve_file(int $attachment_id, int $requesting_user_id, bool $is_admin = false): void
-    {
+    public static function serve_file( int $attachment_id, int $requesting_user_id, bool $is_admin = false ): void {
         // Rate limiting: максимум 10 скачиваний в минуту на пользователя
         $dl_rate_key = 'cb_file_dl_' . $requesting_user_id;
-        $dl_count = (int) get_transient($dl_rate_key);
+        $dl_count    = (int) get_transient($dl_rate_key);
         if ($dl_count >= 10) {
-            wp_die('Слишком много запросов на скачивание. Попробуйте через минуту.', 'Ошибка', ['response' => 429]);
+            wp_die('Слишком много запросов на скачивание. Попробуйте через минуту.', 'Ошибка', array( 'response' => 429 ));
         }
         set_transient($dl_rate_key, $dl_count + 1, 60);
 
         $attachment = self::get_attachment($attachment_id);
         if (!$attachment) {
-            wp_die('Файл не найден.', 'Ошибка', ['response' => 404]);
+            wp_die('Файл не найден.', 'Ошибка', array( 'response' => 404 ));
         }
 
         if (!$is_admin) {
             global $wpdb;
             $tickets_table = $wpdb->prefix . 'cashback_support_tickets';
-            $owner = $wpdb->get_var($wpdb->prepare(
+            $owner         = $wpdb->get_var($wpdb->prepare(
                 "SELECT user_id FROM `{$tickets_table}` WHERE id = %d",
                 $attachment->ticket_id
             ));
             if ((int) $owner !== $requesting_user_id) {
-                wp_die('У вас нет доступа к этому файлу.', 'Доступ запрещён', ['response' => 403]);
+                wp_die('У вас нет доступа к этому файлу.', 'Доступ запрещён', array( 'response' => 403 ));
             }
         }
 
         // Defence-in-depth: stored_name должен быть hex-строкой из 32 символов (bin2hex(random_bytes(16)))
         if (!preg_match('/^[a-f0-9]{32}$/', $attachment->stored_name)) {
-            wp_die('Некорректное имя файла.', 'Ошибка', ['response' => 400]);
+            wp_die('Некорректное имя файла.', 'Ошибка', array( 'response' => 400 ));
         }
 
         $file_path = self::get_upload_dir((int) $attachment->ticket_id) . '/' . $attachment->stored_name;
         if (!file_exists($file_path)) {
-            wp_die('Файл не найден на диске.', 'Ошибка', ['response' => 404]);
+            wp_die('Файл не найден на диске.', 'Ошибка', array( 'response' => 404 ));
         }
 
         // Whitelist безопасных MIME-типов для Content-Type.
         // Если MIME из БД не в списке — отдаём как application/octet-stream
         // чтобы предотвратить inline-рендеринг потенциально опасного контента.
-        $safe_mimes = [
-            'image/jpeg', 'image/png', 'image/gif',
+        $safe_mimes   = array(
+            'image/jpeg',
+			'image/png',
+			'image/gif',
             'application/pdf',
             'application/msword',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             'text/plain',
-        ];
+        );
         $content_type = in_array($attachment->mime_type, $safe_mimes, true)
             ? $attachment->mime_type
             : 'application/octet-stream';
@@ -595,11 +577,10 @@ class Cashback_Support_DB
     /**
      * Получить количество тикетов с непрочитанными сообщениями от пользователей
      */
-    public static function get_unread_tickets_count(): int
-    {
+    public static function get_unread_tickets_count(): int {
         global $wpdb;
 
-        $tickets_table = $wpdb->prefix . 'cashback_support_tickets';
+        $tickets_table  = $wpdb->prefix . 'cashback_support_tickets';
         $messages_table = $wpdb->prefix . 'cashback_support_messages';
 
         $count = $wpdb->get_var(
@@ -616,11 +597,10 @@ class Cashback_Support_DB
     /**
      * Получить количество тикетов с непрочитанными ответами от админа для конкретного пользователя
      */
-    public static function get_unread_admin_replies_count(int $user_id): int
-    {
+    public static function get_unread_admin_replies_count( int $user_id ): int {
         global $wpdb;
 
-        $tickets_table = $wpdb->prefix . 'cashback_support_tickets';
+        $tickets_table  = $wpdb->prefix . 'cashback_support_tickets';
         $messages_table = $wpdb->prefix . 'cashback_support_messages';
 
         $count = $wpdb->get_var($wpdb->prepare(
@@ -639,8 +619,7 @@ class Cashback_Support_DB
     /**
      * Форматировать номер тикета для отображения
      */
-    public static function format_ticket_number(int $ticket_id): string
-    {
+    public static function format_ticket_number( int $ticket_id ): string {
         return '№' . str_pad((string) $ticket_id, 3, '0', STR_PAD_LEFT);
     }
 
@@ -648,8 +627,7 @@ class Cashback_Support_DB
      * Удалить закрытые тикеты старше 1 месяца.
      * Сообщения удаляются каскадно через FK.
      */
-    public static function delete_old_closed_tickets(): int
-    {
+    public static function delete_old_closed_tickets(): int {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_support_tickets';
 

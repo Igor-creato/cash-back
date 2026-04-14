@@ -11,35 +11,32 @@ if (!defined('ABSPATH')) {
  *
  * Endpoint: /my-account/cashback-notifications/
  */
-class Cashback_Notifications_Frontend
-{
+class Cashback_Notifications_Frontend {
+
     private static ?self $instance = null;
 
-    public static function get_instance(): self
-    {
+    public static function get_instance(): self {
         if (self::$instance === null) {
             self::$instance = new self();
         }
         return self::$instance;
     }
 
-    private function __construct()
-    {
+    private function __construct() {
         // Endpoint
-        add_action('init', [$this, 'register_endpoint']);
-        add_filter('woocommerce_account_menu_items', [$this, 'add_menu_item'], 40);
-        add_filter('query_vars', [$this, 'add_query_vars']);
-        add_action('woocommerce_account_cashback-notifications_endpoint', [$this, 'render_page']);
+        add_action('init', array( $this, 'register_endpoint' ));
+        add_filter('woocommerce_account_menu_items', array( $this, 'add_menu_item' ), 40);
+        add_filter('query_vars', array( $this, 'add_query_vars' ));
+        add_action('woocommerce_account_cashback-notifications_endpoint', array( $this, 'render_page' ));
 
         // AJAX
-        add_action('wp_ajax_cashback_save_notification_prefs', [$this, 'handle_save_preferences']);
+        add_action('wp_ajax_cashback_save_notification_prefs', array( $this, 'handle_save_preferences' ));
 
         // Стили и скрипты
-        add_action('wp_enqueue_scripts', [$this, 'enqueue_assets']);
+        add_action('wp_enqueue_scripts', array( $this, 'enqueue_assets' ));
     }
 
-    public function register_endpoint(): void
-    {
+    public function register_endpoint(): void {
         add_rewrite_endpoint('cashback-notifications', EP_ROOT | EP_PAGES);
     }
 
@@ -47,11 +44,10 @@ class Cashback_Notifications_Frontend
      * @param array<string,string> $items
      * @return array<string,string>
      */
-    public function add_menu_item(array $items): array
-    {
-        $logout = [];
+    public function add_menu_item( array $items ): array {
+        $logout = array();
         if (isset($items['customer-logout'])) {
-            $logout = ['customer-logout' => $items['customer-logout']];
+            $logout = array( 'customer-logout' => $items['customer-logout'] );
             unset($items['customer-logout']);
         }
 
@@ -64,14 +60,12 @@ class Cashback_Notifications_Frontend
      * @param string[] $vars
      * @return string[]
      */
-    public function add_query_vars(array $vars): array
-    {
+    public function add_query_vars( array $vars ): array {
         $vars[] = 'cashback-notifications';
         return $vars;
     }
 
-    public function enqueue_assets(): void
-    {
+    public function enqueue_assets(): void {
         if (!is_account_page()) {
             return;
         }
@@ -80,30 +74,29 @@ class Cashback_Notifications_Frontend
 
         wp_enqueue_style(
             'cashback-notifications',
-            plugins_url('assets/css/cashback-notifications.css', dirname(__FILE__)),
-            [],
+            plugins_url('assets/css/cashback-notifications.css', __DIR__),
+            array(),
             $ver
         );
 
         wp_enqueue_script(
             'cashback-notifications',
-            plugins_url('assets/js/cashback-notifications.js', dirname(__FILE__)),
-            ['jquery'],
+            plugins_url('assets/js/cashback-notifications.js', __DIR__),
+            array( 'jquery' ),
             $ver,
             true
         );
 
-        wp_localize_script('cashback-notifications', 'cashbackNotifications', [
+        wp_localize_script('cashback-notifications', 'cashbackNotifications', array(
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('cashback_notification_prefs_nonce'),
-        ]);
+        ));
     }
 
     /**
      * Рендер страницы настроек уведомлений
      */
-    public function render_page(): void
-    {
+    public function render_page(): void {
         $user_id = get_current_user_id();
         if (!$user_id) {
             echo '<p>' . esc_html__('Необходимо авторизоваться.', 'cashback-plugin') . '</p>';
@@ -129,12 +122,13 @@ class Cashback_Notifications_Frontend
                         </tr>
                     </thead>
                     <tbody>
-                    <?php foreach ($types as $slug => $label) :
+                    <?php
+                    foreach ($types as $slug => $label) :
                         // Если глобально выключено — показываем как disabled
                         $globally_enabled = Cashback_Notifications_DB::is_globally_enabled($slug);
                         // Пользовательская настройка (по умолчанию — включено)
-                        $user_enabled = $prefs[$slug] ?? true;
-                        $checked = $globally_enabled && $user_enabled;
+                        $user_enabled = $prefs[ $slug ] ?? true;
+                        $checked      = $globally_enabled && $user_enabled;
                         ?>
                         <tr>
                             <td>
@@ -176,16 +170,15 @@ class Cashback_Notifications_Frontend
     /**
      * AJAX: сохранение предпочтений
      */
-    public function handle_save_preferences(): void
-    {
+    public function handle_save_preferences(): void {
         if (!check_ajax_referer('cashback_notification_prefs_nonce', 'nonce', false)) {
-            wp_send_json_error(['message' => __('Ошибка безопасности, обновите страницу.', 'cashback-plugin')]);
+            wp_send_json_error(array( 'message' => __('Ошибка безопасности, обновите страницу.', 'cashback-plugin') ));
             return;
         }
 
         $user_id = get_current_user_id();
         if (!$user_id) {
-            wp_send_json_error(['message' => __('Необходимо авторизоваться.', 'cashback-plugin')]);
+            wp_send_json_error(array( 'message' => __('Необходимо авторизоваться.', 'cashback-plugin') ));
             return;
         }
 
@@ -194,15 +187,15 @@ class Cashback_Notifications_Frontend
         // Парсим: если чекбокс не отправлен — значит выключен
         $raw = isset($_POST['notifications']) && is_array($_POST['notifications'])
             ? array_map('sanitize_text_field', wp_unslash($_POST['notifications']))
-            : [];
+            : array();
 
-        $prefs = [];
+        $prefs = array();
         foreach (array_keys($types) as $slug) {
-            $prefs[$slug] = isset($raw[$slug]);
+            $prefs[ $slug ] = isset($raw[ $slug ]);
         }
 
         Cashback_Notifications_DB::save_preferences($user_id, $prefs);
 
-        wp_send_json_success(['message' => __('Настройки сохранены.', 'cashback-plugin')]);
+        wp_send_json_success(array( 'message' => __('Настройки сохранены.', 'cashback-plugin') ));
     }
 }

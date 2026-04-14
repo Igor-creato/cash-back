@@ -24,18 +24,17 @@ if (!current_user_can('activate_plugins')) {
 /**
  * Clean up plugin data
  */
-function cashback_plugin_uninstall(): void
-{
+function cashback_plugin_uninstall(): void {
     global $wpdb;
 
     // Remove scheduled cron events
-    $cron_hooks = [
+    $cron_hooks = array(
         'cashback_support_auto_delete_cron',
         'cashback_health_check_cron',
         'cashback_fraud_detection_cron',
         'cashback_fraud_cleanup_cron',
         'cashback_notification_process_queue',
-    ];
+    );
     foreach ($cron_hooks as $hook) {
         $timestamp = wp_next_scheduled($hook);
         if ($timestamp) {
@@ -51,7 +50,7 @@ function cashback_plugin_uninstall(): void
     }
 
     // List of tables to drop
-    $tables = [
+    $tables = array(
         // Affiliate module (drop first — FK dependencies)
         // cashback_affiliate_ledger удалён — данные мигрированы в cashback_balance_ledger
         "{$prefix}cashback_affiliate_accruals",
@@ -86,10 +85,10 @@ function cashback_plugin_uninstall(): void
         // Notifications module
         "{$prefix}cashback_notification_queue",
         "{$prefix}cashback_notification_preferences",
-    ];
+    );
 
     // Drop triggers
-    $triggers = [
+    $triggers = array(
         "{$prefix}calculate_cashback_before_insert",
         "{$prefix}calculate_cashback_before_insert_unregistered",
         "{$prefix}calculate_cashback_before_update",
@@ -111,30 +110,30 @@ function cashback_plugin_uninstall(): void
         "{$prefix}tr_notify_transaction_insert",
         "{$prefix}tr_notify_transaction_update",
         "{$prefix}tr_webhook_payload_hash",
-    ];
+    );
 
     // Drop events
-    $events = [
+    $events = array(
         // cashback_ev_confirmed_cashback удалён в новой версии (заменён PHP cron)
         // DROP на случай если остался от старых установок
         "{$prefix}cashback_ev_confirmed_cashback",
         "{$prefix}cashback_ev_cleanup_cashback_webhooks_old",
         "{$prefix}cashback_ev_cleanup_click_log",
         "{$prefix}cashback_ev_mark_inactive_profiles",
-    ];
+    );
 
     // Drop triggers
     foreach ($triggers as $trigger) {
-        $wpdb->query($wpdb->prepare("DROP TRIGGER IF EXISTS `%i`", $trigger));
+        $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS `%i`', $trigger));
     }
 
     // Drop events
     foreach ($events as $event) {
-        $wpdb->query($wpdb->prepare("DROP EVENT IF EXISTS `%i`", $event));
+        $wpdb->query($wpdb->prepare('DROP EVENT IF EXISTS `%i`', $event));
     }
 
     // Удаление файлов вложений поддержки
-    $upload_dir = wp_upload_dir();
+    $upload_dir  = wp_upload_dir();
     $support_dir = $upload_dir['basedir'] . '/cashback-support';
     if (is_dir($support_dir)) {
         $iterator = new RecursiveIteratorIterator(
@@ -153,11 +152,11 @@ function cashback_plugin_uninstall(): void
 
     // Drop tables (in reverse order to respect foreign keys)
     foreach (array_reverse($tables) as $table) {
-        $wpdb->query($wpdb->prepare("DROP TABLE IF EXISTS `%i`", $table));
+        $wpdb->query($wpdb->prepare('DROP TABLE IF EXISTS `%i`', $table));
     }
 
     // Delete plugin options
-    $options = [
+    $options = array(
         'cashback_max_withdrawal_amount',
         'cashback_email_sender_name',
         'cashback_support_module_enabled',
@@ -216,7 +215,7 @@ function cashback_plugin_uninstall(): void
         'cashback_captcha_server_key',
         'cashback_bot_grey_threshold',
         'cashback_bot_block_threshold',
-    ];
+    );
 
     foreach ($options as $option) {
         delete_option($option);
@@ -247,24 +246,37 @@ function cashback_plugin_uninstall(): void
     delete_transient('cashback_ext_stores_cache');
 
     // Delete rate limiting and plugin transients
-    $transient_prefixes = [
-        'cb_pp_', 'cb_gl_', 'cb_ip_', 'cb_decrypt_rate_', 'cb_support_rate_', 'cb_fp_rate_',
-        'cb_bank_search_rate_', 'cb_balance_rate_', 'cb_load_ticket_rate_',
-        'cb_close_ticket_rate_', 'cb_hist_page_rate_', 'cb_payout_page_rate_',
-        'cb_api_sync_rate_', 'cb_api_validate_rate_', 'cb_fraud_scan_rate_',
+    $transient_prefixes = array(
+        'cb_pp_',
+		'cb_gl_',
+		'cb_ip_',
+		'cb_decrypt_rate_',
+		'cb_support_rate_',
+		'cb_fp_rate_',
+        'cb_bank_search_rate_',
+		'cb_balance_rate_',
+		'cb_load_ticket_rate_',
+        'cb_close_ticket_rate_',
+		'cb_hist_page_rate_',
+		'cb_payout_page_rate_',
+        'cb_api_sync_rate_',
+		'cb_api_validate_rate_',
+		'cb_fraud_scan_rate_',
         'cb_aff_ref_',
         // Бот-защита: rate limiter, grey scoring, CAPTCHA verification cache
-        'cb_rl_', 'cb_grey_', 'cb_cap_',
+        'cb_rl_',
+		'cb_grey_',
+		'cb_cap_',
         // Контактная форма: rate limit
         'cb_contact_rate_',
-    ];
-    $where_parts = [];
-    $values = [];
+    );
+    $where_parts        = array();
+    $values             = array();
     foreach ($transient_prefixes as $p) {
         $where_parts[] = 'option_name LIKE %s';
         $where_parts[] = 'option_name LIKE %s';
-        $values[] = $wpdb->esc_like('_transient_' . $p) . '%';
-        $values[] = $wpdb->esc_like('_transient_timeout_' . $p) . '%';
+        $values[]      = $wpdb->esc_like('_transient_' . $p) . '%';
+        $values[]      = $wpdb->esc_like('_transient_timeout_' . $p) . '%';
     }
     $wpdb->query($wpdb->prepare(
         "DELETE FROM {$wpdb->options} WHERE " . implode(' OR ', $where_parts),

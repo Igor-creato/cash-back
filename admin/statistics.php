@@ -6,8 +6,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class Cashback_Statistics_Admin
-{
+class Cashback_Statistics_Admin {
+
     private static ?self $instance = null;
 
     private string $transactions_table;
@@ -15,37 +15,34 @@ class Cashback_Statistics_Admin
     private string $payout_requests_table;
     private string $user_balance_table;
 
-    public static function get_instance(): self
-    {
+    public static function get_instance(): self {
         if (self::$instance === null) {
             self::$instance = new self();
         }
         return self::$instance;
     }
 
-    private function __construct()
-    {
+    private function __construct() {
         global $wpdb;
-        $this->transactions_table             = $wpdb->prefix . 'cashback_transactions';
+        $this->transactions_table              = $wpdb->prefix . 'cashback_transactions';
         $this->unregistered_transactions_table = $wpdb->prefix . 'cashback_unregistered_transactions';
-        $this->payout_requests_table          = $wpdb->prefix . 'cashback_payout_requests';
-        $this->user_balance_table             = $wpdb->prefix . 'cashback_user_balance';
+        $this->payout_requests_table           = $wpdb->prefix . 'cashback_payout_requests';
+        $this->user_balance_table              = $wpdb->prefix . 'cashback_user_balance';
 
-        add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
+        add_action('admin_enqueue_scripts', array( $this, 'enqueue_admin_scripts' ));
     }
 
     /**
      * Подключение скриптов и стилей для страницы статистики
      */
-    public function enqueue_admin_scripts(string $hook): void
-    {
-        $allowed_hooks = [
+    public function enqueue_admin_scripts( string $hook ): void {
+        $allowed_hooks = array(
             'toplevel_page_cashback-overview',
-            'admin_page_cashback-overview'
-        ];
+            'admin_page_cashback-overview',
+        );
 
         $is_overview_page = in_array($hook, $allowed_hooks, true) ||
-            (isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-overview');
+            ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-overview' );
 
         if (!$is_overview_page) {
             return;
@@ -54,14 +51,14 @@ class Cashback_Statistics_Admin
         wp_enqueue_style(
             'cashback-admin-css',
             plugins_url('../assets/css/admin.css', __FILE__),
-            [],
+            array(),
             '1.1.0'
         );
 
         wp_enqueue_script(
             'cashback-admin-statistics',
             plugins_url('../assets/js/admin-statistics.js', __FILE__),
-            ['jquery'],
+            array( 'jquery' ),
             '1.0.0',
             true
         );
@@ -70,8 +67,7 @@ class Cashback_Statistics_Admin
     /**
      * Рендер страницы статистики
      */
-    public function render_overview_page(): void
-    {
+    public function render_overview_page(): void {
         if (!current_user_can('manage_options')) {
             wp_die(esc_html__('У вас недостаточно прав для просмотра этой страницы.', 'cashback-plugin'));
         }
@@ -109,8 +105,8 @@ class Cashback_Statistics_Admin
         $has_date_filter = true;
 
         // Получаем данные
-        $tx_stats     = $this->get_transaction_stats($filter_date_from, $filter_date_to);
-        $payout_stats = $this->get_payout_stats($filter_date_from, $filter_date_to);
+        $tx_stats      = $this->get_transaction_stats($filter_date_from, $filter_date_to);
+        $payout_stats  = $this->get_payout_stats($filter_date_from, $filter_date_to);
         $balance_stats = $this->get_balance_totals();
 
         $total_commission = (float) $tx_stats['total_commission'];
@@ -127,26 +123,26 @@ class Cashback_Statistics_Admin
             <!-- Вкладки -->
             <nav class="nav-tab-wrapper" style="margin-bottom: 20px;">
                 <a href="<?php echo esc_url($base_url . '&tab=stats'); ?>"
-                   class="nav-tab<?php echo $active_tab === 'stats' ? ' nav-tab-active' : ''; ?>">
+                    class="nav-tab<?php echo $active_tab === 'stats' ? ' nav-tab-active' : ''; ?>">
                     <?php echo esc_html__('Статистика', 'cashback-plugin'); ?>
                 </a>
                 <a href="<?php echo esc_url($base_url . '&tab=shortcodes'); ?>"
-                   class="nav-tab<?php echo $active_tab === 'shortcodes' ? ' nav-tab-active' : ''; ?>">
+                    class="nav-tab<?php echo $active_tab === 'shortcodes' ? ' nav-tab-active' : ''; ?>">
                     <?php echo esc_html__('Шорткоды плагина', 'cashback-plugin'); ?>
                 </a>
             </nav>
 
-            <?php if ($active_tab === 'stats'): ?>
+            <?php if ($active_tab === 'stats') : ?>
 
             <!-- Фильтры по дате -->
             <div class="tablenav top">
                 <div class="alignleft actions">
                     <label for="filter-date-from"><?php echo esc_html__('Дата от:', 'cashback-plugin'); ?></label>
                     <input type="date" id="filter-date-from"
-                           value="<?php echo esc_attr($filter_date_from); ?>" />
+                            value="<?php echo esc_attr($filter_date_from); ?>" />
                     <label for="filter-date-to"><?php echo esc_html__('Дата до:', 'cashback-plugin'); ?></label>
                     <input type="date" id="filter-date-to"
-                           value="<?php echo esc_attr($filter_date_to); ?>" />
+                            value="<?php echo esc_attr($filter_date_to); ?>" />
                     <button type="button" id="stats-filter-submit" class="button action">
                         <?php echo esc_html__('Фильтровать', 'cashback-plugin'); ?>
                     </button>
@@ -161,7 +157,7 @@ class Cashback_Statistics_Admin
                 <?php
                 if (!empty($filter_date_from) && !empty($filter_date_to)) {
                     printf(
-                        esc_html__('Данные за период: %s — %s', 'cashback-plugin'),
+                        esc_html__('Данные за период: %1$s — %2$s', 'cashback-plugin'),
                         esc_html($filter_date_from),
                         esc_html($filter_date_to)
                     );
@@ -213,23 +209,23 @@ class Cashback_Statistics_Admin
                             </thead>
                             <tbody>
                                 <?php
-                                $status_labels = [
+                                $status_labels = array(
                                     'waiting'   => __('В ожидании', 'cashback-plugin'),
                                     'completed' => __('Подтверждён', 'cashback-plugin'),
                                     'hold'      => __('На проверке', 'cashback-plugin'),
                                     'declined'  => __('Отклонён', 'cashback-plugin'),
                                     'balance'   => __('На балансе', 'cashback-plugin'),
-                                ];
-                                foreach ($status_labels as $status_key => $status_label):
+                                );
+                                foreach ($status_labels as $status_key => $status_label) :
                                     $count_key      = 'count_' . $status_key;
-                                    $commission_key  = 'commission_' . $status_key;
-                                    $cashback_key    = 'cashback_' . $status_key;
+                                    $commission_key = 'commission_' . $status_key;
+                                    $cashback_key   = 'cashback_' . $status_key;
                                 ?>
                                 <tr>
                                     <td><?php echo esc_html($status_label); ?></td>
-                                    <td><?php echo esc_html(number_format_i18n((int) ($tx_stats[$count_key] ?? 0))); ?></td>
-                                    <td><?php echo esc_html($this->format_currency((float) ($tx_stats[$commission_key] ?? 0))); ?></td>
-                                    <td><?php echo esc_html($this->format_currency((float) ($tx_stats[$cashback_key] ?? 0))); ?></td>
+                                    <td><?php echo esc_html(number_format_i18n((int) ( $tx_stats[ $count_key ] ?? 0 ))); ?></td>
+                                    <td><?php echo esc_html($this->format_currency((float) ( $tx_stats[ $commission_key ] ?? 0 ))); ?></td>
+                                    <td><?php echo esc_html($this->format_currency((float) ( $tx_stats[ $cashback_key ] ?? 0 ))); ?></td>
                                 </tr>
                                 <?php endforeach; ?>
                             </tbody>
@@ -261,22 +257,22 @@ class Cashback_Statistics_Admin
                             </thead>
                             <tbody>
                                 <?php
-                                $payout_labels = [
+                                $payout_labels = array(
                                     'waiting'     => __('Ожидает обработки', 'cashback-plugin'),
                                     'processing'  => __('В обработке', 'cashback-plugin'),
                                     'paid'        => __('Выплачен', 'cashback-plugin'),
                                     'failed'      => __('Возврат в баланс', 'cashback-plugin'),
                                     'declined'    => __('Заморожена', 'cashback-plugin'),
                                     'needs_retry' => __('Требует повтора', 'cashback-plugin'),
-                                ];
-                                foreach ($payout_labels as $p_key => $p_label):
+                                );
+                                foreach ($payout_labels as $p_key => $p_label) :
                                     $amount_key = $p_key . '_total';
                                     $count_key  = $p_key . '_count';
                                 ?>
                                 <tr>
                                     <td><?php echo esc_html($p_label); ?></td>
-                                    <td><?php echo esc_html(number_format_i18n((int) ($payout_stats[$count_key] ?? 0))); ?></td>
-                                    <td><?php echo esc_html($this->format_currency((float) ($payout_stats[$amount_key] ?? 0))); ?></td>
+                                    <td><?php echo esc_html(number_format_i18n((int) ( $payout_stats[ $count_key ] ?? 0 ))); ?></td>
+                                    <td><?php echo esc_html($this->format_currency((float) ( $payout_stats[ $amount_key ] ?? 0 ))); ?></td>
                                 </tr>
                                 <?php endforeach; ?>
                             </tbody>
@@ -328,7 +324,7 @@ class Cashback_Statistics_Admin
 
             <?php endif; /* tab stats */ ?>
 
-            <?php if ($active_tab === 'shortcodes'): ?>
+            <?php if ($active_tab === 'shortcodes') : ?>
             <!-- ===== ВКЛАДКА: ШОРТКОДЫ ===== -->
             <style>
                 .cb-shortcode-copy {
@@ -378,17 +374,18 @@ class Cashback_Statistics_Admin
                             </thead>
                             <tbody>
                                 <?php
-                                $balance_rows = [
-                                    ['[cashback_balance]',                               'Доступный баланс (по умолчанию)',                                     'Баланс: 1 234,56 ₽'],
-                                    ['[cashback_balance type="all"]',                    'Блок со всеми тремя строками: доступный / в обработке / выплачено',   ''],
-                                    ['[cashback_balance type="pending"]',                'Баланс «В обработке»',                                               ''],
-                                    ['[cashback_balance type="paid"]',                   'Выплаченный баланс',                                                 ''],
-                                    ['[cashback_balance format="number"]',               'Только число, без подписи и знака валюты',                           '1 234,56'],
-                                    ['[cashback_balance guest="login_link"]',            'Для незалогиненных — ссылка на страницу входа',                      ''],
-                                    ['[cashback_balance guest="text"]',                  'Для незалогиненных — текст «Доступно после авторизации»',             ''],
-                                    ['[cashback_balance type="available" decimals="0"]', 'Без копеек',                                                         '1 234 ₽'],
-                                ];
-                                foreach ($balance_rows as $row): ?>
+                                $balance_rows = array(
+                                    array( '[cashback_balance]', 'Доступный баланс (по умолчанию)', 'Баланс: 1 234,56 ₽' ),
+                                    array( '[cashback_balance type="all"]', 'Блок со всеми тремя строками: доступный / в обработке / выплачено', '' ),
+                                    array( '[cashback_balance type="pending"]', 'Баланс «В обработке»', '' ),
+                                    array( '[cashback_balance type="paid"]', 'Выплаченный баланс', '' ),
+                                    array( '[cashback_balance format="number"]', 'Только число, без подписи и знака валюты', '1 234,56' ),
+                                    array( '[cashback_balance guest="login_link"]', 'Для незалогиненных — ссылка на страницу входа', '' ),
+                                    array( '[cashback_balance guest="text"]', 'Для незалогиненных — текст «Доступно после авторизации»', '' ),
+                                    array( '[cashback_balance type="available" decimals="0"]', 'Без копеек', '1 234 ₽' ),
+                                );
+                                foreach ($balance_rows as $row) :
+                                ?>
                                 <tr>
                                     <td>
                                         <span class="cb-shortcode-copy" data-shortcode="<?php echo esc_attr($row[0]); ?>" title="<?php echo esc_attr__('Нажмите, чтобы скопировать', 'cashback-plugin'); ?>">
@@ -564,8 +561,7 @@ class Cashback_Statistics_Admin
      * @param string $date_to   Дата окончания (YYYY-MM-DD)
      * @return array<string, string>
      */
-    private function get_transaction_stats(string $date_from, string $date_to): array
-    {
+    private function get_transaction_stats( string $date_from, string $date_to ): array {
         global $wpdb;
 
         $cache_key = 'cb_stats_tx_' . md5($date_from . '|' . $date_to);
@@ -574,8 +570,8 @@ class Cashback_Statistics_Admin
             return $cached;
         }
 
-        $where_conditions = [];
-        $where_params     = [];
+        $where_conditions = array();
+        $where_params     = array();
 
         if (!empty($date_from)) {
             $where_conditions[] = 'created_at >= %s';
@@ -617,7 +613,7 @@ class Cashback_Statistics_Admin
         ) AS combined";
 
         // WHERE params передаются дважды — для каждой части UNION ALL
-        $merged_params = !empty($where_params) ? array_merge($where_params, $where_params) : [];
+        $merged_params = !empty($where_params) ? array_merge($where_params, $where_params) : array();
 
         if (!empty($merged_params)) {
             $result = $wpdb->get_row($wpdb->prepare($sql, $merged_params), ARRAY_A);
@@ -626,15 +622,26 @@ class Cashback_Statistics_Admin
         }
 
         if (!$result) {
-            $result = [
-                'total_commission' => '0', 'total_cashback' => '0', 'total_count' => '0',
-                'count_waiting' => '0', 'count_completed' => '0', 'count_hold' => '0',
-                'count_declined' => '0', 'count_balance' => '0',
-                'commission_waiting' => '0', 'commission_completed' => '0', 'commission_hold' => '0',
-                'commission_declined' => '0', 'commission_balance' => '0',
-                'cashback_waiting' => '0', 'cashback_completed' => '0', 'cashback_hold' => '0',
-                'cashback_declined' => '0', 'cashback_balance' => '0',
-            ];
+            $result = array(
+                'total_commission'     => '0',
+				'total_cashback'       => '0',
+				'total_count'          => '0',
+                'count_waiting'        => '0',
+				'count_completed'      => '0',
+				'count_hold'           => '0',
+                'count_declined'       => '0',
+				'count_balance'        => '0',
+                'commission_waiting'   => '0',
+				'commission_completed' => '0',
+				'commission_hold'      => '0',
+                'commission_declined'  => '0',
+				'commission_balance'   => '0',
+                'cashback_waiting'     => '0',
+				'cashback_completed'   => '0',
+				'cashback_hold'        => '0',
+                'cashback_declined'    => '0',
+				'cashback_balance'     => '0',
+            );
         }
 
         set_transient($cache_key, $result, HOUR_IN_SECONDS);
@@ -649,8 +656,7 @@ class Cashback_Statistics_Admin
      * @param string $date_to   Дата окончания (YYYY-MM-DD)
      * @return array<string, string>
      */
-    private function get_payout_stats(string $date_from, string $date_to): array
-    {
+    private function get_payout_stats( string $date_from, string $date_to ): array {
         global $wpdb;
 
         $cache_key = 'cb_stats_py_' . md5($date_from . '|' . $date_to);
@@ -659,8 +665,8 @@ class Cashback_Statistics_Admin
             return $cached;
         }
 
-        $where_conditions = [];
-        $where_params     = [];
+        $where_conditions = array();
+        $where_params     = array();
 
         if (!empty($date_from)) {
             $where_conditions[] = 'created_at >= %s';
@@ -701,13 +707,22 @@ class Cashback_Statistics_Admin
         }
 
         if (!$result) {
-            $result = [
-                'total_requests' => '0', 'grand_total' => '0',
-                'waiting_total' => '0', 'processing_total' => '0', 'paid_total' => '0',
-                'failed_total' => '0', 'declined_total' => '0', 'needs_retry_total' => '0',
-                'waiting_count' => '0', 'processing_count' => '0', 'paid_count' => '0',
-                'failed_count' => '0', 'declined_count' => '0', 'needs_retry_count' => '0',
-            ];
+            $result = array(
+                'total_requests'    => '0',
+				'grand_total'       => '0',
+                'waiting_total'     => '0',
+				'processing_total'  => '0',
+				'paid_total'        => '0',
+                'failed_total'      => '0',
+				'declined_total'    => '0',
+				'needs_retry_total' => '0',
+                'waiting_count'     => '0',
+				'processing_count'  => '0',
+				'paid_count'        => '0',
+                'failed_count'      => '0',
+				'declined_count'    => '0',
+				'needs_retry_count' => '0',
+            );
         }
 
         set_transient($cache_key, $result, HOUR_IN_SECONDS);
@@ -720,8 +735,7 @@ class Cashback_Statistics_Admin
      *
      * @return array<string, string>
      */
-    private function get_balance_totals(): array
-    {
+    private function get_balance_totals(): array {
         global $wpdb;
 
         $cached = get_transient('cb_stats_bal');
@@ -741,13 +755,13 @@ class Cashback_Statistics_Admin
         );
 
         if (!$result) {
-            $result = [
+            $result = array(
                 'total_available' => '0',
                 'total_pending'   => '0',
                 'total_paid'      => '0',
                 'total_frozen'    => '0',
                 'total_users'     => '0',
-            ];
+            );
         }
 
         set_transient('cb_stats_bal', $result, 15 * MINUTE_IN_SECONDS);
@@ -761,8 +775,7 @@ class Cashback_Statistics_Admin
      * @param float $amount Сумма
      * @return string Отформатированная строка
      */
-    private function format_currency(float $amount): string
-    {
+    private function format_currency( float $amount ): string {
         return number_format($amount, 2, '.', ' ') . ' ₽';
     }
 }

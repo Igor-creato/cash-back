@@ -19,13 +19,12 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
-{
+class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
+
     /**
      * {@inheritdoc}
      */
-    public function get_slug(): string
-    {
+    public function get_slug(): string {
         return 'epn';
     }
 
@@ -37,8 +36,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
      * 2. Получаем SSID-токен (лимит 1 запрос/сутки с IP).
      * 3. Обмениваем SSID + credentials на access_token.
      */
-    public function get_token(array $credentials, array $network_config): ?string
-    {
+    public function get_token( array $credentials, array $network_config ): ?string {
         $client_id     = $credentials['client_id'] ?? '';
         $client_secret = $credentials['client_secret'] ?? '';
 
@@ -57,12 +55,12 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
         }
 
         // Проверяем runtime кеш
-        if (isset($this->token_cache[$cache_key])) {
-            return $this->token_cache[$cache_key];
+        if (isset($this->token_cache[ $cache_key ])) {
+            return $this->token_cache[ $cache_key ];
         }
 
         // Пробуем refresh_token (если есть сохранённый)
-        $refresh_key = 'cashback_epn_refresh_' . md5($client_id);
+        $refresh_key   = 'cashback_epn_refresh_' . md5($client_id);
         $refresh_token = get_option($refresh_key, '');
         if (!empty($refresh_token)) {
             $token = $this->refresh_token($refresh_token, $network_config, $client_id, $cache_key, $refresh_key);
@@ -77,14 +75,14 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
         // ВАЖНО: /ssid лимитирован 1 запрос в сутки с одного IP.
         // Для снятия лимита — добавить IP в whitelist через EPN поддержку.
         $oauth_base = rtrim($network_config['api_base_url'] ?? 'https://oauth2.epn.bz', '/');
-        $ssid_url   = $oauth_base . '/ssid?' . http_build_query([
+        $ssid_url   = $oauth_base . '/ssid?' . http_build_query(array(
             'v'         => 2,
             'client_id' => $client_id,
-        ]);
+        ));
 
-        $ssid_response = $this->http_get($ssid_url, [
+        $ssid_response = $this->http_get($ssid_url, array(
             'X-API-VERSION' => '2',
-        ]);
+        ));
 
         if (is_wp_error($ssid_response)) {
             $this->last_token_error = 'EPN SSID ошибка сети: ' . $ssid_response->get_error_message();
@@ -105,7 +103,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
         }
 
         if ($ssid_code !== 200 || empty($ssid_token)) {
-            $epn_error = $ssid_body['errors'][0]['error_description'] ?? '';
+            $epn_error              = $ssid_body['errors'][0]['error_description'] ?? '';
             $this->last_token_error = 'EPN SSID failed (HTTP ' . $ssid_code . '). ' . $epn_error;
             error_log('Cashback API Client: EPN SSID failed. Code: ' . $ssid_code . ', Body: ' . wp_json_encode($ssid_body));
             return null;
@@ -114,16 +112,16 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
         // ─── Шаг 2: Получить access_token с SSID ───
         $token_url = $this->build_api_url($network_config, 'api_token_endpoint', 'https://oauth2.epn.bz/token');
 
-        $response = $this->http_post($token_url, [
+        $response = $this->http_post($token_url, array(
             'Content-Type'  => 'application/json',
             'X-API-VERSION' => '2',
-        ], wp_json_encode([
+        ), wp_json_encode(array(
             'grant_type'    => 'client_credential',
             'client_id'     => $client_id,
             'client_secret' => $client_secret,
             'ssid_token'    => $ssid_token,
             'check_ip'      => false,
-        ]));
+        )));
 
         if (is_wp_error($response)) {
             $this->last_token_error = 'EPN token ошибка сети: ' . $response->get_error_message();
@@ -153,7 +151,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
             return null;
         }
 
-        $expires = (int) ($body['data']['attributes']['expires_in'] ?? 86400);
+        $expires = (int) ( $body['data']['attributes']['expires_in'] ?? 86400 );
 
         // Сохраняем refresh_token для обновления без SSID
         $new_refresh = $body['data']['attributes']['refresh_token'] ?? '';
@@ -163,7 +161,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
 
         // Кешируем access_token (24 часа, с запасом 30 минут)
         set_transient($cache_key, $token, max(60, $expires - 1800));
-        $this->token_cache[$cache_key] = $token;
+        $this->token_cache[ $cache_key ] = $token;
 
         return $token;
     }
@@ -178,19 +176,18 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
      * @param string $refresh_key   Ключ опции refresh_token
      * @return string|null Новый access_token или null
      */
-    private function refresh_token(string $refresh_token, array $network_config, string $client_id, string $cache_key, string $refresh_key): ?string
-    {
+    private function refresh_token( string $refresh_token, array $network_config, string $client_id, string $cache_key, string $refresh_key ): ?string {
         $oauth_base  = rtrim($network_config['api_base_url'] ?? 'https://oauth2.epn.bz', '/');
         $refresh_url = $oauth_base . '/token/refresh';
 
-        $response = $this->http_post($refresh_url, [
+        $response = $this->http_post($refresh_url, array(
             'Content-Type'  => 'application/json',
             'X-API-VERSION' => '2',
-        ], wp_json_encode([
+        ), wp_json_encode(array(
             'grant_type'    => 'refresh_token',
             'refresh_token' => $refresh_token,
             'client_id'     => $client_id,
-        ]));
+        )));
 
         if (is_wp_error($response)) {
             return null;
@@ -204,7 +201,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
             return null;
         }
 
-        $expires = (int) ($body['data']['attributes']['expires_in'] ?? 86400);
+        $expires = (int) ( $body['data']['attributes']['expires_in'] ?? 86400 );
 
         // Обновляем refresh_token
         $new_refresh = $body['data']['attributes']['refresh_token'] ?? '';
@@ -214,7 +211,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
 
         // Кешируем access_token
         set_transient($cache_key, $token, max(60, $expires - 1800));
-        $this->token_cache[$cache_key] = $token;
+        $this->token_cache[ $cache_key ] = $token;
 
         return $token;
     }
@@ -222,14 +219,13 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
     /**
      * {@inheritdoc}
      */
-    public function build_auth_headers(array $credentials, array $network_config): ?array
-    {
+    public function build_auth_headers( array $credentials, array $network_config ): ?array {
         $token = $this->get_token($credentials, $network_config);
         if (!$token) {
             return null;
         }
         // EPN использует X-ACCESS-TOKEN вместо Authorization: Bearer
-        return ['X-ACCESS-TOKEN' => $token];
+        return array( 'X-ACCESS-TOKEN' => $token );
     }
 
     /**
@@ -242,22 +238,21 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
      * @param array $network_config Конфигурация сети
      * @return array ['success' => bool, 'actions' => [...], 'total' => int, 'has_next' => bool, 'error' => string|null]
      */
-    public function fetch_actions(array $credentials, array $params, array $network_config): array
-    {
+    public function fetch_actions( array $credentials, array $params, array $network_config ): array {
         $auth_headers = $this->build_auth_headers($credentials, $network_config);
         if (!$auth_headers) {
             return $this->fetch_error('Failed to authenticate with EPN');
         }
 
-        $query_params = [];
+        $query_params = array();
 
         // Пагинация (page-based)
-        $query_params['page']    = (int) ($params['page'] ?? 1);
-        $query_params['perPage'] = min((int) ($params['perPage'] ?? 500), 1000);
+        $query_params['page']    = (int) ( $params['page'] ?? 1 );
+        $query_params['perPage'] = min((int) ( $params['perPage'] ?? 500 ), 1000);
 
         // Обязательные: tsFrom, tsTo
         // EPN ограничивает tsFrom: не ранее 1 года от текущей даты.
-        $max_lookback = (new \DateTime())->modify('-365 days')->format('Y-m-d');
+        $max_lookback = ( new \DateTime() )->modify('-365 days')->format('Y-m-d');
 
         if (!empty($params['tsFrom'])) {
             $query_params['tsFrom'] = $params['tsFrom'];
@@ -319,12 +314,12 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
         // Добавляем стандартные заголовки — nginx на app.epn.bz может блокировать
         // запросы без Accept/Content-Type или со стандартным WordPress User-Agent
         // (возвращает 403 Forbidden).
-        $headers = array_merge([
+        $headers = array_merge(array(
             'Accept'        => 'application/json',
             'Content-Type'  => 'application/json',
             'User-Agent'    => 'CashbackPlugin/1.0',
             'X-API-VERSION' => '2',
-        ], $auth_headers);
+        ), $auth_headers);
 
         $response = $this->http_get($url, $headers);
 
@@ -341,7 +336,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
             $client_id = $credentials['client_id'] ?? '';
             $cache_key = 'cashback_epn_token_' . md5($client_id);
             delete_transient($cache_key);
-            unset($this->token_cache[$cache_key]);
+            unset($this->token_cache[ $cache_key ]);
 
             error_log('Cashback EPN: 401 on actions endpoint, invalidating token and retrying');
 
@@ -354,7 +349,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
             $client_id = $credentials['client_id'] ?? '';
             $cache_key = 'cashback_epn_token_' . md5($client_id);
             delete_transient($cache_key);
-            unset($this->token_cache[$cache_key]);
+            unset($this->token_cache[ $cache_key ]);
 
             error_log('Cashback EPN: 403 on actions endpoint, invalidating token and retrying');
 
@@ -389,37 +384,36 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
         }
 
         // Парсим EPN-ответ: data[].{type, id, attributes}
-        $raw_data = $body['data'] ?? [];
-        $total    = (int) ($body['meta']['totalFound'] ?? count($raw_data));
-        $has_next = (bool) ($body['meta']['hasNext'] ?? false);
+        $raw_data = $body['data'] ?? array();
+        $total    = (int) ( $body['meta']['totalFound'] ?? count($raw_data) );
+        $has_next = (bool) ( $body['meta']['hasNext'] ?? false );
 
         // Нормализация EPN → Admitad формат для совместимости с background_sync()
-        $normalized  = [];
+        $normalized  = array();
         $click_field = $network_config['api_click_field'] ?? 'click_id';
         $user_field  = $network_config['api_user_field'] ?? 'sub2';
 
         foreach ($raw_data as $item) {
-            $attrs = $item['attributes'] ?? [];
-            $epn_id = (string) ($item['id'] ?? '');
+            $attrs  = $item['attributes'] ?? array();
+            $epn_id = (string) ( $item['id'] ?? '' );
 
             $normalized[] = $this->normalize_action($attrs, $epn_id, $click_field, $user_field);
         }
 
-        return [
+        return array(
             'success'  => true,
             'actions'  => $normalized,
             'total'    => $total,
             'has_next' => $has_next,
             'error'    => null,
-        ];
+        );
     }
 
     /**
      * {@inheritdoc}
      */
-    public function fetch_all_actions(array $credentials, array $params, int $max_pages, array $network_config): array
-    {
-        $all_actions = [];
+    public function fetch_all_actions( array $credentials, array $params, int $max_pages, array $network_config ): array {
+        $all_actions = array();
         $per_page    = 500;
         $page        = 1;
         $total       = 0;
@@ -431,19 +425,19 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
             $result = $this->fetch_actions($credentials, $params, $network_config);
 
             if (!$result['success']) {
-                return [
+                return array(
                     'success' => false,
                     'actions' => $all_actions,
                     'total'   => $total,
                     'error'   => $result['error'],
-                ];
+                );
             }
 
             $actions     = $result['actions'];
             $total       = $result['total'];
             $has_next    = $result['has_next'] ?? false;
             $all_actions = array_merge($all_actions, $actions);
-            $page++;
+            ++$page;
 
             // Пауза между запросами (100ms)
             if ($has_next && $page <= $max_pages) {
@@ -451,12 +445,12 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
             }
         } while ($has_next && $page <= $max_pages);
 
-        return [
+        return array(
             'success' => true,
             'actions' => $all_actions,
             'total'   => $total,
             'error'   => null,
-        ];
+        );
     }
 
     /**
@@ -469,24 +463,27 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
      * Пагинация: limit + offset (не page/perPage).
      * Обязательные параметры: lang, viewRules.
      */
-    public function fetch_campaigns(array $credentials, array $network_config): array
-    {
+    public function fetch_campaigns( array $credentials, array $network_config ): array {
         $auth_headers = $this->build_auth_headers($credentials, $network_config);
         if (!$auth_headers) {
-            return ['success' => false, 'campaigns' => [], 'error' => 'Failed to authenticate with EPN'];
+            return array(
+				'success'   => false,
+				'campaigns' => array(),
+				'error'     => 'Failed to authenticate with EPN',
+			);
         }
 
         // EPN: OAuth на oauth2.epn.bz, data API на app.epn.bz — api_base_url = OAuth
         $url = 'https://app.epn.bz/offers/list';
 
-        $headers = array_merge([
+        $headers = array_merge(array(
             'Accept'        => 'application/json',
             'Content-Type'  => 'application/json',
             'User-Agent'    => 'CashbackPlugin/1.0',
             'X-API-VERSION' => '2',
-        ], $auth_headers);
+        ), $auth_headers);
 
-        $all_campaigns = [];
+        $all_campaigns = array();
         $limit         = 500;
         $offset        = 0;
         $max_pages     = 20;
@@ -494,46 +491,50 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
         $retried       = false;
 
         do {
-            $query = [
+            $query = array(
                 'lang'      => 'ru',
                 'viewRules' => 'role_user',
                 'statuses'  => 'active,disabled,waiting,stopped',
                 'fields'    => 'id,name,title,status',
                 'limit'     => $limit,
                 'offset'    => $offset,
-            ];
+            );
 
             $full_url = $url . '?' . http_build_query($query);
 
             $response = $this->http_get($full_url, $headers);
 
             if (is_wp_error($response)) {
-                return [
+                return array(
                     'success'   => false,
                     'campaigns' => $all_campaigns,
                     'error'     => 'HTTP error: ' . $response->get_error_message(),
-                ];
+                );
             }
 
             $code = wp_remote_retrieve_response_code($response);
 
             // 401/403 — сбрасываем токен и повторяем один раз
-            if (($code === 401 || $code === 403) && $page === 0 && !$retried) {
+            if (( $code === 401 || $code === 403 ) && $page === 0 && !$retried) {
                 $client_id = $credentials['client_id'] ?? '';
                 $cache_key = 'cashback_epn_token_' . md5($client_id);
                 delete_transient($cache_key);
-                unset($this->token_cache[$cache_key]);
+                unset($this->token_cache[ $cache_key ]);
 
                 $auth_headers = $this->build_auth_headers($credentials, $network_config);
                 if (!$auth_headers) {
-                    return ['success' => false, 'campaigns' => [], 'error' => 'EPN token refresh failed'];
+                    return array(
+						'success'   => false,
+						'campaigns' => array(),
+						'error'     => 'EPN token refresh failed',
+					);
                 }
 
-                $headers = array_merge([
+                $headers = array_merge(array(
                     'Accept'       => 'application/json',
                     'Content-Type' => 'application/json',
                     'User-Agent'   => 'CashbackPlugin/1.0',
-                ], $auth_headers);
+                ), $auth_headers);
 
                 $retried = true;
                 continue;
@@ -541,32 +542,32 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
 
             if ($code !== 200) {
                 $raw_body = wp_remote_retrieve_body($response);
-                return [
+                return array(
                     'success'   => false,
                     'campaigns' => $all_campaigns,
                     'error'     => "EPN offers HTTP {$code}: " . mb_substr($raw_body, 0, 300),
-                ];
+                );
             }
 
             $body     = json_decode(wp_remote_retrieve_body($response), true);
-            $raw_data = $body['data'] ?? [];
-            $total    = (int) ($body['meta']['count'] ?? 0);
+            $raw_data = $body['data'] ?? array();
+            $total    = (int) ( $body['meta']['count'] ?? 0 );
 
             foreach ($raw_data as $item) {
-                $attrs  = $item['attributes'] ?? [];
-                $status = strtolower((string) ($attrs['status'] ?? ''));
+                $attrs  = $item['attributes'] ?? array();
+                $status = strtolower((string) ( $attrs['status'] ?? '' ));
 
-                $all_campaigns[] = [
-                    'id'                => (string) ($item['id'] ?? ''),
-                    'name'              => (string) ($attrs['name'] ?? $attrs['title'] ?? ''),
-                    'is_active'         => ($status === 'active'),
+                $all_campaigns[] = array(
+                    'id'                => (string) ( $item['id'] ?? '' ),
+                    'name'              => (string) ( $attrs['name'] ?? $attrs['title'] ?? '' ),
+                    'is_active'         => ( $status === 'active' ),
                     'status'            => $status,
                     'connection_status' => $status,
-                ];
+                );
             }
 
             $offset += $limit;
-            $page++;
+            ++$page;
 
             // Если получили меньше limit записей или достигли total — больше страниц нет
             if (count($raw_data) < $limit || $offset >= $total || $page >= $max_pages) {
@@ -576,25 +577,24 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
             usleep(100000);
         } while (true);
 
-        return [
+        return array(
             'success'   => true,
             'campaigns' => $all_campaigns,
             'error'     => null,
-        ];
+        );
     }
 
     /**
      * {@inheritdoc}
      */
-    public function get_default_status_map(): array
-    {
-        return [
-            'pending'    => 'waiting',
-            'approved'   => 'completed',
-            'rejected'   => 'declined',
-            'canceled'   => 'declined',
-            'hold'       => 'waiting',
-        ];
+    public function get_default_status_map(): array {
+        return array(
+            'pending'  => 'waiting',
+            'approved' => 'completed',
+            'rejected' => 'declined',
+            'canceled' => 'declined',
+            'hold'     => 'waiting',
+        );
     }
 
     /**
@@ -606,56 +606,55 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
      * @param string $user_field  Поле user_id (из конфигурации сети)
      * @return array Нормализованный action в формате Admitad
      */
-    private function normalize_action(array $attrs, string $epn_id, string $click_field, string $user_field): array
-    {
+    private function normalize_action( array $attrs, string $epn_id, string $click_field, string $user_field ): array {
         // Маппинг EPN статусов → Admitad-совместимые ключи для status_map
         $epn_status = strtolower($attrs['order_status'] ?? 'pending');
 
-        $action = [
+        $action = array(
             // Основные поля (Admitad-совместимые имена)
-            'action_id'        => $epn_id ?: ($attrs['transactionId'] ?? ''),
-            'order_id'         => (string) ($attrs['order_number'] ?? ''),
+            'action_id'        => $epn_id ?: ( $attrs['transactionId'] ?? '' ),
+            'order_id'         => (string) ( $attrs['order_number'] ?? '' ),
             'status'           => $epn_status,
-            'payment'          => (float) ($attrs['commission_user'] ?? 0),
-            'cart'             => (float) ($attrs['revenue'] ?? 0),
-            'currency'         => (string) ($attrs['currency'] ?? 'RUB'),
-            'action_date'      => (string) ($attrs['order_time'] ?? ''),
-            'click_time'       => (string) ($attrs['transaction_time'] ?? ''),
+            'payment'          => (float) ( $attrs['commission_user'] ?? 0 ),
+            'cart'             => (float) ( $attrs['revenue'] ?? 0 ),
+            'currency'         => (string) ( $attrs['currency'] ?? 'RUB' ),
+            'action_date'      => (string) ( $attrs['order_time'] ?? '' ),
+            'click_time'       => (string) ( $attrs['transaction_time'] ?? '' ),
             'action_type'      => 'sale',
             // EPN: статус approved означает готовность средств к снятию (отдельного флага нет)
-            'funds_ready'      => ($epn_status === 'approved') ? 1 : 0,
+            'funds_ready'      => ( $epn_status === 'approved' ) ? 1 : 0,
 
             // Поля для матчинга (click_id, user_id)
-            'click_id'         => (string) ($attrs['click_id'] ?? ''),
-            'user_click_id'    => (string) ($attrs['user_click_id'] ?? ''),
+            'click_id'         => (string) ( $attrs['click_id'] ?? '' ),
+            'user_click_id'    => (string) ( $attrs['user_click_id'] ?? '' ),
 
             // Sub ID (EPN: sub1-sub5)
-            'sub1'             => (string) ($attrs['sub1'] ?? ''),
-            'sub2'             => (string) ($attrs['sub2'] ?? ''),
-            'sub3'             => (string) ($attrs['sub3'] ?? ''),
-            'sub4'             => (string) ($attrs['sub4'] ?? ''),
-            'sub5'             => (string) ($attrs['sub5'] ?? ''),
+            'sub1'             => (string) ( $attrs['sub1'] ?? '' ),
+            'sub2'             => (string) ( $attrs['sub2'] ?? '' ),
+            'sub3'             => (string) ( $attrs['sub3'] ?? '' ),
+            'sub4'             => (string) ( $attrs['sub4'] ?? '' ),
+            'sub5'             => (string) ( $attrs['sub5'] ?? '' ),
 
             // Admitad subid → EPN sub (для совместимости маппинга)
-            'subid'            => (string) ($attrs['sub1'] ?? $attrs['user_click_id'] ?? ''),
-            'subid1'           => (string) ($attrs['sub1'] ?? ''),
+            'subid'            => (string) ( $attrs['sub1'] ?? $attrs['user_click_id'] ?? '' ),
+            'subid1'           => (string) ( $attrs['sub1'] ?? '' ),
 
             // Кампания / оффер
-            'advcampaign_id'   => (string) ($attrs['offer_id'] ?? ''),
-            'advcampaign_name' => (string) ($attrs['creative_title'] ?? $attrs['offer_type'] ?? ''),
+            'advcampaign_id'   => (string) ( $attrs['offer_id'] ?? '' ),
+            'advcampaign_name' => (string) ( $attrs['creative_title'] ?? $attrs['offer_type'] ?? '' ),
             'website_id'       => '',
 
             // EPN-специфичные
-            'transactionId'    => (string) ($attrs['transactionId'] ?? ''),
-            'country_code'     => (string) ($attrs['country_code'] ?? ''),
-        ];
+            'transactionId'    => (string) ( $attrs['transactionId'] ?? '' ),
+            'country_code'     => (string) ( $attrs['country_code'] ?? '' ),
+        );
 
         // Динамический маппинг: click_field может указывать на click_id, sub1 и т.д.
-        if ($click_field !== 'click_id' && isset($attrs[$click_field])) {
-            $action[$click_field] = (string) $attrs[$click_field];
+        if ($click_field !== 'click_id' && isset($attrs[ $click_field ])) {
+            $action[ $click_field ] = (string) $attrs[ $click_field ];
         }
-        if ($user_field !== 'sub2' && isset($attrs[$user_field])) {
-            $action[$user_field] = (string) $attrs[$user_field];
+        if ($user_field !== 'sub2' && isset($attrs[ $user_field ])) {
+            $action[ $user_field ] = (string) $attrs[ $user_field ];
         }
 
         return $action;
@@ -664,8 +663,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
     /**
      * Конвертация даты из формата Admitad (dd.mm.yyyy) в EPN (yyyy-mm-dd)
      */
-    private static function convert_date(string $date): string
-    {
+    private static function convert_date( string $date ): string {
         // "01.01.2020" → "2020-01-01"
         $parts = explode('.', $date);
         if (count($parts) === 3) {
@@ -679,11 +677,9 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base
      *
      * EPN statusUpdatedStart/statusUpdatedEnd принимают только дату без времени.
      */
-    private static function convert_datetime(string $datetime): string
-    {
+    private static function convert_datetime( string $datetime ): string {
         // "01.01.2020 00:00:00" → "2020-01-01"
         $date_part = explode(' ', $datetime)[0];
         return self::convert_date($date_part);
     }
-
 }

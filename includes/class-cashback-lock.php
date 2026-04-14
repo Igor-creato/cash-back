@@ -18,8 +18,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class Cashback_Lock
-{
+class Cashback_Lock {
+
     /** @var string Имя MySQL advisory lock */
     const LOCK_NAME = 'cashback_global_lock';
 
@@ -44,8 +44,7 @@ class Cashback_Lock
      * @param int $timeout Таймаут ожидания в секундах (0 = не ждать)
      * @return bool true если lock захвачен
      */
-    public static function acquire(int $timeout = 0): bool
-    {
+    public static function acquire( int $timeout = 0 ): bool {
         global $wpdb;
 
         if (self::$lock_held) {
@@ -57,8 +56,8 @@ class Cashback_Lock
 
         // MySQL GET_LOCK — основной механизм
         $lock_name = self::get_prefixed_lock_name();
-        $result = $wpdb->get_var($wpdb->prepare(
-            "SELECT GET_LOCK(%s, %d)",
+        $result    = $wpdb->get_var($wpdb->prepare(
+            'SELECT GET_LOCK(%s, %d)',
             $lock_name,
             $timeout
         ));
@@ -68,11 +67,11 @@ class Cashback_Lock
         }
 
         // wp_options запись — для видимости из других процессов (IS_FREE_LOCK не всегда надёжен)
-        update_option(self::OPTION_KEY, [
+        update_option(self::OPTION_KEY, array(
             'pid'        => getmypid(),
             'started_at' => time(),
             'expires_at' => time() + self::LOCK_TTL,
-        ], false); // autoload = false
+        ), false); // autoload = false
 
         self::$lock_held = true;
 
@@ -84,8 +83,7 @@ class Cashback_Lock
      *
      * @return void
      */
-    public static function release(): void
-    {
+    public static function release(): void {
         global $wpdb;
 
         if (!self::$lock_held) {
@@ -93,7 +91,7 @@ class Cashback_Lock
         }
 
         $lock_name = self::get_prefixed_lock_name();
-        $wpdb->get_var($wpdb->prepare("SELECT RELEASE_LOCK(%s)", $lock_name));
+        $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $lock_name));
 
         delete_option(self::OPTION_KEY);
         self::$lock_held = false;
@@ -107,8 +105,7 @@ class Cashback_Lock
      *
      * @return bool true если lock активен
      */
-    public static function is_lock_active(): bool
-    {
+    public static function is_lock_active(): bool {
         // Быстрая проверка через wp_options (не требует GET_LOCK)
         $lock_data = get_option(self::OPTION_KEY);
 
@@ -119,7 +116,7 @@ class Cashback_Lock
         // Дополнительно проверяем через MySQL IS_FREE_LOCK — он является источником правды
         global $wpdb;
         $lock_name = self::get_prefixed_lock_name();
-        $is_free = $wpdb->get_var($wpdb->prepare("SELECT IS_FREE_LOCK(%s)", $lock_name));
+        $is_free   = $wpdb->get_var($wpdb->prepare('SELECT IS_FREE_LOCK(%s)', $lock_name));
 
         // IS_FREE_LOCK: 1 = свободен, 0 = занят, NULL = ошибка
         if ((int) $is_free === 1) {
@@ -145,8 +142,7 @@ class Cashback_Lock
      *
      * @return bool
      */
-    public static function is_lock_held_by_current_process(): bool
-    {
+    public static function is_lock_held_by_current_process(): bool {
         return self::$lock_held;
     }
 
@@ -155,27 +151,26 @@ class Cashback_Lock
      *
      * @return array{active: bool, pid: int|null, started_at: int|null, expires_at: int|null}
      */
-    public static function get_lock_info(): array
-    {
+    public static function get_lock_info(): array {
         $lock_data = get_option(self::OPTION_KEY);
 
         if (empty($lock_data) || !is_array($lock_data)) {
-            return [
+            return array(
                 'active'     => false,
                 'pid'        => null,
                 'started_at' => null,
                 'expires_at' => null,
-            ];
+            );
         }
 
         $active = self::is_lock_active();
 
-        return [
+        return array(
             'active'     => $active,
             'pid'        => $lock_data['pid'] ?? null,
             'started_at' => $lock_data['started_at'] ?? null,
             'expires_at' => $lock_data['expires_at'] ?? null,
-        ];
+        );
     }
 
     /**
@@ -183,8 +178,7 @@ class Cashback_Lock
      *
      * @return void
      */
-    private static function cleanup_stale_lock(): void
-    {
+    private static function cleanup_stale_lock(): void {
         $lock_data = get_option(self::OPTION_KEY);
 
         if (empty($lock_data) || !is_array($lock_data)) {
@@ -205,7 +199,7 @@ class Cashback_Lock
             // иначе оставляем — acquire() не сможет захватить lock в любом случае.
             global $wpdb;
             $lock_name = self::get_prefixed_lock_name();
-            $is_free = $wpdb->get_var($wpdb->prepare("SELECT IS_FREE_LOCK(%s)", $lock_name));
+            $is_free   = $wpdb->get_var($wpdb->prepare('SELECT IS_FREE_LOCK(%s)', $lock_name));
 
             if ((int) $is_free === 1) {
                 // MySQL lock уже свободен (соединение закрылось) — чистим wp_options
@@ -223,8 +217,7 @@ class Cashback_Lock
      *
      * @return string
      */
-    private static function get_prefixed_lock_name(): string
-    {
+    private static function get_prefixed_lock_name(): string {
         global $wpdb;
         return $wpdb->prefix . self::LOCK_NAME;
     }

@@ -9,8 +9,8 @@ if (!defined('ABSPATH')) {
 /**
  * Основной класс плагина для управления базой данных кэшбэка
  */
-class Mariadb_Plugin
-{
+class Mariadb_Plugin {
+
     /**
      * Экземпляр класса (singleton)
      */
@@ -21,8 +21,7 @@ class Mariadb_Plugin
      *
      * @return self
      */
-    public static function get_instance(): self
-    {
+    public static function get_instance(): self {
         if (null === self::$instance) {
             self::$instance = new self();
         }
@@ -32,13 +31,12 @@ class Mariadb_Plugin
     /**
      * Конструктор
      */
-    private function __construct()
-    {
-        add_action('user_register', function (int $user_id): void {
+    private function __construct() {
+        add_action('user_register', function ( int $user_id ): void {
             $this->add_user_to_cashback_tables($user_id);
         });
 
-        add_action('wp_login', function (string $user_login, $user): void {
+        add_action('wp_login', function ( string $user_login, $user ): void {
             $this->add_user_to_cashback_tables((int) $user->ID);
         }, 10, 2);
     }
@@ -51,8 +49,7 @@ class Mariadb_Plugin
      * @return string Безопасный префикс
      * @throws Exception Если префикс содержит недопустимые символы
      */
-    private function validate_table_prefix(string $prefix): string
-    {
+    private function validate_table_prefix( string $prefix ): string {
         // Префикс может содержать только буквы, цифры и подчеркивания
         if (!preg_match('/^[a-zA-Z0-9_]+$/', $prefix)) {
             throw new Exception('Invalid table prefix detected: ' . esc_html($prefix));
@@ -65,8 +62,7 @@ class Mariadb_Plugin
      *
      * @return void
      */
-    public static function activate(): void
-    {
+    public static function activate(): void {
         $instance = self::get_instance();
 
         // Подавляем вывод при создании таблиц и триггеров
@@ -97,12 +93,11 @@ class Mariadb_Plugin
      * Конвертация wp_users в InnoDB если используется MyISAM.
      * Необходимо для создания FK constraints к wp_users.
      */
-    private function ensure_users_table_innodb(): void
-    {
+    private function ensure_users_table_innodb(): void {
         global $wpdb;
 
         $engine = $wpdb->get_var($wpdb->prepare(
-            "SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s",
+            'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
             $wpdb->users
         ));
 
@@ -116,8 +111,7 @@ class Mariadb_Plugin
     /**
      * Создание таблиц
      */
-    private function create_tables()
-    {
+    private function create_tables() {
         global $wpdb;
 
         $charset_collate = $wpdb->get_charset_collate();
@@ -486,25 +480,25 @@ class Mariadb_Plugin
         ) ENGINE=InnoDB {$charset_collate} COMMENT='История изменений ставок кэшбэка и партнёрской комиссии';";
 
         // Порядок создания: сначала справочники, потом зависимые таблицы
-        $tables = [
-            'cashback_payout_methods'          => $table_payout_methods,
-            'cashback_banks'                   => $table_banks,
-            'cashback_affiliate_networks'      => $table_affiliate_networks,
-            'cashback_affiliate_network_params' => $table_affiliate_network_params,
-            'cashback_payout_requests'         => $table_payout_requests,
-            'cashback_transactions'            => $table_transactions,
+        $tables = array(
+            'cashback_payout_methods'            => $table_payout_methods,
+            'cashback_banks'                     => $table_banks,
+            'cashback_affiliate_networks'        => $table_affiliate_networks,
+            'cashback_affiliate_network_params'  => $table_affiliate_network_params,
+            'cashback_payout_requests'           => $table_payout_requests,
+            'cashback_transactions'              => $table_transactions,
             'cashback_unregistered_transactions' => $table_unregistered,
-            'cashback_user_balance'            => $table_balance,
-            'cashback_balance_ledger'          => $table_balance_ledger,
-            'cashback_webhooks'                => $table_webhooks,
-            'cashback_user_profile'            => $table_profile,
-            'cashback_click_log'               => $table_click_log,
-            'cashback_validation_checkpoints'  => $table_validation_checkpoints,
-            'cashback_sync_log'                => $table_sync_log,
-            'cashback_rate_history'            => $table_rate_history,
-        ];
+            'cashback_user_balance'              => $table_balance,
+            'cashback_balance_ledger'            => $table_balance_ledger,
+            'cashback_webhooks'                  => $table_webhooks,
+            'cashback_user_profile'              => $table_profile,
+            'cashback_click_log'                 => $table_click_log,
+            'cashback_validation_checkpoints'    => $table_validation_checkpoints,
+            'cashback_sync_log'                  => $table_sync_log,
+            'cashback_rate_history'              => $table_rate_history,
+        );
 
-        $failed_tables = [];
+        $failed_tables = array();
 
         foreach ($tables as $table_name => $sql) {
             $full_table_name = $wpdb->prefix . $table_name;
@@ -521,7 +515,7 @@ class Mariadb_Plugin
             } else {
                 // Проверяем что таблица действительно существует
                 $exists = $wpdb->get_var(
-                    $wpdb->prepare("SHOW TABLES LIKE %s", $full_table_name)
+                    $wpdb->prepare('SHOW TABLES LIKE %s', $full_table_name)
                 );
                 if (!$exists) {
                     $failed_tables[] = $table_name . ': table not created (no error reported)';
@@ -558,11 +552,10 @@ class Mariadb_Plugin
      * - CHECK не поддерживается в MySQL < 8.0.16
      * Ошибки не фатальны — таблицы работают и без ограничений на уровне БД.
      */
-    private function add_table_constraints(): void
-    {
+    private function add_table_constraints(): void {
         global $wpdb;
 
-        $constraints = [
+        $constraints = array(
             // cashback_payout_requests
             "ALTER TABLE `{$wpdb->prefix}cashback_payout_requests`
                 ADD CONSTRAINT `fk_payout_user` FOREIGN KEY (`user_id`)
@@ -628,7 +621,7 @@ class Mariadb_Plugin
             "ALTER TABLE `{$wpdb->prefix}cashback_balance_ledger`
                 ADD CONSTRAINT `fk_ledger_payout` FOREIGN KEY (`payout_request_id`)
                 REFERENCES `{$wpdb->prefix}cashback_payout_requests` (`id`) ON DELETE SET NULL",
-        ];
+        );
 
         $suppress = $wpdb->suppress_errors(true);
 
@@ -648,8 +641,7 @@ class Mariadb_Plugin
      *
      * @return void
      */
-    private function insert_default_payout_methods(): void
-    {
+    private function insert_default_payout_methods(): void {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_payout_methods';
 
@@ -662,12 +654,17 @@ class Mariadb_Plugin
         }
 
         // Начальные способы выплат
-        $defaults = [
-            ['slug' => 'sbp', 'name' => 'СБП Система быстрых платежей', 'is_active' => 1, 'sort_order' => 1],
-        ];
+        $defaults = array(
+            array(
+				'slug'       => 'sbp',
+				'name'       => 'СБП Система быстрых платежей',
+				'is_active'  => 1,
+				'sort_order' => 1,
+			),
+        );
 
         foreach ($defaults as $method) {
-            $wpdb->insert($table, $method, ['%s', '%s', '%d', '%d']);
+            $wpdb->insert($table, $method, array( '%s', '%s', '%d', '%d' ));
             if ($wpdb->last_error) {
                 error_log('Mariadb Plugin Error: Failed to insert payout method: ' . $wpdb->last_error);
             }
@@ -681,8 +678,7 @@ class Mariadb_Plugin
      *
      * @return void
      */
-    private function insert_default_banks(): void
-    {
+    private function insert_default_banks(): void {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_banks';
 
@@ -695,12 +691,18 @@ class Mariadb_Plugin
         }
 
         // Начальные банки
-        $defaults = [
-            ['bank_code' => 'sber', 'name' => 'Сбербанк', 'short_name' => 'Сбербанк', 'is_active' => 1, 'sort_order' => 1],
-        ];
+        $defaults = array(
+            array(
+				'bank_code'  => 'sber',
+				'name'       => 'Сбербанк',
+				'short_name' => 'Сбербанк',
+				'is_active'  => 1,
+				'sort_order' => 1,
+			),
+        );
 
         foreach ($defaults as $bank) {
-            $wpdb->insert($table, $bank, ['%s', '%s', '%s', '%d', '%d']);
+            $wpdb->insert($table, $bank, array( '%s', '%s', '%s', '%d', '%d' ));
             if ($wpdb->last_error) {
                 error_log('Mariadb Plugin Error: Failed to insert bank: ' . $wpdb->last_error);
             }
@@ -713,8 +715,7 @@ class Mariadb_Plugin
      * Заполнить дефолтную API-конфигурацию для Admitad и EPN.
      * Только если колонки api_base_url пустые (не перезаписывает ручную настройку).
      */
-    private function insert_default_api_config(): void
-    {
+    private function insert_default_api_config(): void {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_affiliate_networks';
 
@@ -727,30 +728,30 @@ class Mariadb_Plugin
         if ($admitad_url === null || $admitad_url === '') {
             $wpdb->update(
                 $table,
-                [
+                array(
                     'api_base_url'         => 'https://api.admitad.com',
                     'api_token_endpoint'   => '/token/',
                     'api_actions_endpoint' => '/statistics/actions/',
                     'api_user_field'       => 'subid',
                     'api_click_field'      => 'subid1',
-                    'api_status_map'       => wp_json_encode([
+                    'api_status_map'       => wp_json_encode(array(
                         'pending'  => 'waiting',
                         'approved' => 'completed',
                         'declined' => 'declined',
                         'rejected' => 'declined',
                         'open'     => 'waiting',
                         'hold'     => 'waiting',
-                    ]),
-                    'api_field_map'        => wp_json_encode([
+                    )),
+                    'api_field_map'        => wp_json_encode(array(
                         'payment'          => 'comission',
                         'cart'             => 'sum_order',
                         'action_id'        => 'uniq_id',
                         'order_id'         => 'order_number',
                         'advcampaign_id'   => 'offer_id',
                         'advcampaign_name' => 'offer_name',
-                    ]),
-                ],
-                ['slug' => 'admitad']
+                    )),
+                ),
+                array( 'slug' => 'admitad' )
             );
         }
 
@@ -763,29 +764,29 @@ class Mariadb_Plugin
         if ($epn_url === null || $epn_url === '') {
             $wpdb->update(
                 $table,
-                [
+                array(
                     'api_base_url'         => 'https://oauth2.epn.bz',
                     'api_token_endpoint'   => '/token',
                     'api_actions_endpoint' => 'https://app.epn.bz/transactions/user',
                     'api_user_field'       => 'sub',
                     'api_click_field'      => 'click_id',
-                    'api_status_map'       => wp_json_encode([
+                    'api_status_map'       => wp_json_encode(array(
                         'pending'  => 'waiting',
                         'approved' => 'completed',
                         'rejected' => 'declined',
                         'canceled' => 'declined',
                         'hold'     => 'waiting',
-                    ]),
-                    'api_field_map'        => wp_json_encode([
+                    )),
+                    'api_field_map'        => wp_json_encode(array(
                         'payment'          => 'comission',
                         'cart'             => 'sum_order',
                         'action_id'        => 'uniq_id',
                         'order_id'         => 'order_number',
                         'advcampaign_id'   => 'offer_id',
                         'advcampaign_name' => 'offer_name',
-                    ]),
-                ],
-                ['slug' => 'epn']
+                    )),
+                ),
+                array( 'slug' => 'epn' )
             );
         }
     }
@@ -793,8 +794,7 @@ class Mariadb_Plugin
     /**
      * Создание таблицы аудит-лога
      */
-    private function create_audit_log_table(): void
-    {
+    private function create_audit_log_table(): void {
         global $wpdb;
         $charset_collate = $wpdb->get_charset_collate();
 
@@ -823,23 +823,21 @@ class Mariadb_Plugin
     /**
      * Публичный метод для пересоздания триггеров (для миграций без реактивации).
      */
-    public function recreate_triggers(): void
-    {
+    public function recreate_triggers(): void {
         $this->create_triggers();
     }
 
     /**
      * Создание триггеров
      */
-    private function create_triggers()
-    {
+    private function create_triggers() {
         global $wpdb;
 
         // Валидация префикса таблицы для безопасности
         $safe_prefix = $this->validate_table_prefix($wpdb->prefix);
 
         // Удаляем существующие триггеры перед созданием новых
-        $drop_triggers = [
+        $drop_triggers = array(
             "DROP TRIGGER IF EXISTS `{$safe_prefix}calculate_cashback_before_insert`;",
             "DROP TRIGGER IF EXISTS `{$safe_prefix}calculate_cashback_before_insert_unregistered`;",
             "DROP TRIGGER IF EXISTS `{$safe_prefix}calculate_cashback_before_update`;",
@@ -854,7 +852,7 @@ class Mariadb_Plugin
             "DROP TRIGGER IF EXISTS `{$safe_prefix}tr_prevent_update_failed_payout`;",
             "DROP TRIGGER IF EXISTS `{$safe_prefix}tr_banned_user_update_banned_at`;",
             "DROP TRIGGER IF EXISTS `{$safe_prefix}tr_webhook_payload_hash`;",
-        ];
+        );
 
         foreach ($drop_triggers as $drop_trigger) {
             $result = $wpdb->query($drop_trigger);
@@ -863,7 +861,7 @@ class Mariadb_Plugin
             }
         }
 
-        $triggers = [
+        $triggers = array(
             "CREATE TRIGGER `{$safe_prefix}calculate_cashback_before_insert`
             BEFORE INSERT ON `{$safe_prefix}cashback_transactions`
             FOR EACH ROW
@@ -1114,9 +1112,9 @@ class Mariadb_Plugin
                     SET NEW.payload_hash = SHA2(NEW.payload, 256);
                 END IF;
             END;",
-        ];
+        );
 
-        $failed_triggers = [];
+        $failed_triggers = array();
         foreach ($triggers as $trigger) {
             $result = $wpdb->query($trigger);
             if ($result === false) {
@@ -1137,8 +1135,7 @@ class Mariadb_Plugin
     /**
      * Создание событий
      */
-    private function create_events()
-    {
+    private function create_events() {
         global $wpdb;
 
         // Валидация префикса таблицы для безопасности
@@ -1150,17 +1147,17 @@ class Mariadb_Plugin
         $wpdb->query("DROP EVENT IF EXISTS `{$safe_prefix}cashback_ev_confirmed_cashback`");
 
         // Дропаем остальные события перед пересозданием
-        $drops = [
+        $drops = array(
             "DROP EVENT IF EXISTS `{$safe_prefix}cashback_ev_cleanup_cashback_webhooks_old`",
             "DROP EVENT IF EXISTS `{$safe_prefix}cashback_ev_cleanup_click_log`",
             "DROP EVENT IF EXISTS `{$safe_prefix}cashback_ev_mark_inactive_profiles`",
-        ];
+        );
 
         foreach ($drops as $drop) {
             $wpdb->query($drop);
         }
 
-        $events = [
+        $events = array(
             // Событие ежедневно проверяет и удаляет старые вебхуки если старше 6 месяцев
             "CREATE EVENT IF NOT EXISTS `{$safe_prefix}cashback_ev_cleanup_cashback_webhooks_old`
             ON SCHEDULE EVERY 1 DAY
@@ -1202,10 +1199,10 @@ class Mariadb_Plugin
                     LIMIT 1000;
                     DO RELEASE_LOCK('cashback_inactive_profiles_lock');
                 END IF;
-            END;"
-        ];
+            END;",
+        );
 
-        $failed_events = [];
+        $failed_events = array();
         foreach ($events as $event) {
             $result = $wpdb->query($event);
             if ($result === false) {
@@ -1229,21 +1226,20 @@ class Mariadb_Plugin
     /**
      * Инициализация существующих пользователей
      */
-    private function initialize_existing_users()
-    {
+    private function initialize_existing_users() {
         global $wpdb;
 
-        $batch_size = 500;
-        $offset = 0;
+        $batch_size        = 500;
+        $offset            = 0;
         $total_initialized = 0;
-        $total_errors = 0;
+        $total_errors      = 0;
 
         do {
             $user_ids = get_users(array(
                 'fields' => 'ID',
                 'number' => $batch_size,
                 'offset' => $offset,
-                'who' => '',
+                'who'    => '',
             ));
 
             if (empty($user_ids)) {
@@ -1254,9 +1250,9 @@ class Mariadb_Plugin
                 $result = $this->add_user_to_cashback_tables((int) $user_id);
                 if (!$result) {
                     error_log("[Cashback] Failed to initialize user {$user_id}: " . $wpdb->last_error);
-                    $total_errors++;
+                    ++$total_errors;
                 } else {
-                    $total_initialized++;
+                    ++$total_initialized;
                 }
             }
 
@@ -1281,8 +1277,7 @@ class Mariadb_Plugin
      *
      * @return bool True при успехе, false при ошибке.
      */
-    public function add_user_to_profile(int $user_id): bool
-    {
+    public function add_user_to_profile( int $user_id ): bool {
         global $wpdb;
         $table_name = $wpdb->prefix . 'cashback_user_profile';
 
@@ -1292,7 +1287,7 @@ class Mariadb_Plugin
             // INSERT IGNORE атомарно игнорирует дубли по PRIMARY KEY (user_id)
             // Защита от race condition
             $partner_token = self::generate_partner_token();
-            $result = $wpdb->query($wpdb->prepare(
+            $result        = $wpdb->query($wpdb->prepare(
                 "INSERT IGNORE INTO {$table_name} (user_id, partner_token, status, created_at) VALUES (%d, %s, 'active', NOW())",
                 $user_id,
                 $partner_token
@@ -1300,7 +1295,7 @@ class Mariadb_Plugin
 
             // $result = 0 если запись уже существовала (игнорирована)
             // $result > 0 если запись была успешно создана
-            $created = ($result > 0);
+            $created = ( $result > 0 );
 
             if ($created) {
                 error_log('Mariadb Plugin: Created new profile for user ID: ' . $user_id);
@@ -1331,8 +1326,7 @@ class Mariadb_Plugin
      *
      * @return bool True при успехе, false при ошибке.
      */
-    public function add_user_to_balance(int $user_id, bool $is_new_user = true): bool
-    {
+    public function add_user_to_balance( int $user_id, bool $is_new_user = true ): bool {
         global $wpdb;
         $table_name = $wpdb->prefix . 'cashback_user_balance';
 
@@ -1363,8 +1357,7 @@ class Mariadb_Plugin
      *
      * @return bool True при успехе, false при ошибке.
      */
-    public function add_user_to_cashback_tables(int $user_id): bool
-    {
+    public function add_user_to_cashback_tables( int $user_id ): bool {
         global $wpdb;
 
         // Проверяем, существует ли профиль пользователя
@@ -1408,18 +1401,17 @@ class Mariadb_Plugin
      *
      * @return string Reference ID в формате WD-XXXXXXXX
      */
-    public static function generate_reference_id(): string
-    {
+    public static function generate_reference_id(): string {
         // 31 символ: цифры 2-9 (8) + буквы A-Z без O, I, L (23) = 31
-        $charset = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+        $charset     = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
         $charset_len = 31;
-        $id_length = 8;
+        $id_length   = 8;
 
         $random_bytes = random_bytes($id_length);
-        $result = 'WD-';
+        $result       = 'WD-';
 
         for ($i = 0; $i < $id_length; $i++) {
-            $result .= $charset[ord($random_bytes[$i]) % $charset_len];
+            $result .= $charset[ ord($random_bytes[ $i ]) % $charset_len ];
         }
 
         return $result;
@@ -1447,20 +1439,23 @@ class Mariadb_Plugin
      *
      * @return array{processed: int, ledger_inserted: int, errors: string[]}
      */
-    public static function process_ready_transactions(): array
-    {
+    public static function process_ready_transactions(): array {
         global $wpdb;
         $prefix = $wpdb->prefix;
 
         // Проверяем что глобальный lock удержан (вызов разрешён только из sync)
         if (class_exists('Cashback_Lock') && !Cashback_Lock::is_lock_held_by_current_process()) {
             error_log('[Cashback] process_ready_transactions called without global lock — DENIED');
-            return ['processed' => 0, 'ledger_inserted' => 0, 'errors' => ['Global lock not held']];
+            return array(
+				'processed'       => 0,
+				'ledger_inserted' => 0,
+				'errors'          => array( 'Global lock not held' ),
+			);
         }
 
-        $errors = [];
+        $errors          = array();
         $total_processed = 0;
-        $total_ledger = 0;
+        $total_ledger    = 0;
 
         try {
             $batch_id = cashback_generate_uuid7(false);
@@ -1506,15 +1501,15 @@ class Mariadb_Plugin
 
                 // ШАГ 2: INSERT IGNORE в леджер (идемпотентный — дубли пропускаются)
                 // Каждая транзакция = одна запись в леджере с idempotency_key = "accrual_{id}"
-                $ledger_values = [];
-                $ledger_args = [];
+                $ledger_values = array();
+                $ledger_args   = array();
                 foreach ($candidates as $row) {
                     $ledger_values[] = '(%d, %s, %s, %d, %s)';
-                    $ledger_args[] = (int) $row['user_id'];
-                    $ledger_args[] = 'accrual';
-                    $ledger_args[] = number_format((float) $row['cashback'], 2, '.', '');
-                    $ledger_args[] = (int) $row['id'];
-                    $ledger_args[] = 'accrual_' . $row['id'];
+                    $ledger_args[]   = (int) $row['user_id'];
+                    $ledger_args[]   = 'accrual';
+                    $ledger_args[]   = number_format((float) $row['cashback'], 2, '.', '');
+                    $ledger_args[]   = (int) $row['id'];
+                    $ledger_args[]   = 'accrual_' . $row['id'];
                 }
 
                 $values_sql = implode(', ', $ledger_values);
@@ -1612,11 +1607,11 @@ class Mariadb_Plugin
             error_log('[Cashback] process_ready_transactions error: ' . $e->getMessage());
         }
 
-        return [
+        return array(
             'processed'       => $total_processed,
             'ledger_inserted' => $total_ledger,
             'errors'          => $errors,
-        ];
+        );
     }
 
     /**
@@ -1632,12 +1627,11 @@ class Mariadb_Plugin
      * @param int $user_id ID пользователя
      * @return array{consistent: bool, details: array}
      */
-    public static function validate_user_balance_consistency(int $user_id): array
-    {
+    public static function validate_user_balance_consistency( int $user_id ): array {
         global $wpdb;
         $prefix = $wpdb->prefix;
 
-        $issues = [];
+        $issues = array();
 
         // 1. Суммы из леджера по типам операций
         $ledger_sums = $wpdb->get_results($wpdb->prepare(
@@ -1648,22 +1642,22 @@ class Mariadb_Plugin
             $user_id
         ), ARRAY_A);
 
-        $sums = [
-            'accrual'             => '0.00',
-            'payout_hold'         => '0.00',
-            'payout_complete'     => '0.00',
-            'payout_cancel'       => '0.00',
-            'payout_declined'     => '0.00',
-            'adjustment'          => '0.00',
-            'affiliate_accrual'   => '0.00',
-            'affiliate_reversal'  => '0.00',
-            'affiliate_freeze'    => '0.00',
-            'affiliate_unfreeze'  => '0.00',
-        ];
-        $counts = [];
+        $sums   = array(
+            'accrual'            => '0.00',
+            'payout_hold'        => '0.00',
+            'payout_complete'    => '0.00',
+            'payout_cancel'      => '0.00',
+            'payout_declined'    => '0.00',
+            'adjustment'         => '0.00',
+            'affiliate_accrual'  => '0.00',
+            'affiliate_reversal' => '0.00',
+            'affiliate_freeze'   => '0.00',
+            'affiliate_unfreeze' => '0.00',
+        );
+        $counts = array();
         foreach ($ledger_sums as $row) {
-            $sums[$row['type']] = $row['total'];
-            $counts[$row['type']] = (int) $row['cnt'];
+            $sums[ $row['type'] ]   = $row['total'];
+            $counts[ $row['type'] ] = (int) $row['cnt'];
         }
 
         // Абсолютные значен��я сумм (все hold/complete/declined записаны как отрицательные)
@@ -1727,12 +1721,12 @@ class Mariadb_Plugin
         $cache_paid      = $cache['paid_balance'] ?? '0.00';
 
         // 3. Сравнени��
-        $frozen = $cache['frozen_balance'] ?? '0.00';
+        $frozen    = $cache['frozen_balance'] ?? '0.00';
         $is_banned = bccomp($frozen, '0', 2) > 0;
 
         // ��сновная проверка: сумма в��ех денег в си��теме должна совпадать
         $ledger_total = bcadd(bcadd(bcadd($ledger_available, $ledger_pending, 2), $ledger_paid, 2), $ledger_frozen, 2);
-        $cache_total = bcadd(bcadd(bcadd($cache_available, $cache_pending, 2), $cache_paid, 2), $frozen, 2);
+        $cache_total  = bcadd(bcadd(bcadd($cache_available, $cache_pending, 2), $cache_paid, 2), $frozen, 2);
 
         if (bccomp($ledger_total, $cache_total, 2) !== 0) {
             $issues[] = sprintf(
@@ -1832,20 +1826,20 @@ class Mariadb_Plugin
             $issues[] = sprintf('payout_complete without payout_hold: %d payouts', $payouts_without_hold);
         }
 
-        return [
+        return array(
             'consistent' => empty($issues),
-            'details'    => [
-                'ledger' => [
+            'details'    => array(
+                'ledger' => array(
                     'available' => $ledger_available,
                     'pending'   => $ledger_pending,
                     'paid'      => $ledger_paid,
                     'sums'      => $sums,
                     'counts'    => $counts,
-                ],
-                'cache' => $cache ?: [],
+                ),
+                'cache'  => $cache ?: array(),
                 'issues' => $issues,
-            ],
-        ];
+            ),
+        );
     }
 
     // =========================================================================
@@ -1860,8 +1854,7 @@ class Mariadb_Plugin
      *
      * @return string 32-символьный hex токен.
      */
-    public static function generate_partner_token(): string
-    {
+    public static function generate_partner_token(): string {
         return bin2hex(random_bytes(16));
     }
 
@@ -1874,8 +1867,7 @@ class Mariadb_Plugin
      *
      * @return string|null Partner token или null если пользователь не найден в профиле.
      */
-    public static function get_partner_token(int $user_id): ?string
-    {
+    public static function get_partner_token( int $user_id ): ?string {
         global $wpdb;
 
         if ($user_id <= 0) {
@@ -1943,8 +1935,7 @@ class Mariadb_Plugin
      *
      * @return int|null User ID или null если токен не найден.
      */
-    public static function resolve_partner_token(string $token): ?int
-    {
+    public static function resolve_partner_token( string $token ): ?int {
         global $wpdb;
 
         // Валидация формата: строго 32 hex символа
@@ -1969,25 +1960,24 @@ class Mariadb_Plugin
      *
      * @return array Ассоциативный массив [token => user_id].
      */
-    public static function resolve_partner_tokens_batch(array $tokens): array
-    {
+    public static function resolve_partner_tokens_batch( array $tokens ): array {
         global $wpdb;
 
         if (empty($tokens)) {
-            return [];
+            return array();
         }
 
         // Фильтруем валидные hex-токены
-        $valid_tokens = array_filter($tokens, function (string $t): bool {
+        $valid_tokens = array_filter($tokens, function ( string $t ): bool {
             return preg_match('/^[0-9a-f]{32}$/', $t) === 1;
         });
 
         if (empty($valid_tokens)) {
-            return [];
+            return array();
         }
 
         $valid_tokens = array_unique(array_values($valid_tokens));
-        $table = $wpdb->prefix . 'cashback_user_profile';
+        $table        = $wpdb->prefix . 'cashback_user_profile';
         $placeholders = implode(',', array_fill(0, count($valid_tokens), '%s'));
 
         $rows = $wpdb->get_results($wpdb->prepare(
@@ -1995,9 +1985,9 @@ class Mariadb_Plugin
             ...$valid_tokens
         ), ARRAY_A);
 
-        $map = [];
+        $map = array();
         foreach ($rows as $row) {
-            $map[$row['partner_token']] = (int) $row['user_id'];
+            $map[ $row['partner_token'] ] = (int) $row['user_id'];
         }
 
         return $map;
@@ -2007,14 +1997,13 @@ class Mariadb_Plugin
      * Миграция: добавление 'cashback_global' в ENUM rate_type таблицы cashback_rate_history.
      * Для новых установок ENUM уже содержит cashback_global в схеме CREATE TABLE.
      */
-    public function migrate_rate_history_enum(): void
-    {
+    public function migrate_rate_history_enum(): void {
         global $wpdb;
 
         $table = $wpdb->prefix . 'cashback_rate_history';
 
         $exists = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s",
+            'SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
             $table
         ));
 
@@ -2053,15 +2042,14 @@ class Mariadb_Plugin
      * Запись в очередь уведомлений перенесена на уровень приложения:
      * Python webhook worker (transaction_new) и PHP API sync (status/data changes).
      */
-    public function migrate_drop_notification_triggers(): void
-    {
+    public function migrate_drop_notification_triggers(): void {
         global $wpdb;
         $prefix = $wpdb->prefix;
 
-        $triggers = [
+        $triggers = array(
             "{$prefix}tr_notify_transaction_insert",
             "{$prefix}tr_notify_transaction_update",
-        ];
+        );
 
         foreach ($triggers as $trigger) {
             $wpdb->query("DROP TRIGGER IF EXISTS `{$trigger}`");
@@ -2073,14 +2061,13 @@ class Mariadb_Plugin
      * Формат: TX-XXXXXXXX (8 hex-символов из MD5(UUID()+RAND())).
      * Идемпотентная — проверяет наличие колонки/индекса через INFORMATION_SCHEMA.
      */
-    public function migrate_add_transaction_reference_id(): void
-    {
+    public function migrate_add_transaction_reference_id(): void {
         global $wpdb;
 
-        $tables = [
-            $wpdb->prefix . 'cashback_transactions'              => 'uk_tx_reference_id',
+        $tables = array(
+            $wpdb->prefix . 'cashback_transactions' => 'uk_tx_reference_id',
             $wpdb->prefix . 'cashback_unregistered_transactions' => 'uk_utx_reference_id',
-        ];
+        );
 
         foreach ($tables as $table => $uk_name) {
             $column_exists = $wpdb->get_var(
@@ -2109,7 +2096,7 @@ class Mariadb_Plugin
             if ($empty_count > 0) {
                 // Временно отключаем триггер валидации статусов — он блокирует UPDATE записей с order_status='balance'.
                 // Триггер будет пересоздан в recreate_triggers() после миграции.
-                $trigger_name = ($table === $wpdb->prefix . 'cashback_transactions')
+                $trigger_name = ( $table === $wpdb->prefix . 'cashback_transactions' )
                     ? $wpdb->prefix . 'cashback_tr_validate_status_transition'
                     : $wpdb->prefix . 'cashback_tr_validate_status_transition_unregistered';
 
@@ -2126,9 +2113,9 @@ class Mariadb_Plugin
                         break;
                     }
 
-                    $cases = [];
+                    $cases = array();
                     foreach ($ids as $id) {
-                        $ref = 'TX-' . strtoupper(substr(md5(wp_generate_uuid4() . wp_rand()), 0, 8));
+                        $ref     = 'TX-' . strtoupper(substr(md5(wp_generate_uuid4() . wp_rand()), 0, 8));
                         $cases[] = $wpdb->prepare('WHEN %d THEN %s', (int) $id, $ref);
                     }
 
@@ -2148,7 +2135,7 @@ class Mariadb_Plugin
             // UNIQUE KEY
             $index_exists = $wpdb->get_var(
                 $wpdb->prepare(
-                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND INDEX_NAME = %s",
+                    'SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND INDEX_NAME = %s',
                     $table,
                     $uk_name
                 )
@@ -2162,7 +2149,6 @@ class Mariadb_Plugin
             }
         }
     }
-
 }
 
 // Инициализация Mariadb_Plugin происходит через CashbackPlugin::initialize_components()

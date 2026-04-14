@@ -22,21 +22,19 @@ if (!defined('ABSPATH')) {
  *   guest   = hide (по умолчанию) | login_link | text
  *   decimals = 2 (по умолчанию) — количество знаков после запятой
  */
-class Cashback_Shortcodes
-{
+class Cashback_Shortcodes {
+
     private static ?self $instance = null;
 
-    public static function get_instance(): self
-    {
+    public static function get_instance(): self {
         if (null === self::$instance) {
             self::$instance = new self();
         }
         return self::$instance;
     }
 
-    private function __construct()
-    {
-        add_shortcode('cashback_balance', [$this, 'render_balance']);
+    private function __construct() {
+        add_shortcode('cashback_balance', array( $this, 'render_balance' ));
     }
 
     /**
@@ -45,14 +43,13 @@ class Cashback_Shortcodes
      * @param array<string, string>|string $atts
      * @return string HTML-вывод
      */
-    public function render_balance($atts): string
-    {
-        $atts = shortcode_atts([
+    public function render_balance( $atts ): string {
+        $atts = shortcode_atts(array(
             'type'     => 'available',
             'format'   => 'widget',
             'guest'    => 'hide',
             'decimals' => '2',
-        ], $atts, 'cashback_balance');
+        ), $atts, 'cashback_balance');
 
         $type     = sanitize_key($atts['type']);
         $format   = sanitize_key($atts['format']);
@@ -83,8 +80,7 @@ class Cashback_Shortcodes
      *
      * @return array{available: float, pending: float, paid: float}
      */
-    private function get_balance(int $user_id): array
-    {
+    private function get_balance( int $user_id ): array {
         global $wpdb;
 
         $table = $wpdb->prefix . 'cashback_user_balance';
@@ -95,18 +91,17 @@ class Cashback_Shortcodes
             $user_id
         ));
 
-        return [
-            'available' => (float) ($row->available_balance ?? 0.0),
-            'pending'   => (float) ($row->pending_balance ?? 0.0),
-            'paid'      => (float) ($row->paid_balance ?? 0.0),
-        ];
+        return array(
+            'available' => (float) ( $row->available_balance ?? 0.0 ),
+            'pending'   => (float) ( $row->pending_balance ?? 0.0 ),
+            'paid'      => (float) ( $row->paid_balance ?? 0.0 ),
+        );
     }
 
     /**
      * Форматирует сумму: «1 234,56 ₽».
      */
-    private function format_amount(float $amount, int $decimals): string
-    {
+    private function format_amount( float $amount, int $decimals ): string {
         return number_format($amount, $decimals, ',', ' ') . ' ₽';
     }
 
@@ -115,9 +110,8 @@ class Cashback_Shortcodes
      *
      * @param array{available: float, pending: float, paid: float} $balance
      */
-    private function render_number(array $balance, string $type, int $decimals): string
-    {
-        $value = $balance[$type] ?? $balance['available'];
+    private function render_number( array $balance, string $type, int $decimals ): string {
+        $value = $balance[ $type ] ?? $balance['available'];
         return esc_html(number_format($value, $decimals, ',', ' '));
     }
 
@@ -126,16 +120,15 @@ class Cashback_Shortcodes
      *
      * @param array{available: float, pending: float, paid: float} $balance
      */
-    private function render_single_widget(array $balance, string $type, int $decimals): string
-    {
-        $labels = [
+    private function render_single_widget( array $balance, string $type, int $decimals ): string {
+        $labels = array(
             'available' => 'Баланс',
             'pending'   => 'В обработке',
             'paid'      => 'Выплачено',
-        ];
+        );
 
-        $value = $balance[$type] ?? $balance['available'];
-        $label = $labels[$type] ?? $labels['available'];
+        $value = $balance[ $type ] ?? $balance['available'];
+        $label = $labels[ $type ] ?? $labels['available'];
 
         ob_start();
 ?>
@@ -152,8 +145,7 @@ class Cashback_Shortcodes
      *
      * @param array{available: float, pending: float, paid: float} $balance
      */
-    private function render_all_widget(array $balance, int $decimals): string
-    {
+    private function render_all_widget( array $balance, int $decimals ): string {
         ob_start();
     ?>
         <div class="cashback-balance-widget">
@@ -177,8 +169,7 @@ class Cashback_Shortcodes
     /**
      * Вывод для неавторизованного пользователя.
      */
-    private function render_guest(string $mode): string
-    {
+    private function render_guest( string $mode ): string {
         if ($mode === 'hide') {
             return '';
         }

@@ -16,8 +16,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-interface Cashback_Network_Adapter_Interface
-{
+interface Cashback_Network_Adapter_Interface {
+
     /**
      * Slug сети, которую обслуживает адаптер (например, 'admitad', 'epn')
      */
@@ -39,7 +39,7 @@ interface Cashback_Network_Adapter_Interface
      * @param array $network_config Строка из cashback_affiliate_networks
      * @return string|null Токен или null при ошибке
      */
-    public function get_token(array $credentials, array $network_config): ?string;
+    public function get_token( array $credentials, array $network_config ): ?string;
 
     /**
      * Сформировать заголовки авторизации для API-запросов
@@ -48,7 +48,7 @@ interface Cashback_Network_Adapter_Interface
      * @param array $network_config Конфигурация сети
      * @return array|null Массив заголовков или null при ошибке
      */
-    public function build_auth_headers(array $credentials, array $network_config): ?array;
+    public function build_auth_headers( array $credentials, array $network_config ): ?array;
 
     /**
      * Получить ВСЕ действия из API с автоматической пагинацией
@@ -62,7 +62,7 @@ interface Cashback_Network_Adapter_Interface
      * @param array $network_config Конфигурация сети
      * @return array ['success' => bool, 'actions' => array, 'total' => int, 'error' => ?string]
      */
-    public function fetch_all_actions(array $credentials, array $params, int $max_pages, array $network_config): array;
+    public function fetch_all_actions( array $credentials, array $params, int $max_pages, array $network_config ): array;
 
     /**
      * Получить список кампаний/офферов с их статусами из API CPA-сети
@@ -79,7 +79,7 @@ interface Cashback_Network_Adapter_Interface
      * @param array $network_config Строка из cashback_affiliate_networks
      * @return array ['success' => bool, 'campaigns' => array, 'error' => ?string]
      */
-    public function fetch_campaigns(array $credentials, array $network_config): array;
+    public function fetch_campaigns( array $credentials, array $network_config ): array;
 
     /**
      * Маппинг статусов API → локальные по умолчанию
@@ -96,7 +96,7 @@ interface Cashback_Network_Adapter_Interface
      *
      * @param array $credentials Расшифрованные credentials (для вычисления cache key)
      */
-    public function invalidate_token(array $credentials): void;
+    public function invalidate_token( array $credentials ): void;
 
     /**
      * Последняя ошибка получения токена (для UI)

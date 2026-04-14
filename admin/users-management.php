@@ -11,44 +11,42 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class Cashback_Users_Management_Admin
-{
+class Cashback_Users_Management_Admin {
+
     use AdminPaginationTrait;
 
     private string $table_name;
     private string $profile_table_name;
 
-    public function __construct()
-    {
+    public function __construct() {
         global $wpdb;
-        $this->table_name = $wpdb->prefix . 'users';
+        $this->table_name         = $wpdb->prefix . 'users';
         $this->profile_table_name = $wpdb->prefix . 'cashback_user_profile';
 
         // Регистрируем хук для добавления пункта меню
-        add_action('admin_menu', [$this, 'add_admin_menu']);
+        add_action('admin_menu', array( $this, 'add_admin_menu' ));
 
         // Обработка AJAX запросов
-        add_action('wp_ajax_update_user_profile', [$this, 'handle_update_user_profile']);
-        add_action('wp_ajax_get_user_profile', [$this, 'handle_get_user_profile']);
-        add_action('wp_ajax_bulk_update_cashback_rate', [$this, 'handle_bulk_update_cashback_rate']);
+        add_action('wp_ajax_update_user_profile', array( $this, 'handle_update_user_profile' ));
+        add_action('wp_ajax_get_user_profile', array( $this, 'handle_get_user_profile' ));
+        add_action('wp_ajax_bulk_update_cashback_rate', array( $this, 'handle_bulk_update_cashback_rate' ));
 
         // Подключение скриптов
-        add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
+        add_action('admin_enqueue_scripts', array( $this, 'enqueue_admin_scripts' ));
     }
 
     /**
      * Подключение скриптов и стилей для админ-панели
      */
-    public function enqueue_admin_scripts(string $hook): void
-    {
-        $allowed_hooks = [
+    public function enqueue_admin_scripts( string $hook ): void {
+        $allowed_hooks = array(
             'cashback-overview_page_cashback-users',
             'toplevel_page_cashback-users',
-            'admin_page_cashback-users'
-        ];
+            'admin_page_cashback-users',
+        );
 
         $is_users_page = in_array($hook, $allowed_hooks, true) ||
-            (isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-users');
+            ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-users' );
 
         if (!$is_users_page) {
             return;
@@ -57,45 +55,43 @@ class Cashback_Users_Management_Admin
         wp_enqueue_style(
             'cashback-admin-users-css',
             plugins_url('../assets/css/admin.css', __FILE__),
-            [],
+            array(),
             '1.0.1'
         );
 
         wp_enqueue_script(
             'cashback-admin-users',
             plugins_url('../assets/js/admin-users-management.js', __FILE__),
-            ['jquery'],
+            array( 'jquery' ),
             '1.0.0',
             true
         );
 
-        wp_localize_script('cashback-admin-users', 'cashbackUsersData', [
-            'updateNonce' => wp_create_nonce('update_user_profile_nonce'),
-            'getNonce' => wp_create_nonce('get_user_profile_nonce'),
+        wp_localize_script('cashback-admin-users', 'cashbackUsersData', array(
+            'updateNonce'   => wp_create_nonce('update_user_profile_nonce'),
+            'getNonce'      => wp_create_nonce('get_user_profile_nonce'),
             'bulkRateNonce' => wp_create_nonce('bulk_update_cashback_rate_nonce'),
-        ]);
+        ));
     }
 
     /**
      * Добавляем подпункт меню в админке
      */
-    public function add_admin_menu(): void
-    {
+    public function add_admin_menu(): void {
         add_submenu_page(
             'cashback-overview',
             'Пользователи',
             'Пользователи',
             'manage_options',
             'cashback-users',
-            [$this, 'render_users_page']
+            array( $this, 'render_users_page' )
         );
     }
 
     /**
      * Отображаем страницу управления пользователями
      */
-    public function render_users_page(): void
-    {
+    public function render_users_page(): void {
         // Проверяем права доступа
         if (!current_user_can('manage_options')) {
             wp_die(__('У вас недостаточно прав для просмотра этой страницы.', 'cashback-plugin'));
@@ -105,16 +101,16 @@ class Cashback_Users_Management_Admin
 
         // Получаем параметры для пагинации и фильтрации
         $max_allowed_pages = 1000;
-        $current_page = isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1;
+        $current_page      = isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1;
         if ($current_page > $max_allowed_pages) {
             $current_page = $max_allowed_pages;
         }
         $per_page = 10;
-        $offset = ($current_page - 1) * $per_page;
+        $offset   = ( $current_page - 1 ) * $per_page;
 
         // Получаем фильтр статуса с валидацией по допустимому списку
-        $filter_status = isset($_GET['status']) ? sanitize_text_field(wp_unslash($_GET['status'])) : '';
-        $allowed_filter_statuses = ['active', 'noactive', 'banned', 'deleted'];
+        $filter_status           = isset($_GET['status']) ? sanitize_text_field(wp_unslash($_GET['status'])) : '';
+        $allowed_filter_statuses = array( 'active', 'noactive', 'banned', 'deleted' );
         if (!empty($filter_status) && !in_array($filter_status, $allowed_filter_statuses, true)) {
             $filter_status = '';
         }
@@ -123,19 +119,19 @@ class Cashback_Users_Management_Admin
         $search = isset($_GET['search']) ? sanitize_text_field(wp_unslash($_GET['search'])) : '';
 
         // Построение WHERE условий
-        $where_clauses = [];
-        $where_params = [];
+        $where_clauses = array();
+        $where_params  = array();
 
         if (!empty($filter_status)) {
             $where_clauses[] = 'cup.status = %s';
-            $where_params[] = $filter_status;
+            $where_params[]  = $filter_status;
         }
 
         if (!empty($search)) {
-            $like = '%' . $wpdb->esc_like($search) . '%';
+            $like            = '%' . $wpdb->esc_like($search) . '%';
             $where_clauses[] = '(u.user_email LIKE %s OR u.display_name LIKE %s)';
-            $where_params[] = $like;
-            $where_params[] = $like;
+            $where_params[]  = $like;
+            $where_params[]  = $like;
         }
 
         $where_sql = !empty($where_clauses)
@@ -143,12 +139,12 @@ class Cashback_Users_Management_Admin
             : 'WHERE %d = %d';
 
         if (empty($where_clauses)) {
-            $where_params = [1, 1];
+            $where_params = array( 1, 1 );
         }
 
         // Подсчет общего количества пользователей
         $count_params = $where_params;
-        $total_users = $wpdb->get_var(
+        $total_users  = $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT COUNT(*)
                 FROM {$this->table_name} u
@@ -159,8 +155,8 @@ class Cashback_Users_Management_Admin
         );
 
         // Получаем пользователей с профилями
-        $select_params = array_merge($where_params, [$per_page, $offset]);
-        $users = $wpdb->get_results(
+        $select_params = array_merge($where_params, array( $per_page, $offset ));
+        $users         = $wpdb->get_results(
             $wpdb->prepare(
                 "SELECT u.ID, u.display_name, u.user_email,
                         cup.cashback_rate, cup.min_payout_amount, cup.status, cup.ban_reason, cup.banned_at
@@ -175,7 +171,7 @@ class Cashback_Users_Management_Admin
         );
 
         // Определяем все доступные статусы для фильтра
-        $statuses = ['active', 'noactive', 'banned', 'deleted'];
+        $statuses = array( 'active', 'noactive', 'banned', 'deleted' );
 
         // Выводим сообщения об ошибках или успехе
         $message = '';
@@ -201,7 +197,7 @@ class Cashback_Users_Management_Admin
                     <label for="filter-status" class="screen-reader-text">Фильтр по статусу</label>
                     <select name="filter-status" id="filter-status">
                         <option value="">Все статусы</option>
-                        <?php foreach ($statuses as $status): ?>
+                        <?php foreach ($statuses as $status) : ?>
                             <option value="<?php echo esc_attr($status); ?>" <?php selected($filter_status, $status); ?>>
                                 <?php echo esc_html($status); ?>
                             </option>
@@ -213,7 +209,7 @@ class Cashback_Users_Management_Admin
                     <label for="search-input" class="screen-reader-text">Поиск по email или имени</label>
                     <input type="search" id="search-input" name="search" value="<?php echo esc_attr($search); ?>" placeholder="Email или имя пользователя" />
                     <button type="button" id="search-submit" class="button action">Найти</button>
-                    <?php if (!empty($filter_status) || !empty($search)): ?>
+                    <?php if (!empty($filter_status) || !empty($search)) : ?>
                         <a href="<?php echo esc_url(admin_url('admin.php?page=cashback-users')); ?>" class="button action">Сбросить</a>
                     <?php endif; ?>
                 </div>
@@ -270,8 +266,8 @@ class Cashback_Users_Management_Admin
                         </tr>
                     </tfoot>
                     <tbody id="users-tbody">
-                        <?php if (!empty($users)): ?>
-                            <?php foreach ($users as $user): ?>
+                        <?php if (!empty($users)) : ?>
+                            <?php foreach ($users as $user) : ?>
                                 <tr data-user-id="<?php echo esc_attr($user['ID']); ?>">
                                     <td><?php echo esc_html($user['ID']); ?></td>
                                     <td><?php echo esc_html($user['display_name']); ?></td>
@@ -298,7 +294,7 @@ class Cashback_Users_Management_Admin
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
-                        <?php else: ?>
+                        <?php else : ?>
                             <tr>
                                 <td colspan="9">Нет пользователей для отображения.</td>
                             </tr>
@@ -310,15 +306,15 @@ class Cashback_Users_Management_Admin
             <!-- Пагинация -->
             <?php
             $pagination_args = array(
-                'total_items' => $total_users,
-                'per_page'    => $per_page,
+                'total_items'  => $total_users,
+                'per_page'     => $per_page,
                 'current_page' => $current_page,
-                'total_pages' => (int) ceil($total_users / $per_page),
-                'page_slug'   => 'cashback-users',
-                'add_args'    => array_filter([
+                'total_pages'  => (int) ceil($total_users / $per_page),
+                'page_slug'    => 'cashback-users',
+                'add_args'     => array_filter(array(
                     'status' => $filter_status ?: null,
                     'search' => $search ?: null,
-                ]),
+                )),
             );
 
             $this->render_pagination($pagination_args);
@@ -331,29 +327,28 @@ class Cashback_Users_Management_Admin
     /**
      * Обработка AJAX запроса на обновление профиля пользователя
      */
-    public function handle_update_user_profile(): void
-    {
+    public function handle_update_user_profile(): void {
         // Проверяем наличие nonce
         if (!isset($_POST['nonce'])) {
-            wp_send_json_error(['message' => 'Отсутствует nonce.']);
+            wp_send_json_error(array( 'message' => 'Отсутствует nonce.' ));
             return;
         }
 
         // Проверяем nonce
         if (!wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'update_user_profile_nonce')) {
-            wp_send_json_error(['message' => 'Неверный nonce.']);
+            wp_send_json_error(array( 'message' => 'Неверный nonce.' ));
             return;
         }
 
         // Проверяем права пользователя
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => 'Недостаточно прав для выполнения этого действия.']);
+            wp_send_json_error(array( 'message' => 'Недостаточно прав для выполнения этого действия.' ));
             return;
         }
 
         // Проверяем наличие и корректность user_id
         if (!isset($_POST['user_id'])) {
-            wp_send_json_error(['message' => 'Отсутствует ID пользователя.']);
+            wp_send_json_error(array( 'message' => 'Отсутствует ID пользователя.' ));
             return;
         }
 
@@ -362,7 +357,7 @@ class Cashback_Users_Management_Admin
         $user_id = intval($_POST['user_id']);
 
         if ($user_id <= 0) {
-            wp_send_json_error(['message' => 'Некорректный ID пользователя.']);
+            wp_send_json_error(array( 'message' => 'Некорректный ID пользователя.' ));
             return;
         }
 
@@ -376,43 +371,43 @@ class Cashback_Users_Management_Admin
         }
 
         // Подготовим массив для обновления, включая только те поля, которые были переданы
-        $update_data = array();
+        $update_data    = array();
         $update_formats = array();
 
         // Проверяем и добавляем только измененные поля
         if (isset($_POST['cashback_rate'])) {
-            $cashback_rate = sanitize_text_field(wp_unslash($_POST['cashback_rate']));
+            $cashback_rate     = sanitize_text_field(wp_unslash($_POST['cashback_rate']));
             $new_cashback_rate = $cashback_rate;
 
             // Валидация данных
             if (!preg_match('/^\d+(\.\d{1,2})?$/', $cashback_rate) || bccomp($cashback_rate, '0', 2) < 0 || bccomp($cashback_rate, '100', 2) > 0) {
-                wp_send_json_error(['message' => 'Ставка кэшбэка должна быть числом от 0 до 100.']);
+                wp_send_json_error(array( 'message' => 'Ставка кэшбэка должна быть числом от 0 до 100.' ));
                 return;
             }
 
             $update_data['cashback_rate'] = $cashback_rate;
-            $update_formats[] = '%s';
+            $update_formats[]             = '%s';
         }
 
         if (isset($_POST['min_payout_amount'])) {
             $min_payout_amount = sanitize_text_field(wp_unslash($_POST['min_payout_amount']));
 
             if (!preg_match('/^\d+(\.\d{1,2})?$/', $min_payout_amount) || bccomp($min_payout_amount, '0', 2) <= 0) {
-                wp_send_json_error(['message' => 'Минимальная сумма выплаты должна быть положительным числом больше нуля.']);
+                wp_send_json_error(array( 'message' => 'Минимальная сумма выплаты должна быть положительным числом больше нуля.' ));
                 return;
             }
 
             $update_data['min_payout_amount'] = $min_payout_amount;
-            $update_formats[] = '%s';
+            $update_formats[]                 = '%s';
         }
 
         if (isset($_POST['status'])) {
             $status = sanitize_text_field(wp_unslash($_POST['status']));
 
             // Проверяем, что статус допустим
-            $allowed_statuses = ['active', 'noactive', 'banned', 'deleted'];
+            $allowed_statuses = array( 'active', 'noactive', 'banned', 'deleted' );
             if (!in_array($status, $allowed_statuses, true)) {
-                wp_send_json_error(['message' => 'Недопустимый статус пользователя.']);
+                wp_send_json_error(array( 'message' => 'Недопустимый статус пользователя.' ));
                 return;
             }
 
@@ -420,44 +415,44 @@ class Cashback_Users_Management_Admin
             if ($status === 'banned') {
                 $ban_reason = isset($_POST['ban_reason']) ? trim(sanitize_text_field(wp_unslash($_POST['ban_reason']))) : '';
                 if (empty($ban_reason)) {
-                    wp_send_json_error(['message' => 'Заполните причину бана пользователя.']);
+                    wp_send_json_error(array( 'message' => 'Заполните причину бана пользователя.' ));
                     return;
                 }
             }
 
             $update_data['status'] = $status;
-            $update_formats[] = '%s';
+            $update_formats[]      = '%s';
         }
 
         if (isset($_POST['ban_reason'])) {
             $ban_reason = sanitize_text_field(wp_unslash($_POST['ban_reason']));
 
             $update_data['ban_reason'] = $ban_reason;
-            $update_formats[] = '%s';
+            $update_formats[]          = '%s';
         }
 
         // 🔒 Если баним пользователя — сначала захватываем withdrawal lock
         // чтобы сериализовать с параллельным выводом средств
         $needs_withdrawal_lock = isset($status) && $status === 'banned';
-        $withdrawal_lock_name = 'user_withdrawal_' . $user_id;
+        $withdrawal_lock_name  = 'user_withdrawal_' . $user_id;
 
         $withdrawal_lock_released = false;
         if ($needs_withdrawal_lock) {
             $lock_acquired = $wpdb->get_var($wpdb->prepare(
-                "SELECT GET_LOCK(%s, 10)",
+                'SELECT GET_LOCK(%s, 10)',
                 $withdrawal_lock_name
             ));
 
             if (!$lock_acquired) {
-                wp_send_json_error(['message' => 'Пользователь в процессе вывода средств. Попробуйте позже.']);
+                wp_send_json_error(array( 'message' => 'Пользователь в процессе вывода средств. Попробуйте позже.' ));
                 return;
             }
 
             // Гарантированное освобождение блокировки даже при fatal error
-            register_shutdown_function(function () use ($wpdb, $withdrawal_lock_name, &$withdrawal_lock_released) {
+            register_shutdown_function(function () use ( $wpdb, $withdrawal_lock_name, &$withdrawal_lock_released ) {
                 if (!$withdrawal_lock_released) {
                     $withdrawal_lock_released = true;
-                    $wpdb->query($wpdb->prepare("DO RELEASE_LOCK(%s)", $withdrawal_lock_name));
+                    $wpdb->query($wpdb->prepare('DO RELEASE_LOCK(%s)', $withdrawal_lock_name));
                 }
             });
         }
@@ -495,15 +490,15 @@ class Cashback_Users_Management_Admin
 
             // Добавляем дату обновления
             $update_data['updated_at'] = current_time('mysql');
-            $update_formats[] = '%s';
+            $update_formats[]          = '%s';
 
             // Обновляем только те поля, которые были изменены
             $result = $wpdb->update(
                 $this->profile_table_name,
                 $update_data,
-                ['user_id' => $user_id],
+                array( 'user_id' => $user_id ),
                 $update_formats,
-                ['%d']  // Формат условия
+                array( '%d' )  // Формат условия
             );
 
             if ($result === false) {
@@ -559,18 +554,18 @@ class Cashback_Users_Management_Admin
             // Освобождаем withdrawal lock если захватывали
             if ($needs_withdrawal_lock) {
                 $withdrawal_lock_released = true;
-                $wpdb->query($wpdb->prepare("DO RELEASE_LOCK(%s)", $withdrawal_lock_name));
+                $wpdb->query($wpdb->prepare('DO RELEASE_LOCK(%s)', $withdrawal_lock_name));
             }
 
             error_log('[Cashback Users] Error updating profile for user ' . $user_id . ': ' . $e->getMessage());
-            wp_send_json_error(['message' => 'Ошибка при обновлении профиля пользователя.']);
+            wp_send_json_error(array( 'message' => 'Ошибка при обновлении профиля пользователя.' ));
             return;
         }
 
         // Освобождаем withdrawal lock если захватывали
         if ($needs_withdrawal_lock) {
             $withdrawal_lock_released = true;
-            $wpdb->query($wpdb->prepare("DO RELEASE_LOCK(%s)", $withdrawal_lock_name));
+            $wpdb->query($wpdb->prepare('DO RELEASE_LOCK(%s)', $withdrawal_lock_name));
         }
 
         // Получаем обновленные данные из базы
@@ -585,7 +580,7 @@ class Cashback_Users_Management_Admin
         );
 
         if (!$updated_user_data) {
-            wp_send_json_error(['message' => 'Не удалось получить обновленные данные пользователя.']);
+            wp_send_json_error(array( 'message' => 'Не удалось получить обновленные данные пользователя.' ));
             return;
         }
 
@@ -596,29 +591,28 @@ class Cashback_Users_Management_Admin
     /**
      * Обработка AJAX запроса на получение профиля пользователя
      */
-    public function handle_get_user_profile(): void
-    {
+    public function handle_get_user_profile(): void {
         // Проверяем наличие nonce
         if (!isset($_POST['nonce'])) {
-            wp_send_json_error(['message' => 'Отсутствует nonce.']);
+            wp_send_json_error(array( 'message' => 'Отсутствует nonce.' ));
             return;
         }
 
         // Проверяем nonce
         if (!wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'get_user_profile_nonce')) {
-            wp_send_json_error(['message' => 'Неверный nonce.']);
+            wp_send_json_error(array( 'message' => 'Неверный nonce.' ));
             return;
         }
 
         // Проверяем права пользователя
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => 'Недостаточно прав для выполнения этого действия.']);
+            wp_send_json_error(array( 'message' => 'Недостаточно прав для выполнения этого действия.' ));
             return;
         }
 
         // Проверяем наличие user_id
         if (!isset($_POST['user_id'])) {
-            wp_send_json_error(['message' => 'Отсутствует ID пользователя.']);
+            wp_send_json_error(array( 'message' => 'Отсутствует ID пользователя.' ));
             return;
         }
 
@@ -639,13 +633,13 @@ class Cashback_Users_Management_Admin
 
         if (!$user_data) {
             // Если записи нет, возвращаем значения по умолчанию
-            $user_data = [
-                'cashback_rate' => '60.00',
+            $user_data = array(
+                'cashback_rate'     => '60.00',
                 'min_payout_amount' => '100.00',
-                'status' => 'active',
-                'ban_reason' => '',
-                'banned_at' => null
-            ];
+                'status'            => 'active',
+                'ban_reason'        => '',
+                'banned_at'         => null,
+            );
         }
 
         // Возвращаем данные
@@ -655,44 +649,43 @@ class Cashback_Users_Management_Admin
     /**
      * Обработка AJAX запроса на массовое обновление ставки кэшбэка.
      */
-    public function handle_bulk_update_cashback_rate(): void
-    {
+    public function handle_bulk_update_cashback_rate(): void {
         if (!isset($_POST['nonce'])) {
-            wp_send_json_error(['message' => 'Отсутствует nonce.']);
+            wp_send_json_error(array( 'message' => 'Отсутствует nonce.' ));
             return;
         }
 
         if (!wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'bulk_update_cashback_rate_nonce')) {
-            wp_send_json_error(['message' => 'Неверный nonce.']);
+            wp_send_json_error(array( 'message' => 'Неверный nonce.' ));
             return;
         }
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => 'Недостаточно прав для выполнения этого действия.']);
+            wp_send_json_error(array( 'message' => 'Недостаточно прав для выполнения этого действия.' ));
             return;
         }
 
         if (!isset($_POST['old_rate'], $_POST['new_rate'])) {
-            wp_send_json_error(['message' => 'Не указаны параметры.']);
+            wp_send_json_error(array( 'message' => 'Не указаны параметры.' ));
             return;
         }
 
         $old_rate_raw = trim(sanitize_text_field(wp_unslash($_POST['old_rate'])));
-        $new_rate = sanitize_text_field(wp_unslash($_POST['new_rate']));
-        $preview = !empty($_POST['preview']);
+        $new_rate     = sanitize_text_field(wp_unslash($_POST['new_rate']));
+        $preview      = !empty($_POST['preview']);
 
         if (!preg_match('/^\d+(\.\d{1,2})?$/', $new_rate) || bccomp($new_rate, '0', 2) < 0 || bccomp($new_rate, '100', 2) > 0) {
-            wp_send_json_error(['message' => 'Новая ставка должна быть числом от 0 до 100.']);
+            wp_send_json_error(array( 'message' => 'Новая ставка должна быть числом от 0 до 100.' ));
             return;
         }
 
         global $wpdb;
 
-        $is_all = (strtolower($old_rate_raw) === 'all');
+        $is_all = ( strtolower($old_rate_raw) === 'all' );
 
         if (!$is_all) {
             if (!preg_match('/^\d+(\.\d{1,2})?$/', $old_rate_raw) || bccomp($old_rate_raw, '0', 2) < 0 || bccomp($old_rate_raw, '100', 2) > 0) {
-                wp_send_json_error(['message' => 'Текущая ставка должна быть числом от 0 до 100 или "all".']);
+                wp_send_json_error(array( 'message' => 'Текущая ставка должна быть числом от 0 до 100 или "all".' ));
                 return;
             }
         }
@@ -710,16 +703,16 @@ class Cashback_Users_Management_Admin
         }
 
         if ($preview) {
-            wp_send_json_success([
-                'count' => $count,
+            wp_send_json_success(array(
+                'count'    => $count,
                 'old_rate' => $old_rate_raw,
                 'new_rate' => $new_rate,
-            ]);
+            ));
             return;
         }
 
         if ($count === 0) {
-            wp_send_json_error(['message' => 'Не найдено пользователей для обновления.']);
+            wp_send_json_error(array( 'message' => 'Не найдено пользователей для обновления.' ));
             return;
         }
 
@@ -744,7 +737,7 @@ class Cashback_Users_Management_Admin
 
             if ($result === false) {
                 $wpdb->query('ROLLBACK');
-                wp_send_json_error(['message' => 'Ошибка при обновлении базы данных.']);
+                wp_send_json_error(array( 'message' => 'Ошибка при обновлении базы данных.' ));
                 return;
             }
 
@@ -754,11 +747,11 @@ class Cashback_Users_Management_Admin
                     get_current_user_id(),
                     'cashback_user_profile',
                     null,
-                    [
-                        'old_rate' => $old_rate_raw,
-                        'new_rate' => $new_rate,
+                    array(
+                        'old_rate'       => $old_rate_raw,
+                        'new_rate'       => $new_rate,
                         'affected_users' => $result,
-                    ]
+                    )
                 );
             }
 
@@ -770,22 +763,25 @@ class Cashback_Users_Management_Admin
                     (float) $new_rate,
                     (int) $result,
                     'bulk',
-                    ['scope' => $is_all ? 'all' : 'by_rate', 'old_rate' => $old_rate_raw]
+                    array(
+						'scope'    => $is_all ? 'all' : 'by_rate',
+						'old_rate' => $old_rate_raw,
+					)
                 );
             }
 
             $wpdb->query('COMMIT');
         } catch (Exception $e) {
             $wpdb->query('ROLLBACK');
-            wp_send_json_error(['message' => 'Ошибка при обновлении базы данных.']);
+            wp_send_json_error(array( 'message' => 'Ошибка при обновлении базы данных.' ));
             return;
         }
 
-        wp_send_json_success([
-            'updated' => (int) $result,
+        wp_send_json_success(array(
+            'updated'  => (int) $result,
             'old_rate' => $old_rate_raw,
             'new_rate' => $new_rate,
-        ]);
+        ));
     }
 
     /**
@@ -796,8 +792,7 @@ class Cashback_Users_Management_Admin
      * @param bool $in_transaction Флаг, указывающий что метод вызван внутри транзакции
      * @return bool Успешность операции
      */
-    private function handle_user_ban(int $user_id, string $ban_reason, bool $in_transaction = false): bool
-    {
+    private function handle_user_ban( int $user_id, string $ban_reason, bool $in_transaction = false ): bool {
         global $wpdb;
         $requests_table = $wpdb->prefix . 'cashback_payout_requests';
 
@@ -821,14 +816,14 @@ class Cashback_Users_Management_Admin
             foreach ($active_requests as $request) {
                 $result = $wpdb->update(
                     $requests_table,
-                    [
-                        'status' => 'declined',
+                    array(
+                        'status'      => 'declined',
                         'fail_reason' => '(Аккаунт забанен)',
-                        'updated_at' => current_time('mysql')
-                    ],
-                    ['id' => $request->id],
-                    ['%s', '%s', '%s'],
-                    ['%d']
+                        'updated_at'  => current_time('mysql'),
+                    ),
+                    array( 'id' => $request->id ),
+                    array( '%s', '%s', '%s' ),
+                    array( '%d' )
                 );
 
                 if ($result === false) {
@@ -842,7 +837,10 @@ class Cashback_Users_Management_Admin
                         get_current_user_id(),
                         'payout_request',
                         $request->id,
-                        ['amount' => $request->total_amount, 'user_id' => $user_id]
+                        array(
+							'amount'  => $request->total_amount,
+							'user_id' => $user_id,
+						)
                     );
                 }
             }
@@ -857,7 +855,7 @@ class Cashback_Users_Management_Admin
                     get_current_user_id(),
                     'user',
                     $user_id,
-                    ['ban_reason' => $ban_reason]
+                    array( 'ban_reason' => $ban_reason )
                 );
             }
 
@@ -898,8 +896,7 @@ class Cashback_Users_Management_Admin
      * @param bool $in_transaction Флаг, указывающий что метод вызван внутри транзакции
      * @return bool Успешность операции
      */
-    private function handle_user_unban(int $user_id, bool $in_transaction = false): bool
-    {
+    private function handle_user_unban( int $user_id, bool $in_transaction = false ): bool {
         global $wpdb;
         $requests_table = $wpdb->prefix . 'cashback_payout_requests';
 
@@ -924,10 +921,10 @@ class Cashback_Users_Management_Admin
             foreach ($declined_requests as $request) {
                 $result = $wpdb->update(
                     $requests_table,
-                    ['fail_reason' => '(Аккаунт был забанен)'],
-                    ['id' => $request->id],
-                    ['%s'],
-                    ['%d']
+                    array( 'fail_reason' => '(Аккаунт был забанен)' ),
+                    array( 'id' => $request->id ),
+                    array( '%s' ),
+                    array( '%d' )
                 );
 
                 if ($result === false) {
@@ -945,7 +942,7 @@ class Cashback_Users_Management_Admin
                     get_current_user_id(),
                     'user',
                     $user_id,
-                    []
+                    array()
                 );
             }
 

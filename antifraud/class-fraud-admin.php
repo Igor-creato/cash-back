@@ -13,47 +13,44 @@ if (!defined('ABSPATH')) {
  *
  * @since 1.2.0
  */
-class Cashback_Fraud_Admin
-{
+class Cashback_Fraud_Admin {
+
     use AdminPaginationTrait;
 
-    private const PER_PAGE = 20;
+    private const PER_PAGE          = 20;
     private const MAX_ALLOWED_PAGES = 1000;
 
-    public function __construct()
-    {
-        add_action('admin_menu', [$this, 'add_admin_menu']);
+    public function __construct() {
+        add_action('admin_menu', array( $this, 'add_admin_menu' ));
 
-        add_action('wp_ajax_fraud_review_alert', [$this, 'handle_review_alert']);
-        add_action('wp_ajax_fraud_get_alert_details', [$this, 'handle_get_alert_details']);
-        add_action('wp_ajax_fraud_save_settings', [$this, 'handle_save_settings']);
-        add_action('wp_ajax_fraud_run_scan_now', [$this, 'handle_run_scan_now']);
-        add_action('wp_ajax_fraud_ban_user', [$this, 'handle_ban_user']);
-        add_action('wp_ajax_fraud_save_bot_settings', [$this, 'handle_save_bot_settings']);
+        add_action('wp_ajax_fraud_review_alert', array( $this, 'handle_review_alert' ));
+        add_action('wp_ajax_fraud_get_alert_details', array( $this, 'handle_get_alert_details' ));
+        add_action('wp_ajax_fraud_save_settings', array( $this, 'handle_save_settings' ));
+        add_action('wp_ajax_fraud_run_scan_now', array( $this, 'handle_run_scan_now' ));
+        add_action('wp_ajax_fraud_ban_user', array( $this, 'handle_ban_user' ));
+        add_action('wp_ajax_fraud_save_bot_settings', array( $this, 'handle_save_bot_settings' ));
 
-        add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
+        add_action('admin_enqueue_scripts', array( $this, 'enqueue_admin_scripts' ));
     }
 
     /**
      * Регистрация подпункта меню
      */
-    public function add_admin_menu(): void
-    {
+    public function add_admin_menu(): void {
         add_submenu_page(
             'cashback-overview',
             __('Защита', 'cashback-plugin'),
             $this->get_menu_title(),
             'manage_options',
             'cashback-antifraud',
-            [$this, 'render_page']
+            array( $this, 'render_page' )
         );
     }
 
     /**
      * Заголовок меню с бейджом количества открытых алертов
      */
-    private function get_menu_title(): string
-    {
+    private function get_menu_title(): string {
         // Кеширование COUNT чтобы не запрашивать на каждой admin-странице
         // Используем transient вместо wp_cache — wp_cache без persistent cache не сохраняется между запросами
         $count = get_transient('cashback_fraud_open_count');
@@ -78,16 +75,15 @@ class Cashback_Fraud_Admin
     /**
      * Подключение скриптов и стилей
      */
-    public function enqueue_admin_scripts(string $hook): void
-    {
-        $allowed_hooks = [
+    public function enqueue_admin_scripts( string $hook ): void {
+        $allowed_hooks = array(
             'cashback-overview_page_cashback-antifraud',
             'toplevel_page_cashback-antifraud',
             'admin_page_cashback-antifraud',
-        ];
+        );
 
         $is_page = in_array($hook, $allowed_hooks, true) ||
-            (isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-antifraud');
+            ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-antifraud' );
 
         if (!$is_page) {
             return;
@@ -96,40 +92,39 @@ class Cashback_Fraud_Admin
         wp_enqueue_style(
             'cashback-admin-antifraud-css',
             plugins_url('../assets/css/admin.css', __FILE__),
-            [],
+            array(),
             '1.2.0'
         );
 
         wp_enqueue_script(
             'cashback-admin-antifraud',
             plugins_url('../assets/js/admin-antifraud.js', __FILE__),
-            ['jquery'],
+            array( 'jquery' ),
             '1.0.0',
             true
         );
 
-        wp_localize_script('cashback-admin-antifraud', 'cashbackFraudData', [
-            'reviewNonce'   => wp_create_nonce('fraud_review_alert_nonce'),
-            'detailsNonce'  => wp_create_nonce('fraud_get_alert_details_nonce'),
-            'settingsNonce' => wp_create_nonce('fraud_save_settings_nonce'),
-            'scanNonce'     => wp_create_nonce('fraud_run_scan_now_nonce'),
-            'banNonce'      => wp_create_nonce('fraud_ban_user_nonce'),
+        wp_localize_script('cashback-admin-antifraud', 'cashbackFraudData', array(
+            'reviewNonce'      => wp_create_nonce('fraud_review_alert_nonce'),
+            'detailsNonce'     => wp_create_nonce('fraud_get_alert_details_nonce'),
+            'settingsNonce'    => wp_create_nonce('fraud_save_settings_nonce'),
+            'scanNonce'        => wp_create_nonce('fraud_run_scan_now_nonce'),
+            'banNonce'         => wp_create_nonce('fraud_ban_user_nonce'),
             'botSettingsNonce' => wp_create_nonce('fraud_save_bot_settings_nonce'),
-            'ajaxurl'       => admin_url('admin-ajax.php'),
-        ]);
+            'ajaxurl'          => admin_url('admin-ajax.php'),
+        ));
     }
 
     /**
      * Главный рендер страницы с маршрутизацией по вкладкам
      */
-    public function render_page(): void
-    {
+    public function render_page(): void {
         if (!current_user_can('manage_options')) {
             wp_die(__('У вас недостаточно прав для просмотра этой страницы.', 'cashback-plugin'));
         }
 
-        $active_tab = isset($_GET['tab']) ? sanitize_text_field(wp_unslash($_GET['tab'])) : 'alerts';
-        $allowed_tabs = ['alerts', 'users', 'settings', 'spam'];
+        $active_tab   = isset($_GET['tab']) ? sanitize_text_field(wp_unslash($_GET['tab'])) : 'alerts';
+        $allowed_tabs = array( 'alerts', 'users', 'settings', 'spam' );
         if (!in_array($active_tab, $allowed_tabs, true)) {
             $active_tab = 'alerts';
         }
@@ -139,15 +134,15 @@ class Cashback_Fraud_Admin
 
         // Tabs
         echo '<nav class="nav-tab-wrapper">';
-        $tabs = [
+        $tabs = array(
             'alerts'   => __('Уведомления', 'cashback-plugin'),
             'users'    => __('Подозрительные', 'cashback-plugin'),
             'spam'     => __('Спам-клики', 'cashback-plugin'),
             'settings' => __('Настройки', 'cashback-plugin'),
-        ];
+        );
         foreach ($tabs as $slug => $label) {
-            $class = ($slug === $active_tab) ? 'nav-tab nav-tab-active' : 'nav-tab';
-            $url = admin_url('admin.php?page=cashback-antifraud&tab=' . $slug);
+            $class = ( $slug === $active_tab ) ? 'nav-tab nav-tab-active' : 'nav-tab';
+            $url   = admin_url('admin.php?page=cashback-antifraud&tab=' . $slug);
             echo '<a href="' . esc_url($url) . '" class="' . esc_attr($class) . '">' . esc_html($label) . '</a>';
         }
         echo '</nav>';
@@ -177,32 +172,31 @@ class Cashback_Fraud_Admin
     // Tab: Alerts
     // ===========================
 
-    private function render_alerts_tab(): void
-    {
+    private function render_alerts_tab(): void {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_fraud_alerts';
 
         // Filters
-        $filter_status = isset($_GET['status']) ? sanitize_text_field(wp_unslash($_GET['status'])) : '';
+        $filter_status   = isset($_GET['status']) ? sanitize_text_field(wp_unslash($_GET['status'])) : '';
         $filter_severity = isset($_GET['severity']) ? sanitize_text_field(wp_unslash($_GET['severity'])) : '';
-        $filter_type = isset($_GET['alert_type']) ? sanitize_text_field(wp_unslash($_GET['alert_type'])) : '';
-        $current_page = min(isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1, self::MAX_ALLOWED_PAGES);
-        $offset = ($current_page - 1) * self::PER_PAGE;
+        $filter_type     = isset($_GET['alert_type']) ? sanitize_text_field(wp_unslash($_GET['alert_type'])) : '';
+        $current_page    = min(isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1, self::MAX_ALLOWED_PAGES);
+        $offset          = ( $current_page - 1 ) * self::PER_PAGE;
 
-        $where = ['1=1'];
-        $params = [];
+        $where  = array( '1=1' );
+        $params = array();
 
-        if ($filter_status && in_array($filter_status, ['open', 'reviewing', 'confirmed', 'dismissed'], true)) {
-            $where[] = 'a.status = %s';
+        if ($filter_status && in_array($filter_status, array( 'open', 'reviewing', 'confirmed', 'dismissed' ), true)) {
+            $where[]  = 'a.status = %s';
             $params[] = $filter_status;
         }
-        if ($filter_severity && in_array($filter_severity, ['low', 'medium', 'high', 'critical'], true)) {
-            $where[] = 'a.severity = %s';
+        if ($filter_severity && in_array($filter_severity, array( 'low', 'medium', 'high', 'critical' ), true)) {
+            $where[]  = 'a.severity = %s';
             $params[] = $filter_severity;
         }
         $allowed_alert_types = array_keys(self::get_alert_type_labels());
         if ($filter_type && in_array($filter_type, $allowed_alert_types, true)) {
-            $where[] = 'a.alert_type = %s';
+            $where[]  = 'a.alert_type = %s';
             $params[] = $filter_type;
         } else {
             $filter_type = '';
@@ -225,14 +219,14 @@ class Cashback_Fraud_Admin
         $total_pages = (int) ceil($total_items / self::PER_PAGE);
 
         // Data
-        $data_query = "SELECT a.*, u.user_login, u.user_email
+        $data_query  = "SELECT a.*, u.user_login, u.user_email
                        FROM `{$table}` a
                        LEFT JOIN `{$wpdb->users}` u ON a.user_id = u.ID
                        WHERE {$where_sql}
                        ORDER BY a.created_at DESC
                        LIMIT %d OFFSET %d";
-        $data_params = array_merge($params, [self::PER_PAGE, $offset]);
-        $alerts = $wpdb->get_results($wpdb->prepare($data_query, ...$data_params));
+        $data_params = array_merge($params, array( self::PER_PAGE, $offset ));
+        $alerts      = $wpdb->get_results($wpdb->prepare($data_query, ...$data_params));
 
         // Render filter form
         echo '<form method="get" class="cashback-filters" style="margin-bottom:15px;">';
@@ -241,14 +235,24 @@ class Cashback_Fraud_Admin
 
         echo '<select name="status">';
         echo '<option value="">' . esc_html__('Все статусы', 'cashback-plugin') . '</option>';
-        foreach (['open' => 'Открыт', 'reviewing' => 'На проверке', 'confirmed' => 'Подтверждён', 'dismissed' => 'Отклонён'] as $val => $label) {
+        foreach (array(
+			'open'      => 'Открыт',
+			'reviewing' => 'На проверке',
+			'confirmed' => 'Подтверждён',
+			'dismissed' => 'Отклонён',
+		) as $val => $label) {
             echo '<option value="' . esc_attr($val) . '"' . selected($filter_status, $val, false) . '>' . esc_html($label) . '</option>';
         }
         echo '</select> ';
 
         echo '<select name="severity">';
         echo '<option value="">' . esc_html__('Все уровни', 'cashback-plugin') . '</option>';
-        foreach (['critical' => 'Critical', 'high' => 'High', 'medium' => 'Medium', 'low' => 'Low'] as $val => $label) {
+        foreach (array(
+			'critical' => 'Critical',
+			'high'     => 'High',
+			'medium'   => 'Medium',
+			'low'      => 'Low',
+		) as $val => $label) {
             echo '<option value="' . esc_attr($val) . '"' . selected($filter_severity, $val, false) . '>' . esc_html($label) . '</option>';
         }
         echo '</select> ';
@@ -289,18 +293,18 @@ class Cashback_Fraud_Admin
         echo '</tr></thead><tbody>';
 
         foreach ($alerts as $alert) {
-            $type_labels = self::get_alert_type_labels();
-            $status_labels = self::get_status_labels();
+            $type_labels    = self::get_alert_type_labels();
+            $status_labels  = self::get_status_labels();
             $severity_class = 'cashback-severity-' . esc_attr($alert->severity);
 
             echo '<tr>';
             echo '<td>' . esc_html($alert->id) . '</td>';
             echo '<td>' . esc_html($alert->user_login ?? 'ID:' . $alert->user_id) . '<br><small>' . esc_html($alert->user_email ?? '') . '</small></td>';
-            echo '<td>' . esc_html($type_labels[$alert->alert_type] ?? $alert->alert_type) . '</td>';
+            echo '<td>' . esc_html($type_labels[ $alert->alert_type ] ?? $alert->alert_type) . '</td>';
             echo '<td><span class="' . esc_attr($severity_class) . '">' . esc_html(strtoupper($alert->severity)) . '</span></td>';
             echo '<td>' . esc_html(number_format((float) $alert->risk_score, 0)) . '</td>';
             echo '<td>' . esc_html(mb_strimwidth($alert->summary, 0, 80, '...')) . '</td>';
-            echo '<td>' . esc_html($status_labels[$alert->status] ?? $alert->status) . '</td>';
+            echo '<td>' . esc_html($status_labels[ $alert->status ] ?? $alert->status) . '</td>';
             echo '<td>' . esc_html($alert->created_at) . '</td>';
             echo '<td class="cashback-actions">';
 
@@ -318,21 +322,21 @@ class Cashback_Fraud_Admin
         echo '</tbody></table>';
 
         // Pagination
-        $add_args = array_filter([
-            'status' => $filter_status,
-            'severity' => $filter_severity,
+        $add_args = array_filter(array(
+            'status'     => $filter_status,
+            'severity'   => $filter_severity,
             'alert_type' => $filter_type,
-            'tab' => 'alerts',
-        ]);
+            'tab'        => 'alerts',
+        ));
 
-        $this->render_pagination([
-            'total_items' => $total_items,
-            'per_page' => self::PER_PAGE,
+        $this->render_pagination(array(
+            'total_items'  => $total_items,
+            'per_page'     => self::PER_PAGE,
             'current_page' => $current_page,
-            'total_pages' => $total_pages,
-            'page_slug' => 'cashback-antifraud',
-            'add_args' => $add_args,
-        ]);
+            'total_pages'  => $total_pages,
+            'page_slug'    => 'cashback-antifraud',
+            'add_args'     => $add_args,
+        ));
 
         // Modal placeholder
         echo '<div id="fraud-alert-modal" class="cashback-modal" style="display:none;">';
@@ -347,14 +351,13 @@ class Cashback_Fraud_Admin
     // Tab: Suspicious Users
     // ===========================
 
-    private function render_users_tab(): void
-    {
+    private function render_users_tab(): void {
         global $wpdb;
-        $alerts_table = $wpdb->prefix . 'cashback_fraud_alerts';
+        $alerts_table  = $wpdb->prefix . 'cashback_fraud_alerts';
         $profile_table = $wpdb->prefix . 'cashback_user_profile';
 
         $current_page = min(isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1, self::MAX_ALLOWED_PAGES);
-        $offset = ($current_page - 1) * self::PER_PAGE;
+        $offset       = ( $current_page - 1 ) * self::PER_PAGE;
 
         // Users with open/reviewing alerts, sorted by risk score
         $total_items = (int) $wpdb->get_var($wpdb->prepare(
@@ -401,7 +404,7 @@ class Cashback_Fraud_Admin
 
         foreach ($users as $user) {
             $risk_class = '';
-            $score = (float) $user->total_risk_score;
+            $score      = (float) $user->total_risk_score;
             if ($score >= 76) {
                 $risk_class = 'cashback-severity-critical';
             } elseif ($score >= 51) {
@@ -436,14 +439,14 @@ class Cashback_Fraud_Admin
 
         echo '</tbody></table>';
 
-        $this->render_pagination([
-            'total_items' => $total_items,
-            'per_page' => self::PER_PAGE,
+        $this->render_pagination(array(
+            'total_items'  => $total_items,
+            'per_page'     => self::PER_PAGE,
             'current_page' => $current_page,
-            'total_pages' => $total_pages,
-            'page_slug' => 'cashback-antifraud',
-            'add_args' => ['tab' => 'users'],
-        ]);
+            'total_pages'  => $total_pages,
+            'page_slug'    => 'cashback-antifraud',
+            'add_args'     => array( 'tab' => 'users' ),
+        ));
     }
 
     // ===========================
@@ -457,26 +460,31 @@ class Cashback_Fraud_Admin
      *
      * @since 4.3.0
      */
-    private function render_spam_tab(): void
-    {
+    private function render_spam_tab(): void {
         // Период: 1ч, 6ч, 24ч, 7д
-        $allowed_hours = [1, 6, 24, 168];
-        $hours = isset($_GET['hours']) ? absint($_GET['hours']) : 24;
+        $allowed_hours = array( 1, 6, 24, 168 );
+        $hours         = isset($_GET['hours']) ? absint($_GET['hours']) : 24;
         if (!in_array($hours, $allowed_hours, true)) {
             $hours = 24;
         }
 
         $stats = class_exists('WC_Affiliate_URL_Params')
             ? WC_Affiliate_URL_Params::get_spam_stats($hours)
-            : ['total_clicks' => 0, 'total_spam' => 0, 'spam_rate' => 0, 'top_ips' => [], 'top_products' => []];
+            : array(
+				'total_clicks' => 0,
+				'total_spam'   => 0,
+				'spam_rate'    => 0,
+				'top_ips'      => array(),
+				'top_products' => array(),
+			);
 
         // Период
-        $period_labels = [
+        $period_labels = array(
             1   => __('1 час', 'cashback-plugin'),
             6   => __('6 часов', 'cashback-plugin'),
             24  => __('24 часа', 'cashback-plugin'),
             168 => __('7 дней', 'cashback-plugin'),
-        ];
+        );
 
         echo '<form method="get" style="margin-bottom:15px;">';
         echo '<input type="hidden" name="page" value="cashback-antifraud">';
@@ -484,15 +492,15 @@ class Cashback_Fraud_Admin
         echo '<label for="hours"><strong>' . esc_html__('Период:', 'cashback-plugin') . '</strong> </label>';
         echo '<select name="hours" id="hours" onchange="this.form.submit()">';
         foreach ($period_labels as $val => $label) {
-            echo '<option value="' . esc_attr((string)$val) . '"' . selected($hours, $val, false) . '>' . esc_html($label) . '</option>';
+            echo '<option value="' . esc_attr((string) $val) . '"' . selected($hours, $val, false) . '>' . esc_html($label) . '</option>';
         }
         echo '</select>';
         echo '</form>';
 
         // Summary cards
         $total = (int) $stats['total_clicks'];
-        $spam = (int) $stats['total_spam'];
-        $rate = (float) $stats['spam_rate'];
+        $spam  = (int) $stats['total_spam'];
+        $rate  = (float) $stats['spam_rate'];
 
         $rate_class = 'cashback-severity-low';
         if ($rate >= 50) {
@@ -510,8 +518,8 @@ class Cashback_Fraud_Admin
         echo '<div style="color:#646970; margin-top:4px;">' . esc_html__('Всего кликов', 'cashback-plugin') . '</div>';
         echo '</div>';
 
-        echo '<div style="background:#fff; border:1px solid #c3c4c7; border-left:4px solid ' . ($spam > 0 ? '#d63638' : '#00a32a') . '; padding:15px 20px; min-width:180px;">';
-        echo '<div style="font-size:28px; font-weight:600; line-height:1.2; color:' . ($spam > 0 ? '#d63638' : '#1d2327') . ';">' . esc_html(number_format($spam)) . '</div>';
+        echo '<div style="background:#fff; border:1px solid #c3c4c7; border-left:4px solid ' . ( $spam > 0 ? '#d63638' : '#00a32a' ) . '; padding:15px 20px; min-width:180px;">';
+        echo '<div style="font-size:28px; font-weight:600; line-height:1.2; color:' . ( $spam > 0 ? '#d63638' : '#1d2327' ) . ';">' . esc_html(number_format($spam)) . '</div>';
         echo '<div style="color:#646970; margin-top:4px;">' . esc_html__('Спам-кликов', 'cashback-plugin') . '</div>';
         echo '</div>';
 
@@ -544,8 +552,8 @@ class Cashback_Fraud_Admin
 
             foreach ($stats['top_ips'] as $row) {
                 $ip_total = (int) $row['total'];
-                $ip_spam = (int) $row['spam_count'];
-                $ip_rate = $ip_total > 0 ? round($ip_spam / $ip_total * 100, 1) : 0;
+                $ip_spam  = (int) $row['spam_count'];
+                $ip_rate  = $ip_total > 0 ? round($ip_spam / $ip_total * 100, 1) : 0;
 
                 $row_class = '';
                 if ($ip_rate >= 80) {
@@ -560,9 +568,9 @@ class Cashback_Fraud_Admin
                 echo '<td>' . esc_html(number_format($ip_spam)) . '</td>';
                 echo '<td>';
                 if ($row_class) {
-                    echo '<span class="' . esc_attr($row_class) . '">' . esc_html((string)$ip_rate) . '%</span>';
+                    echo '<span class="' . esc_attr($row_class) . '">' . esc_html((string) $ip_rate) . '%</span>';
                 } else {
-                    echo esc_html((string)$ip_rate) . '%';
+                    echo esc_html((string) $ip_rate) . '%';
                 }
                 echo '</td>';
                 echo '</tr>';
@@ -588,14 +596,14 @@ class Cashback_Fraud_Admin
             echo '</tr></thead><tbody>';
 
             foreach ($stats['top_products'] as $row) {
-                $pid = (int) $row['product_id'];
+                $pid   = (int) $row['product_id'];
                 $title = get_the_title($pid);
                 if (empty($title)) {
                     $title = '#' . $pid;
                 }
 
                 echo '<tr>';
-                echo '<td>' . esc_html((string)$pid) . '</td>';
+                echo '<td>' . esc_html((string) $pid) . '</td>';
                 echo '<td>';
                 $edit_link = get_edit_post_link($pid);
                 if ($edit_link) {
@@ -633,7 +641,7 @@ class Cashback_Fraud_Admin
             echo '</tr></thead><tbody>';
 
             foreach ($recent as $click) {
-                $click_pid = (int) $click->product_id;
+                $click_pid   = (int) $click->product_id;
                 $click_title = get_the_title($click_pid);
                 if (empty($click_title)) {
                     $click_title = '#' . $click_pid;
@@ -648,7 +656,7 @@ class Cashback_Fraud_Admin
                 echo '<td><code>' . esc_html($click->ip_address) . '</code></td>';
                 echo '<td>' . esc_html(mb_strimwidth($click_title, 0, 40, '...')) . '</td>';
                 echo '<td><small title="' . esc_attr($click->user_agent ?? '') . '">' . esc_html($ua_short) . '</small></td>';
-                echo '<td>' . ($click->user_id > 0 ? esc_html($click->user_id) : '<em>guest</em>') . '</td>';
+                echo '<td>' . ( $click->user_id > 0 ? esc_html($click->user_id) : '<em>guest</em>' ) . '</td>';
                 echo '</tr>';
             }
 
@@ -665,20 +673,19 @@ class Cashback_Fraud_Admin
      *
      * @return array|object[] Массив объектов.
      */
-    private function get_recent_spam_clicks(int $limit = 50): array
-    {
+    private function get_recent_spam_clicks( int $limit = 50 ): array {
         global $wpdb;
 
         $table = $wpdb->prefix . 'cashback_click_log';
 
         // Проверяем существование таблицы
         $table_exists = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s",
+            'SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
             $table
         ));
 
         if (!$table_exists) {
-            return [];
+            return array();
         }
 
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table is safe prefixed name
@@ -689,15 +696,14 @@ class Cashback_Fraud_Admin
              ORDER BY created_at DESC
              LIMIT %d",
             $limit
-        )) ?: [];
+        )) ?: array();
     }
 
     // ===========================
     // Tab: Settings
     // ===========================
 
-    private function render_settings_tab(): void
-    {
+    private function render_settings_tab(): void {
         $settings = Cashback_Fraud_Settings::get_all();
         $defaults = Cashback_Fraud_Settings::get_defaults();
 
@@ -756,8 +762,7 @@ class Cashback_Fraud_Admin
     /**
      * Рендер секции настроек бот-защиты и CAPTCHA
      */
-    private function render_bot_protection_settings(): void
-    {
+    private function render_bot_protection_settings(): void {
         $bot_settings = Cashback_Fraud_Settings::get_all_bot_settings();
 
         echo '<hr style="margin: 32px 0;">';
@@ -823,9 +828,8 @@ class Cashback_Fraud_Admin
     /**
      * Рендер checkbox поля для бот-защиты
      */
-    private function render_bot_checkbox_field(string $key, string $label, array $settings): void
-    {
-        $checked = !empty($settings[$key]) ? 'checked' : '';
+    private function render_bot_checkbox_field( string $key, string $label, array $settings ): void {
+        $checked = !empty($settings[ $key ]) ? 'checked' : '';
         echo '<tr>';
         echo '<th scope="row">' . esc_html($label) . '</th>';
         echo '<td><label><input type="checkbox" name="' . esc_attr($key) . '" value="1" ' . $checked . '> ' . esc_html__('Да', 'cashback-plugin') . '</label></td>';
@@ -835,9 +839,8 @@ class Cashback_Fraud_Admin
     /**
      * Рендер checkbox поля для формы настроек
      */
-    private function render_checkbox_field(string $key, string $label, array $settings): void
-    {
-        $checked = !empty($settings[$key]) ? 'checked' : '';
+    private function render_checkbox_field( string $key, string $label, array $settings ): void {
+        $checked = !empty($settings[ $key ]) ? 'checked' : '';
         echo '<tr>';
         echo '<th scope="row">' . esc_html($label) . '</th>';
         echo '<td><label><input type="checkbox" name="' . esc_attr($key) . '" value="1" ' . $checked . '> ' . esc_html__('Да', 'cashback-plugin') . '</label></td>';
@@ -847,15 +850,14 @@ class Cashback_Fraud_Admin
     /**
      * Рендер числового поля для формы настроек
      */
-    private function render_number_field(string $key, string $label, array $settings, array $defaults, string $extra_attrs = ''): void
-    {
-        $value = $settings[$key] ?? '';
-        $default = $defaults[$key] ?? '';
+    private function render_number_field( string $key, string $label, array $settings, array $defaults, string $extra_attrs = '' ): void {
+        $value   = $settings[ $key ] ?? '';
+        $default = $defaults[ $key ] ?? '';
 
         // Экранируем extra_attrs: парсим key="value" пары и пересобираем безопасно
         $safe_attrs = '';
         if (!empty($extra_attrs)) {
-            $allowed_attrs = ['step', 'min', 'max', 'placeholder'];
+            $allowed_attrs = array( 'step', 'min', 'max', 'placeholder' );
             if (preg_match_all('/(\w+)=["\']([^"\']*)["\']/', $extra_attrs, $matches, PREG_SET_ORDER)) {
                 foreach ($matches as $match) {
                     if (in_array($match[1], $allowed_attrs, true)) {
@@ -881,24 +883,23 @@ class Cashback_Fraud_Admin
     /**
      * Подтверждение/отклонение алерта
      */
-    public function handle_review_alert(): void
-    {
+    public function handle_review_alert(): void {
         if (!check_ajax_referer('fraud_review_alert_nonce', 'nonce', false)) {
-            wp_send_json_error(['message' => 'Invalid nonce']);
+            wp_send_json_error(array( 'message' => 'Invalid nonce' ));
             return;
         }
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => 'Недостаточно прав']);
+            wp_send_json_error(array( 'message' => 'Недостаточно прав' ));
             return;
         }
 
-        $alert_id = isset($_POST['alert_id']) ? absint($_POST['alert_id']) : 0;
-        $new_status = isset($_POST['new_status']) ? sanitize_text_field(wp_unslash($_POST['new_status'])) : '';
+        $alert_id    = isset($_POST['alert_id']) ? absint($_POST['alert_id']) : 0;
+        $new_status  = isset($_POST['new_status']) ? sanitize_text_field(wp_unslash($_POST['new_status'])) : '';
         $review_note = isset($_POST['review_note']) ? sanitize_textarea_field(wp_unslash($_POST['review_note'])) : '';
 
-        if (!$alert_id || !in_array($new_status, ['reviewing', 'confirmed', 'dismissed'], true)) {
-            wp_send_json_error(['message' => 'Невалидные параметры']);
+        if (!$alert_id || !in_array($new_status, array( 'reviewing', 'confirmed', 'dismissed' ), true)) {
+            wp_send_json_error(array( 'message' => 'Невалидные параметры' ));
             return;
         }
 
@@ -911,26 +912,26 @@ class Cashback_Fraud_Admin
         ));
 
         if (!$alert) {
-            wp_send_json_error(['message' => 'Алерт не найден']);
+            wp_send_json_error(array( 'message' => 'Алерт не найден' ));
             return;
         }
 
-        if (in_array($alert->status, ['confirmed', 'dismissed'], true)) {
-            wp_send_json_error(['message' => 'Алерт уже обработан']);
+        if (in_array($alert->status, array( 'confirmed', 'dismissed' ), true)) {
+            wp_send_json_error(array( 'message' => 'Алерт уже обработан' ));
             return;
         }
 
         $wpdb->update(
             $table,
-            [
+            array(
                 'status'      => $new_status,
                 'reviewed_by' => get_current_user_id(),
                 'reviewed_at' => current_time('mysql'),
                 'review_note' => $review_note,
-            ],
-            ['id' => $alert_id],
-            ['%s', '%d', '%s', '%s'],
-            ['%d']
+            ),
+            array( 'id' => $alert_id ),
+            array( '%s', '%d', '%s', '%s' ),
+            array( '%d' )
         );
 
         // Audit log
@@ -940,36 +941,41 @@ class Cashback_Fraud_Admin
                 get_current_user_id(),
                 'fraud_alert',
                 $alert_id,
-                ['new_status' => $new_status, 'user_id' => $alert->user_id]
+                array(
+					'new_status' => $new_status,
+					'user_id'    => $alert->user_id,
+				)
             );
         }
 
-        wp_send_json_success(['message' => 'Алерт обновлён', 'new_status' => $new_status]);
+        wp_send_json_success(array(
+			'message'    => 'Алерт обновлён',
+			'new_status' => $new_status,
+		));
     }
 
     /**
      * Получение деталей алерта с сигналами
      */
-    public function handle_get_alert_details(): void
-    {
+    public function handle_get_alert_details(): void {
         if (!check_ajax_referer('fraud_get_alert_details_nonce', 'nonce', false)) {
-            wp_send_json_error(['message' => 'Invalid nonce']);
+            wp_send_json_error(array( 'message' => 'Invalid nonce' ));
             return;
         }
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => 'Недостаточно прав']);
+            wp_send_json_error(array( 'message' => 'Недостаточно прав' ));
             return;
         }
 
         $alert_id = isset($_POST['alert_id']) ? absint($_POST['alert_id']) : 0;
         if (!$alert_id) {
-            wp_send_json_error(['message' => 'Нет alert_id']);
+            wp_send_json_error(array( 'message' => 'Нет alert_id' ));
             return;
         }
 
         global $wpdb;
-        $alerts_table = $wpdb->prefix . 'cashback_fraud_alerts';
+        $alerts_table  = $wpdb->prefix . 'cashback_fraud_alerts';
         $signals_table = $wpdb->prefix . 'cashback_fraud_signals';
 
         $alert = $wpdb->get_row($wpdb->prepare(
@@ -981,7 +987,7 @@ class Cashback_Fraud_Admin
         ), ARRAY_A);
 
         if (!$alert) {
-            wp_send_json_error(['message' => 'Алерт не найден']);
+            wp_send_json_error(array( 'message' => 'Алерт не найден' ));
             return;
         }
 
@@ -992,7 +998,7 @@ class Cashback_Fraud_Admin
 
         // Balance info
         $balance_table = $wpdb->prefix . 'cashback_user_balance';
-        $balance = $wpdb->get_row($wpdb->prepare(
+        $balance       = $wpdb->get_row($wpdb->prepare(
             "SELECT * FROM `{$balance_table}` WHERE user_id = %d",
             $alert['user_id']
         ), ARRAY_A);
@@ -1003,34 +1009,33 @@ class Cashback_Fraud_Admin
         }
         unset($s);
 
-        wp_send_json_success([
+        wp_send_json_success(array(
             'alert'   => $alert,
             'signals' => $signals,
             'balance' => $balance,
-        ]);
+        ));
     }
 
     /**
      * Сохранение настроек
      */
-    public function handle_save_settings(): void
-    {
+    public function handle_save_settings(): void {
         if (!check_ajax_referer('fraud_save_settings_nonce', 'nonce', false)) {
-            wp_send_json_error(['message' => 'Invalid nonce']);
+            wp_send_json_error(array( 'message' => 'Invalid nonce' ));
             return;
         }
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => 'Недостаточно прав']);
+            wp_send_json_error(array( 'message' => 'Недостаточно прав' ));
             return;
         }
 
-        $settings = isset($_POST['settings']) ? (array) $_POST['settings'] : [];
+        $settings = isset($_POST['settings']) ? (array) $_POST['settings'] : array();
 
         // Sanitize each value
-        $sanitized = [];
+        $sanitized = array();
         foreach ($settings as $key => $value) {
-            $sanitized[sanitize_text_field($key)] = sanitize_text_field(wp_unslash((string) $value));
+            $sanitized[ sanitize_text_field($key) ] = sanitize_text_field(wp_unslash((string) $value));
         }
 
         Cashback_Fraud_Settings::save_settings($sanitized);
@@ -1042,33 +1047,32 @@ class Cashback_Fraud_Admin
                 get_current_user_id(),
                 'system',
                 null,
-                ['changed_keys' => array_keys($sanitized)]
+                array( 'changed_keys' => array_keys($sanitized) )
             );
         }
 
-        wp_send_json_success(['message' => 'Настройки сохранены']);
+        wp_send_json_success(array( 'message' => 'Настройки сохранены' ));
     }
 
     /**
      * Сохранение настроек бот-защиты
      */
-    public function handle_save_bot_settings(): void
-    {
+    public function handle_save_bot_settings(): void {
         if (!check_ajax_referer('fraud_save_bot_settings_nonce', 'nonce', false)) {
-            wp_send_json_error(['message' => 'Invalid nonce']);
+            wp_send_json_error(array( 'message' => 'Invalid nonce' ));
             return;
         }
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => 'Недостаточно прав']);
+            wp_send_json_error(array( 'message' => 'Недостаточно прав' ));
             return;
         }
 
-        $settings = isset($_POST['settings']) ? (array) $_POST['settings'] : [];
+        $settings = isset($_POST['settings']) ? (array) $_POST['settings'] : array();
 
-        $sanitized = [];
+        $sanitized = array();
         foreach ($settings as $key => $value) {
-            $sanitized[sanitize_text_field($key)] = sanitize_text_field(wp_unslash((string) $value));
+            $sanitized[ sanitize_text_field($key) ] = sanitize_text_field(wp_unslash((string) $value));
         }
 
         Cashback_Fraud_Settings::save_bot_settings($sanitized);
@@ -1079,33 +1083,32 @@ class Cashback_Fraud_Admin
                 get_current_user_id(),
                 'system',
                 null,
-                ['changed_keys' => array_keys($sanitized)]
+                array( 'changed_keys' => array_keys($sanitized) )
             );
         }
 
-        wp_send_json_success(['message' => 'Настройки бот-защиты сохранены']);
+        wp_send_json_success(array( 'message' => 'Настройки бот-защиты сохранены' ));
     }
 
     /**
      * Ручной запуск сканирования
      */
-    public function handle_run_scan_now(): void
-    {
+    public function handle_run_scan_now(): void {
         if (!check_ajax_referer('fraud_run_scan_now_nonce', 'nonce', false)) {
-            wp_send_json_error(['message' => 'Invalid nonce']);
+            wp_send_json_error(array( 'message' => 'Invalid nonce' ));
             return;
         }
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => 'Недостаточно прав']);
+            wp_send_json_error(array( 'message' => 'Недостаточно прав' ));
             return;
         }
 
         // Rate limiting: максимум 2 сканирования за 10 минут
-        $rate_key = 'cb_fraud_scan_rate_' . get_current_user_id();
+        $rate_key   = 'cb_fraud_scan_rate_' . get_current_user_id();
         $rate_count = (int) get_transient($rate_key);
         if ($rate_count >= 2) {
-            wp_send_json_error(['message' => 'Сканирование уже запускалось недавно. Подождите 10 минут.']);
+            wp_send_json_error(array( 'message' => 'Сканирование уже запускалось недавно. Подождите 10 минут.' ));
             return;
         }
         set_transient($rate_key, $rate_count + 1, 10 * MINUTE_IN_SECONDS);
@@ -1116,36 +1119,38 @@ class Cashback_Fraud_Admin
                 get_current_user_id(),
                 'system',
                 null,
-                []
+                array()
             );
         }
 
         Cashback_Fraud_Detector::run_all_checks();
 
-        wp_send_json_success(['message' => 'Проверка завершена', 'last_run' => current_time('mysql')]);
+        wp_send_json_success(array(
+			'message'  => 'Проверка завершена',
+			'last_run' => current_time('mysql'),
+		));
     }
 
     /**
      * Бан пользователя через антифрод-модуль
      * Переиспользует логику бана из users-management.php
      */
-    public function handle_ban_user(): void
-    {
+    public function handle_ban_user(): void {
         if (!check_ajax_referer('fraud_ban_user_nonce', 'nonce', false)) {
-            wp_send_json_error(['message' => 'Invalid nonce']);
+            wp_send_json_error(array( 'message' => 'Invalid nonce' ));
             return;
         }
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => 'Недостаточно прав']);
+            wp_send_json_error(array( 'message' => 'Недостаточно прав' ));
             return;
         }
 
-        $user_id = isset($_POST['user_id']) ? absint($_POST['user_id']) : 0;
+        $user_id    = isset($_POST['user_id']) ? absint($_POST['user_id']) : 0;
         $ban_reason = isset($_POST['ban_reason']) ? sanitize_text_field(wp_unslash($_POST['ban_reason'])) : '';
 
         if (!$user_id) {
-            wp_send_json_error(['message' => 'Нет user_id']);
+            wp_send_json_error(array( 'message' => 'Нет user_id' ));
             return;
         }
 
@@ -1154,7 +1159,7 @@ class Cashback_Fraud_Admin
         }
 
         global $wpdb;
-        $profile_table = $wpdb->prefix . 'cashback_user_profile';
+        $profile_table  = $wpdb->prefix . 'cashback_user_profile';
         $requests_table = $wpdb->prefix . 'cashback_payout_requests';
 
         $wpdb->query('START TRANSACTION');
@@ -1176,15 +1181,15 @@ class Cashback_Fraud_Admin
 
             $wpdb->update(
                 $profile_table,
-                [
+                array(
                     'status'     => 'banned',
                     'ban_reason' => $ban_reason,
                     'banned_at'  => current_time('mysql'),
                     'updated_at' => current_time('mysql'),
-                ],
-                ['user_id' => $user_id],
-                ['%s', '%s', '%s', '%s'],
-                ['%d']
+                ),
+                array( 'user_id' => $user_id ),
+                array( '%s', '%s', '%s', '%s' ),
+                array( '%d' )
             );
 
             // PHP-фолбэк: заморозка баланса (идемпотентно при наличии триггера)
@@ -1201,14 +1206,14 @@ class Cashback_Fraud_Admin
             foreach ($active_requests as $request) {
                 $wpdb->update(
                     $requests_table,
-                    [
+                    array(
                         'status'      => 'declined',
                         'fail_reason' => '(Аккаунт забанен)',
                         'updated_at'  => current_time('mysql'),
-                    ],
-                    ['id' => $request->id],
-                    ['%s', '%s', '%s'],
-                    ['%d']
+                    ),
+                    array( 'id' => $request->id ),
+                    array( '%s', '%s', '%s' ),
+                    array( '%d' )
                 );
 
                 if (class_exists('Cashback_Encryption')) {
@@ -1217,7 +1222,10 @@ class Cashback_Fraud_Admin
                         get_current_user_id(),
                         'payout_request',
                         (int) $request->id,
-                        ['amount' => $request->total_amount, 'user_id' => $user_id]
+                        array(
+							'amount'  => $request->total_amount,
+							'user_id' => $user_id,
+						)
                     );
                 }
             }
@@ -1243,7 +1251,7 @@ class Cashback_Fraud_Admin
                     get_current_user_id(),
                     'user_profile',
                     $user_id,
-                    ['ban_reason' => $ban_reason]
+                    array( 'ban_reason' => $ban_reason )
                 );
             }
 
@@ -1264,11 +1272,11 @@ class Cashback_Fraud_Admin
                 );
             }
 
-            wp_send_json_success(['message' => 'Пользователь забанен']);
+            wp_send_json_success(array( 'message' => 'Пользователь забанен' ));
 
         } catch (\Exception $e) {
             $wpdb->query('ROLLBACK');
-            wp_send_json_error(['message' => $e->getMessage()]);
+            wp_send_json_error(array( 'message' => $e->getMessage() ));
         }
     }
 
@@ -1279,29 +1287,27 @@ class Cashback_Fraud_Admin
     /**
      * @return array<string, string>
      */
-    private static function get_alert_type_labels(): array
-    {
-        return [
-            'multi_account_ip' => 'Общий IP',
-            'multi_account_fp' => 'Общий fingerprint',
-            'shared_details'   => 'Общие реквизиты',
+    private static function get_alert_type_labels(): array {
+        return array(
+            'multi_account_ip'  => 'Общий IP',
+            'multi_account_fp'  => 'Общий fingerprint',
+            'shared_details'    => 'Общие реквизиты',
             'cancellation_rate' => 'Высокий % отклонений',
-            'velocity'         => 'Высокая частота выводов',
-            'amount_anomaly'   => 'Аномальная сумма',
-            'new_account_risk' => 'Новый аккаунт',
-        ];
+            'velocity'          => 'Высокая частота выводов',
+            'amount_anomaly'    => 'Аномальная сумма',
+            'new_account_risk'  => 'Новый аккаунт',
+        );
     }
 
     /**
      * @return array<string, string>
      */
-    private static function get_status_labels(): array
-    {
-        return [
+    private static function get_status_labels(): array {
+        return array(
             'open'      => 'Открыт',
             'reviewing' => 'На проверке',
             'confirmed' => 'Подтверждён',
             'dismissed' => 'Отклонён',
-        ];
+        );
     }
 }

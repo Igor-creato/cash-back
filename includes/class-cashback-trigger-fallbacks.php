@@ -10,16 +10,15 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class Cashback_Trigger_Fallbacks
-{
+class Cashback_Trigger_Fallbacks {
+
     /**
      * Рассчитывает кешбэк перед INSERT транзакции (замена триггера calculate_cashback_before_insert).
      *
      * @param array $data Данные для вставки (по ссылке)
      * @param bool  $is_registered true для зарегистрированных, false для незарег.
      */
-    public static function calculate_cashback(array &$data, bool $is_registered = true): void
-    {
+    public static function calculate_cashback( array &$data, bool $is_registered = true ): void {
         if ($is_registered) {
             global $wpdb;
             $rate = 60.00;
@@ -61,8 +60,7 @@ class Cashback_Trigger_Fallbacks
      * @param object $old_row     Текущая строка из БД
      * @param bool   $is_registered true для зарегистрированных
      */
-    public static function recalculate_cashback_on_update(array &$update_data, object $old_row, bool $is_registered = true): void
-    {
+    public static function recalculate_cashback_on_update( array &$update_data, object $old_row, bool $is_registered = true ): void {
         if (!isset($update_data['comission'])) {
             return;
         }
@@ -91,8 +89,7 @@ class Cashback_Trigger_Fallbacks
      * @param string $new_status Новый статус
      * @return true|string true если переход допустим, иначе сообщение об ошибке
      */
-    public static function validate_status_transition(string $old_status, string $new_status): string|true
-    {
+    public static function validate_status_transition( string $old_status, string $new_status ): string|true {
         if ($old_status === $new_status) {
             return true;
         }
@@ -132,8 +129,7 @@ class Cashback_Trigger_Fallbacks
      * @param string $current_status Текущий статус заявки
      * @return true|string true если можно изменять, иначе сообщение об ошибке
      */
-    public static function validate_payout_update(string $current_status): string|true
-    {
+    public static function validate_payout_update( string $current_status ): string|true {
         if ($current_status === 'paid') {
             return 'Изменение запрещено: выплаченная заявка не может быть изменена.';
         }
@@ -150,8 +146,7 @@ class Cashback_Trigger_Fallbacks
      *
      * @param array $data Данные для UPDATE (по ссылке)
      */
-    public static function set_banned_at(array &$data): void
-    {
+    public static function set_banned_at( array &$data ): void {
         $data['banned_at'] = current_time('mysql');
     }
 
@@ -160,9 +155,8 @@ class Cashback_Trigger_Fallbacks
      *
      * @param array $data Данные для UPDATE (по ссылке)
      */
-    public static function clear_ban_fields(array &$data): void
-    {
-        $data['banned_at'] = null;
+    public static function clear_ban_fields( array &$data ): void {
+        $data['banned_at']  = null;
         $data['ban_reason'] = null;
     }
 
@@ -172,8 +166,7 @@ class Cashback_Trigger_Fallbacks
      *
      * @param int $user_id ID пользователя
      */
-    public static function freeze_balance_on_ban(int $user_id): void
-    {
+    public static function freeze_balance_on_ban( int $user_id ): void {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_user_balance';
 
@@ -194,8 +187,7 @@ class Cashback_Trigger_Fallbacks
      *
      * @param int $user_id ID пользователя
      */
-    public static function unfreeze_balance_on_unban(int $user_id): void
-    {
+    public static function unfreeze_balance_on_unban( int $user_id ): void {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_user_balance';
 
@@ -215,8 +207,7 @@ class Cashback_Trigger_Fallbacks
      *
      * @param array $data Данные для вставки (по ссылке)
      */
-    public static function compute_webhook_payload_hash(array &$data): void
-    {
+    public static function compute_webhook_payload_hash( array &$data ): void {
         if (empty($data['payload_hash']) && !empty($data['payload'])) {
             $data['payload_hash'] = hash('sha256', $data['payload']);
         }

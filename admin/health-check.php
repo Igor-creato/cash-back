@@ -17,8 +17,8 @@ if (!defined('ABSPATH')) {
  *
  * @since 1.1.0
  */
-class Cashback_Health_Check
-{
+class Cashback_Health_Check {
+
     private const STALE_PAYOUT_DAYS = 30;
 
     /**
@@ -26,9 +26,8 @@ class Cashback_Health_Check
      *
      * @return void
      */
-    public static function run(): void
-    {
-        $issues = [];
+    public static function run(): void {
+        $issues = array();
 
         $issues = array_merge($issues, self::check_negative_balances());
         $issues = array_merge($issues, self::check_stale_payouts());
@@ -50,12 +49,11 @@ class Cashback_Health_Check
      *
      * @return array Список найденных проблем
      */
-    private static function check_negative_balances(): array
-    {
+    private static function check_negative_balances(): array {
         global $wpdb;
 
-        $table = $wpdb->prefix . 'cashback_user_balance';
-        $issues = [];
+        $table  = $wpdb->prefix . 'cashback_user_balance';
+        $issues = array();
 
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix, no user input
         $negative = $wpdb->get_results(
@@ -65,7 +63,7 @@ class Cashback_Health_Check
         );
 
         foreach ($negative as $row) {
-            $details = sprintf(
+            $details  = sprintf(
                 'user_id=%d, available=%.2f, pending=%.2f, paid=%.2f, frozen=%.2f',
                 $row->user_id,
                 $row->available_balance,
@@ -73,11 +71,11 @@ class Cashback_Health_Check
                 $row->paid_balance,
                 $row->frozen_balance
             );
-            $issues[] = [
+            $issues[] = array(
                 'severity' => 'CRITICAL',
-                'type' => 'negative_balance',
-                'message' => "Отрицательный баланс: {$details}"
-            ];
+                'type'     => 'negative_balance',
+                'message'  => "Отрицательный баланс: {$details}",
+            );
         }
 
         return $issues;
@@ -90,12 +88,11 @@ class Cashback_Health_Check
      *
      * @return array Список найденных проблем
      */
-    private static function check_stale_payouts(): array
-    {
+    private static function check_stale_payouts(): array {
         global $wpdb;
 
-        $table = $wpdb->prefix . 'cashback_payout_requests';
-        $issues = [];
+        $table  = $wpdb->prefix . 'cashback_payout_requests';
+        $issues = array();
 
         $stale = $wpdb->get_results($wpdb->prepare(
             "SELECT id, user_id, total_amount, created_at
@@ -106,17 +103,17 @@ class Cashback_Health_Check
         ));
 
         foreach ($stale as $row) {
-            $issues[] = [
+            $issues[] = array(
                 'severity' => 'WARNING',
-                'type' => 'stale_payout',
-                'message' => sprintf(
+                'type'     => 'stale_payout',
+                'message'  => sprintf(
                     'Заявка #%d (user_id=%d, сумма=%.2f) в статусе waiting с %s',
                     $row->id,
                     $row->user_id,
                     $row->total_amount,
                     $row->created_at
-                )
-            ];
+                ),
+            );
         }
 
         return $issues;
@@ -130,13 +127,12 @@ class Cashback_Health_Check
      *
      * @return array Список найденных проблем
      */
-    private static function check_balance_payout_mismatch(): array
-    {
+    private static function check_balance_payout_mismatch(): array {
         global $wpdb;
 
-        $table_balance = $wpdb->prefix . 'cashback_user_balance';
+        $table_balance  = $wpdb->prefix . 'cashback_user_balance';
         $table_requests = $wpdb->prefix . 'cashback_payout_requests';
-        $issues = [];
+        $issues         = array();
 
         // Пользователи с pending_balance > 0, но без активных заявок
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names from $wpdb->prefix, no user input
@@ -150,15 +146,15 @@ class Cashback_Health_Check
         );
 
         foreach ($mismatched as $row) {
-            $issues[] = [
+            $issues[] = array(
                 'severity' => 'WARNING',
-                'type' => 'pending_without_payout',
-                'message' => sprintf(
+                'type'     => 'pending_without_payout',
+                'message'  => sprintf(
                     'user_id=%d имеет pending_balance=%.2f, но нет активных заявок на выплату',
                     $row->user_id,
                     $row->pending_balance
-                )
-            ];
+                ),
+            );
         }
 
         return $issues;
@@ -173,13 +169,12 @@ class Cashback_Health_Check
      *
      * @return array Список найденных проблем
      */
-    private static function check_orphaned_users(): array
-    {
+    private static function check_orphaned_users(): array {
         global $wpdb;
 
         $table_profile = $wpdb->prefix . 'cashback_user_profile';
         $table_balance = $wpdb->prefix . 'cashback_user_balance';
-        $issues = [];
+        $issues        = array();
 
         // Пользователи WordPress без профиля кэшбэка
         // COUNT отдельно, затем LIMIT 20 для примеров — защита от OOM на больших сайтах
@@ -198,16 +193,16 @@ class Cashback_Health_Check
                  WHERE p.user_id IS NULL
                  LIMIT 20"
             );
-            $issues[] = [
+            $issues[]               = array(
                 'severity' => 'WARNING',
-                'type' => 'missing_profile',
-                'message' => sprintf(
+                'type'     => 'missing_profile',
+                'message'  => sprintf(
                     '%d пользователь(ей) без профиля в кэшбэк-системе: ID %s%s',
                     $orphaned_profile_count,
                     implode(', ', $without_profile_sample),
                     $orphaned_profile_count > 20 ? '...' : ''
-                )
-            ];
+                ),
+            );
         }
 
         // Пользователи WordPress без баланса кэшбэка
@@ -226,16 +221,16 @@ class Cashback_Health_Check
                  WHERE b.user_id IS NULL
                  LIMIT 20"
             );
-            $issues[] = [
+            $issues[]               = array(
                 'severity' => 'WARNING',
-                'type' => 'missing_balance',
-                'message' => sprintf(
+                'type'     => 'missing_balance',
+                'message'  => sprintf(
                     '%d пользователь(ей) без баланса в кэшбэк-системе: ID %s%s',
                     $orphaned_balance_count,
                     implode(', ', $without_balance_sample),
                     $orphaned_balance_count > 20 ? '...' : ''
-                )
-            ];
+                ),
+            );
         }
 
         return $issues;
@@ -247,13 +242,12 @@ class Cashback_Health_Check
      * @param array $issues Список проблем
      * @return void
      */
-    private static function send_report(array $issues): void
-    {
+    private static function send_report( array $issues ): void {
         $admin_email = get_option('admin_email');
-        $site_name = get_bloginfo('name');
+        $site_name   = get_bloginfo('name');
 
-        $critical_count = count(array_filter($issues, fn($i) => $i['severity'] === 'CRITICAL'));
-        $warning_count = count(array_filter($issues, fn($i) => $i['severity'] === 'WARNING'));
+        $critical_count = count(array_filter($issues, fn( $i ) => $i['severity'] === 'CRITICAL'));
+        $warning_count  = count(array_filter($issues, fn( $i ) => $i['severity'] === 'WARNING'));
 
         // Определяем тему письма по серьёзности
         if ($critical_count > 0) {
@@ -263,10 +257,10 @@ class Cashback_Health_Check
         }
 
         // Формируем тело письма
-        $body = "Cashback Health Check Report\n";
+        $body  = "Cashback Health Check Report\n";
         $body .= str_repeat('=', 50) . "\n";
         $body .= sprintf("Дата: %s\n", current_time('mysql'));
-        $body .= sprintf("Сайт: %s\n", home_url()) ;
+        $body .= sprintf("Сайт: %s\n", home_url());
         $body .= sprintf("Критических: %d | Предупреждений: %d\n", $critical_count, $warning_count);
         $body .= str_repeat('=', 50) . "\n\n";
 

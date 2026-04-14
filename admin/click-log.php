@@ -14,8 +14,8 @@ if (!defined('ABSPATH')) {
 /**
  * Класс просмотра лога кликов в админ-панели
  */
-class Cashback_Click_Log_Admin
-{
+class Cashback_Click_Log_Admin {
+
     use AdminPaginationTrait;
 
     /**
@@ -35,13 +35,12 @@ class Cashback_Click_Log_Admin
     /**
      * Конструктор класса
      */
-    public function __construct()
-    {
+    public function __construct() {
         global $wpdb;
         $this->table_name = $wpdb->prefix . 'cashback_click_log';
 
-        add_action('admin_menu', [$this, 'add_admin_menu']);
-        add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
+        add_action('admin_menu', array( $this, 'add_admin_menu' ));
+        add_action('admin_enqueue_scripts', array( $this, 'enqueue_admin_scripts' ));
     }
 
     /**
@@ -49,15 +48,14 @@ class Cashback_Click_Log_Admin
      *
      * @return void
      */
-    public function add_admin_menu(): void
-    {
+    public function add_admin_menu(): void {
         add_submenu_page(
             'cashback-overview',
             'Лог кликов',
             'Лог кликов',
             'manage_options',
             'cashback-click-log',
-            [$this, 'render_page']
+            array( $this, 'render_page' )
         );
     }
 
@@ -67,16 +65,15 @@ class Cashback_Click_Log_Admin
      * @param string $hook Текущая страница админки
      * @return void
      */
-    public function enqueue_admin_scripts(string $hook): void
-    {
-        $allowed_hooks = [
+    public function enqueue_admin_scripts( string $hook ): void {
+        $allowed_hooks = array(
             'cashback-overview_page_cashback-click-log',
             'toplevel_page_cashback-click-log',
-            'admin_page_cashback-click-log'
-        ];
+            'admin_page_cashback-click-log',
+        );
 
         $is_target_page = in_array($hook, $allowed_hooks, true) ||
-            (isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-click-log');
+            ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-click-log' );
 
         if (!$is_target_page) {
             return;
@@ -85,21 +82,21 @@ class Cashback_Click_Log_Admin
         wp_enqueue_style(
             'cashback-admin-click-log-css',
             plugins_url('../assets/css/admin.css', __FILE__),
-            [],
+            array(),
             '1.0.0'
         );
 
         wp_enqueue_script(
             'cashback-admin-click-log',
             plugins_url('../assets/js/admin-click-log.js', __FILE__),
-            ['jquery'],
+            array( 'jquery' ),
             '1.0.0',
             true
         );
 
-        wp_localize_script('cashback-admin-click-log', 'cashbackClickLogData', [
+        wp_localize_script('cashback-admin-click-log', 'cashbackClickLogData', array(
             'ajaxurl' => admin_url('admin-ajax.php'),
-        ]);
+        ));
 
         wp_add_inline_style('cashback-admin-click-log-css',
             '.column-url { word-break: break-all; }' .
@@ -114,8 +111,7 @@ class Cashback_Click_Log_Admin
      *
      * @return void
      */
-    public function render_page(): void
-    {
+    public function render_page(): void {
         if (!current_user_can('manage_options')) {
             wp_die(__('У вас нет доступа к этой странице.', 'cashback-plugin'));
         }
@@ -124,12 +120,12 @@ class Cashback_Click_Log_Admin
 
         // Параметры пагинации
         $current_page = max(1, intval($_GET['paged'] ?? 1));
-        $offset = ($current_page - 1) * $this->per_page;
+        $offset       = ( $current_page - 1 ) * $this->per_page;
 
         // Фильтры
-        $filter_email = isset($_GET['email']) ? sanitize_text_field(wp_unslash($_GET['email'])) : '';
+        $filter_email     = isset($_GET['email']) ? sanitize_text_field(wp_unslash($_GET['email'])) : '';
         $filter_date_from = isset($_GET['date_from']) ? sanitize_text_field(wp_unslash($_GET['date_from'])) : '';
-        $filter_date_to = isset($_GET['date_to']) ? sanitize_text_field(wp_unslash($_GET['date_to'])) : '';
+        $filter_date_to   = isset($_GET['date_to']) ? sanitize_text_field(wp_unslash($_GET['date_to'])) : '';
         $filter_spam_only = isset($_GET['spam_only']) && sanitize_text_field(wp_unslash($_GET['spam_only'])) === '1';
 
         // Валидация дат (формат + реальная дата)
@@ -153,22 +149,22 @@ class Cashback_Click_Log_Admin
         }
 
         // Построение WHERE
-        $where_conditions = [];
-        $where_params = [];
+        $where_conditions = array();
+        $where_params     = array();
 
         if (!empty($filter_email)) {
             $where_conditions[] = 'u.user_email LIKE %s';
-            $where_params[] = '%' . $wpdb->esc_like($filter_email) . '%';
+            $where_params[]     = '%' . $wpdb->esc_like($filter_email) . '%';
         }
 
         if (!empty($filter_date_from)) {
             $where_conditions[] = 'DATE(cl.created_at) >= %s';
-            $where_params[] = $filter_date_from;
+            $where_params[]     = $filter_date_from;
         }
 
         if (!empty($filter_date_to)) {
             $where_conditions[] = 'DATE(cl.created_at) <= %s';
-            $where_params[] = $filter_date_to;
+            $where_params[]     = $filter_date_to;
         }
 
         if ($filter_spam_only) {
@@ -205,7 +201,7 @@ class Cashback_Click_Log_Admin
                          ORDER BY cl.created_at DESC
                          LIMIT %d OFFSET %d";
 
-        $query_params = array_merge($where_params, [$this->per_page, $offset]);
+        $query_params = array_merge($where_params, array( $this->per_page, $offset ));
 
         $rows = $wpdb->get_results($wpdb->prepare($select_query, $query_params), ARRAY_A);
 
@@ -320,19 +316,19 @@ class Cashback_Click_Log_Admin
             </div>
 
             <?php
-            $this->render_pagination([
+            $this->render_pagination(array(
                 'total_items'  => $total_items,
                 'per_page'     => $this->per_page,
                 'current_page' => $current_page,
                 'total_pages'  => $total_pages,
                 'page_slug'    => 'cashback-click-log',
-                'add_args'     => array_filter([
+                'add_args'     => array_filter(array(
                     'email'     => $filter_email,
                     'date_from' => $filter_date_from,
                     'date_to'   => $filter_date_to,
                     'spam_only' => $filter_spam_only ? '1' : '',
-                ]),
-            ]);
+                )),
+            ));
             ?>
         </div>
         <?php

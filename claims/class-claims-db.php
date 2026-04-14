@@ -13,10 +13,9 @@ if (!defined('ABSPATH')) {
  * - cashback_claims
  * - cashback_claim_events
  */
-class Cashback_Claims_DB
-{
-    public static function create_tables(): void
-    {
+class Cashback_Claims_DB {
+
+    public static function create_tables(): void {
         global $wpdb;
 
         $charset_collate = $wpdb->get_charset_collate();
@@ -72,12 +71,12 @@ class Cashback_Claims_DB
             KEY `idx_unread` (`is_read`, `actor_type`)
         ) ENGINE=InnoDB {$charset_collate} COMMENT='История изменений заявок на кэшбэк';";
 
-        $tables = [
+        $tables = array(
             'cashback_claims'       => $table_claims,
             'cashback_claim_events' => $table_events,
-        ];
+        );
 
-        $failed = [];
+        $failed = array();
         foreach ($tables as $name => $sql) {
             $result = $wpdb->query($sql);
             if ($result === false) {
@@ -95,11 +94,10 @@ class Cashback_Claims_DB
         error_log('[Claims] Tables created successfully');
     }
 
-    private static function add_constraints(): void
-    {
+    private static function add_constraints(): void {
         global $wpdb;
 
-        $constraints = [
+        $constraints = array(
             "ALTER TABLE `{$wpdb->prefix}cashback_claims`
                 ADD CONSTRAINT `fk_claims_user` FOREIGN KEY (`user_id`)
                 REFERENCES `{$wpdb->prefix}users` (`ID`) ON DELETE CASCADE",
@@ -109,7 +107,7 @@ class Cashback_Claims_DB
             "ALTER TABLE `{$wpdb->prefix}cashback_claim_events`
                 ADD CONSTRAINT `fk_events_claim` FOREIGN KEY (`claim_id`)
                 REFERENCES `{$wpdb->prefix}cashback_claims` (`claim_id`) ON DELETE CASCADE",
-        ];
+        );
 
         $suppress = $wpdb->suppress_errors(true);
         foreach ($constraints as $sql) {
@@ -124,12 +122,11 @@ class Cashback_Claims_DB
     /**
      * Add is_read column if missing (migration for existing installs).
      */
-    public static function migrate_add_is_read(): void
-    {
+    public static function migrate_add_is_read(): void {
         global $wpdb;
 
         $table = "{$wpdb->prefix}cashback_claim_events";
-        $col = $wpdb->get_results("SHOW COLUMNS FROM `{$table}` LIKE 'is_read'");
+        $col   = $wpdb->get_results("SHOW COLUMNS FROM `{$table}` LIKE 'is_read'");
 
         if (empty($col)) {
             $wpdb->query("ALTER TABLE `{$table}` ADD COLUMN `is_read` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = прочитано пользователем' AFTER `actor_type`");
@@ -143,8 +140,7 @@ class Cashback_Claims_DB
     /**
      * Get count of unread admin/system events for a user across all their claims.
      */
-    public static function get_unread_events_count(int $user_id): int
-    {
+    public static function get_unread_events_count( int $user_id ): int {
         global $wpdb;
 
         return (int) $wpdb->get_var($wpdb->prepare(
@@ -159,8 +155,7 @@ class Cashback_Claims_DB
     /**
      * Mark all events for a user's claims as read.
      */
-    public static function mark_user_events_read(int $user_id): int
-    {
+    public static function mark_user_events_read( int $user_id ): int {
         global $wpdb;
 
         return (int) $wpdb->query($wpdb->prepare(
@@ -172,17 +167,16 @@ class Cashback_Claims_DB
         ));
     }
 
-    public static function drop_tables(): void
-    {
+    public static function drop_tables(): void {
         global $wpdb;
 
-        $tables = [
+        $tables = array(
             "{$wpdb->prefix}cashback_claim_events",
             "{$wpdb->prefix}cashback_claims",
-        ];
+        );
 
         foreach ($tables as $table) {
-            $wpdb->query($wpdb->prepare("DROP TABLE IF EXISTS `%i`", $table));
+            $wpdb->query($wpdb->prepare('DROP TABLE IF EXISTS `%i`', $table));
         }
     }
 }

@@ -22,19 +22,18 @@ if (!defined('ABSPATH')) {
  * 8. claim_status          — Статус заявки изменён → пользователю
  * 9. claim_admin_alert     — Новая заявка → администратору
  */
-class Cashback_Notifications
-{
-    public function __construct()
-    {
+class Cashback_Notifications {
+
+    public function __construct() {
         // Транзакции (PHP do_action — для случаев когда INSERT идёт через PHP-код плагина)
-        add_action('cashback_notification_transaction_created', [$this, 'on_transaction_created'], 10, 2);
-        add_action('cashback_notification_transaction_status_changed', [$this, 'on_transaction_status_changed'], 10, 4);
+        add_action('cashback_notification_transaction_created', array( $this, 'on_transaction_created' ), 10, 2);
+        add_action('cashback_notification_transaction_status_changed', array( $this, 'on_transaction_status_changed' ), 10, 4);
 
         // Обработка очереди из MySQL триггеров (для постбэков, вставленных напрямую в БД)
-        add_action('cashback_notification_process_queue', [$this, 'process_queue']);
+        add_action('cashback_notification_process_queue', array( $this, 'process_queue' ));
 
         // Регистрация 1-минутного интервала
-        add_filter('cron_schedules', [$this, 'add_cron_interval']);
+        add_filter('cron_schedules', array( $this, 'add_cron_interval' ));
 
         // Планирование откладываем до init — иначе cron_schedules фильтр
         // вызывает __() с textdomain до его загрузки (WP 6.7+ notice).
@@ -45,25 +44,25 @@ class Cashback_Notifications
         });
 
         // Начисление кэшбэка на баланс
-        add_action('cashback_notification_balance_credited', [$this, 'on_balance_credited'], 10, 1);
+        add_action('cashback_notification_balance_credited', array( $this, 'on_balance_credited' ), 10, 1);
 
         // Регистрация пользователя
-        add_action('cashback_notification_user_registered', [$this, 'on_user_registered'], 10, 1);
+        add_action('cashback_notification_user_registered', array( $this, 'on_user_registered' ), 10, 1);
 
         // Поддержка — ответ админа → пользователю
-        add_action('cashback_notification_ticket_reply', [$this, 'on_ticket_reply'], 10, 4);
+        add_action('cashback_notification_ticket_reply', array( $this, 'on_ticket_reply' ), 10, 4);
 
         // Поддержка — пользователь → админу
-        add_action('cashback_notification_ticket_admin_alert', [$this, 'on_ticket_admin_alert'], 10, 3);
+        add_action('cashback_notification_ticket_admin_alert', array( $this, 'on_ticket_admin_alert' ), 10, 3);
 
         // Заявки (claims) — перехватываем существующие хуки
-        add_action('cashback_claim_created', [$this, 'on_claim_created'], 10, 3);
-        add_action('cashback_claim_created', [$this, 'on_claim_admin_alert'], 10, 3);
-        add_action('cashback_claim_status_changed', [$this, 'on_claim_status_changed'], 10, 6);
+        add_action('cashback_claim_created', array( $this, 'on_claim_created' ), 10, 3);
+        add_action('cashback_claim_created', array( $this, 'on_claim_admin_alert' ), 10, 3);
+        add_action('cashback_claim_status_changed', array( $this, 'on_claim_status_changed' ), 10, 6);
 
         // Партнёрская программа (affiliate)
-        add_action('cashback_notification_affiliate_referral', [$this, 'on_affiliate_referral'], 10, 2);
-        add_action('cashback_notification_affiliate_commission', [$this, 'on_affiliate_commission'], 10, 1);
+        add_action('cashback_notification_affiliate_referral', array( $this, 'on_affiliate_referral' ), 10, 2);
+        add_action('cashback_notification_affiliate_commission', array( $this, 'on_affiliate_commission' ), 10, 1);
     }
 
     // =====================================================================
@@ -76,9 +75,8 @@ class Cashback_Notifications
      * @param int   $transaction_id ID транзакции
      * @param array $data           Данные транзакции (user_id, partner, sum_order, comission, order_status и т.д.)
      */
-    public function on_transaction_created(int $transaction_id, array $data): void
-    {
-        $user_id = (int) ($data['user_id'] ?? 0);
+    public function on_transaction_created( int $transaction_id, array $data ): void {
+        $user_id = (int) ( $data['user_id'] ?? 0 );
         if ($user_id <= 0) {
             return;
         }
@@ -129,8 +127,7 @@ class Cashback_Notifications
      * @param string $old_status     Старый статус
      * @param string $new_status     Новый статус
      */
-    public function on_transaction_status_changed(int $transaction_id, int $user_id, string $old_status, string $new_status): void
-    {
+    public function on_transaction_status_changed( int $transaction_id, int $user_id, string $old_status, string $new_status ): void {
         if ($user_id <= 0 || $old_status === $new_status) {
             return;
         }
@@ -140,15 +137,15 @@ class Cashback_Notifications
             return;
         }
 
-        $status_labels = [
+        $status_labels = array(
             'waiting'   => __('В ожидании', 'cashback-plugin'),
             'completed' => __('Подтверждён', 'cashback-plugin'),
             'hold'      => __('На проверке', 'cashback-plugin'),
             'declined'  => __('Отклонён', 'cashback-plugin'),
             'balance'   => __('Зачислен на баланс', 'cashback-plugin'),
-        ];
+        );
 
-        $new_label = $status_labels[$new_status] ?? $new_status;
+        $new_label = $status_labels[ $new_status ] ?? $new_status;
 
         $subject = sprintf(
             __('Статус транзакции #%1$d изменён на «%2$s»', 'cashback-plugin'),
@@ -167,7 +164,7 @@ class Cashback_Notifications
 Подробности в личном кабинете: %5$s', 'cashback-plugin'),
             $user->display_name,
             $transaction_id,
-            $status_labels[$old_status] ?? $old_status,
+            $status_labels[ $old_status ] ?? $old_status,
             $new_label,
             function_exists('wc_get_account_endpoint_url') ? wc_get_account_endpoint_url('cashback-history') : ''
         );
@@ -189,8 +186,7 @@ class Cashback_Notifications
      * @param string $partner        Название партнёра
      * @param array  $changes        Данные изменений из JSON
      */
-    public function on_transaction_data_changed(int $transaction_id, int $user_id, string $partner, array $changes): void
-    {
+    public function on_transaction_data_changed( int $transaction_id, int $user_id, string $partner, array $changes ): void {
         if ($user_id <= 0) {
             return;
         }
@@ -201,23 +197,23 @@ class Cashback_Notifications
         }
 
         // Формируем описание изменений (без комиссии — она не показывается пользователю)
-        $change_lines = [];
+        $change_lines = array();
 
-        $old_sum = (float) ($changes['old_sum_order'] ?? 0);
-        $new_sum = (float) ($changes['new_sum_order'] ?? 0);
+        $old_sum = (float) ( $changes['old_sum_order'] ?? 0 );
+        $new_sum = (float) ( $changes['new_sum_order'] ?? 0 );
         if (abs($old_sum - $new_sum) >= 0.01) {
             $change_lines[] = sprintf(
-                __('Сумма заказа: %s → %s ₽', 'cashback-plugin'),
+                __('Сумма заказа: %1$s → %2$s ₽', 'cashback-plugin'),
                 number_format($old_sum, 2, ',', ' '),
                 number_format($new_sum, 2, ',', ' ')
             );
         }
 
-        $old_cashback = (float) ($changes['old_cashback'] ?? 0);
-        $new_cashback = (float) ($changes['new_cashback'] ?? 0);
+        $old_cashback = (float) ( $changes['old_cashback'] ?? 0 );
+        $new_cashback = (float) ( $changes['new_cashback'] ?? 0 );
         if (abs($old_cashback - $new_cashback) >= 0.01) {
             $change_lines[] = sprintf(
-                __('Кэшбэк: %s → %s ₽', 'cashback-plugin'),
+                __('Кэшбэк: %1$s → %2$s ₽', 'cashback-plugin'),
                 number_format($old_cashback, 2, ',', ' '),
                 number_format($new_cashback, 2, ',', ' ')
             );
@@ -266,20 +262,22 @@ class Cashback_Notifications
      *
      * @param array $candidates Массив [['id' => ..., 'user_id' => ..., 'cashback' => ...], ...]
      */
-    public function on_balance_credited(array $candidates): void
-    {
+    public function on_balance_credited( array $candidates ): void {
         // Группируем по user_id — один email на пользователя
-        $grouped = [];
+        $grouped = array();
         foreach ($candidates as $row) {
             $uid = (int) $row['user_id'];
             if ($uid <= 0) {
                 continue;
             }
-            if (!isset($grouped[$uid])) {
-                $grouped[$uid] = ['total' => 0.0, 'count' => 0];
+            if (!isset($grouped[ $uid ])) {
+                $grouped[ $uid ] = array(
+					'total' => 0.0,
+					'count' => 0,
+				);
             }
-            $grouped[$uid]['total'] += (float) $row['cashback'];
-            $grouped[$uid]['count']++;
+            $grouped[ $uid ]['total'] += (float) $row['cashback'];
+            ++$grouped[ $uid ]['count'];
         }
 
         $sender = Cashback_Email_Sender::get_instance();
@@ -340,8 +338,7 @@ class Cashback_Notifications
      *
      * @param int $user_id ID пользователя
      */
-    public function on_user_registered(int $user_id): void
-    {
+    public function on_user_registered( int $user_id ): void {
         $user = get_user_by('id', $user_id);
         if (!$user) {
             return;
@@ -388,8 +385,7 @@ class Cashback_Notifications
      * @param int    $user_id       ID пользователя-владельца тикета
      * @param string $admin_message Текст ответа
      */
-    public function on_ticket_reply(int $ticket_id, string $subject, int $user_id, string $admin_message): void
-    {
+    public function on_ticket_reply( int $ticket_id, string $subject, int $user_id, string $admin_message ): void {
         $user = get_user_by('id', $user_id);
         if (!$user) {
             return;
@@ -440,8 +436,7 @@ class Cashback_Notifications
      * @param string $event_type 'new_ticket' или 'user_reply'
      * @param string $subject    Тема тикета
      */
-    public function on_ticket_admin_alert(int $ticket_id, string $event_type, string $subject): void
-    {
+    public function on_ticket_admin_alert( int $ticket_id, string $event_type, string $subject ): void {
         $ticket_number = '';
         if (class_exists('Cashback_Support_DB')) {
             $ticket_number = Cashback_Support_DB::format_ticket_number($ticket_id);
@@ -449,7 +444,7 @@ class Cashback_Notifications
             $ticket_number = '#' . $ticket_id;
         }
 
-        $user = wp_get_current_user();
+        $user      = wp_get_current_user();
         $admin_url = admin_url('admin.php?page=cashback-support&action=view&ticket_id=' . $ticket_id);
 
         if ($event_type === 'new_ticket') {
@@ -491,8 +486,7 @@ class Cashback_Notifications
     /**
      * Заявка создана — уведомление пользователю
      */
-    public function on_claim_created(int $claim_id, int $user_id, array $data): void
-    {
+    public function on_claim_created( int $claim_id, int $user_id, array $data ): void {
         $user = get_user_by('id', $user_id);
         if (!$user) {
             return;
@@ -532,8 +526,7 @@ ID заявки: %4$d
     /**
      * Новая заявка — уведомление администраторам
      */
-    public function on_claim_admin_alert(int $claim_id, int $user_id, array $data): void
-    {
+    public function on_claim_admin_alert( int $claim_id, int $user_id, array $data ): void {
         $user = get_user_by('id', $user_id);
 
         $subject = sprintf(
@@ -565,8 +558,7 @@ ID заявки: %4$d
     /**
      * Статус заявки изменён — уведомление пользователю
      */
-    public function on_claim_status_changed(int $claim_id, string $old_status, string $new_status, string $note, string $actor_type, ?int $actor_id): void
-    {
+    public function on_claim_status_changed( int $claim_id, string $old_status, string $new_status, string $note, string $actor_type, ?int $actor_id ): void {
         global $wpdb;
 
         $claim = $wpdb->get_row($wpdb->prepare(
@@ -579,19 +571,19 @@ ID заявки: %4$d
         }
 
         $user_id = (int) $claim['user_id'];
-        $user = get_user_by('id', $user_id);
+        $user    = get_user_by('id', $user_id);
         if (!$user) {
             return;
         }
 
-        $status_labels = [
+        $status_labels = array(
             'submitted'       => __('Отправлена', 'cashback-plugin'),
             'sent_to_network' => __('Отправлена партнёру', 'cashback-plugin'),
             'approved'        => __('Одобрена', 'cashback-plugin'),
             'declined'        => __('Отклонена', 'cashback-plugin'),
-        ];
+        );
 
-        $label = $status_labels[$new_status] ?? $new_status;
+        $label = $status_labels[ $new_status ] ?? $new_status;
 
         $subject = sprintf(
             __('Статус заявки #%1$d изменён на «%2$s»', 'cashback-plugin'),
@@ -633,8 +625,7 @@ ID заявки: %4$d
      * @param int $referrer_id ID реферера (кто пригласил)
      * @param int $referral_id ID нового реферала (кто зарегистрировался)
      */
-    public function on_affiliate_referral(int $referrer_id, int $referral_id): void
-    {
+    public function on_affiliate_referral( int $referrer_id, int $referral_id ): void {
         if ($referrer_id <= 0) {
             return;
         }
@@ -644,7 +635,7 @@ ID заявки: %4$d
             return;
         }
 
-        $referral = get_user_by('id', $referral_id);
+        $referral      = get_user_by('id', $referral_id);
         $referral_name = $referral ? $referral->display_name : '—';
 
         $subject = __('Новый реферал в вашей партнёрской программе', 'cashback-plugin');
@@ -677,8 +668,7 @@ ID заявки: %4$d
      * @param array $accruals Массив начислений, сгруппированных по referrer_id:
      *              [referrer_id => ['total' => float, 'count' => int]]
      */
-    public function on_affiliate_commission(array $accruals): void
-    {
+    public function on_affiliate_commission( array $accruals ): void {
         $sender = Cashback_Email_Sender::get_instance();
 
         foreach ($accruals as $referrer_id => $info) {
@@ -738,13 +728,12 @@ ID заявки: %4$d
      * @param array<string,array> $schedules
      * @return array<string,array>
      */
-    public function add_cron_interval(array $schedules): array
-    {
+    public function add_cron_interval( array $schedules ): array {
         if (!isset($schedules['every_minute'])) {
-            $schedules['every_minute'] = [
+            $schedules['every_minute'] = array(
                 'interval' => 60,
                 'display'  => __('Каждую минуту', 'cashback-plugin'),
-            ];
+            );
         }
         return $schedules;
     }
@@ -755,8 +744,7 @@ ID заявки: %4$d
      * Вызывается WP Cron каждую минуту. Читает необработанные записи
      * из cashback_notification_queue, отправляет email и помечает обработанными.
      */
-    public function process_queue(): void
-    {
+    public function process_queue(): void {
         global $wpdb;
         $queue_table = $wpdb->prefix . 'cashback_notification_queue';
         $tx_table    = $wpdb->prefix . 'cashback_transactions';
@@ -775,7 +763,7 @@ ID заявки: %4$d
             return;
         }
 
-        $processed_ids = [];
+        $processed_ids = array();
 
         foreach ($items as $item) {
             $tx_id   = (int) $item->transaction_id;
@@ -788,12 +776,12 @@ ID заявки: %4$d
 
             switch ($item->event_type) {
                 case 'transaction_new':
-                    $this->on_transaction_created($tx_id, [
+                    $this->on_transaction_created($tx_id, array(
                         'user_id'    => $user_id,
                         'partner'    => $item->partner ?? '',
                         'offer_name' => $item->offer_name ?? '',
                         'sum_order'  => $item->sum_order ?? 0,
-                    ]);
+                    ));
                     break;
 
                 case 'transaction_status':
@@ -806,7 +794,7 @@ ID заявки: %4$d
                     break;
 
                 case 'transaction_data_changed':
-                    $extra = !empty($item->extra_data) ? json_decode($item->extra_data, true) : [];
+                    $extra = !empty($item->extra_data) ? json_decode($item->extra_data, true) : array();
                     $this->on_transaction_data_changed(
                         $tx_id,
                         $user_id,

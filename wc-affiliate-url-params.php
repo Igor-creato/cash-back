@@ -15,11 +15,11 @@ if (!defined('ABSPATH')) {
  *
  * @since 2.0.0
  */
-class WC_Affiliate_URL_Params
-{
-    private const CACHE_GROUP = 'wc_affiliate_url_params';
+class WC_Affiliate_URL_Params {
+
+    private const CACHE_GROUP      = 'wc_affiliate_url_params';
     private const CACHE_EXPIRATION = 3600;
-    private const LOGGER_SOURCE = 'wc-affiliate-url-params';
+    private const LOGGER_SOURCE    = 'wc-affiliate-url-params';
 
     /**
      * Rate limiting: двухуровневые ключи (без User-Agent).
@@ -56,39 +56,38 @@ class WC_Affiliate_URL_Params
      *
      * @since 2.0.0
      */
-    public function __construct()
-    {
+    public function __construct() {
         // Хуки для добавления полей в админке
-        add_action('woocommerce_product_options_general_product_data', [$this, 'add_custom_fields']);
-        add_action('woocommerce_process_product_meta', [$this, 'save_custom_fields']);
+        add_action('woocommerce_product_options_general_product_data', array( $this, 'add_custom_fields' ));
+        add_action('woocommerce_process_product_meta', array( $this, 'save_custom_fields' ));
 
         // Админ-уведомления (ошибки валидации при сохранении)
-        add_action('admin_notices', [$this, 'show_admin_notices']);
+        add_action('admin_notices', array( $this, 'show_admin_notices' ));
 
         // Хуки для модификации URL на фронтенде
-        add_filter('woocommerce_product_add_to_cart_url', [$this, 'modify_external_url'], 10, 2);
+        add_filter('woocommerce_product_add_to_cart_url', array( $this, 'modify_external_url' ), 10, 2);
 
         // Добавляем data-product-id к ссылкам внешних товаров для JavaScript
-        add_filter('woocommerce_loop_add_to_cart_link', [$this, 'add_product_id_to_link'], 10, 2);
+        add_filter('woocommerce_loop_add_to_cart_link', array( $this, 'add_product_id_to_link' ), 10, 2);
 
         // Модифицируем кнопку внешнего товара на странице товара
-        add_action('woocommerce_external_add_to_cart', [$this, 'modify_single_product_button'], 5);
+        add_action('woocommerce_external_add_to_cart', array( $this, 'modify_single_product_button' ), 5);
         // Удаляем стандартный вывод кнопки, чтобы избежать дублирования
         remove_action('woocommerce_external_add_to_cart', 'woocommerce_external_add_to_cart', 30);
 
         // Подключение JS и CSS
-        add_action('wp_enqueue_scripts', [$this, 'enqueue_frontend_scripts']);
-        add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
+        add_action('wp_enqueue_scripts', array( $this, 'enqueue_frontend_scripts' ));
+        add_action('admin_enqueue_scripts', array( $this, 'enqueue_admin_scripts' ));
 
         // Server-side redirect endpoint для логирования кликов.
         // Приоритет 1: перехватить ДО темы и WooCommerce, иначе single product template
         // перезапишет нашу промежуточную страницу.
-        add_action('template_redirect', [$this, 'handle_click_redirect'], 1);
+        add_action('template_redirect', array( $this, 'handle_click_redirect' ), 1);
 
         // Отображение кэшбэка на карточках товаров и странице товара
-        add_filter('woocommerce_get_price_html', [$this, 'append_cashback_to_price'], 10, 2);
-        add_action('woocommerce_after_shop_loop_item_title', [$this, 'display_cashback_standalone_loop'], 15);
-        add_action('woocommerce_single_product_summary', [$this, 'display_cashback_single_product'], 11);
+        add_filter('woocommerce_get_price_html', array( $this, 'append_cashback_to_price' ), 10, 2);
+        add_action('woocommerce_after_shop_loop_item_title', array( $this, 'display_cashback_standalone_loop' ), 15);
+        add_action('woocommerce_single_product_summary', array( $this, 'display_cashback_single_product' ), 11);
     }
 
     /**
@@ -101,14 +100,13 @@ class WC_Affiliate_URL_Params
      *
      * @return void
      */
-    public function add_custom_fields(): void
-    {
+    public function add_custom_fields(): void {
         global $post, $wpdb;
 
         $product = wc_get_product($post->ID);
 
         $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
-        $params_table = $wpdb->prefix . 'cashback_affiliate_network_params';
+        $params_table   = $wpdb->prefix . 'cashback_affiliate_network_params';
 
         // Получаем все сети
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix, no user input
@@ -132,7 +130,7 @@ class WC_Affiliate_URL_Params
         }
 
         // Параметры выбранной сети (для начальной отрисовки)
-        $network_params = [];
+        $network_params = array();
         if ($selected_network_id > 0) {
             $network_params = $wpdb->get_results(
                 $wpdb->prepare(
@@ -140,7 +138,7 @@ class WC_Affiliate_URL_Params
                     $selected_network_id
                 ),
                 ARRAY_A
-            ) ?: [];
+            ) ?: array();
         }
 
         echo '<div class="options_group show_if_external">';
@@ -149,7 +147,10 @@ class WC_Affiliate_URL_Params
         echo '<p class="description" style="padding: 5px 12px; color: #666; margin: 0;">'
             . wp_kses(
                 __('В поле <b>Значение</b>: для подстановки ID пользователя введите <code>user</code>, для уникального идентификатора клика — <code>uuid</code>, иначе значение будет передано как есть.', 'wc-affiliate-url-params'),
-                ['b' => [], 'code' => []]
+                array(
+					'b'    => array(),
+					'code' => array(),
+				)
             )
             . '</p>';
 
@@ -160,9 +161,9 @@ class WC_Affiliate_URL_Params
         echo '<option value="">' . esc_html__('Выберите сеть', 'wc-affiliate-url-params') . '</option>';
 
         foreach ($networks as $network) {
-            $network_id = (int) $network['id'];
-            $is_active = (bool) $network['is_active'];
-            $is_selected = ($network_id === $selected_network_id);
+            $network_id  = (int) $network['id'];
+            $is_active   = (bool) $network['is_active'];
+            $is_selected = ( $network_id === $selected_network_id );
 
             // Неактивные сети: показываем только если они уже выбраны у товара
             if (!$is_active && !$is_selected) {
@@ -210,7 +211,7 @@ class WC_Affiliate_URL_Params
         $auto_deactivated = get_post_meta($post->ID, '_cashback_auto_deactivated', true);
         if ($auto_deactivated === '1') {
             $deactivation_reason = get_post_meta($post->ID, '_cashback_deactivation_reason', true);
-            $deactivated_at = get_post_meta($post->ID, '_cashback_deactivated_at', true);
+            $deactivated_at      = get_post_meta($post->ID, '_cashback_deactivated_at', true);
             echo '<div class="affiliate-network-warning" style="padding: 8px 12px; margin: 5px 12px; background: #fce4ec; border-left: 4px solid #d63638; color: #c62828;">';
             echo '<strong>' . esc_html__('Магазин автоматически деактивирован', 'wc-affiliate-url-params') . '</strong><br>';
             if ($deactivated_at) {
@@ -234,7 +235,7 @@ class WC_Affiliate_URL_Params
         // Индивидуальные параметры товара
         $product_params = get_post_meta($post->ID, '_affiliate_product_params', true);
         if (!is_array($product_params)) {
-            $product_params = [];
+            $product_params = array();
         }
 
         echo '<div class="options_group show_if_external">';
@@ -257,7 +258,7 @@ class WC_Affiliate_URL_Params
         echo '<div id="affiliate-product-params-rows">';
 
         foreach ($product_params as $pp) {
-            $key = isset($pp['key']) ? esc_attr($pp['key']) : '';
+            $key   = isset($pp['key']) ? esc_attr($pp['key']) : '';
             $value = isset($pp['value']) ? esc_attr($pp['value']) : '';
             echo '<div class="product-param-row" style="display: flex; gap: 10px; margin-bottom: 6px; align-items: center;">';
             echo '<input type="text" name="affiliate_product_param_key[]" value="' . $key . '" class="regular-text" placeholder="param_key" pattern="[a-zA-Z0-9_\-]+" title="' . esc_attr__('Только латиница, цифры, _ и -', 'wc-affiliate-url-params') . '" style="flex:1;" />';
@@ -270,7 +271,7 @@ class WC_Affiliate_URL_Params
 
         echo '<p style="margin-top: 8px;">';
         echo '<button type="button" id="add-product-param-row" class="button button-small"'
-            . (count($product_params) >= 5 ? ' disabled' : '') . '>'
+            . ( count($product_params) >= 5 ? ' disabled' : '' ) . '>'
             . esc_html__('+ Добавить параметр', 'wc-affiliate-url-params') . '</button>';
         echo '<span class="description" style="margin-left: 8px;">'
             . esc_html__('Макс. 5 параметров.', 'wc-affiliate-url-params')
@@ -288,45 +289,45 @@ class WC_Affiliate_URL_Params
             . esc_html__('Отображается на карточке товара под ценой или вместо цены, если цена не указана.', 'wc-affiliate-url-params')
             . '</p>';
 
-        woocommerce_wp_text_input([
+        woocommerce_wp_text_input(array(
             'id'          => '_store_domain',
             'label'       => __('Домен магазина', 'wc-affiliate-url-params'),
             'description' => __('Домен для браузерного расширения (напр. aliexpress.com). Заполняется автоматически из URL товара.', 'wc-affiliate-url-params'),
             'desc_tip'    => true,
             'placeholder' => 'aliexpress.com',
             'type'        => 'text',
-        ]);
+        ));
 
-        woocommerce_wp_select([
+        woocommerce_wp_select(array(
             'id'          => '_store_popup_mode',
             'label'       => __('Всплывающее окно', 'wc-affiliate-url-params'),
             'description' => __('Показывать ли всплывающее уведомление в браузерном расширении.', 'wc-affiliate-url-params'),
             'desc_tip'    => true,
             'value'       => get_post_meta($post->ID, '_store_popup_mode', true),
-            'options'     => [
+            'options'     => array(
                 ''     => __('— Выберите показывать ли всплывающее окно —', 'wc-affiliate-url-params'),
                 'show' => __('Показывать', 'wc-affiliate-url-params'),
                 'hide' => __('Не показывать', 'wc-affiliate-url-params'),
-            ],
-        ]);
+            ),
+        ));
 
-        woocommerce_wp_text_input([
+        woocommerce_wp_text_input(array(
             'id'          => '_cashback_display_label',
             'label'       => __('Текст метки', 'wc-affiliate-url-params'),
             'description' => __('По умолчанию: Кэшбэк', 'wc-affiliate-url-params'),
             'desc_tip'    => true,
             'placeholder' => 'Кэшбэк',
             'type'        => 'text',
-        ]);
+        ));
 
-        woocommerce_wp_text_input([
+        woocommerce_wp_text_input(array(
             'id'          => '_cashback_display_value',
             'label'       => __('Размер кэшбэка', 'wc-affiliate-url-params'),
             'description' => __('Например: до 81%, 388р., до 800р.', 'wc-affiliate-url-params'),
             'desc_tip'    => true,
             'placeholder' => 'до 81%',
             'type'        => 'text',
-        ]);
+        ));
 
         echo '</div>';
     }
@@ -340,8 +341,7 @@ class WC_Affiliate_URL_Params
      *
      * @return void
      */
-    private function render_network_params_table(array $params): void
-    {
+    private function render_network_params_table( array $params ): void {
         if (empty($params)) {
             echo '<p style="padding: 5px 12px; color: #666; font-style: italic;">'
                 . esc_html__('У этой сети нет настроенных параметров.', 'wc-affiliate-url-params') . '</p>';
@@ -388,8 +388,7 @@ class WC_Affiliate_URL_Params
      *
      * @return void
      */
-    public function save_custom_fields(int $post_id): void
-    {
+    public function save_custom_fields( int $post_id ): void {
         if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
             return;
         }
@@ -402,7 +401,7 @@ class WC_Affiliate_URL_Params
             return;
         }
 
-        $product = wc_get_product($post_id);
+        $product     = wc_get_product($post_id);
         $is_external = $product && $product->get_type() === 'external';
 
         // Fallback to POST data for new products where type may not be resolved yet
@@ -441,28 +440,28 @@ class WC_Affiliate_URL_Params
         wp_cache_delete('affiliate_params_' . $post_id, self::CACHE_GROUP);
 
         // Индивидуальные параметры товара
-        $param_keys = isset($_POST['affiliate_product_param_key']) && is_array($_POST['affiliate_product_param_key'])
+        $param_keys   = isset($_POST['affiliate_product_param_key']) && is_array($_POST['affiliate_product_param_key'])
             ? array_map('sanitize_text_field', wp_unslash($_POST['affiliate_product_param_key']))
-            : [];
+            : array();
         $param_values = isset($_POST['affiliate_product_param_value']) && is_array($_POST['affiliate_product_param_value'])
             ? array_map('sanitize_text_field', wp_unslash($_POST['affiliate_product_param_value']))
-            : [];
+            : array();
 
-        $product_params = [];
+        $product_params     = array();
         $max_product_params = 5;
 
         for ($i = 0; $i < min(count($param_keys), $max_product_params); $i++) {
-            $key = trim($param_keys[$i]);
-            $value = trim($param_values[$i]);
+            $key   = trim($param_keys[ $i ]);
+            $value = trim($param_values[ $i ]);
 
             if ($key === '' || !preg_match('/^[a-zA-Z0-9_\-]+$/', $key)) {
                 continue;
             }
 
-            $product_params[] = [
+            $product_params[] = array(
                 'key'   => $key,
                 'value' => $value,
-            ];
+            );
         }
 
         update_post_meta($post_id, '_affiliate_product_params', $product_params);
@@ -476,7 +475,7 @@ class WC_Affiliate_URL_Params
         if (empty($store_domain) && $product && $product instanceof \WC_Product_External) {
             $product_url = $product->get_product_url();
             if ($product_url) {
-                $parsed = wp_parse_url($product_url);
+                $parsed       = wp_parse_url($product_url);
                 $store_domain = $parsed['host'] ?? '';
             }
         }
@@ -491,7 +490,7 @@ class WC_Affiliate_URL_Params
             : '';
 
         // Валидация: если домен задан, а режим не выбран — не даём опубликовать
-        if (!empty($store_domain) && !in_array($popup_mode, ['show', 'hide'], true)) {
+        if (!empty($store_domain) && !in_array($popup_mode, array( 'show', 'hide' ), true)) {
             set_transient(
                 'cashback_popup_mode_error_' . get_current_user_id(),
                 __('Выберите показывать или не показывать всплывающее окно.', 'wc-affiliate-url-params'),
@@ -499,7 +498,10 @@ class WC_Affiliate_URL_Params
             );
             // Откатываем статус если товар стал publish
             if (get_post_status($post_id) === 'publish') {
-                wp_update_post(['ID' => $post_id, 'post_status' => 'draft']);
+                wp_update_post(array(
+					'ID'          => $post_id,
+					'post_status' => 'draft',
+				));
             }
         } else {
             update_post_meta($post_id, '_store_popup_mode', $popup_mode);
@@ -522,17 +524,17 @@ class WC_Affiliate_URL_Params
         // Проверяем активность выбранной сети
         global $wpdb;
         $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
-        $is_active = (int) $wpdb->get_var($wpdb->prepare(
+        $is_active      = (int) $wpdb->get_var($wpdb->prepare(
             "SELECT is_active FROM {$networks_table} WHERE id = %d",
             $network_id
         ));
 
         if ($is_active === 0) {
             // Переводим товар в статус "На утверждении"
-            wp_update_post([
-                'ID' => $post_id,
+            wp_update_post(array(
+                'ID'          => $post_id,
                 'post_status' => 'pending',
-            ]);
+            ));
 
             set_transient(
                 'cashback_affiliate_network_warning_' . get_current_user_id(),
@@ -555,8 +557,7 @@ class WC_Affiliate_URL_Params
      *
      * @return void
      */
-    public function show_admin_notices(): void
-    {
+    public function show_admin_notices(): void {
         $user_id = get_current_user_id();
 
         // Ошибка: режим всплывающего окна не выбран
@@ -604,8 +605,7 @@ class WC_Affiliate_URL_Params
      *
      * @return string Модифицированный URL с партнерскими параметрами.
      */
-    public function modify_external_url(string $url, WC_Product $product): string
-    {
+    public function modify_external_url( string $url, WC_Product $product ): string {
         if ($product->get_type() !== 'external') {
             return $url;
         }
@@ -613,7 +613,7 @@ class WC_Affiliate_URL_Params
         $product_id = $product->get_id();
 
         // Проверяем кэш
-        $cache_key = 'affiliate_params_' . $product_id;
+        $cache_key     = 'affiliate_params_' . $product_id;
         $cached_params = wp_cache_get($cache_key, self::CACHE_GROUP);
 
         if (false === $cached_params) {
@@ -638,48 +638,47 @@ class WC_Affiliate_URL_Params
      *
      * @return array Массив партнерских параметров [ i => ['key' => param_name, 'value' => param_type] ].
      */
-    private function get_affiliate_params(int $product_id): array
-    {
+    private function get_affiliate_params( int $product_id ): array {
         global $wpdb;
 
         $network_id = (int) get_post_meta($product_id, '_affiliate_network_id', true);
         if ($network_id <= 0) {
-            return [];
+            return array();
         }
 
         // Проверяем активность сети
         $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
-        $is_active = (int) $wpdb->get_var($wpdb->prepare(
+        $is_active      = (int) $wpdb->get_var($wpdb->prepare(
             "SELECT is_active FROM {$networks_table} WHERE id = %d",
             $network_id
         ));
 
         if ($is_active === 0) {
-            return [];
+            return array();
         }
 
         $params_table = $wpdb->prefix . 'cashback_affiliate_network_params';
-        $rows = $wpdb->get_results($wpdb->prepare(
+        $rows         = $wpdb->get_results($wpdb->prepare(
             "SELECT param_name, param_type FROM {$params_table} WHERE network_id = %d ORDER BY id ASC",
             $network_id
         ), ARRAY_A);
 
-        $params = [];
+        $params = array();
         if (!empty($rows)) {
             foreach ($rows as $i => $row) {
-                $params[$i] = [
+                $params[ $i ] = array(
                     'key'   => $row['param_name'],
                     'value' => $row['param_type'],
-                ];
+                );
             }
         }
 
         // Мерж индивидуальных параметров товара
         $product_params = get_post_meta($product_id, '_affiliate_product_params', true);
         if (is_array($product_params) && !empty($product_params)) {
-            $key_to_index = [];
+            $key_to_index = array();
             foreach ($params as $idx => $p) {
-                $key_to_index[$p['key']] = $idx;
+                $key_to_index[ $p['key'] ] = $idx;
             }
 
             foreach ($product_params as $pp) {
@@ -687,15 +686,15 @@ class WC_Affiliate_URL_Params
                     continue;
                 }
 
-                if (isset($key_to_index[$pp['key']])) {
+                if (isset($key_to_index[ $pp['key'] ])) {
                     // Переопределяем значение сетевого параметра
-                    $params[$key_to_index[$pp['key']]]['value'] = $pp['value'];
+                    $params[ $key_to_index[ $pp['key'] ] ]['value'] = $pp['value'];
                 } else {
                     // Добавляем новый параметр
-                    $params[] = [
+                    $params[] = array(
                         'key'   => $pp['key'],
                         'value' => $pp['value'],
-                    ];
+                    );
                 }
             }
         }
@@ -716,8 +715,7 @@ class WC_Affiliate_URL_Params
      *
      * @return void
      */
-    public function handle_click_redirect(): void
-    {
+    public function handle_click_redirect(): void {
         // Шаг 2: финальный redirect с activation page → affiliate URL.
         // Браузерное расширение уже зафиксировало активацию по cookie на шаге 1.
         if (isset($_GET['cashback_go']) && isset($_GET['click_id'])) {
@@ -771,7 +769,7 @@ class WC_Affiliate_URL_Params
             }
 
             // Контекст пользователя
-            $user_id = get_current_user_id(); // 0 для гостей
+            $user_id    = get_current_user_id(); // 0 для гостей
             $session_id = $this->get_session_id();
 
             // Построение финального affiliate URL
@@ -829,7 +827,7 @@ class WC_Affiliate_URL_Params
             }
 
             // Логирование клика в БД (ошибка НЕ блокирует редирект)
-            $this->log_click_to_db([
+            $this->log_click_to_db(array(
                 'click_id'      => $click_id,
                 'user_id'       => $user_id,
                 'session_id'    => $session_id,
@@ -840,7 +838,7 @@ class WC_Affiliate_URL_Params
                 'user_agent'    => $user_agent,
                 'referer'       => $referer,
                 'spam_click'    => $rate_status === 'spam' ? 1 : 0,
-            ]);
+            ));
 
             // Устанавливаем cookie для браузерного расширения.
             // chrome.cookies API расширения читает этот cookie на каждое событие onUpdated
@@ -856,18 +854,18 @@ class WC_Affiliate_URL_Params
             if (!empty($dest_domain)) {
                 setcookie(
                     'cb_activation',
-                    (string) wp_json_encode([
+                    (string) wp_json_encode(array(
                         'click_id' => $click_id,
                         'domain'   => $dest_domain,
                         'ts'       => time(),
-                    ]),
-                    [
+                    )),
+                    array(
                         'expires'  => time() + 1800,
                         'path'     => '/',
                         'secure'   => is_ssl(),
                         'httponly' => false,
                         'samesite' => 'Lax',
-                    ]
+                    )
                 );
             }
 
@@ -883,7 +881,10 @@ class WC_Affiliate_URL_Params
             // URL через home_url() — НЕ через permalink товара, иначе WooCommerce
             // перехватывает запрос как single product page и ломает standalone HTML.
             $activation_page_url = add_query_arg(
-                ['cashback_go' => '1', 'click_id' => $click_id],
+                array(
+					'cashback_go' => '1',
+					'click_id'    => $click_id,
+				),
                 home_url('/')
             );
             wp_redirect($activation_page_url, 302);
@@ -894,7 +895,7 @@ class WC_Affiliate_URL_Params
 
             try {
                 $product = wc_get_product($product_id);
-                $url = ($product && $product->get_type() === 'external')
+                $url     = ( $product && $product->get_type() === 'external' )
                     ? $product->get_product_url()
                     : home_url();
             } catch (\Throwable $e2) {
@@ -925,8 +926,7 @@ class WC_Affiliate_URL_Params
      *
      * @return void
      */
-    private function handle_activation_page(): void
-    {
+    private function handle_activation_page(): void {
         $click_id = sanitize_text_field(wp_unslash($_GET['click_id'] ?? ''));
 
         // Валидация: ровно 32 hex-символа (bin2hex(random_bytes(16)))
@@ -944,7 +944,7 @@ class WC_Affiliate_URL_Params
                 "SELECT affiliate_url FROM `{$table}` WHERE click_id = %s LIMIT 1",
                 $click_id
             ));
-            $url = ($row && in_array(parse_url($row, PHP_URL_SCHEME), ['http', 'https'], true))
+            $url = ( $row && in_array(parse_url($row, PHP_URL_SCHEME), array( 'http', 'https' ), true) )
                 ? $row
                 : home_url();
             wp_redirect($url, 302);
@@ -964,7 +964,7 @@ class WC_Affiliate_URL_Params
         $affiliate_url = '';
         if (!empty($click['affiliate_url'])) {
             $scheme = parse_url($click['affiliate_url'], PHP_URL_SCHEME);
-            if (in_array($scheme, ['http', 'https'], true)) {
+            if (in_array($scheme, array( 'http', 'https' ), true)) {
                 $affiliate_url = $click['affiliate_url'];
             }
         }
@@ -990,26 +990,26 @@ class WC_Affiliate_URL_Params
         }
 
         // JSON для браузерного расширения (content script читает data-cb-activation)
-        $activation_data = esc_attr((string) wp_json_encode([
+        $activation_data = esc_attr((string) wp_json_encode(array(
             'domain'   => $store_domain,
             'click_id' => $click_id,
-        ]));
+        )));
 
         $safe_redirect_url = esc_url($affiliate_url);
         // wp_json_encode() для JS-контекста: экранирует кавычки и спецсимволы,
         // но НЕ кодирует & в &amp; (в отличие от esc_js(), который использует htmlspecialchars).
-        $safe_js_url       = wp_json_encode($affiliate_url);
-        $charset           = esc_attr(get_bloginfo('charset'));
-        $lang_attr         = get_language_attributes();
-        $site_name         = esc_html(get_bloginfo('name'));
+        $safe_js_url = wp_json_encode($affiliate_url);
+        $charset     = esc_attr(get_bloginfo('charset'));
+        $lang_attr   = get_language_attributes();
+        $site_name   = esc_html(get_bloginfo('name'));
 
         // Логотип сайта: custom_logo → site_icon → fallback эмодзи
-        $logo_html = '';
+        $logo_html      = '';
         $custom_logo_id = get_theme_mod('custom_logo');
         if ($custom_logo_id) {
             $logo_url = wp_get_attachment_image_url($custom_logo_id, 'medium');
             if ($logo_url) {
-                $logo_alt = get_post_meta($custom_logo_id, '_wp_attachment_image_alt', true);
+                $logo_alt  = get_post_meta($custom_logo_id, '_wp_attachment_image_alt', true);
                 $logo_html = '<img src="' . esc_url($logo_url) . '" alt="' . esc_attr($logo_alt ?: $site_name) . '">';
             }
         }
@@ -1025,21 +1025,21 @@ class WC_Affiliate_URL_Params
         if (empty($logo_html)) {
             $logo_html = '&#128176;';
         }
-        $store_name_esc    = esc_html($store_name);
+        $store_name_esc = esc_html($store_name);
 
         // Текстовые строки
-        $text_heading     = esc_html__('Переход в магазин', 'cashback-plugin');
-        $text_activated   = esc_html__('Кэшбэк активируется через:', 'cashback-plugin');
-        $text_redirect    = esc_html__('Вы будете перенаправлены через', 'cashback-plugin');
-        $text_sec         = esc_html__('сек.', 'cashback-plugin');
-        $text_go_now      = esc_html__('Перейти сейчас', 'cashback-plugin');
+        $text_heading   = esc_html__('Переход в магазин', 'cashback-plugin');
+        $text_activated = esc_html__('Кэшбэк активируется через:', 'cashback-plugin');
+        $text_redirect  = esc_html__('Вы будете перенаправлены через', 'cashback-plugin');
+        $text_sec       = esc_html__('сек.', 'cashback-plugin');
+        $text_go_now    = esc_html__('Перейти сейчас', 'cashback-plugin');
 
         // Favicon из Site Icon (Customizer → Site Identity → Иконка сайта)
         $favicon_html = '';
         $site_icon_id = get_option('site_icon');
         if ($site_icon_id) {
-            $icon_32 = wp_get_attachment_image_url((int) $site_icon_id, array(32, 32));
-            $icon_180 = wp_get_attachment_image_url((int) $site_icon_id, array(180, 180));
+            $icon_32  = wp_get_attachment_image_url((int) $site_icon_id, array( 32, 32 ));
+            $icon_180 = wp_get_attachment_image_url((int) $site_icon_id, array( 180, 180 ));
             if ($icon_32) {
                 $favicon_html .= '<link rel="icon" href="' . esc_url($icon_32) . '" sizes="32x32">';
             }
@@ -1258,8 +1258,7 @@ HTML;
      *
      * @return string|null Полный affiliate URL или null если товар не найден.
      */
-    private function build_final_affiliate_url(int $product_id, int $user_id, string $click_id): ?string
-    {
+    private function build_final_affiliate_url( int $product_id, int $user_id, string $click_id ): ?string {
         $product = wc_get_product($product_id);
         if (!$product || $product->get_type() !== 'external') {
             return null;
@@ -1272,7 +1271,7 @@ HTML;
 
         // Защита от open redirect: разрешаем только http/https схемы
         $scheme = parse_url($base_url, PHP_URL_SCHEME);
-        if (!in_array($scheme, ['http', 'https'], true)) {
+        if (!in_array($scheme, array( 'http', 'https' ), true)) {
             return null;
         }
 
@@ -1287,7 +1286,7 @@ HTML;
             $partner_token = Mariadb_Plugin::get_partner_token($user_id);
         }
 
-        $params = [];
+        $params = array();
         foreach ($affiliate_params as $param) {
             if (empty($param['key']) || empty($param['value'])) {
                 continue;
@@ -1297,11 +1296,11 @@ HTML;
 
             if ($param_type === 'user') {
                 // partner_token вместо user_id — защита от IDOR и перебора
-                $params[$param['key']] = $partner_token !== null ? $partner_token : 'unregistered';
+                $params[ $param['key'] ] = $partner_token !== null ? $partner_token : 'unregistered';
             } elseif ($param_type === 'uuid') {
-                $params[$param['key']] = $click_id;
+                $params[ $param['key'] ] = $click_id;
             } else {
-                $params[$param['key']] = $param['value'];
+                $params[ $param['key'] ] = $param['value'];
             }
         }
 
@@ -1317,8 +1316,7 @@ HTML;
      *
      * @return string|null Slug сети или null.
      */
-    private function get_network_slug_for_product(int $product_id): ?string
-    {
+    private function get_network_slug_for_product( int $product_id ): ?string {
         global $wpdb;
 
         $network_id = (int) get_post_meta($product_id, '_affiliate_network_id', true);
@@ -1327,7 +1325,7 @@ HTML;
         }
 
         $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
-        $slug = $wpdb->get_var($wpdb->prepare(
+        $slug           = $wpdb->get_var($wpdb->prepare(
             "SELECT slug FROM {$networks_table} WHERE id = %d AND is_active = 1",
             $network_id
         ));
@@ -1346,8 +1344,7 @@ HTML;
      *
      * @return string|null Идентификатор WC-сессии или null.
      */
-    private function get_session_id(): ?string
-    {
+    private function get_session_id(): ?string {
         if (is_user_logged_in()) {
             return null;
         }
@@ -1374,8 +1371,7 @@ HTML;
      *
      * @return bool true если UA похож на бота/скрипт.
      */
-    private function is_bot_user_agent(string $user_agent): bool
-    {
+    private function is_bot_user_agent( string $user_agent ): bool {
         // Пустой UA — однозначно не браузер
         if (trim($user_agent) === '') {
             return true;
@@ -1387,7 +1383,7 @@ HTML;
         }
 
         // Известные бот/скрипт сигнатуры (lowercase для сравнения)
-        $bot_signatures = [
+        $bot_signatures = array(
             'curl/',
             'wget/',
             'python-requests',
@@ -1412,7 +1408,7 @@ HTML;
             'selenium',
             'puppeteer',
             'playwright',
-        ];
+        );
 
         $ua_lower = strtolower($user_agent);
 
@@ -1451,8 +1447,7 @@ HTML;
      *
      * @return string 'normal' | 'spam' | 'blocked'
      */
-    private function get_click_rate_status(string $ip_address, int $product_id): string
-    {
+    private function get_click_rate_status( string $ip_address, int $product_id ): string {
         $window = self::RATE_LIMIT_WINDOW_SECONDS;
 
         // --- Ключ 1: per-product (IP + product_id, без UA) ---
@@ -1513,14 +1508,13 @@ HTML;
      *
      * @return bool true при успехе, false при ошибке.
      */
-    private function log_click_to_db(array $data): bool
-    {
+    private function log_click_to_db( array $data ): bool {
         global $wpdb;
 
         $table = $wpdb->prefix . 'cashback_click_log';
 
         // Время в UTC с микросекундами
-        $created_at = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('Y-m-d H:i:s.u');
+        $created_at = ( new \DateTimeImmutable('now', new \DateTimeZone('UTC')) )->format('Y-m-d H:i:s.u');
 
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table is a safe prefixed table name
         $result = $wpdb->query($wpdb->prepare(
@@ -1543,7 +1537,7 @@ HTML;
             $logger = wc_get_logger();
             $logger->error(
                 sprintf('Ошибка записи клика для товара %d: %s', $data['product_id'], $wpdb->last_error),
-                ['source' => self::LOGGER_SOURCE]
+                array( 'source' => self::LOGGER_SOURCE )
             );
             return false;
         }
@@ -1563,8 +1557,7 @@ HTML;
      *
      * @return array Массив с агрегированной статистикой.
      */
-    public static function get_spam_stats(int $hours = 24): array
-    {
+    public static function get_spam_stats( int $hours = 24 ): array {
         global $wpdb;
 
         $table = $wpdb->prefix . 'cashback_click_log';
@@ -1604,16 +1597,16 @@ HTML;
             $hours
         ), ARRAY_A);
 
-        return [
+        return array(
             'period_hours' => $hours,
-            'total_clicks' => (int) ($totals['total_clicks'] ?? 0),
-            'total_spam'   => (int) ($totals['total_spam'] ?? 0),
+            'total_clicks' => (int) ( $totals['total_clicks'] ?? 0 ),
+            'total_spam'   => (int) ( $totals['total_spam'] ?? 0 ),
             'spam_rate'    => $totals['total_clicks'] > 0
                 ? round((int) $totals['total_spam'] / (int) $totals['total_clicks'] * 100, 1)
                 : 0,
-            'top_ips'      => $top_ips ?: [],
-            'top_products' => $top_products ?: [],
-        ];
+            'top_ips'      => $top_ips ?: array(),
+            'top_products' => $top_products ?: array(),
+        );
     }
 
     /**
@@ -1626,8 +1619,7 @@ HTML;
      *
      * @return string Модифицированная ссылка с data-атрибутом.
      */
-    public function add_product_id_to_link(string $link, WC_Product $product): string
-    {
+    public function add_product_id_to_link( string $link, WC_Product $product ): string {
         if ($product->get_type() === 'external') {
             $product_id   = $product->get_id();
             $base_url     = $product->get_product_url();
@@ -1664,15 +1656,14 @@ HTML;
      *
      * @return void
      */
-    public function modify_single_product_button(): void
-    {
+    public function modify_single_product_button(): void {
         global $product;
 
         if (!$product || $product->get_type() !== 'external') {
             return;
         }
 
-        $base_url = $product->get_product_url();
+        $base_url    = $product->get_product_url();
         $product_url = $this->modify_external_url($base_url, $product);
         $button_text = $product->single_add_to_cart_text();
 
@@ -1699,8 +1690,7 @@ HTML;
      *
      * @return string HTML-строка или пустая строка если кэшбэк не задан.
      */
-    private function get_cashback_html(int $product_id, string $context = 'loop', bool $standalone = false): string
-    {
+    private function get_cashback_html( int $product_id, string $context = 'loop', bool $standalone = false ): string {
         $value = get_post_meta($product_id, '_cashback_display_value', true);
         if (empty($value)) {
             return '';
@@ -1737,8 +1727,7 @@ HTML;
      *
      * @return string Модифицированный HTML цены.
      */
-    public function append_cashback_to_price(string $price_html, \WC_Product $product): string
-    {
+    public function append_cashback_to_price( string $price_html, \WC_Product $product ): string {
         if ($product->get_type() !== 'external') {
             return $price_html;
         }
@@ -1756,8 +1745,8 @@ HTML;
         }
 
         $product_id = $product->get_id();
-        $is_single = function_exists('is_product') && is_product();
-        $context = $is_single ? 'single' : 'loop';
+        $is_single  = function_exists('is_product') && is_product();
+        $context    = $is_single ? 'single' : 'loop';
         $standalone = empty(trim($price_html));
 
         $cashback_html = $this->get_cashback_html($product_id, $context, $standalone);
@@ -1782,8 +1771,7 @@ HTML;
      *
      * @return void
      */
-    public function display_cashback_standalone_loop(): void
-    {
+    public function display_cashback_standalone_loop(): void {
         global $product;
 
         if (!$product || $product->get_type() !== 'external') {
@@ -1810,8 +1798,7 @@ HTML;
      *
      * @return void
      */
-    public function display_cashback_single_product(): void
-    {
+    public function display_cashback_single_product(): void {
         global $product;
 
         if (!$product || $product->get_type() !== 'external') {
@@ -1835,30 +1822,29 @@ HTML;
      *
      * @return void
      */
-    public function enqueue_frontend_scripts(): void
-    {
+    public function enqueue_frontend_scripts(): void {
         if (!is_admin()) {
             wp_enqueue_script(
                 'wc-affiliate-url-params',
                 plugins_url('assets/js/affiliate-guest-warning.js', __FILE__),
-                ['jquery'],
+                array( 'jquery' ),
                 '4.1.1',
                 true
             );
 
-            wp_localize_script('wc-affiliate-url-params', 'wcAffiliateParams', [
-                'isLoggedIn' => is_user_logged_in(),
+            wp_localize_script('wc-affiliate-url-params', 'wcAffiliateParams', array(
+                'isLoggedIn'     => is_user_logged_in(),
                 'warningMessage' => __(
                     'Вы не авторизованы, при переходе покупка не будет учтена сервисом. Продолжить?',
                     'wc-affiliate-url-params'
                 ),
-                'loginUrl' => add_query_arg('action', 'register', get_permalink(wc_get_page_id('myaccount'))),
-            ]);
+                'loginUrl'       => add_query_arg('action', 'register', get_permalink(wc_get_page_id('myaccount'))),
+            ));
 
             wp_enqueue_style(
                 'wc-affiliate-url-params',
                 plugins_url('assets/css/frontend.css', __FILE__),
-                [],
+                array(),
                 '1.0.0'
             );
         }
@@ -1873,8 +1859,7 @@ HTML;
      *
      * @return void
      */
-    public function enqueue_admin_scripts(string $hook): void
-    {
+    public function enqueue_admin_scripts( string $hook ): void {
         if ($hook !== 'post.php' && $hook !== 'post-new.php') {
             return;
         }
@@ -1888,24 +1873,24 @@ HTML;
         wp_enqueue_style(
             'wc-affiliate-url-params-admin',
             plugins_url('assets/css/admin.css', __FILE__),
-            [],
+            array(),
             '1.2.0'
         );
 
         wp_enqueue_script(
             'wc-affiliate-network-admin',
             plugins_url('assets/js/admin-affiliate-network.js', __FILE__),
-            ['jquery'],
+            array( 'jquery' ),
             '1.1.0',
             true
         );
 
-        wp_localize_script('wc-affiliate-network-admin', 'wcAffiliateNetworkData', [
+        wp_localize_script('wc-affiliate-network-admin', 'wcAffiliateNetworkData', array(
             'ajaxUrl'          => admin_url('admin-ajax.php'),
             'getParamsNonce'   => wp_create_nonce('get_network_params_nonce'),
             'updateParamNonce' => wp_create_nonce('update_network_param_nonce'),
             'deleteParamNonce' => wp_create_nonce('delete_network_param_nonce'),
-        ]);
+        ));
     }
 }
 

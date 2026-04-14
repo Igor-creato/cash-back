@@ -12,12 +12,11 @@ if (!defined('ABSPATH')) {
  * Единая точка для всех email: HTML-шаблон, проверка предпочтений,
  * глобальные переключатели, брендирование.
  */
-class Cashback_Email_Sender
-{
+class Cashback_Email_Sender {
+
     private static ?self $instance = null;
 
-    public static function get_instance(): self
-    {
+    public static function get_instance(): self {
         if (self::$instance === null) {
             self::$instance = new self();
         }
@@ -36,8 +35,7 @@ class Cashback_Email_Sender
      * @param int|null $user_id         ID пользователя (для проверки предпочтений)
      * @return bool Отправлено или нет
      */
-    public function send(string $to, string $subject, string $message, string $notification_type, ?int $user_id = null): bool
-    {
+    public function send( string $to, string $subject, string $message, string $notification_type, ?int $user_id = null ): bool {
         // Проверяем глобальную настройку
         if (!Cashback_Notifications_DB::is_globally_enabled($notification_type)) {
             return false;
@@ -50,10 +48,10 @@ class Cashback_Email_Sender
 
         $html = $this->render_html_template($subject, $message, $user_id);
 
-        $headers = [
+        $headers = array(
             'Content-Type: text/html; charset=UTF-8',
             'From: ' . $this->get_from_name() . ' <' . $this->get_from_email() . '>',
-        ];
+        );
 
         return wp_mail($to, $subject, $html, $headers);
     }
@@ -65,19 +63,18 @@ class Cashback_Email_Sender
      * @param string $message           Текст сообщения
      * @param string $notification_type Тип уведомления
      */
-    public function send_admin(string $subject, string $message, string $notification_type): void
-    {
+    public function send_admin( string $subject, string $message, string $notification_type ): void {
         if (!Cashback_Notifications_DB::is_globally_enabled($notification_type)) {
             return;
         }
 
-        $admins = get_users(['role__in' => ['administrator', 'shop_manager']]);
-        $html = $this->render_html_template($subject, $message);
+        $admins = get_users(array( 'role__in' => array( 'administrator', 'shop_manager' ) ));
+        $html   = $this->render_html_template($subject, $message);
 
-        $headers = [
+        $headers = array(
             'Content-Type: text/html; charset=UTF-8',
             'From: ' . $this->get_from_name() . ' <' . $this->get_from_email() . '>',
-        ];
+        );
 
         foreach ($admins as $admin) {
             wp_mail($admin->user_email, $subject, $html, $headers);
@@ -92,17 +89,16 @@ class Cashback_Email_Sender
      * @param int|null $user_id ID пользователя (для ссылки на настройки)
      * @return string HTML
      */
-    private function render_html_template(string $subject, string $message, ?int $user_id = null): string
-    {
+    private function render_html_template( string $subject, string $message, ?int $user_id = null ): string {
         $site_name = get_option('blogname', 'Cashback');
-        $site_url = home_url('/');
+        $site_url  = home_url('/');
 
         $settings_link = '';
         if ($user_id !== null && function_exists('wc_get_account_endpoint_url')) {
             $settings_link = wc_get_account_endpoint_url('cashback-notifications');
         }
 
-        $html = '<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">';
+        $html  = '<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">';
         $html .= '<meta name="viewport" content="width=device-width, initial-scale=1.0">';
         $html .= '<title>' . esc_html($subject) . '</title></head>';
         $html .= '<body style="margin:0;padding:0;background:#f4f4f7;font-family:Arial,Helvetica,sans-serif;">';
@@ -148,8 +144,7 @@ class Cashback_Email_Sender
     /**
      * Имя отправителя
      */
-    private function get_from_name(): string
-    {
+    private function get_from_name(): string {
         return get_option('cashback_email_sender_name', get_option('blogname', 'Cashback'));
     }
 
@@ -158,8 +153,7 @@ class Cashback_Email_Sender
      *
      * Приоритет: cashback_email_sender_email → admin_email → fallback
      */
-    private function get_from_email(): string
-    {
+    private function get_from_email(): string {
         $sender = get_option('cashback_email_sender_email', '');
         if ($sender && is_email($sender)) {
             return $sender;

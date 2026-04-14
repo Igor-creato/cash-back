@@ -9,8 +9,8 @@ if (!defined('ABSPATH')) {
  *
  * Используется в Cashback_Payouts_Admin и Cashback_Users_Management_Admin.
  */
-trait AdminPaginationTrait
-{
+trait AdminPaginationTrait {
+
     /**
      * Рендерит пагинацию с использованием WordPress paginate_links().
      *
@@ -24,14 +24,13 @@ trait AdminPaginationTrait
      * }
      * @return void
      */
-    private function render_pagination(array $args): void
-    {
-        $total_items = (int) $args['total_items'];
-        $per_page = (int) $args['per_page'];
+    private function render_pagination( array $args ): void {
+        $total_items  = (int) $args['total_items'];
+        $per_page     = (int) $args['per_page'];
         $current_page = (int) $args['current_page'];
-        $total_pages = (int) $args['total_pages'];
-        $page_slug = $args['page_slug'];
-        $add_args = $args['add_args'];
+        $total_pages  = (int) $args['total_pages'];
+        $page_slug    = $args['page_slug'];
+        $add_args     = $args['add_args'];
 
         if ($total_pages <= 1) {
             return;
@@ -40,7 +39,7 @@ trait AdminPaginationTrait
         // Явно формируем базовый URL для предотвращения trailing slash проблемы
         $base_url = remove_query_arg('paged', add_query_arg('page', $page_slug, admin_url('admin.php')));
 
-        $pagination_links = paginate_links([
+        $pagination_links = paginate_links(array(
             'base'      => add_query_arg('paged', '%#%', $base_url),
             'format'    => '',
             'total'     => $total_pages,
@@ -49,7 +48,7 @@ trait AdminPaginationTrait
             'type'      => 'plain',
             'prev_text' => '&lsaquo; ' . __('Предыдущая', 'cashback-plugin'),
             'next_text' => __('Следующая', 'cashback-plugin') . ' &rsaquo;',
-        ]);
+        ));
 
         if ($pagination_links) {
             echo '<div class="tablenav bottom">';
