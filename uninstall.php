@@ -159,6 +159,8 @@ function cashback_plugin_uninstall(): void {
     $options = array(
         'cashback_max_withdrawal_amount',
         'cashback_email_sender_name',
+        'cashback_email_sender_email',
+        'cashback_email_signature',
         'cashback_support_module_enabled',
         'cashback_support_attachments_enabled',
         'cashback_support_max_file_size',
