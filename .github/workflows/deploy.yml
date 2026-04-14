@@ -54,7 +54,7 @@ jobs:
             dealerdirect/phpcodesniffer-composer-installer:^1.0
 
       - name: PHPStan
-        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=2G
 
       - name: PHPCS
         run: vendor/bin/phpcs -q --report=checkstyle | cs2pr
