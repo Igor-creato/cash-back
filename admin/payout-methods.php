@@ -236,63 +236,6 @@ class Cashback_Payout_Methods_Admin
                     <div id="withdrawal-settings-message"></div>
                 </div>
 
-                <!-- Шорткоды баланса -->
-                <div class="card" style="margin: 0;">
-                    <h2 class="title">Шорткод баланса <code>[cashback_balance]</code></h2>
-                    <p>Используйте шорткод для вывода кэшбэк-баланса в любом месте сайта (страницы, посты, виджеты).</p>
-                    <table class="widefat striped" style="margin-bottom: 10px;">
-                        <thead>
-                            <tr>
-                                <th>Шорткод</th>
-                                <th>Описание</th>
-                                <th>Пример вывода</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>[cashback_balance]</code></td>
-                                <td>Доступный баланс (по умолчанию)</td>
-                                <td>Баланс: 1 234,56 ₽</td>
-                            </tr>
-                            <tr>
-                                <td><code>[cashback_balance type="all"]</code></td>
-                                <td>Блок со всеми тремя строками: доступный / в обработке / выплачено</td>
-                                <td></td>
-                            </tr>
-                            <tr>
-                                <td><code>[cashback_balance type="pending"]</code></td>
-                                <td>Баланс «В обработке»</td>
-                                <td></td>
-                            </tr>
-                            <tr>
-                                <td><code>[cashback_balance type="paid"]</code></td>
-                                <td>Выплаченный баланс</td>
-                                <td></td>
-                            </tr>
-                            <tr>
-                                <td><code>[cashback_balance format="number"]</code></td>
-                                <td>Только число, без подписи и знака валюты</td>
-                                <td>1 234,56</td>
-                            </tr>
-                            <tr>
-                                <td><code>[cashback_balance guest="login_link"]</code></td>
-                                <td>Для незалогиненных — ссылка на страницу входа</td>
-                                <td></td>
-                            </tr>
-                            <tr>
-                                <td><code>[cashback_balance guest="text"]</code></td>
-                                <td>Для незалогиненных — текст «Доступно после авторизации»</td>
-                                <td></td>
-                            </tr>
-                            <tr>
-                                <td><code>[cashback_balance type="available" decimals="0"]</code></td>
-                                <td>Без копеек</td>
-                                <td>1 234 ₽</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    <p class="description">Атрибуты: <strong>type</strong> — <code>available</code> / <code>pending</code> / <code>paid</code> / <code>all</code> &nbsp;|&nbsp; <strong>format</strong> — <code>widget</code> / <code>number</code> &nbsp;|&nbsp; <strong>guest</strong> — <code>hide</code> / <code>login_link</code> / <code>text</code> &nbsp;|&nbsp; <strong>decimals</strong> — количество знаков после запятой.</p>
-                </div>
                 </div>
 
                 <!-- Таблица существующих способов выплаты -->

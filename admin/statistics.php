@@ -117,10 +117,26 @@ class Cashback_Statistics_Admin
         $total_cashback   = (float) $tx_stats['total_cashback'];
         $service_profit   = $total_commission - $total_cashback;
 
+        $active_tab = isset($_GET['tab']) && $_GET['tab'] === 'shortcodes' ? 'shortcodes' : 'stats';
+        $base_url   = admin_url('admin.php?page=cashback-overview');
         ?>
         <div class="wrap">
-            <h1 class="wp-heading-inline"><?php echo esc_html__('Статистика кэшбэка', 'cashback-plugin'); ?></h1>
+            <h1 class="wp-heading-inline"><?php echo esc_html__('Кэшбэк', 'cashback-plugin'); ?></h1>
             <hr class="wp-header-end">
+
+            <!-- Вкладки -->
+            <nav class="nav-tab-wrapper" style="margin-bottom: 20px;">
+                <a href="<?php echo esc_url($base_url . '&tab=stats'); ?>"
+                   class="nav-tab<?php echo $active_tab === 'stats' ? ' nav-tab-active' : ''; ?>">
+                    <?php echo esc_html__('Статистика', 'cashback-plugin'); ?>
+                </a>
+                <a href="<?php echo esc_url($base_url . '&tab=shortcodes'); ?>"
+                   class="nav-tab<?php echo $active_tab === 'shortcodes' ? ' nav-tab-active' : ''; ?>">
+                    <?php echo esc_html__('Шорткоды плагина', 'cashback-plugin'); ?>
+                </a>
+            </nav>
+
+            <?php if ($active_tab === 'stats'): ?>
 
             <!-- Фильтры по дате -->
             <div class="tablenav top">
@@ -309,6 +325,233 @@ class Cashback_Statistics_Admin
                     </div>
                 </div>
             </div>
+
+            <?php endif; /* tab stats */ ?>
+
+            <?php if ($active_tab === 'shortcodes'): ?>
+            <!-- ===== ВКЛАДКА: ШОРТКОДЫ ===== -->
+            <style>
+                .cb-shortcode-copy {
+                    cursor: pointer;
+                    user-select: none;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-family: monospace;
+                    font-size: 13px;
+                    background: #f6f7f7;
+                    border: 1px solid #c3c4c7;
+                    border-radius: 3px;
+                    padding: 3px 10px;
+                    transition: background 0.15s;
+                    white-space: nowrap;
+                }
+                .cb-shortcode-copy:hover { background: #e0e7f0; }
+                .cb-shortcode-copy .cb-copy-icon { font-size: 14px; }
+                .cb-shortcode-copy.cb-copied { background: #edfaed; border-color: #00a32a; color: #00a32a; }
+                .cb-shortcode-attrs { font-size: 12px; color: #646970; margin-top: 4px; }
+                .cb-shortcode-section { margin-bottom: 24px; }
+                .cb-shortcode-section .postbox { margin-bottom: 0; }
+                .cb-how-to { background: #f0f7ff; border-left: 4px solid #2271b1; padding: 12px 16px; margin-top: 16px; border-radius: 0 3px 3px 0; }
+                .cb-how-to ol, .cb-how-to ul { margin-left: 20px; margin-top: 6px; }
+                .cb-how-to li { margin-bottom: 4px; }
+                .cb-notice-info { background: #fff8e5; border-left: 4px solid #dba617; padding: 10px 14px; margin-top: 12px; border-radius: 0 3px 3px 0; font-size: 13px; }
+            </style>
+
+            <p class="description" style="margin-bottom: 20px;">
+                <?php echo esc_html__('Вставьте любой шорткод в содержимое страницы или виджета WordPress. Нажмите на шорткод — он скопируется в буфер обмена.', 'cashback-plugin'); ?>
+            </p>
+
+            <!-- [cashback_balance] -->
+            <div class="cb-shortcode-section">
+                <div class="postbox">
+                    <h2 class="hndle"><span>[cashback_balance] — <?php echo esc_html__('Баланс пользователя', 'cashback-plugin'); ?></span></h2>
+                    <div class="inside">
+                        <p><?php echo esc_html__('Выводит кэшбэк-баланс авторизованного пользователя. Для неавторизованных — скрывает блок (или показывает ссылку входа, по настройке).', 'cashback-plugin'); ?></p>
+                        <table class="widefat striped" style="margin-bottom: 12px;">
+                            <thead>
+                                <tr>
+                                    <th style="width: 38%;"><?php echo esc_html__('Шорткод', 'cashback-plugin'); ?></th>
+                                    <th><?php echo esc_html__('Описание', 'cashback-plugin'); ?></th>
+                                    <th style="width: 18%;"><?php echo esc_html__('Пример вывода', 'cashback-plugin'); ?></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                $balance_rows = [
+                                    ['[cashback_balance]',                               'Доступный баланс (по умолчанию)',                                     'Баланс: 1 234,56 ₽'],
+                                    ['[cashback_balance type="all"]',                    'Блок со всеми тремя строками: доступный / в обработке / выплачено',   ''],
+                                    ['[cashback_balance type="pending"]',                'Баланс «В обработке»',                                               ''],
+                                    ['[cashback_balance type="paid"]',                   'Выплаченный баланс',                                                 ''],
+                                    ['[cashback_balance format="number"]',               'Только число, без подписи и знака валюты',                           '1 234,56'],
+                                    ['[cashback_balance guest="login_link"]',            'Для незалогиненных — ссылка на страницу входа',                      ''],
+                                    ['[cashback_balance guest="text"]',                  'Для незалогиненных — текст «Доступно после авторизации»',             ''],
+                                    ['[cashback_balance type="available" decimals="0"]', 'Без копеек',                                                         '1 234 ₽'],
+                                ];
+                                foreach ($balance_rows as $row): ?>
+                                <tr>
+                                    <td>
+                                        <span class="cb-shortcode-copy" data-shortcode="<?php echo esc_attr($row[0]); ?>" title="<?php echo esc_attr__('Нажмите, чтобы скопировать', 'cashback-plugin'); ?>">
+                                            <span class="cb-copy-icon">⎘</span><?php echo esc_html($row[0]); ?>
+                                        </span>
+                                    </td>
+                                    <td><?php echo esc_html($row[1]); ?></td>
+                                    <td><?php echo esc_html($row[2]); ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        <p class="cb-shortcode-attrs">
+                            <strong><?php echo esc_html__('Атрибуты:', 'cashback-plugin'); ?></strong>
+                            <code>type</code> — <code>available</code> / <code>pending</code> / <code>paid</code> / <code>all</code> &nbsp;|&nbsp;
+                            <code>format</code> — <code>widget</code> / <code>number</code> &nbsp;|&nbsp;
+                            <code>guest</code> — <code>hide</code> / <code>login_link</code> / <code>text</code> &nbsp;|&nbsp;
+                            <code>decimals</code> — <?php echo esc_html__('количество знаков после запятой (по умолчанию 2)', 'cashback-plugin'); ?>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- [cashback_contact_form] -->
+            <div class="cb-shortcode-section">
+                <div class="postbox">
+                    <h2 class="hndle"><span>[cashback_contact_form] — <?php echo esc_html__('Форма обратной связи', 'cashback-plugin'); ?></span></h2>
+                    <div class="inside">
+                        <p><?php echo esc_html__('Форма обратной связи. Доступна всем посетителям, включая незарегистрированных. Письмо приходит на email администратора сайта.', 'cashback-plugin'); ?></p>
+                        <p>
+                            <span class="cb-shortcode-copy" data-shortcode="[cashback_contact_form]" title="<?php echo esc_attr__('Нажмите, чтобы скопировать', 'cashback-plugin'); ?>">
+                                <span class="cb-copy-icon">⎘</span>[cashback_contact_form]
+                            </span>
+                        </p>
+                        <table class="widefat striped" style="margin-top: 12px; margin-bottom: 12px;">
+                            <thead>
+                                <tr>
+                                    <th><?php echo esc_html__('Поле формы', 'cashback-plugin'); ?></th>
+                                    <th><?php echo esc_html__('Обязательное', 'cashback-plugin'); ?></th>
+                                    <th><?php echo esc_html__('Ограничение', 'cashback-plugin'); ?></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><?php echo esc_html__('Имя (contact_name)', 'cashback-plugin'); ?></td><td><?php echo esc_html__('Да', 'cashback-plugin'); ?></td><td><?php echo esc_html__('до 100 символов', 'cashback-plugin'); ?></td></tr>
+                                <tr><td><?php echo esc_html__('E-mail (contact_email)', 'cashback-plugin'); ?></td><td><?php echo esc_html__('Да', 'cashback-plugin'); ?></td><td><?php echo esc_html__('до 254 символов', 'cashback-plugin'); ?></td></tr>
+                                <tr><td><?php echo esc_html__('Тема (contact_subject)', 'cashback-plugin'); ?></td><td><?php echo esc_html__('Да', 'cashback-plugin'); ?></td><td><?php echo esc_html__('до 255 символов', 'cashback-plugin'); ?></td></tr>
+                                <tr><td><?php echo esc_html__('Сообщение (contact_message)', 'cashback-plugin'); ?></td><td><?php echo esc_html__('Да', 'cashback-plugin'); ?></td><td><?php echo esc_html__('10–5000 символов', 'cashback-plugin'); ?></td></tr>
+                            </tbody>
+                        </table>
+                        <div class="cb-how-to">
+                            <strong><?php echo esc_html__('Как добавить на страницу:', 'cashback-plugin'); ?></strong>
+                            <ol>
+                                <li><?php echo esc_html__('Откройте нужную страницу в редакторе WordPress (например, «Контакты»).', 'cashback-plugin'); ?></li>
+                                <li><?php echo esc_html__('Gutenberg: добавьте блок «Шорткод». Классический редактор: вставьте текст напрямую.', 'cashback-plugin'); ?></li>
+                                <li><?php echo esc_html__('Введите шорткод и сохраните страницу.', 'cashback-plugin'); ?></li>
+                            </ol>
+                            <p style="margin-top: 10px;"><strong><?php echo esc_html__('Защита:', 'cashback-plugin'); ?></strong> rate limiting (3 отправки/час с IP) · honeypot · timing check · фильтр bot UA · Яндекс SmartCaptcha (если настроена в разделе «Защита / Антифрод»).</p>
+                        </div>
+                        <div class="cb-notice-info">
+                            <?php echo esc_html__('Эта форма отправляет письмо напрямую — тикеты в системе поддержки не создаются. Для переписки с тикетами пользователи используют раздел «Поддержка» в личном кабинете.', 'cashback-plugin'); ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- [cashback_withdrawal_form] -->
+            <div class="cb-shortcode-section">
+                <div class="postbox">
+                    <h2 class="hndle"><span>[cashback_withdrawal_form] — <?php echo esc_html__('Форма вывода кэшбэка', 'cashback-plugin'); ?></span></h2>
+                    <div class="inside">
+                        <p><?php echo esc_html__('Полная форма вывода кэшбэка — та же, что в личном кабинете (/my-account/cashback-withdrawal/). Требует авторизации пользователя.', 'cashback-plugin'); ?></p>
+                        <p>
+                            <span class="cb-shortcode-copy" data-shortcode="[cashback_withdrawal_form]" title="<?php echo esc_attr__('Нажмите, чтобы скопировать', 'cashback-plugin'); ?>">
+                                <span class="cb-copy-icon">⎘</span>[cashback_withdrawal_form]
+                            </span>
+                        </p>
+                        <div class="cb-how-to" style="margin-top: 12px;">
+                            <strong><?php echo esc_html__('Особенности:', 'cashback-plugin'); ?></strong>
+                            <ul>
+                                <li><?php echo esc_html__('Требует авторизации — неавторизованным показывает заглушку с кнопкой «Войти».', 'cashback-plugin'); ?></li>
+                                <li><?php echo esc_html__('Включает все проверки: rate limit, CAPTCHA, проверка баланса.', 'cashback-plugin'); ?></li>
+                                <li><?php echo esc_html__('Идентична форме по адресу /my-account/cashback-withdrawal/.', 'cashback-plugin'); ?></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- [cashback_transactions] -->
+            <div class="cb-shortcode-section">
+                <div class="postbox">
+                    <h2 class="hndle"><span>[cashback_transactions] — <?php echo esc_html__('История транзакций', 'cashback-plugin'); ?></span></h2>
+                    <div class="inside">
+                        <p><?php echo esc_html__('Таблица последних транзакций авторизованного пользователя с пагинацией. Требует авторизации.', 'cashback-plugin'); ?></p>
+                        <p>
+                            <span class="cb-shortcode-copy" data-shortcode="[cashback_transactions]" title="<?php echo esc_attr__('Нажмите, чтобы скопировать', 'cashback-plugin'); ?>">
+                                <span class="cb-copy-icon">⎘</span>[cashback_transactions]
+                            </span>
+                        </p>
+                        <table class="widefat striped" style="margin-top: 12px; margin-bottom: 12px;">
+                            <thead>
+                                <tr>
+                                    <th><?php echo esc_html__('Атрибут', 'cashback-plugin'); ?></th>
+                                    <th><?php echo esc_html__('По умолчанию', 'cashback-plugin'); ?></th>
+                                    <th><?php echo esc_html__('Описание', 'cashback-plugin'); ?></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><code>limit</code></td><td><code>10</code></td><td><?php echo esc_html__('Количество записей на странице', 'cashback-plugin'); ?></td></tr>
+                                <tr><td><code>status</code></td><td><code>all</code></td><td><?php echo esc_html__('Фильтр по статусу транзакции', 'cashback-plugin'); ?></td></tr>
+                                <tr><td><code>show_pagination</code></td><td><code>true</code></td><td><?php echo esc_html__('Показывать пагинацию', 'cashback-plugin'); ?></td></tr>
+                            </tbody>
+                        </table>
+                        <p class="cb-shortcode-attrs">
+                            <?php echo esc_html__('Примеры:', 'cashback-plugin'); ?>
+                            <span class="cb-shortcode-copy" data-shortcode='[cashback_transactions limit="5"]' style="margin-left:6px;" title="<?php echo esc_attr__('Нажмите, чтобы скопировать', 'cashback-plugin'); ?>">
+                                <span class="cb-copy-icon">⎘</span>[cashback_transactions limit="5"]
+                            </span>
+                            <span class="cb-shortcode-copy" data-shortcode='[cashback_transactions status="completed" show_pagination="false"]' style="margin-left:6px;" title="<?php echo esc_attr__('Нажмите, чтобы скопировать', 'cashback-plugin'); ?>">
+                                <span class="cb-copy-icon">⎘</span>[cashback_transactions status="completed" show_pagination="false"]
+                            </span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+            (function() {
+                function copyText(text) {
+                    if (navigator.clipboard && window.isSecureContext) {
+                        return navigator.clipboard.writeText(text);
+                    }
+                    // Fallback для HTTP-окружений
+                    var ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.position = 'fixed';
+                    ta.style.left = '-9999px';
+                    document.body.appendChild(ta);
+                    ta.focus();
+                    ta.select();
+                    try { document.execCommand('copy'); } catch(e) {}
+                    document.body.removeChild(ta);
+                    return Promise.resolve();
+                }
+
+                document.querySelectorAll('.cb-shortcode-copy').forEach(function(el) {
+                    el.addEventListener('click', function() {
+                        var text = el.dataset.shortcode;
+                        copyText(text).then(function() {
+                            var original = el.innerHTML;
+                            el.classList.add('cb-copied');
+                            el.innerHTML = '<span class="cb-copy-icon">✓</span> Скопировано!';
+                            setTimeout(function() {
+                                el.classList.remove('cb-copied');
+                                el.innerHTML = original;
+                            }, 1800);
+                        });
+                    });
+                });
+            })();
+            </script>
+
+            <?php endif; /* tab shortcodes */ ?>
 
         </div>
         <?php

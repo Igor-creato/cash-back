@@ -32,12 +32,17 @@ class Cashback_Notifications
 
         // Обработка очереди из MySQL триггеров (для постбэков, вставленных напрямую в БД)
         add_action('cashback_notification_process_queue', [$this, 'process_queue']);
-        if (!wp_next_scheduled('cashback_notification_process_queue')) {
-            wp_schedule_event(time(), 'every_minute', 'cashback_notification_process_queue');
-        }
 
         // Регистрация 1-минутного интервала
         add_filter('cron_schedules', [$this, 'add_cron_interval']);
+
+        // Планирование откладываем до init — иначе cron_schedules фильтр
+        // вызывает __() с textdomain до его загрузки (WP 6.7+ notice).
+        add_action('init', function () {
+            if (!wp_next_scheduled('cashback_notification_process_queue')) {
+                wp_schedule_event(time(), 'every_minute', 'cashback_notification_process_queue');
+            }
+        });
 
         // Начисление кэшбэка на баланс
         add_action('cashback_notification_balance_credited', [$this, 'on_balance_credited'], 10, 1);
