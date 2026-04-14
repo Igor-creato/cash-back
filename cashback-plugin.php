@@ -11,7 +11,7 @@ declare(strict_types=1);
  * Text Domain: cashback-plugin
  * Domain Path: /languages
  * Requires at least: 6.2
- * Requires PHP: 7.4
+ * Requires PHP: 8.3
  * WC requires at least: 5.0
  * WC tested up to: 9.5
  * License: GPL v2 or later
@@ -24,7 +24,7 @@ declare(strict_types=1);
 defined('ABSPATH') or die('No script kiddies please!');
 
 // Минимальные требования к версиям
-define('CASHBACK_MIN_PHP_VERSION', '7.4');
+define('CASHBACK_MIN_PHP_VERSION', '8.3');
 define('CASHBACK_MIN_WP_VERSION', '6.2');
 define('CASHBACK_MIN_WC_VERSION', '5.0');
 
