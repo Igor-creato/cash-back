@@ -378,7 +378,7 @@ echo Cashback_Captcha::render_container('cb-captcha-claims'); }
                         }
                     }
                 ?>
-                    <tr class="claim-row <?php echo $has_events ? 'has-events' : ''; ?>" data-claim-id="<?php echo esc_attr($claim['claim_id']); ?>">
+                    <tr class="claim-row <?php echo $has_events ? 'has-events' : ''; ?><?php echo $unread > 0 ? ' claim-row-unread' : ''; ?>" data-claim-id="<?php echo esc_attr($claim['claim_id']); ?>">
                         <td data-title="<?php esc_attr_e('ID', 'cashback-plugin'); ?>">
                             <?php echo esc_html($claim['claim_id']); ?>
                             <?php if ($unread > 0) : ?>

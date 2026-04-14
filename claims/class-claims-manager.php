@@ -235,13 +235,14 @@ class Cashback_Claims_Manager {
         $wpdb->insert(
             "{$wpdb->prefix}cashback_claim_events",
             array(
-                'claim_id'   => $claim_id,
-                'status'     => $status,
-                'note'       => $note,
-                'actor_id'   => $actor_id,
-                'actor_type' => $actor_type,
+                'claim_id'      => $claim_id,
+                'status'        => $status,
+                'note'          => $note,
+                'actor_id'      => $actor_id,
+                'actor_type'    => $actor_type,
+                'is_read_admin' => $actor_type === 'user' ? 0 : 1,
             ),
-            array( '%d', '%s', '%s', '%d', '%s' )
+            array( '%d', '%s', '%s', '%d', '%s', '%d' )
         );
     }
 
@@ -331,10 +332,15 @@ class Cashback_Claims_Manager {
 
         $claims = $wpdb->get_results($wpdb->prepare(
             "SELECT c.claim_id, c.product_name, c.order_id, c.order_value, c.order_date,
-                    c.status, c.probability_score, c.is_suspicious, c.created_at
+                    c.status, c.probability_score, c.is_suspicious, c.created_at,
+                    (SELECT COUNT(*) FROM `{$wpdb->prefix}cashback_claim_events` e
+                     WHERE e.claim_id = c.claim_id AND e.is_read = 0
+                       AND e.actor_type IN ('admin', 'system')
+                       AND e.note IS NOT NULL AND e.note != ''
+                       AND NOT (e.actor_type = 'system' AND e.note LIKE '%Антифрод:%')) AS unread_count
              FROM `{$wpdb->prefix}cashback_claims` c
              WHERE {$where}
-             ORDER BY c.created_at DESC
+             ORDER BY (unread_count > 0) DESC, c.created_at DESC
              LIMIT %d OFFSET %d",
             ...array_merge($params, array( $per_page, $offset ))
         ), ARRAY_A);
@@ -438,11 +444,13 @@ class Cashback_Claims_Manager {
 
         $list_params = array_merge($params, array( $per_page, $offset ));
         $claims      = $wpdb->get_results($wpdb->prepare(
-            "SELECT c.*, u.display_name as user_display_name, u.user_email as user_email
+            "SELECT c.*, u.display_name as user_display_name, u.user_email as user_email,
+                    (SELECT COUNT(*) FROM `{$wpdb->prefix}cashback_claim_events` e
+                     WHERE e.claim_id = c.claim_id AND e.actor_type = 'user' AND e.is_read_admin = 0) AS unread_count
              FROM `{$wpdb->prefix}cashback_claims` c
              {$join_sql}
              {$where_sql}
-             ORDER BY c.{$orderby} {$order}
+             ORDER BY (unread_count > 0) DESC, c.{$orderby} {$order}
              LIMIT %d OFFSET %d",
             ...$list_params
         ), ARRAY_A);

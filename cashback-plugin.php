@@ -273,6 +273,7 @@ class CashbackPlugin {
         if (class_exists('Cashback_Claims_DB')) {
             Cashback_Claims_DB::create_tables();
             Cashback_Claims_DB::migrate_add_is_read();
+            Cashback_Claims_DB::migrate_add_is_read_admin();
         }
 
         // Создание таблицы уведомлений

@@ -487,6 +487,11 @@ input#clicks-date-to {
     background: #fff8f8;
 }
 
+.claim-row.claim-row-unread > td,
+tr.claim-row-unread > td {
+    font-weight: 700;
+}
+
 .claim-event-date {
     color: #888;
     font-size: 12px;
