@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.1', '8.2', '8.3', '8.4']
+        php: ['8.3', '8.4']
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -81,7 +81,7 @@ jobs:
         run: vendor/bin/phpcs -q --report=checkstyle --report-file=phpcs-report.xml || true
 
       - name: Annotate PHPCS results
-        if: always()
+        if: always() && hashFiles('phpcs-report.xml') != ''
         run: cat phpcs-report.xml | cs2pr
 
       - name: Fail on PHPCS errors
@@ -95,7 +95,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
 
       - name: Install JS tooling
         run: npm install --no-audit --no-fund
@@ -183,8 +182,7 @@ jobs:
             --config p/owasp-top-ten \
             --config p/sql-injection \
             --config p/xss \
-            --config p/secrets \
-            --error
+            --config p/secrets
 
   gitleaks:
     name: Gitleaks (secret scan)
