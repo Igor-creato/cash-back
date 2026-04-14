@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<ruleset name="Cashback Plugin">
+    <description>Coding standards for Cashback Plugin</description>
+
+    <file>.</file>
+
+    <exclude-pattern>*/vendor/*</exclude-pattern>
+    <exclude-pattern>*/node_modules/*</exclude-pattern>
+    <exclude-pattern>*/wp-plugin-tests/*</exclude-pattern>
+    <exclude-pattern>*/obsidian/*</exclude-pattern>
+    <exclude-pattern>*/context/*</exclude-pattern>
+    <exclude-pattern>*/development/*</exclude-pattern>
+    <exclude-pattern>*/languages/*</exclude-pattern>
+
+    <arg name="extensions" value="php"/>
+    <arg name="colors"/>
+    <arg value="sp"/>
+
+    <rule ref="WordPress-Core">
+        <exclude name="Generic.Commenting.DocComment.MissingShort"/>
+        <exclude name="Squiz.Commenting"/>
+        <exclude name="WordPress.Files.FileName"/>
+        <exclude name="Generic.WhiteSpace.DisallowSpaceIndent"/>
+        <exclude name="WordPress.WhiteSpace"/>
+        <exclude name="Generic.WhiteSpace.ScopeIndent"/>
+        <exclude name="PEAR.Functions.FunctionCallSignature"/>
+    </rule>
+
+    <config name="minimum_supported_wp_version" value="6.0"/>
+    <config name="testVersion" value="8.1-"/>
+</ruleset>
