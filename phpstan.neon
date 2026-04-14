@@ -14,7 +14,8 @@ parameters:
         - context
         - development
         - languages
-    scanDirectories:
-        - vendor/php-stubs/woocommerce-stubs
+    bootstrapFiles:
+        - vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php
+    reportUnmatchedIgnoredErrors: false
     ignoreErrors:
         - '#Constant [A-Z_]+ not found#'

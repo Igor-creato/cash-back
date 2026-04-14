@@ -1289,6 +1289,7 @@ class Cashback_API_Client
         $click_field = $network['api_click_field'] ?? 'subid1';
 
         // Маппинг полей API → локальные колонки (те же переменные что и в registered-блоке)
+        $field_map = $network['field_map'];
         $fm_payment  = $this->api_field_for('comission', $field_map) ?: 'payment';
         $fm_cart     = $this->api_field_for('sum_order', $field_map) ?: 'cart';
         $fm_uniq_id  = $this->api_field_for('uniq_id', $field_map) ?: 'action_id';
