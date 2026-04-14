@@ -145,6 +145,9 @@ class HistoryPayout {
      * @return void
      */
     private function render_payouts_table( array $payouts ): void {
+        $support_enabled = class_exists('Cashback_Support_DB') && Cashback_Support_DB::is_module_enabled();
+        $support_base    = $support_enabled ? wc_get_account_endpoint_url('cashback-support') : '';
+
         echo '<table id="payouts-table" class="wd-table shop_table_responsive">';
         echo '<thead>';
         echo '<tr>';
@@ -155,6 +158,9 @@ class HistoryPayout {
         echo '<th>' . esc_html__('Счет', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Банк', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Статус', 'cashback-plugin') . '</th>';
+        if ($support_enabled) {
+            echo '<th class="col-support-action"><span class="screen-reader-text">' . esc_html__('Поддержка', 'cashback-plugin') . '</span></th>';
+        }
         echo '</tr>';
         echo '</thead>';
         echo '<tbody id="payouts-body">';
@@ -168,6 +174,21 @@ class HistoryPayout {
             echo '<td data-title="' . esc_attr__('Счет', 'cashback-plugin') . '">' . esc_html($this->get_display_account($payout) ?: __('Не указан', 'cashback-plugin')) . '</td>';
             echo '<td data-title="' . esc_attr__('Банк', 'cashback-plugin') . '">' . esc_html($this->get_bank_name_by_code($payout->provider ?? '') ?: __('Не указан', 'cashback-plugin')) . '</td>';
             echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '" class="status-' . esc_attr($payout->status) . '">' . esc_html($this->get_status_label($payout->status)) . '</td>';
+            if ($support_enabled) {
+                $support_url = add_query_arg(
+                    array(
+                        'related_type' => 'payout',
+                        'related_id'   => (int) $payout->id,
+                    ),
+                    $support_base
+                );
+                echo '<td data-title="' . esc_attr__('Поддержка', 'cashback-plugin') . '" class="col-support-action">';
+                echo '<a href="' . esc_url($support_url) . '" class="support-ask-btn" title="' . esc_attr__('Вопрос в поддержку', 'cashback-plugin') . '" aria-label="' . esc_attr__('Вопрос в поддержку', 'cashback-plugin') . '">';
+                echo '<span class="support-ask-btn__icon" aria-hidden="true">?</span>';
+                echo '<span class="support-ask-btn__label">' . esc_html__('Вопрос в поддержку', 'cashback-plugin') . '</span>';
+                echo '</a>';
+                echo '</td>';
+            }
             echo '</tr>';
         }
 
@@ -235,7 +256,7 @@ class HistoryPayout {
         $this->apply_payout_filters($where, $params, $filters);
 
         return $wpdb->get_results($wpdb->prepare(
-            "SELECT reference_id, created_at, total_amount, payout_method, payout_account, masked_details, provider, status
+            "SELECT id, reference_id, created_at, total_amount, payout_method, payout_account, masked_details, provider, status
              FROM {$table_name}
              {$where}
              ORDER BY created_at DESC

@@ -250,7 +250,7 @@ class Cashback_Affiliate_Frontend {
         $offset      = ( $page - 1 ) * $per_page;
 
         $accruals = $wpdb->get_results($wpdb->prepare(
-            "SELECT a.reference_id, a.commission_amount, a.commission_rate,
+            "SELECT a.id, a.reference_id, a.commission_amount, a.commission_rate,
                     a.cashback_amount, a.status AS display_status, a.created_at,
                     u.display_name AS referred_name
              FROM `{$prefix}cashback_affiliate_accruals` a
@@ -269,6 +269,9 @@ class Cashback_Affiliate_Frontend {
             return;
         }
 
+        $support_enabled = class_exists('Cashback_Support_DB') && Cashback_Support_DB::is_module_enabled();
+        $support_base    = $support_enabled ? wc_get_account_endpoint_url('cashback-support') : '';
+
         echo '<table class="cashback-affiliate-table">';
         echo '<thead><tr>';
         echo '<th>' . esc_html__('Дата', 'cashback-plugin') . '</th>';
@@ -278,6 +281,9 @@ class Cashback_Affiliate_Frontend {
         echo '<th>' . esc_html__('Ставка', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Комиссия', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Статус', 'cashback-plugin') . '</th>';
+        if ($support_enabled) {
+            echo '<th class="col-support-action"><span class="screen-reader-text">' . esc_html__('Поддержка', 'cashback-plugin') . '</span></th>';
+        }
         echo '</tr></thead><tbody>';
 
         $status_labels = array(
@@ -301,6 +307,21 @@ class Cashback_Affiliate_Frontend {
             echo '<td data-title="' . esc_attr__('Комиссия', 'cashback-plugin') . '"><strong>' . esc_html(number_format_i18n((float) $row['commission_amount'], 2)) . ' ₽</strong></td>';
             echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '"><span class="cashback-affiliate-status ' . $status_class . '">'
                 . esc_html($status_label) . '</span></td>';
+            if ($support_enabled) {
+                $support_url = add_query_arg(
+                    array(
+                        'related_type' => 'affiliate_accrual',
+                        'related_id'   => (int) $row['id'],
+                    ),
+                    $support_base
+                );
+                echo '<td data-title="' . esc_attr__('Поддержка', 'cashback-plugin') . '" class="col-support-action">';
+                echo '<a href="' . esc_url($support_url) . '" class="support-ask-btn" title="' . esc_attr__('Вопрос в поддержку', 'cashback-plugin') . '" aria-label="' . esc_attr__('Вопрос в поддержку', 'cashback-plugin') . '">';
+                echo '<span class="support-ask-btn__icon" aria-hidden="true">?</span>';
+                echo '<span class="support-ask-btn__label">' . esc_html__('Вопрос в поддержку', 'cashback-plugin') . '</span>';
+                echo '</a>';
+                echo '</td>';
+            }
             echo '</tr>';
         }
 

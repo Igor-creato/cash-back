@@ -305,3 +305,128 @@
         box-shadow: 0 -3px 8px rgba(0, 0, 0, 0.12) !important;
     }
 }
+
+/* ===== Привязка тикета к сущности ===== */
+
+/* Карточка связанной записи (в форме создания и в detail) */
+.support-related-card {
+    border: 1px solid #d0e2f2;
+    background: #f5faff;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin: 0 0 15px;
+    font-size: 14px;
+}
+.support-related-card--form {
+    background: #f0f9ff;
+    border-color: #b6d6ef;
+}
+.support-related-card__header {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 6px;
+    color: #5c6b74;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.support-related-card__type {
+    font-weight: 600;
+    color: #2b5e86;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 13px;
+}
+.support-related-card__ref code {
+    font-size: 13px;
+    background: #fff;
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid #e0e8ef;
+}
+.support-related-card__title {
+    margin-top: 4px;
+    font-weight: 500;
+    color: #333;
+}
+.support-related-card__meta {
+    margin-top: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    color: #666;
+    font-size: 12px;
+}
+.support-related-card__status {
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: #e8e8e8;
+    color: #555;
+}
+.support-related-card__status--completed,
+.support-related-card__status--available,
+.support-related-card__status--paid,
+.support-related-card__status--balance {
+    background: #d9f3d9;
+    color: #2a6a2a;
+}
+.support-related-card__status--waiting,
+.support-related-card__status--pending,
+.support-related-card__status--hold,
+.support-related-card__status--frozen {
+    background: #fff3cd;
+    color: #8a6d3b;
+}
+.support-related-card__status--declined {
+    background: #f8d7da;
+    color: #8a2b35;
+}
+
+/* Чип типа привязки в списках тикетов */
+.support-related-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 11px;
+    border-radius: 10px;
+    background: #e3eef7;
+    color: #2b5e86;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+.support-related-chip--affiliate_accrual {
+    background: #f0e4f7;
+    color: #6a2b86;
+}
+.support-related-chip--payout {
+    background: #e4f7ea;
+    color: #2b8648;
+}
+
+/* Кнопка "Вопрос в поддержку" в таблицах истории / партнёрских начислений */
+.col-support-action { width: 44px; text-align: center; }
+.support-ask-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #e3eef7;
+    color: #2b5e86 !important;
+    font-weight: 700;
+    text-decoration: none !important;
+    line-height: 1;
+    transition: background 0.15s;
+}
+.support-ask-btn:hover { background: #2b5e86; color: #fff !important; }
+.support-ask-btn__icon { font-size: 14px; }
+.support-ask-btn__label { display: none; }
+
+@media (max-width: 768px) {
+    .col-support-action { width: auto; text-align: right; }
+    .support-ask-btn { width: auto; height: auto; padding: 6px 10px; border-radius: 6px; }
+    .support-ask-btn__icon { display: none; }
+    .support-ask-btn__label { display: inline; font-size: 13px; }
+}

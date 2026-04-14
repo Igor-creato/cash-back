@@ -283,6 +283,25 @@ class Cashback_Support_Admin {
             .priority-urgent { background: #f44336; }
             .priority-normal { background: #ff9800; }
             .priority-not_urgent { background: #607d8b; }
+            .support-related-chip {
+                display: inline-block;
+                padding: 2px 8px;
+                font-size: 11px;
+                border-radius: 10px;
+                background: #e3eef7;
+                color: #2b5e86;
+                margin-left: 6px;
+                vertical-align: middle;
+                white-space: nowrap;
+            }
+            .support-related-chip--affiliate_accrual {
+                background: #f0e4f7;
+                color: #6a2b86;
+            }
+            .support-related-chip--payout {
+                background: #e4f7ea;
+                color: #2b8648;
+            }
         </style>
 
         <h1 class="wp-heading-inline">Поддержка</h1>
@@ -352,7 +371,14 @@ class Cashback_Support_Admin {
                     <?php foreach ($tickets as $ticket) : ?>
                         <tr<?php echo $ticket->unread_count > 0 ? ' style="font-weight: bold;"' : ''; ?>>
                             <td><?php echo esc_html(Cashback_Support_DB::format_ticket_number((int) $ticket->id)); ?></td>
-                            <td><?php echo esc_html($ticket->subject); ?></td>
+                            <td>
+                                <?php echo esc_html($ticket->subject); ?>
+                                <?php if (!empty($ticket->related_type)) : ?>
+                                    <span class="support-related-chip support-related-chip--<?php echo esc_attr($ticket->related_type); ?>" title="<?php echo esc_attr(Cashback_Support_DB::get_related_type_label((string) $ticket->related_type)); ?>">
+                                        <?php echo esc_html(Cashback_Support_DB::get_related_type_label((string) $ticket->related_type)); ?>
+                                    </span>
+                                <?php endif; ?>
+                            </td>
                             <td><?php echo esc_html((string) $ticket->user_id); ?></td>
                             <td>
                                 <?php echo esc_html($ticket->user_login ?? 'Удалён'); ?>
@@ -560,6 +586,53 @@ class Cashback_Support_Admin {
                 <td><?php echo esc_html(date_i18n('d.m.Y H:i', strtotime($ticket->closed_at))); ?></td>
             </tr>
             <?php endif; ?>
+            <?php
+            if (!empty($ticket->related_type) && !empty($ticket->related_id)) :
+                $related = Cashback_Support_DB::get_related_entity((string) $ticket->related_type, (int) $ticket->related_id);
+                if ($related) :
+                    $type_label = Cashback_Support_DB::get_related_type_label((string) $related['type']);
+                    $ref        = !empty($related['reference_id']) ? (string) $related['reference_id'] : '#' . (int) $related['id'];
+                    $amount     = number_format_i18n((float) ( $related['amount'] ?? 0 ), 2);
+                    $currency   = (string) ( $related['currency'] ?? '' );
+                    $status     = (string) ( $related['status'] ?? '' );
+                    $created    = !empty($related['created_at']) ? date_i18n('d.m.Y H:i', strtotime((string) $related['created_at'])) : '';
+                    $admin_url  = '';
+                    if ($related['type'] === 'cashback_tx') {
+                        $admin_url = admin_url('admin.php?page=cashback-transactions&reference_id=' . rawurlencode($ref));
+                    } elseif ($related['type'] === 'affiliate_accrual') {
+                        $admin_url = admin_url('admin.php?page=cashback-affiliate&reference_id=' . rawurlencode($ref));
+                    } elseif ($related['type'] === 'payout') {
+                        $admin_url = admin_url('admin.php?page=cashback-payouts&reference_id=' . rawurlencode($ref));
+                    }
+                    ?>
+                    <tr>
+                        <th>Связано с</th>
+                        <td>
+                            <strong><?php echo esc_html($type_label); ?></strong>
+                            <?php if ($admin_url) : ?>
+                                <a href="<?php echo esc_url($admin_url); ?>"><code><?php echo esc_html($ref); ?></code></a>
+                            <?php else : ?>
+                                <code><?php echo esc_html($ref); ?></code>
+                            <?php endif; ?>
+                            <?php if (!empty($related['title'])) : ?>
+                                — <?php echo esc_html((string) $related['title']); ?>
+                            <?php endif; ?>
+                            <br>
+                            <span style="color:#666; font-size: 12px;">
+                                <?php echo esc_html($amount . ' ' . $currency); ?>
+                                <?php if ($status !== '') : ?>
+                                    • <?php echo esc_html($status); ?>
+                                <?php endif; ?>
+                                <?php if ($created !== '') : ?>
+                                    • <?php echo esc_html($created); ?>
+                                <?php endif; ?>
+                            </span>
+                        </td>
+                    </tr>
+                    <?php
+                endif;
+            endif;
+            ?>
         </table>
 
         <?php $this->render_admin_notice_container(); ?>

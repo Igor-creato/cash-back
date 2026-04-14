@@ -102,6 +102,14 @@
             fd.append('priority', priority);
             fd.append('message', message);
 
+            // Привязка тикета к сущности (покупка/начисление или партнёрское начисление)
+            var relatedType = $('#support-create-form input[name="related_type"]').val();
+            var relatedId = $('#support-create-form input[name="related_id"]').val();
+            if (relatedType && relatedId) {
+                fd.append('related_type', relatedType);
+                fd.append('related_id', relatedId);
+            }
+
             if (fileInput && fileInput.files.length > 0) {
                 for (var i = 0; i < fileInput.files.length; i++) {
                     fd.append('support_files[]', fileInput.files[i]);
@@ -119,6 +127,18 @@
                         showAlert('support-create-alert', 'success', response.data.message);
                         $('#support-create-form')[0].reset();
                         $('#support-files-list').empty();
+                        // Удаляем связанную карточку и скрытые поля — привязка использована
+                        $('#support-create-form .support-related-card--form').remove();
+                        $('#support-create-form input[name="related_type"], #support-create-form input[name="related_id"]').remove();
+                        // Чистим query-параметры related_type/related_id из URL (без перезагрузки)
+                        if (window.history && window.history.replaceState) {
+                            try {
+                                var cleanUrl = new URL(window.location.href);
+                                cleanUrl.searchParams.delete('related_type');
+                                cleanUrl.searchParams.delete('related_id');
+                                window.history.replaceState({}, '', cleanUrl.toString());
+                            } catch (e) {}
+                        }
                         // Через 2 секунды переключаемся на вкладку истории и подгружаем первую страницу
                         setTimeout(function() {
                             $('.cashback-support-tab[data-tab="history"]').click();
