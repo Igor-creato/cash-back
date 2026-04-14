@@ -1,4 +1,3 @@
-import wpPlugin from '@wordpress/eslint-plugin';
 import security from 'eslint-plugin-security';
 import globals from 'globals';
 
@@ -15,7 +14,6 @@ export default [
             'assets/js/**/*.min.js',
         ],
     },
-    ...wpPlugin.configs.recommended,
     security.configs.recommended,
     {
         files: ['assets/js/**/*.js'],
