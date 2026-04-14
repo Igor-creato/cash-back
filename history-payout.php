@@ -159,7 +159,7 @@ class HistoryPayout {
         echo '<th>' . esc_html__('Банк', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Статус', 'cashback-plugin') . '</th>';
         if ($support_enabled) {
-            echo '<th class="col-support-action"><span class="screen-reader-text">' . esc_html__('Поддержка', 'cashback-plugin') . '</span></th>';
+            echo '<th class="col-support-action">' . esc_html__('Поддержка', 'cashback-plugin') . '</th>';
         }
         echo '</tr>';
         echo '</thead>';

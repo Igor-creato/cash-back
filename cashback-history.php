@@ -186,7 +186,7 @@ class CashbackHistory {
         echo '<th>' . esc_html__('Кэшбэк', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Статус', 'cashback-plugin') . '</th>';
         if ($support_enabled) {
-            echo '<th class="col-support-action"><span class="screen-reader-text">' . esc_html__('Поддержка', 'cashback-plugin') . '</span></th>';
+            echo '<th class="col-support-action">' . esc_html__('Поддержка', 'cashback-plugin') . '</th>';
         }
         echo '</tr>';
         echo '</thead>';
@@ -297,7 +297,7 @@ class CashbackHistory {
         $this->apply_filters($where, $params, $filters);
 
         return $wpdb->get_results($wpdb->prepare(
-            "SELECT reference_id, action_date, created_at, offer_name, order_number, cashback, order_status
+            "SELECT id, reference_id, action_date, created_at, offer_name, order_number, cashback, order_status
              FROM {$table_name}
              {$where}
              ORDER BY created_at DESC
