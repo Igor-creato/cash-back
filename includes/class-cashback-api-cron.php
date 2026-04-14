@@ -37,7 +37,16 @@ class Cashback_API_Cron
         // Регистрация обработчика
         add_action(self::HOOK_NAME, [self::class, 'run_sync']);
 
-        // Планирование если не запланировано
+        // Планирование откладываем до init — иначе cron_schedules фильтр
+        // вызывает __() с textdomain до его загрузки (WP 6.7+ notice).
+        add_action('init', [self::class, 'maybe_schedule']);
+    }
+
+    /**
+     * Планирование cron если не запланировано (вызывается на init)
+     */
+    public static function maybe_schedule(): void
+    {
         if (!wp_next_scheduled(self::HOOK_NAME)) {
             wp_schedule_event(time(), self::INTERVAL_NAME, self::HOOK_NAME);
         }
