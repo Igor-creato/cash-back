@@ -173,6 +173,9 @@ class CashbackHistory {
      * @return void
      */
     private function render_transactions_table( array $transactions ): void {
+        $support_enabled = class_exists('Cashback_Support_DB') && Cashback_Support_DB::is_module_enabled();
+        $support_base    = $support_enabled ? wc_get_account_endpoint_url('cashback-support') : '';
+
         echo '<table id="transactions-table" class="wd-table shop_table_responsive">';
         echo '<thead>';
         echo '<tr>';
@@ -182,6 +185,9 @@ class CashbackHistory {
         echo '<th>' . esc_html__('Номер заказа', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Кэшбэк', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Статус', 'cashback-plugin') . '</th>';
+        if ($support_enabled) {
+            echo '<th class="col-support-action"><span class="screen-reader-text">' . esc_html__('Поддержка', 'cashback-plugin') . '</span></th>';
+        }
         echo '</tr>';
         echo '</thead>';
         echo '<tbody id="transactions-body">';
@@ -194,6 +200,21 @@ class CashbackHistory {
             echo '<td data-title="' . esc_attr__('Номер заказа', 'cashback-plugin') . '">' . esc_html($transaction->order_number ?? __('Н/Д', 'cashback-plugin')) . '</td>';
             echo '<td data-title="' . esc_attr__('Кэшбэк', 'cashback-plugin') . '">' . esc_html($transaction->cashback ?? '0.00') . '</td>';
             echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '" class="status-' . esc_attr($transaction->order_status) . '">' . esc_html($this->get_status_label($transaction->order_status)) . '</td>';
+            if ($support_enabled) {
+                $support_url = add_query_arg(
+                    array(
+                        'related_type' => 'cashback_tx',
+                        'related_id'   => (int) $transaction->id,
+                    ),
+                    $support_base
+                );
+                echo '<td data-title="' . esc_attr__('Поддержка', 'cashback-plugin') . '" class="col-support-action">';
+                echo '<a href="' . esc_url($support_url) . '" class="support-ask-btn" title="' . esc_attr__('Вопрос в поддержку', 'cashback-plugin') . '" aria-label="' . esc_attr__('Вопрос в поддержку', 'cashback-plugin') . '">';
+                echo '<span class="support-ask-btn__icon" aria-hidden="true">?</span>';
+                echo '<span class="support-ask-btn__label">' . esc_html__('Вопрос в поддержку', 'cashback-plugin') . '</span>';
+                echo '</a>';
+                echo '</td>';
+            }
             echo '</tr>';
         }
 

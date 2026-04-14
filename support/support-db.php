@@ -29,6 +29,8 @@ class Cashback_Support_DB {
             `subject` varchar(255) NOT NULL,
             `priority` enum('urgent','normal','not_urgent') NOT NULL DEFAULT 'not_urgent',
             `status` enum('open','answered','closed') NOT NULL DEFAULT 'open',
+            `related_type` enum('cashback_tx','affiliate_accrual','payout') DEFAULT NULL,
+            `related_id` bigint(20) unsigned DEFAULT NULL,
             `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             `closed_at` datetime DEFAULT NULL,
@@ -36,7 +38,8 @@ class Cashback_Support_DB {
             KEY `idx_user_id` (`user_id`),
             KEY `idx_status` (`status`),
             KEY `idx_priority` (`priority`),
-            KEY `idx_status_updated` (`status`, `updated_at`)
+            KEY `idx_status_updated` (`status`, `updated_at`),
+            KEY `idx_related` (`related_type`, `related_id`)
         ) {$charset_collate};";
 
         $sql_messages = "CREATE TABLE IF NOT EXISTS `{$messages_table}` (
@@ -72,6 +75,31 @@ class Cashback_Support_DB {
         dbDelta($sql_tickets);
         dbDelta($sql_messages);
         dbDelta($sql_attachments);
+
+        // Миграция для существующих установок: добавляем колонки и индекс привязки тикета
+        // к сущности (покупка/начисление кэшбэка или партнёрское начисление).
+        $has_related_type = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = 'related_type'",
+            $tickets_table
+        ));
+        if (!$has_related_type) {
+            $wpdb->query("ALTER TABLE `{$tickets_table}`
+                ADD COLUMN `related_type` ENUM('cashback_tx','affiliate_accrual','payout') DEFAULT NULL AFTER `status`,
+                ADD COLUMN `related_id` BIGINT(20) UNSIGNED DEFAULT NULL AFTER `related_type`,
+                ADD KEY `idx_related` (`related_type`, `related_id`)");
+        } else {
+            // Расширяем ENUM на случай, если колонка создавалась старой версией без 'payout'.
+            $enum_def = $wpdb->get_var($wpdb->prepare(
+                "SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = 'related_type'",
+                $tickets_table
+            ));
+            if ($enum_def && strpos((string) $enum_def, "'payout'") === false) {
+                $wpdb->query("ALTER TABLE `{$tickets_table}`
+                    MODIFY COLUMN `related_type` ENUM('cashback_tx','affiliate_accrual','payout') DEFAULT NULL");
+            }
+        }
 
         // Добавляем внешние ключи после создания таблиц
         $fk_exists = $wpdb->get_var(
@@ -621,6 +649,163 @@ class Cashback_Support_DB {
      */
     public static function format_ticket_number( int $ticket_id ): string {
         return '№' . str_pad((string) $ticket_id, 3, '0', STR_PAD_LEFT);
+    }
+
+    // ========= Привязка тикета к сущности =========
+
+    /**
+     * Допустимые типы привязки тикета к сущности.
+     *
+     * @return string[]
+     */
+    public static function get_allowed_related_types(): array {
+        return array( 'cashback_tx', 'affiliate_accrual', 'payout' );
+    }
+
+    /**
+     * Человекочитаемая метка для типа привязки.
+     */
+    public static function get_related_type_label( string $type ): string {
+        $labels = array(
+            'cashback_tx'        => 'Покупка',
+            'affiliate_accrual'  => 'Партнёрское начисление',
+            'payout'             => 'Выплата',
+        );
+        return $labels[ $type ] ?? '';
+    }
+
+    /**
+     * Проверить, что сущность принадлежит пользователю.
+     * Используется при создании тикета с привязкой (защита от IDOR).
+     */
+    public static function validate_related_ownership( int $user_id, string $type, int $entity_id ): bool {
+        if ($user_id <= 0 || $entity_id <= 0) {
+            return false;
+        }
+        if (!in_array($type, self::get_allowed_related_types(), true)) {
+            return false;
+        }
+
+        global $wpdb;
+
+        if ($type === 'cashback_tx') {
+            $owner = $wpdb->get_var($wpdb->prepare(
+                "SELECT user_id FROM `{$wpdb->prefix}cashback_transactions` WHERE id = %d",
+                $entity_id
+            ));
+            return $owner !== null && (int) $owner === $user_id;
+        }
+
+        if ($type === 'affiliate_accrual') {
+            $owner = $wpdb->get_var($wpdb->prepare(
+                "SELECT referrer_id FROM `{$wpdb->prefix}cashback_affiliate_accruals` WHERE id = %d",
+                $entity_id
+            ));
+            return $owner !== null && (int) $owner === $user_id;
+        }
+
+        if ($type === 'payout') {
+            $owner = $wpdb->get_var($wpdb->prepare(
+                "SELECT user_id FROM `{$wpdb->prefix}cashback_payout_requests` WHERE id = %d",
+                $entity_id
+            ));
+            return $owner !== null && (int) $owner === $user_id;
+        }
+
+        return false;
+    }
+
+    /**
+     * Получить краткий снимок связанной сущности для отображения в UI (ЛК и админка).
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function get_related_entity( string $type, int $entity_id ): ?array {
+        if ($entity_id <= 0 || !in_array($type, self::get_allowed_related_types(), true)) {
+            return null;
+        }
+
+        global $wpdb;
+
+        if ($type === 'cashback_tx') {
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT id, reference_id, offer_name, sum_order, cashback, currency, order_status, created_at
+                 FROM `{$wpdb->prefix}cashback_transactions` WHERE id = %d",
+                $entity_id
+            ));
+            if (!$row) {
+                return null;
+            }
+            return array(
+                'type'         => 'cashback_tx',
+                'id'           => (int) $row->id,
+                'reference_id' => (string) $row->reference_id,
+                'title'        => (string) ( $row->offer_name ?? '' ),
+                'amount'       => (float) ( $row->sum_order ?? 0 ),
+                'cashback'     => (float) ( $row->cashback ?? 0 ),
+                'currency'     => (string) ( $row->currency ?? 'RUB' ),
+                'status'       => (string) $row->order_status,
+                'created_at'   => (string) $row->created_at,
+            );
+        }
+
+        if ($type === 'affiliate_accrual') {
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT id, reference_id, commission_amount, status, created_at
+                 FROM `{$wpdb->prefix}cashback_affiliate_accruals` WHERE id = %d",
+                $entity_id
+            ));
+            if (!$row) {
+                return null;
+            }
+            return array(
+                'type'         => 'affiliate_accrual',
+                'id'           => (int) $row->id,
+                'reference_id' => (string) $row->reference_id,
+                'title'        => '',
+                'amount'       => (float) $row->commission_amount,
+                'cashback'     => 0.0,
+                'currency'     => 'RUB',
+                'status'       => (string) $row->status,
+                'created_at'   => (string) $row->created_at,
+            );
+        }
+
+        if ($type === 'payout') {
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT id, reference_id, total_amount, payout_method, status, created_at
+                 FROM `{$wpdb->prefix}cashback_payout_requests` WHERE id = %d",
+                $entity_id
+            ));
+            if (!$row) {
+                return null;
+            }
+            return array(
+                'type'         => 'payout',
+                'id'           => (int) $row->id,
+                'reference_id' => (string) $row->reference_id,
+                'title'        => (string) ( $row->payout_method ?? '' ),
+                'amount'       => (float) $row->total_amount,
+                'cashback'     => 0.0,
+                'currency'     => 'RUB',
+                'status'       => (string) $row->status,
+                'created_at'   => (string) $row->created_at,
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * Префикс для темы тикета, сгенерированный по привязке: "[Покупка #TX-XXXXXXXX]".
+     */
+    public static function format_related_prefix( string $type, array $entity ): string {
+        $label = self::get_related_type_label($type);
+        $ref   = !empty($entity['reference_id']) ? (string) $entity['reference_id'] : '#' . (int) ( $entity['id'] ?? 0 );
+        if ($label === '' || $ref === '') {
+            return '';
+        }
+        return '[' . $label . ' ' . $ref . ']';
     }
 
     /**

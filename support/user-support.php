@@ -101,7 +101,7 @@ class Cashback_User_Support {
             'cashback-user-support-css',
             plugins_url('assets/css/user-support.css', __FILE__),
             array(),
-            '1.1.0'
+            '1.2.0'
         );
 
         wp_enqueue_script(
@@ -124,7 +124,7 @@ class Cashback_User_Support {
             'cashback-user-support',
             plugins_url('assets/js/user-support.js', __FILE__),
             array( 'jquery', 'cashback-safe-html' ),
-            '1.1.0',
+            '1.2.0',
             true
         );
 
@@ -202,6 +202,16 @@ class Cashback_User_Support {
             return;
         }
 
+        // Предзаполнение привязки из query-параметров
+        $prefill_type   = sanitize_key(wp_unslash($_GET['related_type'] ?? ''));
+        $prefill_id     = absint($_GET['related_id'] ?? 0);
+        $prefill_entity = null;
+        if ($prefill_type !== '' && $prefill_id > 0
+            && in_array($prefill_type, Cashback_Support_DB::get_allowed_related_types(), true)
+            && Cashback_Support_DB::validate_related_ownership($user_id, $prefill_type, $prefill_id)) {
+            $prefill_entity = Cashback_Support_DB::get_related_entity($prefill_type, $prefill_id);
+        }
+
         ?>
         <h2>Поддержка</h2>
 
@@ -218,7 +228,7 @@ class Cashback_User_Support {
 
         <!-- Вкладка: Новый тикет -->
         <div class="cashback-support-tab-content active" id="tab-new">
-            <?php $this->render_create_form(); ?>
+            <?php $this->render_create_form($prefill_entity); ?>
         </div>
 
         <!-- Вкладка: История тикетов -->
@@ -323,6 +333,11 @@ class Cashback_User_Support {
                     <div class="support-ticket-meta">
                         <span class="support-badge support-badge-<?php echo esc_attr($ticket->status); ?>"><?php echo esc_html($status_label); ?></span>
                         <span class="support-badge support-badge-<?php echo esc_attr($ticket->priority); ?>"><?php echo esc_html($priority_label); ?></span>
+                        <?php if (!empty($ticket->related_type)) : ?>
+                            <span class="support-related-chip support-related-chip--<?php echo esc_attr($ticket->related_type); ?>" title="<?php echo esc_attr(Cashback_Support_DB::get_related_type_label((string) $ticket->related_type)); ?>">
+                                <?php echo esc_html(Cashback_Support_DB::get_related_type_label((string) $ticket->related_type)); ?>
+                            </span>
+                        <?php endif; ?>
                         <span><?php echo esc_html($date); ?></span>
                     </div>
                 </div>
@@ -384,12 +399,20 @@ class Cashback_User_Support {
 
     /**
      * Рендеринг формы создания тикета
+     *
+     * @param array<string, mixed>|null $prefill_entity Снимок связанной сущности для предзаполнения.
      */
-    private function render_create_form(): void {
+    private function render_create_form( ?array $prefill_entity = null ): void {
+        $has_prefill = is_array($prefill_entity) && !empty($prefill_entity['type']) && !empty($prefill_entity['id']);
         ?>
         <div id="support-create-alert" style="display: none;"></div>
 
         <form id="support-create-form" method="post" novalidate enctype="multipart/form-data" data-cb-protected="1">
+            <?php if ($has_prefill) : ?>
+                <input type="hidden" name="related_type" value="<?php echo esc_attr((string) $prefill_entity['type']); ?>">
+                <input type="hidden" name="related_id" value="<?php echo (int) $prefill_entity['id']; ?>">
+                <?php $this->render_related_card($prefill_entity, true); ?>
+            <?php endif; ?>
             <div class="support-form-group">
                 <label for="support-subject">Тема</label>
                 <input type="text" id="support-subject" name="subject" maxlength="255" placeholder="Опишите тему обращения">
@@ -429,6 +452,47 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); }
         <?php
     }
 
+    /**
+     * Карточка связанной сущности (покупка/начисление или партнёрское начисление).
+     *
+     * @param array<string, mixed> $entity Снимок сущности из Cashback_Support_DB::get_related_entity().
+     * @param bool                 $in_form true — блок в форме создания; false — блок в детализации тикета.
+     */
+    private function render_related_card( array $entity, bool $in_form = false ): void {
+        $type_label = Cashback_Support_DB::get_related_type_label((string) $entity['type']);
+        $ref        = !empty($entity['reference_id']) ? (string) $entity['reference_id'] : '#' . (int) $entity['id'];
+        $title      = (string) ( $entity['title'] ?? '' );
+        $amount     = number_format_i18n((float) ( $entity['amount'] ?? 0 ), 2);
+        $currency   = esc_html((string) ( $entity['currency'] ?? '' ));
+        $status     = (string) ( $entity['status'] ?? '' );
+        $created_at = !empty($entity['created_at']) ? date_i18n('d.m.Y H:i', strtotime((string) $entity['created_at'])) : '';
+        ?>
+        <div class="support-related-card<?php echo $in_form ? ' support-related-card--form' : ''; ?>">
+            <div class="support-related-card__header">
+                <span class="support-related-card__label"><?php echo $in_form ? 'Тикет будет привязан к:' : 'Связано с:'; ?></span>
+                <span class="support-related-card__type"><?php echo esc_html($type_label); ?></span>
+            </div>
+            <div class="support-related-card__body">
+                <div class="support-related-card__ref"><code><?php echo esc_html($ref); ?></code></div>
+                <?php if ($title !== '') : ?>
+                    <div class="support-related-card__title"><?php echo esc_html($title); ?></div>
+                <?php endif; ?>
+                <div class="support-related-card__meta">
+                    <span><?php echo esc_html($amount . ' ' . $currency); ?></span>
+                    <?php if ($status !== '') : ?>
+                        <span class="support-related-card__status support-related-card__status--<?php echo esc_attr($status); ?>">
+                            <?php echo esc_html($status); ?>
+                        </span>
+                    <?php endif; ?>
+                    <?php if ($created_at !== '') : ?>
+                        <span><?php echo esc_html($created_at); ?></span>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        <?php
+    }
+
     // ========= AJAX обработчики =========
 
     /**
@@ -459,14 +523,41 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); }
         $priority = sanitize_text_field(wp_unslash($_POST['priority'] ?? 'not_urgent'));
         $message  = sanitize_textarea_field($_POST['message'] ?? '');
 
+        // Привязка тикета к сущности (покупка/начисление или партнёрская комиссия).
+        // Значения приходят из скрытых полей формы или query-параметров.
+        $related_type_raw = sanitize_key(wp_unslash($_POST['related_type'] ?? ''));
+        $related_id       = absint($_POST['related_id'] ?? 0);
+        $related_type     = null;
+        $related_entity   = null;
+
+        if ($related_type_raw !== '' && $related_id > 0) {
+            $allowed_types = Cashback_Support_DB::get_allowed_related_types();
+            if (!in_array($related_type_raw, $allowed_types, true)) {
+                wp_send_json_error(array( 'message' => 'Некорректный тип привязки.' ));
+                return;
+            }
+            if (!Cashback_Support_DB::validate_related_ownership($user_id, $related_type_raw, $related_id)) {
+                wp_send_json_error(array( 'message' => 'Связанная запись не найдена или не принадлежит вам.' ));
+                return;
+            }
+            $related_entity = Cashback_Support_DB::get_related_entity($related_type_raw, $related_id);
+            if ($related_entity) {
+                $related_type = $related_type_raw;
+                $prefix       = Cashback_Support_DB::format_related_prefix($related_type, $related_entity);
+                if ($prefix !== '' && mb_strpos($subject, $prefix) !== 0) {
+                    $subject = trim($prefix . ' ' . $subject);
+                }
+            }
+        }
+
         if (empty($subject) || empty($priority) || empty($message)) {
             wp_send_json_error(array( 'message' => 'Заполните все обязательные поля.' ));
             return;
         }
 
         if (mb_strlen($subject) > 255) {
-            wp_send_json_error(array( 'message' => 'Тема слишком длинная (максимум 255 символов).' ));
-            return;
+            // Если префикс раздул тему за лимит — оставляем только префикс + обрезку.
+            $subject = mb_substr($subject, 0, 255);
         }
 
         if (mb_strlen($message) > 5000) {
@@ -493,16 +584,22 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); }
         // Вставляем тикет и первое сообщение в транзакции
         $wpdb->query('START TRANSACTION');
 
-        $inserted = $wpdb->insert(
-            $this->tickets_table,
-            array(
-                'user_id'  => $user_id,
-                'subject'  => $subject,
-                'priority' => $priority,
-                'status'   => 'open',
-            ),
-            array( '%d', '%s', '%s', '%s' )
+        $ticket_data = array(
+            'user_id'  => $user_id,
+            'subject'  => $subject,
+            'priority' => $priority,
+            'status'   => 'open',
         );
+        $ticket_formats = array( '%d', '%s', '%s', '%s' );
+
+        if ($related_type !== null && $related_id > 0) {
+            $ticket_data['related_type'] = $related_type;
+            $ticket_data['related_id']   = $related_id;
+            $ticket_formats[]            = '%s';
+            $ticket_formats[]            = '%d';
+        }
+
+        $inserted = $wpdb->insert($this->tickets_table, $ticket_data, $ticket_formats);
 
         if (!$inserted) {
             $wpdb->query('ROLLBACK');
@@ -927,6 +1024,16 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); }
         $html         .= '<span class="support-badge support-badge-' . esc_attr($ticket->priority) . '">' . esc_html($this->get_priority_label($ticket->priority)) . '</span> ';
         $html         .= '<span style="color: #666;">' . esc_html(date_i18n('d.m.Y H:i', strtotime($ticket->created_at))) . '</span>';
         $html         .= '</p>';
+
+        // Карточка связанной записи (покупка/начисление или партнёрское начисление)
+        if (!empty($ticket->related_type) && !empty($ticket->related_id)) {
+            $related = Cashback_Support_DB::get_related_entity((string) $ticket->related_type, (int) $ticket->related_id);
+            if ($related) {
+                ob_start();
+                $this->render_related_card($related, false);
+                $html .= (string) ob_get_clean();
+            }
+        }
 
         // Контейнер уведомлений
         $html .= '<div id="support-detail-alert" style="display:none;"></div>';
