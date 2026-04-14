@@ -222,6 +222,24 @@ class Cashback_Notifications_Admin {
                                 </p>
                             </td>
                         </tr>
+                        <tr>
+                            <th scope="row">
+                                <label for="cashback_email_signature">
+                                    <?php esc_html_e('Подпись', 'cashback-plugin'); ?>
+                                </label>
+                            </th>
+                            <td>
+                                <textarea
+                                    id="cashback_email_signature"
+                                    name="email_signature"
+                                    rows="4"
+                                    class="large-text"
+                                ><?php echo esc_textarea(get_option('cashback_email_signature', '')); ?></textarea>
+                                <p class="description">
+                                    <?php esc_html_e('Текст подписи, который будет выводиться внизу письма пользователю.', 'cashback-plugin'); ?>
+                                </p>
+                            </td>
+                        </tr>
                     </table>
                 </div>
 
@@ -268,6 +286,12 @@ class Cashback_Notifications_Admin {
         if (isset($_POST['email_sender_email'])) {
             $sender_email = sanitize_email(wp_unslash($_POST['email_sender_email']));
             update_option('cashback_email_sender_email', $sender_email);
+        }
+
+        // Подпись в письмах пользователям
+        if (isset($_POST['email_signature'])) {
+            $signature = sanitize_textarea_field(wp_unslash($_POST['email_signature']));
+            update_option('cashback_email_signature', $signature);
         }
 
         wp_send_json_success(array( 'message' => __('Настройки сохранены.', 'cashback-plugin') ));

@@ -90,8 +90,9 @@ class Cashback_Email_Sender {
      * @return string HTML
      */
     private function render_html_template( string $subject, string $message, ?int $user_id = null ): string {
-        $site_name = get_option('blogname', 'Cashback');
-        $site_url  = home_url('/');
+        $site_name   = $this->get_from_name();
+        $site_url    = home_url('/');
+        $signature   = (string) get_option('cashback_email_signature', '');
 
         $settings_link = '';
         if ($user_id !== null && function_exists('wc_get_account_endpoint_url')) {
@@ -119,6 +120,13 @@ class Cashback_Email_Sender {
         // Тело
         $html .= '<tr><td style="padding:32px;color:#333333;font-size:15px;line-height:1.6;">';
         $html .= '<p style="white-space:pre-line;margin:0 0 16px;">' . wp_kses_post($message) . '</p>';
+
+        if ($signature !== '') {
+            $html .= '<p style="white-space:pre-line;margin:24px 0 0;color:#555555;font-size:14px;">';
+            $html .= nl2br(esc_html($signature));
+            $html .= '</p>';
+        }
+
         $html .= '</td></tr>';
 
         // Футер
