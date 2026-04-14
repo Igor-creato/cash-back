@@ -151,6 +151,31 @@ class Cashback_Support_Admin {
                 setTimeout(function() { $container.find('.notice').fadeOut(300, function() { jQuery(this).remove(); }); }, 5000);
             }
         }
+        jQuery(document).on('click', '.cashback-copy-ref', function(e) {
+            e.preventDefault();
+            var $el = jQuery(this);
+            var text = $el.data('copy');
+            if (text === undefined || text === null) { return; }
+            text = String(text);
+            var done = function() {
+                var original = $el.text();
+                $el.text('✓ скопировано');
+                setTimeout(function() { $el.text(original); }, 1200);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(done, function() {
+                    var ta = document.createElement('textarea');
+                    ta.value = text; document.body.appendChild(ta); ta.select();
+                    try { document.execCommand('copy'); done(); } catch (err) {}
+                    document.body.removeChild(ta);
+                });
+            } else {
+                var ta = document.createElement('textarea');
+                ta.value = text; document.body.appendChild(ta); ta.select();
+                try { document.execCommand('copy'); done(); } catch (err) {}
+                document.body.removeChild(ta);
+            }
+        });
         </script>
         <?php
     }
@@ -600,7 +625,7 @@ class Cashback_Support_Admin {
                     if ($related['type'] === 'cashback_tx') {
                         $admin_url = admin_url('admin.php?page=cashback-transactions&reference_id=' . rawurlencode($ref));
                     } elseif ($related['type'] === 'affiliate_accrual') {
-                        $admin_url = admin_url('admin.php?page=cashback-affiliate&reference_id=' . rawurlencode($ref));
+                        $admin_url = admin_url('admin.php?page=cashback-affiliate&tab=accruals&reference_id=' . rawurlencode($ref));
                     } elseif ($related['type'] === 'payout') {
                         $admin_url = admin_url('admin.php?page=cashback-payouts&reference_id=' . rawurlencode($ref));
                     }
@@ -609,10 +634,9 @@ class Cashback_Support_Admin {
                         <th>Связано с</th>
                         <td>
                             <strong><?php echo esc_html($type_label); ?></strong>
+                            <code class="cashback-copy-ref" data-copy="<?php echo esc_attr($ref); ?>" title="<?php echo esc_attr__('Скопировать', 'cashback-plugin'); ?>" style="cursor:pointer;"><?php echo esc_html($ref); ?></code>
                             <?php if ($admin_url) : ?>
-                                <a href="<?php echo esc_url($admin_url); ?>"><code><?php echo esc_html($ref); ?></code></a>
-                            <?php else : ?>
-                                <code><?php echo esc_html($ref); ?></code>
+                                <a href="<?php echo esc_url($admin_url); ?>" class="cashback-ref-link" title="<?php echo esc_attr__('Открыть', 'cashback-plugin'); ?>" style="text-decoration:none;margin-left:4px;">↗</a>
                             <?php endif; ?>
                             <?php if (!empty($related['title'])) : ?>
                                 — <?php echo esc_html((string) $related['title']); ?>
