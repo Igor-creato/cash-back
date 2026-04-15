@@ -170,6 +170,7 @@ class Cashback_Trigger_Fallbacks {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_user_balance';
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix, safe interpolation.
         $wpdb->query($wpdb->prepare(
             "UPDATE {$table}
              SET frozen_balance = frozen_balance + available_balance + pending_balance,
@@ -179,6 +180,7 @@ class Cashback_Trigger_Fallbacks {
              WHERE user_id = %d AND (available_balance > 0 OR pending_balance > 0)",
             $user_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
     }
 
     /**
@@ -191,6 +193,7 @@ class Cashback_Trigger_Fallbacks {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_user_balance';
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix, safe interpolation.
         $wpdb->query($wpdb->prepare(
             "UPDATE {$table}
              SET available_balance = available_balance + frozen_balance,
@@ -199,6 +202,7 @@ class Cashback_Trigger_Fallbacks {
              WHERE user_id = %d AND frozen_balance > 0",
             $user_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
     }
 
     /**

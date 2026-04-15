@@ -127,6 +127,7 @@ class Cashback_Fraud_DB {
             ));
 
             if (!$exists) {
+                // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Static ALTER TABLE from local array, table names from $wpdb->prefix.
                 $result = $wpdb->query($info['sql']);
                 if ($result === false) {
                     error_log("Cashback Fraud DB: Failed to add FK {$fk_name}: " . $wpdb->last_error);
