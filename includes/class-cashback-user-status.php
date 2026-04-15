@@ -26,11 +26,13 @@ class Cashback_User_Status {
     public static function is_user_banned( int $user_id ): bool {
         global $wpdb;
 
-        $table  = $wpdb->prefix . 'cashback_user_profile';
+        $table = $wpdb->prefix . 'cashback_user_profile';
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table from $wpdb->prefix; user_id bound via $wpdb->prepare().
         $status = $wpdb->get_var($wpdb->prepare(
             "SELECT status FROM {$table} WHERE user_id = %d",
             $user_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         return $status === 'banned';
     }
@@ -45,11 +47,13 @@ class Cashback_User_Status {
         global $wpdb;
 
         $table = $wpdb->prefix . 'cashback_user_profile';
-        $info  = $wpdb->get_row($wpdb->prepare(
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table from $wpdb->prefix; user_id bound via $wpdb->prepare().
+        $info = $wpdb->get_row($wpdb->prepare(
             "SELECT banned_at, ban_reason FROM {$table}
              WHERE user_id = %d AND status = 'banned'",
             $user_id
         ), ARRAY_A);
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         return $info ?: null;
     }

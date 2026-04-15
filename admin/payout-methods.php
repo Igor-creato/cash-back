@@ -126,7 +126,8 @@ class Cashback_Payout_Methods_Admin {
             $where_clause = $wpdb->prepare(' WHERE is_active = %d', $filter_value);
         }
 
-        // Получаем все способы выплаты с учётом фильтра
+        // Получаем все способы выплаты с учётом фильтра.
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->table_name инициализируется из $wpdb->prefix + фиксированный суффикс, SQLi невозможен.
         if ($is_filtered) {
             $payout_methods = $wpdb->get_results(
                 $wpdb->prepare(
@@ -141,6 +142,7 @@ class Cashback_Payout_Methods_Admin {
                 ARRAY_A
             );
         }
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         // Выводим сообщения об ошибках или успехе
         $message = '';
@@ -390,10 +392,12 @@ class Cashback_Payout_Methods_Admin {
             return;
         }
 
-        // Проверяем, существует ли уже способ выплаты с таким slug
+        // Проверяем, существует ли уже способ выплаты с таким slug.
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->table_name из $wpdb->prefix + фиксированный суффикс.
         $existing = $wpdb->get_var(
             $wpdb->prepare("SELECT COUNT(*) FROM {$this->table_name} WHERE slug = %s", $slug)
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if ($existing > 0) {
             wp_send_json_error(array( 'message' => 'Способ выплаты с таким slug уже существует.' ));

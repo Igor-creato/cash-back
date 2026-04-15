@@ -296,7 +296,8 @@ class CashbackHistory {
 
         $this->apply_filters($where, $params, $filters);
 
-        return $wpdb->get_results($wpdb->prepare(
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table_name from $wpdb->prefix; $where built from allowlist with %s/%d placeholders, values bound via $wpdb->prepare().
+        $results = $wpdb->get_results($wpdb->prepare(
             "SELECT id, reference_id, action_date, created_at, offer_name, order_number, cashback, order_status
              FROM {$table_name}
              {$where}
@@ -304,6 +305,8 @@ class CashbackHistory {
              LIMIT %d OFFSET %d",
             array_merge($params, array( $limit, $offset ))
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        return $results;
     }
 
     /**
@@ -322,10 +325,13 @@ class CashbackHistory {
 
         $this->apply_filters($where, $params, $filters);
 
-        return (int) $wpdb->get_var($wpdb->prepare(
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table_name from $wpdb->prefix; $where built from allowlist with %s/%d placeholders, values bound via $wpdb->prepare().
+        $total = (int) $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM {$table_name} {$where}",
             $params
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        return $total;
     }
 
     /**
