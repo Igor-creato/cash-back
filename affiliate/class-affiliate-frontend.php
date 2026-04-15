@@ -239,16 +239,19 @@ class Cashback_Affiliate_Frontend {
             Cashback_Affiliate_Service::sync_pending_accruals();
         }
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имя таблицы из $wpdb->prefix, user_id биндится через prepare().
         $total = (int) $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM `{$prefix}cashback_affiliate_accruals`
              WHERE referrer_id = %d",
             $user_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $total_pages = max(1, (int) ceil($total / $per_page));
         $page        = min($page, $total_pages);
         $offset      = ( $page - 1 ) * $per_page;
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имена таблиц из $wpdb->prefix/$wpdb->users, значения биндятся через prepare().
         $accruals = $wpdb->get_results($wpdb->prepare(
             "SELECT a.id, a.reference_id, a.commission_amount, a.commission_rate,
                     a.cashback_amount, a.status AS display_status, a.created_at,
@@ -262,6 +265,7 @@ class Cashback_Affiliate_Frontend {
             $per_page,
             $offset
         ), ARRAY_A);
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (empty($accruals)) {
             echo '<p class="cashback-affiliate-empty">'
@@ -372,15 +376,18 @@ class Cashback_Affiliate_Frontend {
         $per_page = self::PER_PAGE;
         $offset   = ( $page - 1 ) * $per_page;
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имя таблицы из $wpdb->prefix, user_id биндится через prepare().
         $total = (int) $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM `{$prefix}cashback_affiliate_profiles`
              WHERE referred_by_user_id = %d",
             $user_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $total_pages = max(1, (int) ceil($total / $per_page));
         $page        = min($page, $total_pages);
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имена таблиц из $wpdb->prefix/$wpdb->users, значения биндятся через prepare().
         $referrals = $wpdb->get_results($wpdb->prepare(
             "SELECT ap.user_id, ap.referred_at, ap.affiliate_status,
                     u.display_name, u.user_registered,
@@ -399,6 +406,7 @@ class Cashback_Affiliate_Frontend {
             $per_page,
             $offset
         ), ARRAY_A);
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (empty($referrals)) {
             echo '<p class="cashback-affiliate-empty">'

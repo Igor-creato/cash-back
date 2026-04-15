@@ -101,6 +101,7 @@ class Cashback_Affiliate_DB {
         $prefix          = $wpdb->prefix;
         $charset_collate = $wpdb->get_charset_collate();
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Префикс таблиц/charset из $wpdb (CREATE TABLE — DDL без пользовательского ввода).
         // 1. Профили участников партнёрской программы
         $wpdb->query(
             "CREATE TABLE IF NOT EXISTS `{$prefix}cashback_affiliate_profiles` (
@@ -167,6 +168,7 @@ class Cashback_Affiliate_DB {
                 KEY `idx_created_at` (`created_at`)
             ) ENGINE=InnoDB {$charset_collate} COMMENT='Начисления партнёрских комиссий';"
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         // Таблица cashback_affiliate_ledger удалена — affiliate операции хранятся
         // в едином cashback_balance_ledger (типы: affiliate_accrual, affiliate_freeze, affiliate_unfreeze).
@@ -234,11 +236,12 @@ class Cashback_Affiliate_DB {
             return; // уже мигрировано
         }
 
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table из $wpdb->prefix, ALTER TABLE — статичный DDL.
         $wpdb->query(
             "ALTER TABLE `{$table}`
              MODIFY COLUMN `status` ENUM('pending','available','frozen','paid','declined') NOT NULL DEFAULT 'pending'"
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
     }
 
     /**
@@ -249,10 +252,12 @@ class Cashback_Affiliate_DB {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_affiliate_profiles';
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table из $wpdb->prefix, user_id биндится через prepare().
         $exists = $wpdb->get_var($wpdb->prepare(
             "SELECT user_id FROM `{$table}` WHERE user_id = %d LIMIT 1",
             $user_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$exists) {
             $wpdb->insert(

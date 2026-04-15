@@ -104,6 +104,7 @@ class Cashback_Affiliate_Antifraud {
         global $wpdb;
         $prefix = $wpdb->prefix;
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имя таблицы из $wpdb->prefix, user_id биндится через prepare().
         $status = $wpdb->get_var($wpdb->prepare(
             "SELECT p.status
              FROM `{$prefix}cashback_user_profile` p
@@ -111,12 +112,14 @@ class Cashback_Affiliate_Antifraud {
              LIMIT 1",
             $referrer_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$status || $status === 'banned' || $status === 'deleted') {
             return false;
         }
 
         // Проверяем affiliate_status
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имя таблицы из $wpdb->prefix, user_id биндится через prepare().
         $aff_status = $wpdb->get_var($wpdb->prepare(
             "SELECT affiliate_status
              FROM `{$prefix}cashback_affiliate_profiles`
@@ -124,6 +127,7 @@ class Cashback_Affiliate_Antifraud {
              LIMIT 1",
             $referrer_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         // Если профиля нет — реферер валиден (профиль создастся)
         // Если disabled — не принимаем реферала
@@ -160,6 +164,7 @@ class Cashback_Affiliate_Antifraud {
         $prefix = $wpdb->prefix;
 
         // Проверяем по fingerprints реферера за последние 30 дней
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имя таблицы из $wpdb->prefix, значения биндятся через prepare().
         $fp_match = $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*)
              FROM `{$prefix}cashback_user_fingerprints`
@@ -170,12 +175,14 @@ class Cashback_Affiliate_Antifraud {
             $referrer_id,
             $referred_ip
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if ((int) $fp_match > 0) {
             return true;
         }
 
         // Проверяем по кликам реферера (cashback_click_log)
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имя таблицы из $wpdb->prefix, значения биндятся через prepare().
         $click_match = $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*)
              FROM `{$prefix}cashback_click_log`
@@ -186,6 +193,7 @@ class Cashback_Affiliate_Antifraud {
             $referrer_id,
             $referred_ip
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         return (int) $click_match > 0;
     }

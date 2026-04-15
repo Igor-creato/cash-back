@@ -268,7 +268,7 @@ class Cashback_Support_Admin {
         }
 
         // Подсчёт общего количества
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix; where_clause built from whitelisted conditions only
+        // phpcs:disable WordPress.DB.PreparedSQL -- Имена таблиц из $wpdb->prefix; $where_clause из allowlist-условий с %s, биндинг через prepare().
         $count_sql   = "SELECT COUNT(*) FROM `{$this->tickets_table}` t {$where_clause}";
         $total_items = !empty($where_params)
             ? (int) $wpdb->get_var($wpdb->prepare($count_sql, $where_params))
@@ -277,7 +277,6 @@ class Cashback_Support_Admin {
         $total_pages = (int) ceil($total_items / $per_page);
 
         // Получение тикетов
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names from $wpdb->prefix; where_clause built from whitelisted conditions only
         $select_sql = "SELECT t.*, u.user_login, u.user_email,
             (SELECT COUNT(*) FROM `{$this->messages_table}` m WHERE m.ticket_id = t.id AND m.is_admin = 0 AND m.is_read = 0) as unread_count
             FROM `{$this->tickets_table}` t
@@ -292,6 +291,7 @@ class Cashback_Support_Admin {
 
         $query_params = array_merge($where_params, array( $per_page, $offset ));
         $tickets      = $wpdb->get_results($wpdb->prepare($select_sql, $query_params));
+        // phpcs:enable WordPress.DB.PreparedSQL
 
         ?>
         <style>
@@ -516,6 +516,7 @@ class Cashback_Support_Admin {
         global $wpdb;
 
         // Получаем тикет
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имена таблиц из $wpdb->prefix/$wpdb->users, ticket_id биндится через prepare().
         $ticket = $wpdb->get_row($wpdb->prepare(
             "SELECT t.*, u.user_login, u.user_email
              FROM `{$this->tickets_table}` t
@@ -523,6 +524,7 @@ class Cashback_Support_Admin {
              WHERE t.id = %d",
             $ticket_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$ticket) {
             echo '<div class="notice notice-error"><p>Тикет не найден.</p></div>';
@@ -543,6 +545,7 @@ class Cashback_Support_Admin {
         );
 
         // Получаем все сообщения
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имена таблиц из $wpdb->prefix/$wpdb->users, ticket_id биндится через prepare().
         $messages = $wpdb->get_results($wpdb->prepare(
             "SELECT m.*, u.user_login
              FROM `{$this->messages_table}` m
@@ -551,6 +554,7 @@ class Cashback_Support_Admin {
              ORDER BY m.created_at ASC",
             $ticket_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         // Batch-загрузка вложений
         $message_ids     = array_map(function ( $m ) {
@@ -936,10 +940,12 @@ class Cashback_Support_Admin {
         // Проверяем что тикет существует и не закрыт — внутри транзакции с блокировкой строки
         $wpdb->query('START TRANSACTION');
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имя таблицы из $wpdb->prefix, ticket_id биндится через prepare().
         $ticket = $wpdb->get_row($wpdb->prepare(
             "SELECT id, user_id, subject, status FROM `{$this->tickets_table}` WHERE id = %d FOR UPDATE",
             $ticket_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$ticket) {
             $wpdb->query('ROLLBACK');
@@ -1057,10 +1063,12 @@ class Cashback_Support_Admin {
         // Читаем и обновляем статус атомарно, чтобы избежать гонки состояний
         $wpdb->query('START TRANSACTION');
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имя таблицы из $wpdb->prefix, ticket_id биндится через prepare().
         $ticket = $wpdb->get_row($wpdb->prepare(
             "SELECT id, status FROM `{$this->tickets_table}` WHERE id = %d FOR UPDATE",
             $ticket_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$ticket) {
             $wpdb->query('ROLLBACK');
