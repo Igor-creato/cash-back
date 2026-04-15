@@ -532,13 +532,11 @@ class Cashback_API_Client {
 					'message' => 'API Key не настроен. Сохраните API Key.',
 				);
             }
-        } else {
-            if (!$credentials || empty($credentials['client_id']) || empty($credentials['client_secret'])) {
+        } elseif (!$credentials || empty($credentials['client_id']) || empty($credentials['client_secret'])) {
                 return array(
 					'success' => false,
 					'message' => 'API credentials не настроены. Сохраните client_id и client_secret.',
 				);
-            }
         }
 
         $network_config = $network;

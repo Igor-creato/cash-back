@@ -667,9 +667,9 @@ class Cashback_Support_DB {
      */
     public static function get_related_type_label( string $type ): string {
         $labels = array(
-            'cashback_tx'        => 'Покупка',
-            'affiliate_accrual'  => 'Партнёрское начисление',
-            'payout'             => 'Выплата',
+            'cashback_tx'       => 'Покупка',
+            'affiliate_accrual' => 'Партнёрское начисление',
+            'payout'            => 'Выплата',
         );
         return $labels[ $type ] ?? '';
     }

@@ -90,9 +90,9 @@ class Cashback_Email_Sender {
      * @return string HTML
      */
     private function render_html_template( string $subject, string $message, ?int $user_id = null ): string {
-        $site_name   = $this->get_from_name();
-        $site_url    = home_url('/');
-        $signature   = (string) get_option('cashback_email_signature', '');
+        $site_name = $this->get_from_name();
+        $site_url  = home_url('/');
+        $signature = (string) get_option('cashback_email_signature', '');
 
         $settings_link = '';
         if ($user_id !== null && function_exists('wc_get_account_endpoint_url')) {

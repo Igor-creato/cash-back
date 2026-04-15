@@ -247,7 +247,8 @@ class Cashback_Claims_Admin {
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($result['claims'] as $claim) :
+                        <?php
+                        foreach ($result['claims'] as $claim) :
                             $unread = (int) ( $claim['unread_count'] ?? 0 );
                         ?>
                             <tr class="<?php echo $unread > 0 ? 'claim-row-unread' : ''; ?>">
