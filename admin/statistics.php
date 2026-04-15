@@ -615,11 +615,13 @@ class Cashback_Statistics_Admin {
         // WHERE params передаются дважды — для каждой части UNION ALL
         $merged_params = !empty($where_params) ? array_merge($where_params, $where_params) : array();
 
+        // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared -- Table names from $wpdb->prefix; $where_clause собран из allowlist-условий с %s, значения биндятся через $wpdb->prepare().
         if (!empty($merged_params)) {
             $result = $wpdb->get_row($wpdb->prepare($sql, $merged_params), ARRAY_A);
         } else {
             $result = $wpdb->get_row($sql, ARRAY_A);
         }
+        // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared
 
         if (!$result) {
             $result = array(
@@ -700,11 +702,13 @@ class Cashback_Statistics_Admin {
         FROM {$this->payout_requests_table}
         {$where_clause}";
 
+        // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared -- Table name from $wpdb->prefix; $where_clause собран из allowlist-условий с %s, значения биндятся через $wpdb->prepare().
         if (!empty($where_params)) {
             $result = $wpdb->get_row($wpdb->prepare($sql, $where_params), ARRAY_A);
         } else {
             $result = $wpdb->get_row($sql, ARRAY_A);
         }
+        // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared
 
         if (!$result) {
             $result = array(
