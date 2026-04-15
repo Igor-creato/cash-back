@@ -750,6 +750,7 @@ ID заявки: %4$d
         $tx_table    = $wpdb->prefix . 'cashback_transactions';
 
         // Берём до 50 необработанных записей
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names from $wpdb->prefix; static SELECT без user-input.
         $items = $wpdb->get_results(
             "SELECT q.*, t.partner, t.offer_name, t.sum_order, t.comission, t.cashback
              FROM `{$queue_table}` q
@@ -758,6 +759,7 @@ ID заявки: %4$d
              ORDER BY q.created_at ASC
              LIMIT 50"
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (empty($items)) {
             return;
@@ -810,15 +812,19 @@ ID заявки: %4$d
         // Помечаем обработанными
         if (!empty($processed_ids)) {
             $placeholders = implode(',', array_fill(0, count($processed_ids), '%d'));
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; $placeholders — '%d'-список фиксированной длины = count($processed_ids), id-шники биндятся через $wpdb->prepare().
             $wpdb->query($wpdb->prepare(
                 "UPDATE `{$queue_table}` SET processed = 1 WHERE id IN ({$placeholders})",
                 ...$processed_ids
             ));
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         }
 
         // Очистка старых записей (старше 7 дней)
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; статичный DELETE без user-input.
         $wpdb->query(
             "DELETE FROM `{$queue_table}` WHERE processed = 1 AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY) LIMIT 500"
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
     }
 }
