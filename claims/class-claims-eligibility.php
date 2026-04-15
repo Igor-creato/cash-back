@@ -136,6 +136,7 @@ class Cashback_Claims_Eligibility {
                    AND c.status IN ('draft', 'submitted', 'sent_to_network', 'approved')
                )";
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names from $wpdb->prefix; $eligible_where is a static fragment with only %s/%d placeholders, values bound via $wpdb->prepare().
         $clicks = $wpdb->get_results($wpdb->prepare(
             "SELECT cl.click_id, cl.product_id, cl.created_at, cl.cpa_network, cl.offer_id,
                     cl.ip_address, cl.user_agent
@@ -158,6 +159,7 @@ class Cashback_Claims_Eligibility {
             $cutoff_min,
             $cutoff_max
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $pages = (int) ceil($total / $per_page);
 
@@ -253,7 +255,8 @@ class Cashback_Claims_Eligibility {
              LIMIT %d OFFSET %d";
 
         $data_args = array_merge($prepare_args, array( $per_page, $offset ));
-        $clicks    = $wpdb->get_results($wpdb->prepare($select_query, ...$data_args), ARRAY_A);
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $select_query assembled from static fragments with %s/%d placeholders (table names from $wpdb->prefix, IN-list via array_fill), values bound via $wpdb->prepare().
+        $clicks = $wpdb->get_results($wpdb->prepare($select_query, ...$data_args), ARRAY_A);
 
         $count_query = "SELECT COUNT(*)
              FROM `{$wpdb->prefix}cashback_click_log` cl
@@ -265,6 +268,7 @@ class Cashback_Claims_Eligibility {
                  AND c_active.status IN ('draft', 'submitted', 'sent_to_network', 'approved', 'declined')
              WHERE cl.user_id = %d{$where_extra}";
 
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $count_query assembled from static fragments with %s/%d placeholders (table names from $wpdb->prefix, IN-list via array_fill), values bound via $wpdb->prepare().
         $total = (int) $wpdb->get_var($wpdb->prepare($count_query, ...$prepare_args));
 
         $pages = (int) ceil($total / $per_page);

@@ -55,12 +55,13 @@ class Cashback_Health_Check {
         $table  = $wpdb->prefix . 'cashback_user_balance';
         $issues = array();
 
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix, no user input
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix, no user input
         $negative = $wpdb->get_results(
             "SELECT user_id, available_balance, pending_balance, paid_balance, frozen_balance
              FROM `{$table}`
              WHERE available_balance < 0 OR pending_balance < 0 OR paid_balance < 0 OR frozen_balance < 0"
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         foreach ($negative as $row) {
             $details  = sprintf(
@@ -94,6 +95,7 @@ class Cashback_Health_Check {
         $table  = $wpdb->prefix . 'cashback_payout_requests';
         $issues = array();
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix, no user input
         $stale = $wpdb->get_results($wpdb->prepare(
             "SELECT id, user_id, total_amount, created_at
              FROM `{$table}`
@@ -101,6 +103,7 @@ class Cashback_Health_Check {
              AND created_at < DATE_SUB(NOW(), INTERVAL %d DAY)",
             self::STALE_PAYOUT_DAYS
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         foreach ($stale as $row) {
             $issues[] = array(
@@ -135,7 +138,7 @@ class Cashback_Health_Check {
         $issues         = array();
 
         // Пользователи с pending_balance > 0, но без активных заявок
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names from $wpdb->prefix, no user input
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names from $wpdb->prefix, no user input
         $mismatched = $wpdb->get_results(
             "SELECT b.user_id, b.pending_balance
              FROM `{$table_balance}` b
@@ -144,6 +147,7 @@ class Cashback_Health_Check {
              WHERE b.pending_balance > 0
              AND r.id IS NULL"
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         foreach ($mismatched as $row) {
             $issues[] = array(
@@ -178,6 +182,7 @@ class Cashback_Health_Check {
 
         // Пользователи WordPress без профиля кэшбэка
         // COUNT отдельно, затем LIMIT 20 для примеров — защита от OOM на больших сайтах
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names from $wpdb->prefix / $wpdb->users, no user input
         $orphaned_profile_count = (int) $wpdb->get_var(
             "SELECT COUNT(*)
              FROM `{$wpdb->users}` u
@@ -232,6 +237,7 @@ class Cashback_Health_Check {
                 ),
             );
         }
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         return $issues;
     }

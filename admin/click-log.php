@@ -175,7 +175,8 @@ class Cashback_Click_Log_Admin {
 
         $users_table = $wpdb->users;
 
-        // Подсчет записей
+        // Подсчет записей.
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->table_name из $wpdb->prefix; $users_table = $wpdb->users (ядро WP); $where_clause собран из жёстко заданных условий только с %s/%d и подставляется через $wpdb->prepare().
         if (!empty($where_params)) {
             $total_items = (int) $wpdb->get_var($wpdb->prepare(
                 "SELECT COUNT(*) FROM {$this->table_name} cl LEFT JOIN {$users_table} u ON cl.user_id = u.ID {$where_clause}",
@@ -188,6 +189,7 @@ class Cashback_Click_Log_Admin {
                 1
             ));
         }
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $total_pages = (int) ceil($total_items / $this->per_page);
 
@@ -203,6 +205,7 @@ class Cashback_Click_Log_Admin {
 
         $query_params = array_merge($where_params, array( $this->per_page, $offset ));
 
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $select_query собран из контролируемых источников ($wpdb->prefix/$wpdb->users/allowlist-условий) и передан в $wpdb->prepare().
         $rows = $wpdb->get_results($wpdb->prepare($select_query, $query_params), ARRAY_A);
 
         ?>

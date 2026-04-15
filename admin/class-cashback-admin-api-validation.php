@@ -1114,11 +1114,13 @@ echo 'style="display:none"';}
 
         $table = $wpdb->prefix . ( $is_unregistered ? 'cashback_unregistered_transactions' : 'cashback_transactions' );
 
-        // Проверяем существование и текущий статус
+        // Проверяем существование и текущий статус.
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table построен из $wpdb->prefix + жёстко заданный суффикс, SQLi невозможен.
         $current = $wpdb->get_row($wpdb->prepare(
             "SELECT id, order_status, comission, applied_cashback_rate FROM {$table} WHERE id = %d",
             $transaction_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$current) {
             wp_send_json_error(array( 'message' => 'Транзакция не найдена' ));
@@ -1347,11 +1349,13 @@ echo 'style="display:none"';}
 
         $table = $wpdb->prefix . ( $is_unregistered ? 'cashback_unregistered_transactions' : 'cashback_transactions' );
 
-        // Проверяем существование и текущий статус
+        // Проверяем существование и текущий статус.
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table построен из $wpdb->prefix + жёстко заданный суффикс, SQLi невозможен.
         $current = $wpdb->get_row($wpdb->prepare(
             "SELECT id, order_status, comission, sum_order, applied_cashback_rate FROM {$table} WHERE id = %d",
             $local_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$current) {
             wp_send_json_error(array( 'message' => 'Транзакция не найдена' ));
