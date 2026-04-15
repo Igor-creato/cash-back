@@ -268,6 +268,7 @@ class Cashback_Claims_Manager {
             $params[] = $user_id;
         }
 
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $sql built above from static fragments with %d placeholders, values bound via $wpdb->prepare().
         $claim = $wpdb->get_row($wpdb->prepare($sql, ...$params), ARRAY_A);
 
         if (!$claim) {
@@ -330,6 +331,7 @@ class Cashback_Claims_Manager {
             $params[] = '%' . $wpdb->esc_like($search) . '%';
         }
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Tables from $wpdb->prefix; $where built from allowlist fragments with %s/%d placeholders; values bound via $wpdb->prepare().
         $claims = $wpdb->get_results($wpdb->prepare(
             "SELECT c.claim_id, c.product_name, c.order_id, c.order_value, c.order_date,
                     c.status, c.probability_score, c.is_suspicious, c.created_at,
@@ -344,13 +346,15 @@ class Cashback_Claims_Manager {
              LIMIT %d OFFSET %d",
             ...array_merge($params, array( $per_page, $offset ))
         ), ARRAY_A);
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         // Fetch events for each claim (admin/system notes visible to user)
         $claim_ids       = array_column($claims, 'claim_id');
         $events_by_claim = array();
         if (!empty($claim_ids)) {
             $placeholders = implode(',', array_fill(0, count($claim_ids), '%d'));
-            $events       = $wpdb->get_results($wpdb->prepare(
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table from $wpdb->prefix; $placeholders is array_fill of %d; values bound via $wpdb->prepare().
+            $events = $wpdb->get_results($wpdb->prepare(
                 "SELECT event_id, claim_id, status, note, actor_type, is_read, created_at
                  FROM `{$wpdb->prefix}cashback_claim_events`
                  WHERE claim_id IN ({$placeholders}) AND note IS NOT NULL AND note != ''
@@ -358,6 +362,7 @@ class Cashback_Claims_Manager {
                  ORDER BY created_at ASC",
                 ...array_merge($claim_ids, array( '%Антифрод:%' ))
             ), ARRAY_A);
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
             foreach ($events as $event) {
                 $events_by_claim[ $event['claim_id'] ][] = $event;
@@ -369,10 +374,12 @@ class Cashback_Claims_Manager {
         }
         unset($claim);
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table from $wpdb->prefix; $where built from allowlist fragments with %s/%d placeholders; values bound via $wpdb->prepare().
         $total = (int) $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM `{$wpdb->prefix}cashback_claims` c WHERE {$where}",
             ...$params
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $pages = (int) ceil($total / $per_page);
 
@@ -443,7 +450,8 @@ class Cashback_Claims_Manager {
         $join_sql = "LEFT JOIN `{$wpdb->prefix}users` u ON u.ID = c.user_id";
 
         $list_params = array_merge($params, array( $per_page, $offset ));
-        $claims      = $wpdb->get_results($wpdb->prepare(
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Tables from $wpdb->prefix; $join_sql static; $where_sql built from allowlist fragments with %s/%d; $orderby/$order from hard allowlist (in_array + ASC/DESC); values bound via $wpdb->prepare().
+        $claims = $wpdb->get_results($wpdb->prepare(
             "SELECT c.*, u.display_name as user_display_name, u.user_email as user_email,
                     (SELECT COUNT(*) FROM `{$wpdb->prefix}cashback_claim_events` e
                      WHERE e.claim_id = c.claim_id AND e.actor_type = 'user' AND e.is_read_admin = 0) AS unread_count
@@ -454,12 +462,15 @@ class Cashback_Claims_Manager {
              LIMIT %d OFFSET %d",
             ...$list_params
         ), ARRAY_A);
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!empty($params)) {
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Tables from $wpdb->prefix; $join_sql static; $where_sql built from allowlist fragments; values bound via $wpdb->prepare().
             $total = (int) $wpdb->get_var($wpdb->prepare(
                 "SELECT COUNT(*) FROM `{$wpdb->prefix}cashback_claims` c {$join_sql} {$where_sql}",
                 ...$params
             ));
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         } else {
             $total = (int) $wpdb->get_var(
                 "SELECT COUNT(*) FROM `{$wpdb->prefix}cashback_claims`"
