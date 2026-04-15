@@ -8,7 +8,7 @@
     "szepeviktor/phpstan-wordpress": "^2.0",
     "php-stubs/woocommerce-stubs": "^9.5",
     "squizlabs/php_codesniffer": "^3.11",
-    "wp-coding-standards/wpcs": "^3.1",
+    "wp-coding-standards/wpcs": "^3.3",
     "automattic/vipwpcs": "^3.0",
     "phpcompatibility/phpcompatibility-wp": "^2.1",
     "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
@@ -19,5 +19,13 @@
       "dealerdirect/phpcodesniffer-composer-installer": true,
       "composer/package-versions-deprecated": true
     }
+  },
+  "scripts": {
+    "lint": "phpcs -p",
+    "lint:summary": "phpcs -p --report=summary",
+    "lint:fix:dry": "phpcs --standard=./phpcs-safe.xml -p --report=diff",
+    "lint:fix:preview": "phpcs --standard=./phpcs-safe.xml -p --report=summary",
+    "lint:fix:safe": "phpcbf --standard=./phpcs-safe.xml -p",
+    "lint:fixable": "phpcs -p --report=summary --filter=GitModified"
   }
 }

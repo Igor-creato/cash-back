@@ -230,6 +230,10 @@ class Cashback_Affiliate_Admin {
 
         echo '<input type="search" name="s" value="' . esc_attr($filter_search) . '" placeholder="' . esc_attr__('Поиск...', 'cashback-plugin') . '">';
         echo '<button type="submit" class="button">' . esc_html__('Фильтр', 'cashback-plugin') . '</button>';
+        if ($filter_status !== '' || $filter_search !== '') {
+            $reset_url = add_query_arg(array( 'page' => 'cashback-affiliate', 'tab' => 'accruals' ), admin_url('admin.php'));
+            echo ' <a href="' . esc_url($reset_url) . '" class="button">' . esc_html__('Сбросить фильтры', 'cashback-plugin') . '</a>';
+        }
         echo '</form>';
         echo '</div>';
 
