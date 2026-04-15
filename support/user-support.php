@@ -584,7 +584,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); }
         // Вставляем тикет и первое сообщение в транзакции
         $wpdb->query('START TRANSACTION');
 
-        $ticket_data = array(
+        $ticket_data    = array(
             'user_id'  => $user_id,
             'subject'  => $subject,
             'priority' => $priority,
