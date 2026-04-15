@@ -743,6 +743,7 @@ class Cashback_Statistics_Admin {
             return $cached;
         }
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->user_balance_table из $wpdb->prefix.
         $result = $wpdb->get_row(
             "SELECT
                 COALESCE(SUM(available_balance), 0) AS total_available,
@@ -753,6 +754,7 @@ class Cashback_Statistics_Admin {
             FROM {$this->user_balance_table}",
             ARRAY_A
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$result) {
             $result = array(
