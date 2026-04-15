@@ -282,6 +282,7 @@ class Cashback_User_Support {
     private function get_tickets( int $user_id, int $limit, int $offset ): array {
         global $wpdb;
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names from $wpdb->prefix; values bound via $wpdb->prepare().
         return $wpdb->get_results($wpdb->prepare(
             "SELECT t.*,
                 (SELECT COUNT(*) FROM `{$this->messages_table}` m WHERE m.ticket_id = t.id AND m.is_admin = 1 AND m.is_read = 0) as unread_count
@@ -293,6 +294,7 @@ class Cashback_User_Support {
             $limit,
             $offset
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
     }
 
     /**
@@ -301,10 +303,12 @@ class Cashback_User_Support {
     private function get_total_tickets( int $user_id ): int {
         global $wpdb;
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; value bound via $wpdb->prepare().
         return (int) $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM `{$this->tickets_table}` WHERE user_id = %d",
             $user_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
     }
 
     /**
@@ -567,10 +571,12 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); }
 
         // Защита от спама: максимум 5 тикетов в час (проверка через БД — атомарна)
         $tickets_table_rl = $wpdb->prefix . 'cashback_support_tickets';
-        $recent_tickets   = (int) $wpdb->get_var($wpdb->prepare(
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; value bound via $wpdb->prepare().
+        $recent_tickets = (int) $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM `{$tickets_table_rl}` WHERE user_id = %d AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
             $user_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         if ($recent_tickets >= 5) {
             wp_send_json_error(array( 'message' => 'Слишком много тикетов. Попробуйте позже.' ));
             return;
@@ -743,10 +749,12 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); }
 
         // Защита от спама: максимум 20 ответов в час (проверка через БД — атомарна)
         $messages_table_rl = $wpdb->prefix . 'cashback_support_messages';
-        $recent_replies    = (int) $wpdb->get_var($wpdb->prepare(
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; value bound via $wpdb->prepare().
+        $recent_replies = (int) $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM `{$messages_table_rl}` WHERE user_id = %d AND is_admin = 0 AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
             $user_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         if ($recent_replies >= 20) {
             wp_send_json_error(array( 'message' => 'Слишком много сообщений. Попробуйте позже.' ));
             return;
@@ -757,6 +765,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); }
 
         try {
             // БЛОКИРУЕМ тикет с FOR UPDATE
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; values bound via $wpdb->prepare().
             $ticket = $wpdb->get_row($wpdb->prepare(
                 "SELECT id, user_id, subject, status
                  FROM `{$this->tickets_table}`
@@ -765,6 +774,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); }
                 $ticket_id,
                 $user_id
             ));
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
             if (!$ticket) {
                 throw new Exception('Тикет не найден или не принадлежит пользователю');
@@ -906,11 +916,13 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); }
         }
 
         // Проверяем что тикет принадлежит пользователю
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; values bound via $wpdb->prepare().
         $ticket = $wpdb->get_row($wpdb->prepare(
             "SELECT id, status FROM `{$this->tickets_table}` WHERE id = %d AND user_id = %d",
             $ticket_id,
             $user_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$ticket) {
             wp_send_json_error(array( 'message' => 'Ошибка при выполнении, попробуйте еще раз' ));
@@ -971,11 +983,13 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); }
         }
 
         // Проверяем что тикет принадлежит пользователю
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; values bound via $wpdb->prepare().
         $ticket = $wpdb->get_row($wpdb->prepare(
             "SELECT * FROM `{$this->tickets_table}` WHERE id = %d AND user_id = %d",
             $ticket_id,
             $user_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$ticket) {
             wp_send_json_error(array( 'message' => 'Тикет не найден' ));
@@ -996,6 +1010,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); }
         );
 
         // Получаем сообщения
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names from $wpdb->prefix/$wpdb->users; value bound via $wpdb->prepare().
         $messages = $wpdb->get_results($wpdb->prepare(
             "SELECT m.*, u.user_login
              FROM `{$this->messages_table}` m
@@ -1004,6 +1019,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); }
              ORDER BY m.created_at ASC",
             $ticket_id
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $is_closed = ( $ticket->status === 'closed' );
 

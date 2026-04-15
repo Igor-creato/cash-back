@@ -80,6 +80,7 @@ class Cashback_Claims_DB {
 
         $failed = array();
         foreach ($tables as $name => $sql) {
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- DDL from local array (CREATE TABLE), no user input.
             $result = $wpdb->query($sql);
             if ($result === false) {
                 $failed[] = $name . ': ' . $wpdb->last_error;
@@ -113,6 +114,7 @@ class Cashback_Claims_DB {
 
         $suppress = $wpdb->suppress_errors(true);
         foreach ($constraints as $sql) {
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- DDL from local array (ALTER TABLE constraints), no user input.
             $wpdb->query($sql);
             if ($wpdb->last_error && strpos($wpdb->last_error, 'Duplicate') === false) {
                 error_log('[Claims] Constraint warning (non-fatal): ' . $wpdb->last_error);
@@ -128,7 +130,8 @@ class Cashback_Claims_DB {
         global $wpdb;
 
         $table = "{$wpdb->prefix}cashback_claim_events";
-        $col   = $wpdb->get_results("SHOW COLUMNS FROM `{$table}` LIKE 'is_read'");
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; static DDL/migration without user input.
+        $col = $wpdb->get_results("SHOW COLUMNS FROM `{$table}` LIKE 'is_read'");
 
         if (empty($col)) {
             $wpdb->query("ALTER TABLE `{$table}` ADD COLUMN `is_read` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = прочитано пользователем' AFTER `actor_type`");
@@ -137,6 +140,7 @@ class Cashback_Claims_DB {
             $wpdb->query("UPDATE `{$table}` SET `is_read` = 1");
             error_log('[Claims] Migration: added is_read column to claim_events');
         }
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
     }
 
     /**
@@ -146,7 +150,8 @@ class Cashback_Claims_DB {
         global $wpdb;
 
         $table = "{$wpdb->prefix}cashback_claim_events";
-        $col   = $wpdb->get_results("SHOW COLUMNS FROM `{$table}` LIKE 'is_read_admin'");
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; static DDL/migration without user input.
+        $col = $wpdb->get_results("SHOW COLUMNS FROM `{$table}` LIKE 'is_read_admin'");
 
         if (empty($col)) {
             $wpdb->query("ALTER TABLE `{$table}` ADD COLUMN `is_read_admin` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = прочитано администратором' AFTER `is_read`");
@@ -155,6 +160,7 @@ class Cashback_Claims_DB {
             $wpdb->query("UPDATE `{$table}` SET `is_read_admin` = 0 WHERE `actor_type` = 'user' AND `created_at` >= (NOW() - INTERVAL 30 DAY)");
             error_log('[Claims] Migration: added is_read_admin column to claim_events');
         }
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
     }
 
     /**
