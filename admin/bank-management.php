@@ -124,6 +124,7 @@ class Cashback_Bank_Management_Admin {
         }
 
         // Общее количество банков
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->table_name из $wpdb->prefix; $where_clause собран из литералов с placeholder'ами %s/%d.
         if (!empty($where_values)) {
             $total_banks = (int) $wpdb->get_var(
                 $wpdb->prepare(
@@ -153,6 +154,7 @@ class Cashback_Bank_Management_Admin {
                 ARRAY_A
             );
         }
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         // Вычисляем общее количество страниц
         $total_pages = (int) ceil($total_banks / $per_page);
@@ -424,6 +426,7 @@ class Cashback_Bank_Management_Admin {
         }
 
         // Проверяем, существует ли уже банк с таким bank_code, name или short_name
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->table_name из $wpdb->prefix.
         if (!empty($short_name)) {
             $existing = (int) $wpdb->get_var(
                 $wpdb->prepare(
@@ -442,6 +445,7 @@ class Cashback_Bank_Management_Admin {
                 )
             );
         }
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if ($existing > 0) {
             wp_send_json_error(array( 'message' => 'Такой банк уже добавлен, добавьте другой банк.' ));
