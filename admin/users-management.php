@@ -142,33 +142,23 @@ class Cashback_Users_Management_Admin {
             $where_params = array( 1, 1 );
         }
 
-        // Подсчет общего количества пользователей
-        $count_params = $where_params;
-        $total_users  = $wpdb->get_var(
-            $wpdb->prepare(
-                "SELECT COUNT(*)
-                FROM {$this->table_name} u
-                LEFT JOIN {$this->profile_table_name} cup ON u.ID = cup.user_id
-                {$where_sql}",
-                ...$count_params
-            )
+        // Подсчет общего количества пользователей.
+        // Таблицы идут через %i; $where_sql — allowlist условий с %s (+ безопасный fallback 'WHERE %d = %d').
+        $count_params = array_merge(
+            array( $this->table_name, $this->profile_table_name ),
+            $where_params
         );
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_sql из allowlist условий с %s/%d; таблицы через %i.
+        $total_users = $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i u LEFT JOIN %i cup ON u.ID = cup.user_id {$where_sql}", ...$count_params ) );
 
-        // Получаем пользователей с профилями
-        $select_params = array_merge($where_params, array( $per_page, $offset ));
-        $users         = $wpdb->get_results(
-            $wpdb->prepare(
-                "SELECT u.ID, u.display_name, u.user_email,
-                        cup.cashback_rate, cup.min_payout_amount, cup.status, cup.ban_reason, cup.banned_at
-                FROM {$this->table_name} u
-                LEFT JOIN {$this->profile_table_name} cup ON u.ID = cup.user_id
-                {$where_sql}
-                ORDER BY u.ID ASC
-                LIMIT %d OFFSET %d",
-                ...$select_params
-            ),
-            'ARRAY_A'
+        // Получаем пользователей с профилями.
+        $select_params = array_merge(
+            array( $this->table_name, $this->profile_table_name ),
+            $where_params,
+            array( $per_page, $offset )
         );
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_sql из allowlist условий с %s/%d; таблицы через %i.
+        $users = $wpdb->get_results( $wpdb->prepare( "SELECT u.ID, u.display_name, u.user_email, cup.cashback_rate, cup.min_payout_amount, cup.status, cup.ban_reason, cup.banned_at FROM %i u LEFT JOIN %i cup ON u.ID = cup.user_id {$where_sql} ORDER BY u.ID ASC LIMIT %d OFFSET %d", ...$select_params ), 'ARRAY_A' );
 
         // Определяем все доступные статусы для фильтра
         $statuses = array( 'active', 'noactive', 'banned', 'deleted' );
@@ -365,7 +355,8 @@ class Cashback_Users_Management_Admin {
         $new_cashback_rate = null;
         if (isset($_POST['cashback_rate'])) {
             $old_cashback_rate = $wpdb->get_var($wpdb->prepare(
-                "SELECT cashback_rate FROM {$this->profile_table_name} WHERE user_id = %d",
+                'SELECT cashback_rate FROM %i WHERE user_id = %d',
+                $this->profile_table_name,
                 $user_id
             ));
         }
@@ -461,12 +452,10 @@ class Cashback_Users_Management_Admin {
         $wpdb->query('START TRANSACTION');
 
         try {
-            // БЛОКИРУЕМ строку профиля с FOR UPDATE для предотвращения race conditions
+            // БЛОКИРУЕМ строку профиля с FOR UPDATE для предотвращения race conditions.
             $profile = $wpdb->get_row($wpdb->prepare(
-                "SELECT status, ban_reason
-                 FROM {$this->profile_table_name}
-                 WHERE user_id = %d
-                 FOR UPDATE",
+                'SELECT status, ban_reason FROM %i WHERE user_id = %d FOR UPDATE',
+                $this->profile_table_name,
                 $user_id
             ));
 
@@ -568,12 +557,11 @@ class Cashback_Users_Management_Admin {
             $wpdb->query($wpdb->prepare('DO RELEASE_LOCK(%s)', $withdrawal_lock_name));
         }
 
-        // Получаем обновленные данные из базы
+        // Получаем обновленные данные из базы.
         $updated_user_data = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT cashback_rate, min_payout_amount, status, ban_reason, banned_at 
-                 FROM {$this->profile_table_name} 
-                 WHERE user_id = %d",
+                'SELECT cashback_rate, min_payout_amount, status, ban_reason, banned_at FROM %i WHERE user_id = %d',
+                $this->profile_table_name,
                 $user_id
             ),
             ARRAY_A
@@ -620,12 +608,11 @@ class Cashback_Users_Management_Admin {
 
         $user_id = intval($_POST['user_id']);
 
-        // Получаем данные пользователя из базы данных
+        // Получаем данные пользователя из базы данных.
         $user_data = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT cashback_rate, min_payout_amount, status, ban_reason, banned_at 
-                 FROM {$this->profile_table_name} 
-                 WHERE user_id = %d",
+                'SELECT cashback_rate, min_payout_amount, status, ban_reason, banned_at FROM %i WHERE user_id = %d',
+                $this->profile_table_name,
                 $user_id
             ),
             ARRAY_A
@@ -692,12 +679,14 @@ class Cashback_Users_Management_Admin {
 
         if ($is_all) {
             $count = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM {$this->profile_table_name} WHERE cashback_rate != %s",
+                'SELECT COUNT(*) FROM %i WHERE cashback_rate != %s',
+                $this->profile_table_name,
                 $new_rate
             ));
         } else {
             $count = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM {$this->profile_table_name} WHERE cashback_rate = %s",
+                'SELECT COUNT(*) FROM %i WHERE cashback_rate = %s',
+                $this->profile_table_name,
                 $old_rate_raw
             ));
         }
@@ -721,14 +710,16 @@ class Cashback_Users_Management_Admin {
         try {
             if ($is_all) {
                 $result = $wpdb->query($wpdb->prepare(
-                    "UPDATE {$this->profile_table_name} SET cashback_rate = %s, updated_at = %s WHERE cashback_rate != %s",
+                    'UPDATE %i SET cashback_rate = %s, updated_at = %s WHERE cashback_rate != %s',
+                    $this->profile_table_name,
                     $new_rate,
                     current_time('mysql'),
                     $new_rate
                 ));
             } else {
                 $result = $wpdb->query($wpdb->prepare(
-                    "UPDATE {$this->profile_table_name} SET cashback_rate = %s, updated_at = %s WHERE cashback_rate = %s",
+                    'UPDATE %i SET cashback_rate = %s, updated_at = %s WHERE cashback_rate = %s',
+                    $this->profile_table_name,
                     $new_rate,
                     current_time('mysql'),
                     $old_rate_raw
@@ -802,13 +793,10 @@ class Cashback_Users_Management_Admin {
         }
 
         try {
-            // 🔒 БЛОКИРУЕМ активные заявки на выплату с FOR UPDATE
+            // 🔒 БЛОКИРУЕМ активные заявки на выплату с FOR UPDATE.
             $active_requests = $wpdb->get_results($wpdb->prepare(
-                "SELECT id, total_amount, status
-                 FROM {$requests_table}
-                 WHERE user_id = %d
-                 AND status NOT IN ('failed', 'paid', 'declined')
-                 FOR UPDATE",
+                "SELECT id, total_amount, status FROM %i WHERE user_id = %d AND status NOT IN ('failed', 'paid', 'declined') FOR UPDATE",
+                $requests_table,
                 $user_id
             ));
 
@@ -906,14 +894,10 @@ class Cashback_Users_Management_Admin {
         }
 
         try {
-            // 🔒 БЛОКИРУЕМ declined заявки пользователя с FOR UPDATE
+            // 🔒 БЛОКИРУЕМ declined заявки пользователя с FOR UPDATE.
             $declined_requests = $wpdb->get_results($wpdb->prepare(
-                "SELECT id, fail_reason
-                 FROM {$requests_table}
-                 WHERE user_id = %d
-                 AND status = 'declined'
-                 AND (fail_reason = '(Аккаунт забанен)' OR fail_reason = 'Account banned')
-                 FOR UPDATE",
+                "SELECT id, fail_reason FROM %i WHERE user_id = %d AND status = 'declined' AND (fail_reason = '(Аккаунт забанен)' OR fail_reason = 'Account banned') FOR UPDATE",
+                $requests_table,
                 $user_id
             ));
 

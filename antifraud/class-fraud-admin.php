@@ -58,7 +58,8 @@ class Cashback_Fraud_Admin {
             global $wpdb;
             $table = $wpdb->prefix . 'cashback_fraud_alerts';
             $count = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM `{$table}` WHERE status = %s",
+                'SELECT COUNT(*) FROM %i WHERE status = %s',
+                $table,
                 'open'
             ));
             set_transient('cashback_fraud_open_count', $count, 300);
@@ -205,28 +206,25 @@ class Cashback_Fraud_Admin {
         $where_sql = implode(' AND ', $where);
 
         // Count
-        $count_query = "SELECT COUNT(*) FROM `{$table}` a WHERE {$where_sql}";
         if (empty($params)) {
             $total_items = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM `{$table}` a WHERE %d = %d",
+                'SELECT COUNT(*) FROM %i a WHERE %d = %d',
+                $table,
                 1,
                 1
             ));
         } else {
-            $total_items = (int) $wpdb->get_var($wpdb->prepare($count_query, ...$params));
+            $count_params = array_merge( array( $table ), $params );
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql из allowlist условий со %s (добавляет плейсхолдеры, которые phpcs не видит); таблица через %i, значения через prepare().
+            $total_items = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i a WHERE {$where_sql}", ...$count_params ) );
         }
 
         $total_pages = (int) ceil($total_items / self::PER_PAGE);
 
         // Data
-        $data_query  = "SELECT a.*, u.user_login, u.user_email
-                       FROM `{$table}` a
-                       LEFT JOIN `{$wpdb->users}` u ON a.user_id = u.ID
-                       WHERE {$where_sql}
-                       ORDER BY a.created_at DESC
-                       LIMIT %d OFFSET %d";
-        $data_params = array_merge($params, array( self::PER_PAGE, $offset ));
-        $alerts      = $wpdb->get_results($wpdb->prepare($data_query, ...$data_params));
+        $data_params = array_merge( array( $table, $wpdb->users ), $params, array( self::PER_PAGE, $offset ) );
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql из allowlist условий со %s (добавляет плейсхолдеры, которые phpcs не видит); таблицы через %i, значения через prepare().
+        $alerts = $wpdb->get_results( $wpdb->prepare( "SELECT a.*, u.user_login, u.user_email FROM %i a LEFT JOIN %i u ON a.user_id = u.ID WHERE {$where_sql} ORDER BY a.created_at DESC LIMIT %d OFFSET %d", ...$data_params ) );
 
         // Render filter form
         echo '<form method="get" class="cashback-filters" style="margin-bottom:15px;">';
@@ -361,9 +359,10 @@ class Cashback_Fraud_Admin {
 
         // Users with open/reviewing alerts, sorted by risk score
         $total_items = (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(DISTINCT a.user_id)
-             FROM `{$alerts_table}` a
-             WHERE a.status IN (%s, %s)",
+            'SELECT COUNT(DISTINCT a.user_id)
+             FROM %i a
+             WHERE a.status IN (%s, %s)',
+            $alerts_table,
             'open',
             'reviewing'
         ));
@@ -375,13 +374,16 @@ class Cashback_Fraud_Admin {
                     LEAST(100, SUM(a.risk_score)) as total_risk_score,
                     COUNT(a.id) as open_alerts,
                     p.status as profile_status
-             FROM `{$alerts_table}` a
-             LEFT JOIN `{$wpdb->users}` u ON a.user_id = u.ID
-             LEFT JOIN `{$profile_table}` p ON a.user_id = p.user_id
+             FROM %i a
+             LEFT JOIN %i u ON a.user_id = u.ID
+             LEFT JOIN %i p ON a.user_id = p.user_id
              WHERE a.status IN ('open', 'reviewing')
              GROUP BY a.user_id
              ORDER BY total_risk_score DESC
              LIMIT %d OFFSET %d",
+            $alerts_table,
+            $wpdb->users,
+            $profile_table,
             self::PER_PAGE,
             $offset
         ));
@@ -688,13 +690,13 @@ class Cashback_Fraud_Admin {
             return array();
         }
 
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table is safe prefixed name
         return $wpdb->get_results($wpdb->prepare(
-            "SELECT ip_address, product_id, user_agent, user_id, created_at
-             FROM `{$table}`
+            'SELECT ip_address, product_id, user_agent, user_id, created_at
+             FROM %i
              WHERE spam_click = 1
              ORDER BY created_at DESC
-             LIMIT %d",
+             LIMIT %d',
+            $table,
             $limit
         )) ?: array();
     }
@@ -907,7 +909,8 @@ class Cashback_Fraud_Admin {
         $table = $wpdb->prefix . 'cashback_fraud_alerts';
 
         $alert = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM `{$table}` WHERE id = %d",
+            'SELECT * FROM %i WHERE id = %d',
+            $table,
             $alert_id
         ));
 
@@ -979,10 +982,12 @@ class Cashback_Fraud_Admin {
         $signals_table = $wpdb->prefix . 'cashback_fraud_signals';
 
         $alert = $wpdb->get_row($wpdb->prepare(
-            "SELECT a.*, u.user_login, u.user_email, u.user_registered
-             FROM `{$alerts_table}` a
-             LEFT JOIN `{$wpdb->users}` u ON a.user_id = u.ID
-             WHERE a.id = %d",
+            'SELECT a.*, u.user_login, u.user_email, u.user_registered
+             FROM %i a
+             LEFT JOIN %i u ON a.user_id = u.ID
+             WHERE a.id = %d',
+            $alerts_table,
+            $wpdb->users,
             $alert_id
         ), ARRAY_A);
 
@@ -992,14 +997,16 @@ class Cashback_Fraud_Admin {
         }
 
         $signals = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM `{$signals_table}` WHERE alert_id = %d ORDER BY weight DESC",
+            'SELECT * FROM %i WHERE alert_id = %d ORDER BY weight DESC',
+            $signals_table,
             $alert_id
         ), ARRAY_A);
 
         // Balance info
         $balance_table = $wpdb->prefix . 'cashback_user_balance';
         $balance       = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM `{$balance_table}` WHERE user_id = %d",
+            'SELECT * FROM %i WHERE user_id = %d',
+            $balance_table,
             $alert['user_id']
         ), ARRAY_A);
 
@@ -1167,7 +1174,8 @@ class Cashback_Fraud_Admin {
         try {
             // Lock and update profile
             $profile = $wpdb->get_row($wpdb->prepare(
-                "SELECT status FROM `{$profile_table}` WHERE user_id = %d FOR UPDATE",
+                'SELECT status FROM %i WHERE user_id = %d FOR UPDATE',
+                $profile_table,
                 $user_id
             ));
 
@@ -1197,9 +1205,10 @@ class Cashback_Fraud_Admin {
 
             // Decline active payout requests
             $active_requests = $wpdb->get_results($wpdb->prepare(
-                "SELECT id, total_amount FROM `{$requests_table}`
+                "SELECT id, total_amount FROM %i
                  WHERE user_id = %d AND status NOT IN ('failed', 'paid', 'declined')
                  FOR UPDATE",
+                $requests_table,
                 $user_id
             ));
 

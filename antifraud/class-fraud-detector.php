@@ -64,7 +64,7 @@ class Cashback_Fraud_Detector {
         $results = $wpdb->get_results($wpdb->prepare(
             "SELECT ip_address, GROUP_CONCAT(DISTINCT user_id ORDER BY user_id) as user_ids,
                     COUNT(DISTINCT user_id) as user_count
-             FROM `{$fp_table}`
+             FROM %i
              WHERE created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
                AND ip_address NOT IN ('127.0.0.1', '::1', '0.0.0.0')
                AND ip_address NOT LIKE '10.%'
@@ -72,6 +72,7 @@ class Cashback_Fraud_Detector {
                AND ip_address NOT BETWEEN '172.16.0.0' AND '172.31.255.255'
              GROUP BY ip_address
              HAVING user_count > %d",
+            $fp_table,
             $threshold
         ));
 
@@ -137,11 +138,12 @@ class Cashback_Fraud_Detector {
         $results = $wpdb->get_results($wpdb->prepare(
             "SELECT fingerprint_hash, GROUP_CONCAT(DISTINCT user_id ORDER BY user_id) as user_ids,
                     COUNT(DISTINCT user_id) as user_count
-             FROM `{$fp_table}`
+             FROM %i
              WHERE fingerprint_hash IS NOT NULL
                AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
              GROUP BY fingerprint_hash
              HAVING user_count > %d",
+            $fp_table,
             $threshold
         ));
 
@@ -206,12 +208,13 @@ class Cashback_Fraud_Detector {
         $results = $wpdb->get_results($wpdb->prepare(
             "SELECT details_hash, GROUP_CONCAT(user_id ORDER BY user_id) as user_ids,
                     COUNT(*) as user_count
-             FROM `{$profile_table}`
+             FROM %i
              WHERE details_hash IS NOT NULL
                AND details_hash != ''
                AND status != 'deleted'
              GROUP BY details_hash
              HAVING user_count > %d",
+            $profile_table,
             $threshold
         ));
 
@@ -281,10 +284,11 @@ class Cashback_Fraud_Detector {
                     COUNT(*) as total,
                     SUM(CASE WHEN order_status = 'declined' THEN 1 ELSE 0 END) as declined,
                     ROUND(SUM(CASE WHEN order_status = 'declined' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as decline_rate
-             FROM `{$tx_table}`
+             FROM %i
              WHERE created_at > DATE_SUB(NOW(), INTERVAL 90 DAY)
              GROUP BY user_id
              HAVING total >= %d AND decline_rate > %f",
+            $tx_table,
             $min_tx,
             $threshold
         ));
@@ -348,10 +352,11 @@ class Cashback_Fraud_Detector {
         // Per day
         $daily = $wpdb->get_results($wpdb->prepare(
             "SELECT user_id, DATE(created_at) as req_date, COUNT(*) as req_count
-             FROM `{$req_table}`
+             FROM %i
              WHERE created_at > DATE_SUB(NOW(), INTERVAL 7 DAY)
              GROUP BY user_id, DATE(created_at)
              HAVING req_count > %d",
+            $req_table,
             $max_day
         ));
 
@@ -399,10 +404,11 @@ class Cashback_Fraud_Detector {
         // Per week
         $weekly = $wpdb->get_results($wpdb->prepare(
             "SELECT user_id, YEARWEEK(created_at, 1) as req_week, COUNT(*) as req_count
-             FROM `{$req_table}`
+             FROM %i
              WHERE created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
              GROUP BY user_id, YEARWEEK(created_at, 1)
              HAVING req_count > %d",
+            $req_table,
             $max_week
         ));
 
@@ -464,10 +470,10 @@ class Cashback_Fraud_Detector {
         $results = $wpdb->get_results($wpdb->prepare(
             "SELECT t.user_id, t.id as transaction_id, t.cashback as current_amount,
                     stats.avg_cashback, stats.tx_count
-             FROM `{$tx_table}` t
+             FROM %i t
              INNER JOIN (
                  SELECT user_id, AVG(cashback) as avg_cashback, COUNT(*) as tx_count
-                 FROM `{$tx_table}`
+                 FROM %i
                  WHERE order_status IN ('completed', 'balance', 'hold')
                    AND cashback > 0
                    AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
@@ -477,6 +483,8 @@ class Cashback_Fraud_Detector {
              WHERE t.created_at > DATE_SUB(NOW(), INTERVAL 1 DAY)
                AND t.cashback > stats.avg_cashback * %f
                AND t.cashback > 0",
+            $tx_table,
+            $tx_table,
             $multiplier
         ));
 
@@ -542,10 +550,12 @@ class Cashback_Fraud_Detector {
         $results = $wpdb->get_results($wpdb->prepare(
             "SELECT r.user_id, u.user_registered, r.id as request_id, r.total_amount,
                     DATEDIFF(r.created_at, u.user_registered) as days_since_reg
-             FROM `{$req_table}` r
-             INNER JOIN `{$wpdb->users}` u ON r.user_id = u.ID
+             FROM %i r
+             INNER JOIN %i u ON r.user_id = u.ID
              WHERE u.user_registered > DATE_SUB(NOW(), INTERVAL %d DAY)
                AND r.created_at > DATE_SUB(NOW(), INTERVAL 1 DAY)",
+            $req_table,
+            $wpdb->users,
             $cooling_days
         ));
 
@@ -609,8 +619,9 @@ class Cashback_Fraud_Detector {
 
         $score = $wpdb->get_var($wpdb->prepare(
             "SELECT COALESCE(SUM(risk_score), 0)
-             FROM `{$table}`
+             FROM %i
              WHERE user_id = %d AND status IN ('open', 'reviewing')",
+            $table,
             $user_id
         ));
 
@@ -630,12 +641,13 @@ class Cashback_Fraud_Detector {
 
         // Дедупликация: проверяем open/reviewing + confirmed/dismissed за последние 30 дней
         return (bool) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM `{$table}`
+            "SELECT COUNT(*) FROM %i
              WHERE user_id = %d AND alert_type = %s
              AND (
                  status IN ('open', 'reviewing')
                  OR (status IN ('confirmed', 'dismissed') AND updated_at > DATE_SUB(NOW(), INTERVAL 30 DAY))
              )",
+            $table,
             $user_id,
             $alert_type
         ));
@@ -671,13 +683,14 @@ class Cashback_Fraud_Detector {
         $wpdb->query('START TRANSACTION');
 
         $exists = (bool) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM `{$alerts_table}`
+            "SELECT COUNT(*) FROM %i
              WHERE user_id = %d AND alert_type = %s
              AND (
                  status IN ('open', 'reviewing')
                  OR (status IN ('confirmed', 'dismissed') AND updated_at > DATE_SUB(NOW(), INTERVAL 30 DAY))
              )
              FOR UPDATE",
+            $alerts_table,
             $user_id,
             $alert_type
         ));
@@ -780,14 +793,8 @@ class Cashback_Fraud_Detector {
         $table        = $wpdb->prefix . 'cashback_fraud_alerts';
         $placeholders = implode(',', array_fill(0, count($alert_ids), '%d'));
 
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-        $alerts = $wpdb->get_results($wpdb->prepare(
-            "SELECT a.*, u.user_login, u.user_email
-             FROM `{$table}` a
-             LEFT JOIN `{$wpdb->users}` u ON a.user_id = u.ID
-             WHERE a.id IN ({$placeholders})",
-            ...$alert_ids
-        ));
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders — строка из array_fill(count($alert_ids), '%d'); таблицы через %i, значения через prepare().
+        $alerts = $wpdb->get_results($wpdb->prepare( "SELECT a.*, u.user_login, u.user_email FROM %i a LEFT JOIN %i u ON a.user_id = u.ID WHERE a.id IN ({$placeholders})", $table, $wpdb->users, ...$alert_ids ));
 
         if (empty($alerts)) {
             return;
