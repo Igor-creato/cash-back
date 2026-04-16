@@ -754,6 +754,7 @@ class Cashback_Affiliate_Admin {
         global $wpdb;
         $prefix = $wpdb->prefix;
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names come from $wpdb->prefix / $wpdb->users; user_id bound via prepare().
         $profile = $wpdb->get_row($wpdb->prepare(
             "SELECT ap.*, u.display_name, u.user_email
              FROM `{$prefix}cashback_affiliate_profiles` ap
@@ -761,6 +762,7 @@ class Cashback_Affiliate_Admin {
              WHERE ap.user_id = %d LIMIT 1",
             $user_id
         ), ARRAY_A);
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$profile) {
             wp_send_json_error(array( 'message' => 'Профиль не найден.' ));
@@ -822,6 +824,7 @@ class Cashback_Affiliate_Admin {
         }
 
         // Count affected users (for preview or apply)
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table = $wpdb->prefix . 'cashback_affiliate_profiles'; rate values bound via prepare().
         if ($is_all) {
             $count = (int) $wpdb->get_var($wpdb->prepare(
                 "SELECT COUNT(*) FROM `{$table}` WHERE (affiliate_rate IS NULL OR affiliate_rate != %s)",
@@ -842,6 +845,7 @@ class Cashback_Affiliate_Admin {
                 $count     += $count_null;
             }
         }
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if ($preview) {
             wp_send_json_success(array(
@@ -862,6 +866,7 @@ class Cashback_Affiliate_Admin {
         try {
             $global_rate = Cashback_Affiliate_DB::get_global_rate();
 
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table = $wpdb->prefix . 'cashback_affiliate_profiles'; rate values bound via prepare().
             if ($is_all) {
                 $result = $wpdb->query($wpdb->prepare(
                     "UPDATE `{$table}` SET affiliate_rate = %s WHERE (affiliate_rate IS NULL OR affiliate_rate != %s)",
@@ -884,6 +889,7 @@ class Cashback_Affiliate_Admin {
                     }
                 }
             }
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
             if ($result === false) {
                 $wpdb->query('ROLLBACK');
@@ -975,10 +981,12 @@ class Cashback_Affiliate_Admin {
         }
 
         // Получаем текущую запись
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; id bound via prepare().
         $accrual = $wpdb->get_row($wpdb->prepare(
             "SELECT * FROM `{$prefix}cashback_affiliate_accruals` WHERE id = %d LIMIT 1",
             $accrual_id
         ), ARRAY_A);
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$accrual) {
             wp_send_json_error(array( 'message' => 'Начисление не найдено.' ));

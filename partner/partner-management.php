@@ -132,6 +132,7 @@ class Cashback_Partner_Management_Admin {
         }
 
         // Общее количество партнеров
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->table_name из $wpdb->prefix; $where_clause из allowlist (`is_active = %d`), значения через prepare().
         if (!empty($where_values)) {
             $total_partners = (int) $wpdb->get_var(
                 $wpdb->prepare(
@@ -173,6 +174,7 @@ class Cashback_Partner_Management_Admin {
             ),
             ARRAY_A
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         // Выводим сообщения об ошибках или успехе
         $message = '';
@@ -442,9 +444,11 @@ class Cashback_Partner_Management_Admin {
         }
 
         // Читаем текущий статус активности до обновления
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->table_name из $wpdb->prefix; id через prepare().
         $old_is_active = (int) $wpdb->get_var(
             $wpdb->prepare("SELECT is_active FROM {$this->table_name} WHERE id = %d", $id)
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         // Обновляем запись в базе данных
         $result = $wpdb->update(
@@ -515,6 +519,7 @@ class Cashback_Partner_Management_Admin {
         }
 
         // Проверяем, существует ли уже партнер с таким slug или name
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->table_name из $wpdb->prefix; slug/name через prepare().
         $existing = (int) $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT COUNT(*) FROM {$this->table_name} WHERE slug = %s OR name = %s",
@@ -522,6 +527,7 @@ class Cashback_Partner_Management_Admin {
                 $name
             )
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if ($existing > 0) {
             wp_send_json_error(array( 'message' => 'Партнер с таким названием или slug уже существует.' ));
@@ -567,6 +573,7 @@ class Cashback_Partner_Management_Admin {
 
         $network_id = intval($_POST['network_id']);
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->params_table из $wpdb->prefix; network_id через prepare().
         $params = $wpdb->get_results(
             $wpdb->prepare(
                 "SELECT id, param_name, param_type FROM {$this->params_table} WHERE network_id = %d ORDER BY id ASC",
@@ -574,6 +581,7 @@ class Cashback_Partner_Management_Admin {
             ),
             ARRAY_A
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         wp_send_json_success(array( 'params' => $params ?: array() ));
     }
@@ -602,12 +610,14 @@ class Cashback_Partner_Management_Admin {
         }
 
         // Проверяем что сеть существует
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->table_name из $wpdb->prefix; id через prepare().
         $network_exists = (int) $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT COUNT(*) FROM {$this->table_name} WHERE id = %d",
                 $network_id
             )
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if ($network_exists === 0) {
             wp_send_json_error(array( 'message' => 'Партнерская сеть не найдена.' ));
@@ -642,12 +652,14 @@ class Cashback_Partner_Management_Admin {
         }
 
         // Проверяем лимит с учетом существующих параметров
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->params_table из $wpdb->prefix; network_id через prepare().
         $existing_count = (int) $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT COUNT(*) FROM {$this->params_table} WHERE network_id = %d",
                 $network_id
             )
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $new_count = 0;
         foreach ($param_names as $pn) {
