@@ -99,9 +99,11 @@ class Cashback_Transactions_Admin {
         }
 
         // Получаем список уникальных сетей для фильтра
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table_name = $this->registered_table / $this->unregistered_table (из $wpdb->prefix).
         $available_partners = $wpdb->get_col(
             "SELECT DISTINCT partner FROM {$table_name} WHERE partner IS NOT NULL AND partner != '' ORDER BY partner ASC"
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         if (!empty($filter_partner) && !in_array($filter_partner, $available_partners, true)) {
             $filter_partner = '';
         }
@@ -139,6 +141,7 @@ class Cashback_Transactions_Admin {
         }
 
         // Count
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table_name из $wpdb->prefix; $where_clause из allowlist-условий (order_status/partner/LIKE) с %s, значения биндятся через prepare().
         if (!empty($where_params)) {
             $total_items = (int) $wpdb->get_var(
                 $wpdb->prepare(
@@ -178,6 +181,7 @@ class Cashback_Transactions_Admin {
                 ARRAY_A
             );
         }
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $base_url = admin_url('admin.php?page=cashback-transactions');
         ?>
@@ -400,10 +404,12 @@ class Cashback_Transactions_Admin {
 
         try {
             // Блокируем строку для предотвращения конкурентного обновления (MySQL Event, sync)
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table_name = $this->registered_table / $this->unregistered_table (из $wpdb->prefix); id bound via prepare().
             $current = $wpdb->get_row($wpdb->prepare(
                 "SELECT id, reference_id, user_id, order_status, sum_order, comission, cashback FROM {$table_name} WHERE id = %d FOR UPDATE",
                 $transaction_id
             ), ARRAY_A);
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
             if (!$current) {
                 $wpdb->query('ROLLBACK');
@@ -470,11 +476,13 @@ class Cashback_Transactions_Admin {
         }
 
         // Return fresh data (cashback may have been recalculated by trigger)
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table_name из $wpdb->prefix; id bound via prepare().
         $updated = $wpdb->get_row($wpdb->prepare(
             "SELECT id, reference_id, user_id, order_number, partner, order_status, sum_order, comission, cashback, click_id, created_at
              FROM {$table_name} WHERE id = %d",
             $transaction_id
         ), ARRAY_A);
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         wp_send_json_success(array( 'transaction_data' => $updated ));
     }
@@ -504,11 +512,13 @@ class Cashback_Transactions_Admin {
         $tab        = sanitize_text_field(wp_unslash($_POST['tab'] ?? 'registered'));
         $table_name = ( $tab === 'unregistered' ) ? $this->unregistered_table : $this->registered_table;
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table_name из $wpdb->prefix; id bound via prepare().
         $data = $wpdb->get_row($wpdb->prepare(
             "SELECT id, reference_id, user_id, order_number, partner, order_status, sum_order, comission, cashback, click_id, created_at
              FROM {$table_name} WHERE id = %d",
             $transaction_id
         ), ARRAY_A);
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$data) {
             wp_send_json_error(array( 'message' => 'Транзакция не найдена.' ));
@@ -556,10 +566,12 @@ class Cashback_Transactions_Admin {
 
         try {
             // Блокируем исходную строку
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->unregistered_table = $wpdb->prefix . '...'; id bound via prepare().
             $tx = $wpdb->get_row($wpdb->prepare(
                 "SELECT * FROM {$this->unregistered_table} WHERE id = %d FOR UPDATE",
                 $transaction_id
             ), ARRAY_A);
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
             if (!$tx) {
                 $wpdb->query('ROLLBACK');
@@ -569,11 +581,13 @@ class Cashback_Transactions_Admin {
 
             // Проверяем дубль в целевой таблице
             if (!empty($tx['uniq_id'])) {
+                // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->registered_table = $wpdb->prefix . '...'; values bound via prepare().
                 $duplicate = (int) $wpdb->get_var($wpdb->prepare(
                     "SELECT COUNT(*) FROM {$this->registered_table} WHERE uniq_id = %s AND partner = %s",
                     $tx['uniq_id'],
                     (string) ( $tx['partner'] ?? '' )
                 ));
+                // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
                 if ($duplicate > 0) {
                     // Запись уже есть в зарегистрированных — удаляем «висящую» строку из unregistered
