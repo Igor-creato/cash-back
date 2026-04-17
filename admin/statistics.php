@@ -607,21 +607,25 @@ class Cashback_Statistics_Admin {
             COALESCE(SUM(CASE WHEN order_status = 'declined' THEN cashback ELSE 0 END), 0) AS cashback_declined,
             COALESCE(SUM(CASE WHEN order_status = 'balance' THEN cashback ELSE 0 END), 0) AS cashback_balance
         FROM (
-            SELECT order_status, comission, cashback FROM {$this->transactions_table} {$where_clause}
+            SELECT order_status, comission, cashback FROM %i {$where_clause}
             UNION ALL
-            SELECT order_status, comission, cashback FROM {$this->unregistered_transactions_table} {$where_clause}
+            SELECT order_status, comission, cashback FROM %i {$where_clause}
         ) AS combined";
 
-        // WHERE params передаются дважды — для каждой части UNION ALL
-        $merged_params = !empty($where_params) ? array_merge($where_params, $where_params) : array();
-
-        // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared -- Table names from $wpdb->prefix; $where_clause собран из allowlist-условий с %s, значения биндятся через $wpdb->prepare().
-        if (!empty($merged_params)) {
-            $result = $wpdb->get_row($wpdb->prepare($sql, $merged_params), ARRAY_A);
+        // Имена таблиц передаются дважды (по одному на каждую часть UNION ALL); WHERE-параметры — также дважды.
+        if (!empty($where_params)) {
+            $merged_params = array_merge(
+                array( $this->transactions_table ),
+                $where_params,
+                array( $this->unregistered_transactions_table ),
+                $where_params
+            );
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- $where_clause собран из allowlist 'created_at >= %s'/'created_at <= %s'; имена таблиц экранируются через %i.
+            $result = $wpdb->get_row($wpdb->prepare($sql, ...$merged_params), ARRAY_A);
         } else {
-            $result = $wpdb->get_row($sql, ARRAY_A);
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $where_clause пустой; имена таблиц экранируются через %i.
+            $result = $wpdb->get_row($wpdb->prepare($sql, $this->transactions_table, $this->unregistered_transactions_table), ARRAY_A);
         }
-        // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared
 
         if (!$result) {
             $result = array(
@@ -699,16 +703,17 @@ class Cashback_Statistics_Admin {
             COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count,
             COALESCE(SUM(CASE WHEN status = 'declined' THEN 1 ELSE 0 END), 0) AS declined_count,
             COALESCE(SUM(CASE WHEN status = 'needs_retry' THEN 1 ELSE 0 END), 0) AS needs_retry_count
-        FROM {$this->payout_requests_table}
+        FROM %i
         {$where_clause}";
 
-        // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared -- Table name from $wpdb->prefix; $where_clause собран из allowlist-условий с %s, значения биндятся через $wpdb->prepare().
         if (!empty($where_params)) {
-            $result = $wpdb->get_row($wpdb->prepare($sql, $where_params), ARRAY_A);
+            $merged_params = array_merge(array( $this->payout_requests_table ), $where_params);
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- $where_clause собран из allowlist 'created_at >= %s'/'created_at <= %s'; имя таблицы экранируется через %i.
+            $result = $wpdb->get_row($wpdb->prepare($sql, ...$merged_params), ARRAY_A);
         } else {
-            $result = $wpdb->get_row($sql, ARRAY_A);
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $where_clause пустой; имя таблицы экранируется через %i.
+            $result = $wpdb->get_row($wpdb->prepare($sql, $this->payout_requests_table), ARRAY_A);
         }
-        // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared
 
         if (!$result) {
             $result = array(
@@ -747,18 +752,19 @@ class Cashback_Statistics_Admin {
             return $cached;
         }
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->user_balance_table из $wpdb->prefix.
         $result = $wpdb->get_row(
-            "SELECT
+            $wpdb->prepare(
+                'SELECT
                 COALESCE(SUM(available_balance), 0) AS total_available,
                 COALESCE(SUM(pending_balance), 0) AS total_pending,
                 COALESCE(SUM(paid_balance), 0) AS total_paid,
                 COALESCE(SUM(frozen_balance), 0) AS total_frozen,
                 COUNT(*) AS total_users
-            FROM {$this->user_balance_table}",
+            FROM %i',
+                $this->user_balance_table
+            ),
             ARRAY_A
         );
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$result) {
             $result = array(
