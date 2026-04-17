@@ -129,18 +129,17 @@ class Cashback_Claims_DB {
     public static function migrate_add_is_read(): void {
         global $wpdb;
 
-        $table = "{$wpdb->prefix}cashback_claim_events";
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; static DDL/migration without user input.
-        $col = $wpdb->get_results("SHOW COLUMNS FROM `{$table}` LIKE 'is_read'");
+        $table = $wpdb->prefix . 'cashback_claim_events';
+
+        $col = $wpdb->get_results( $wpdb->prepare( 'SHOW COLUMNS FROM %i LIKE %s', $table, 'is_read' ) );
 
         if (empty($col)) {
-            $wpdb->query("ALTER TABLE `{$table}` ADD COLUMN `is_read` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = прочитано пользователем' AFTER `actor_type`");
-            $wpdb->query("ALTER TABLE `{$table}` ADD KEY `idx_unread` (`is_read`, `actor_type`)");
+            $wpdb->query( $wpdb->prepare( "ALTER TABLE %i ADD COLUMN `is_read` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = прочитано пользователем' AFTER `actor_type`", $table ) );
+            $wpdb->query( $wpdb->prepare( 'ALTER TABLE %i ADD KEY `idx_unread` (`is_read`, `actor_type`)', $table ) );
             // Mark all existing events as read so users don't get flooded
-            $wpdb->query("UPDATE `{$table}` SET `is_read` = 1");
+            $wpdb->query( $wpdb->prepare( 'UPDATE %i SET `is_read` = 1', $table ) );
             error_log('[Claims] Migration: added is_read column to claim_events');
         }
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
     }
 
     /**
@@ -149,18 +148,17 @@ class Cashback_Claims_DB {
     public static function migrate_add_is_read_admin(): void {
         global $wpdb;
 
-        $table = "{$wpdb->prefix}cashback_claim_events";
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; static DDL/migration without user input.
-        $col = $wpdb->get_results("SHOW COLUMNS FROM `{$table}` LIKE 'is_read_admin'");
+        $table = $wpdb->prefix . 'cashback_claim_events';
+
+        $col = $wpdb->get_results( $wpdb->prepare( 'SHOW COLUMNS FROM %i LIKE %s', $table, 'is_read_admin' ) );
 
         if (empty($col)) {
-            $wpdb->query("ALTER TABLE `{$table}` ADD COLUMN `is_read_admin` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = прочитано администратором' AFTER `is_read`");
-            $wpdb->query("ALTER TABLE `{$table}` ADD KEY `idx_unread_admin` (`is_read_admin`, `actor_type`)");
+            $wpdb->query( $wpdb->prepare( "ALTER TABLE %i ADD COLUMN `is_read_admin` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = прочитано администратором' AFTER `is_read`", $table ) );
+            $wpdb->query( $wpdb->prepare( 'ALTER TABLE %i ADD KEY `idx_unread_admin` (`is_read_admin`, `actor_type`)', $table ) );
             // Mark user-authored events from the last 30 days as unread; older ones stay read
-            $wpdb->query("UPDATE `{$table}` SET `is_read_admin` = 0 WHERE `actor_type` = 'user' AND `created_at` >= (NOW() - INTERVAL 30 DAY)");
+            $wpdb->query( $wpdb->prepare( "UPDATE %i SET `is_read_admin` = 0 WHERE `actor_type` = %s AND `created_at` >= (NOW() - INTERVAL 30 DAY)", $table, 'user' ) );
             error_log('[Claims] Migration: added is_read_admin column to claim_events');
         }
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
     }
 
     /**
@@ -169,11 +167,12 @@ class Cashback_Claims_DB {
     public static function get_unread_events_count_admin(): int {
         global $wpdb;
 
-        return (int) $wpdb->get_var(
-            "SELECT COUNT(*)
-             FROM `{$wpdb->prefix}cashback_claim_events`
-             WHERE actor_type = 'user' AND is_read_admin = 0"
-        );
+        $table = $wpdb->prefix . 'cashback_claim_events';
+        return (int) $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM %i WHERE actor_type = %s AND is_read_admin = 0",
+            $table,
+            'user'
+        ) );
     }
 
     /**
@@ -182,12 +181,13 @@ class Cashback_Claims_DB {
     public static function mark_admin_events_read( int $claim_id ): int {
         global $wpdb;
 
-        return (int) $wpdb->query($wpdb->prepare(
-            "UPDATE `{$wpdb->prefix}cashback_claim_events`
-             SET is_read_admin = 1
-             WHERE claim_id = %d AND actor_type = 'user' AND is_read_admin = 0",
-            $claim_id
-        ));
+        $table = $wpdb->prefix . 'cashback_claim_events';
+        return (int) $wpdb->query( $wpdb->prepare(
+            "UPDATE %i SET is_read_admin = 1 WHERE claim_id = %d AND actor_type = %s AND is_read_admin = 0",
+            $table,
+            $claim_id,
+            'user'
+        ) );
     }
 
     /**
@@ -196,13 +196,17 @@ class Cashback_Claims_DB {
     public static function get_unread_events_count( int $user_id ): int {
         global $wpdb;
 
-        return (int) $wpdb->get_var($wpdb->prepare(
+        $events_table = $wpdb->prefix . 'cashback_claim_events';
+        $claims_table = $wpdb->prefix . 'cashback_claims';
+        return (int) $wpdb->get_var( $wpdb->prepare(
             "SELECT COUNT(*)
-             FROM `{$wpdb->prefix}cashback_claim_events` e
-             INNER JOIN `{$wpdb->prefix}cashback_claims` c ON c.claim_id = e.claim_id
+             FROM %i e
+             INNER JOIN %i c ON c.claim_id = e.claim_id
              WHERE c.user_id = %d AND e.actor_type IN ('admin', 'system') AND e.is_read = 0",
+            $events_table,
+            $claims_table,
             $user_id
-        ));
+        ) );
     }
 
     /**
@@ -211,13 +215,19 @@ class Cashback_Claims_DB {
     public static function mark_user_events_read( int $user_id ): int {
         global $wpdb;
 
-        return (int) $wpdb->query($wpdb->prepare(
-            "UPDATE `{$wpdb->prefix}cashback_claim_events` e
-             INNER JOIN `{$wpdb->prefix}cashback_claims` c ON c.claim_id = e.claim_id
+        $events_table = $wpdb->prefix . 'cashback_claim_events';
+        $claims_table = $wpdb->prefix . 'cashback_claims';
+        return (int) $wpdb->query( $wpdb->prepare(
+            'UPDATE %i e
+             INNER JOIN %i c ON c.claim_id = e.claim_id
              SET e.is_read = 1
-             WHERE c.user_id = %d AND e.actor_type IN ('admin', 'system') AND e.is_read = 0",
-            $user_id
-        ));
+             WHERE c.user_id = %d AND e.actor_type IN (%s, %s) AND e.is_read = 0',
+            $events_table,
+            $claims_table,
+            $user_id,
+            'admin',
+            'system'
+        ) );
     }
 
     public static function drop_tables(): void {

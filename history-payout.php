@@ -255,14 +255,14 @@ class HistoryPayout {
 
         $this->apply_payout_filters($where, $params, $filters);
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; $where is built from allowlisted conditions with %s/%d placeholders, values bound via $wpdb->prepare().
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where from allowlisted conditions with %s/%d placeholders.
         return $wpdb->get_results($wpdb->prepare(
             "SELECT id, reference_id, created_at, total_amount, payout_method, payout_account, masked_details, provider, status
-             FROM {$table_name}
+             FROM %i
              {$where}
              ORDER BY created_at DESC
              LIMIT %d OFFSET %d",
-            array_merge($params, array( $limit, $offset ))
+            array_merge( array( $table_name ), $params, array( $limit, $offset ) )
         ));
         // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
     }
@@ -276,12 +276,11 @@ class HistoryPayout {
 
         $this->apply_payout_filters($where, $params, $filters);
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; $where is built from allowlisted conditions with %s/%d placeholders, values bound via $wpdb->prepare().
         return (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM {$table_name} {$where}",
-            $params
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where from allowlisted conditions with %s/%d placeholders.
+            "SELECT COUNT(*) FROM %i {$where}",
+            array_merge( array( $table_name ), $params )
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
     }
 
     /**
@@ -468,12 +467,10 @@ class HistoryPayout {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_payout_methods';
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; value bound via $wpdb->prepare().
         $methods = $wpdb->get_results(
-            $wpdb->prepare("SELECT slug, name FROM {$table_name} WHERE is_active = %d", 1),
+            $wpdb->prepare( 'SELECT slug, name FROM %i WHERE is_active = %d', $table_name, 1 ),
             ARRAY_A
         );
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $this->payout_method_labels = array();
 
@@ -503,12 +500,10 @@ class HistoryPayout {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_banks';
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; static query without user input.
         $rows = $wpdb->get_results(
-            "SELECT bank_code, name FROM {$table_name}",
+            $wpdb->prepare( 'SELECT bank_code, name FROM %i', $table_name ),
             ARRAY_A
         );
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $this->bank_names = array();
         if ($rows) {

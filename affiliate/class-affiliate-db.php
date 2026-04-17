@@ -101,8 +101,8 @@ class Cashback_Affiliate_DB {
         $prefix          = $wpdb->prefix;
         $charset_collate = $wpdb->get_charset_collate();
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Префикс таблиц/charset из $wpdb (CREATE TABLE — DDL без пользовательского ввода).
         // 1. Профили участников партнёрской программы
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- DDL: $prefix/$charset_collate из $wpdb, без user input.
         $wpdb->query(
             "CREATE TABLE IF NOT EXISTS `{$prefix}cashback_affiliate_profiles` (
                 `user_id` bigint(20) unsigned NOT NULL COMMENT 'WP user ID',
@@ -121,8 +121,10 @@ class Cashback_Affiliate_DB {
                 KEY `idx_referral_click_id` (`referral_click_id`)
             ) ENGINE=InnoDB {$charset_collate} COMMENT='Профили участников партнёрской программы';"
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         // 2. Клики по реферальным ссылкам
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- DDL: $prefix/$charset_collate из $wpdb, без user input.
         $wpdb->query(
             "CREATE TABLE IF NOT EXISTS `{$prefix}cashback_affiliate_clicks` (
                 `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
@@ -143,8 +145,10 @@ class Cashback_Affiliate_DB {
                 KEY `idx_ip_address` (`ip_address`)
             ) ENGINE=InnoDB {$charset_collate} COMMENT='Клики по реферальным ссылкам';"
         );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         // 3. Начисления партнёрских комиссий
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- DDL: $prefix/$charset_collate из $wpdb, без user input.
         $wpdb->query(
             "CREATE TABLE IF NOT EXISTS `{$prefix}cashback_affiliate_accruals` (
                 `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
@@ -252,12 +256,11 @@ class Cashback_Affiliate_DB {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_affiliate_profiles';
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table из $wpdb->prefix, user_id биндится через prepare().
         $exists = $wpdb->get_var($wpdb->prepare(
-            "SELECT user_id FROM `{$table}` WHERE user_id = %d LIMIT 1",
+            'SELECT user_id FROM %i WHERE user_id = %d LIMIT 1',
+            $table,
             $user_id
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$exists) {
             $wpdb->insert(
