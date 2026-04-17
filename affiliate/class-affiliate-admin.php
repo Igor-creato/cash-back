@@ -284,8 +284,8 @@ class Cashback_Affiliate_Admin {
      */
     private function query_accruals( string $filter_status, string $filter_search ): array {
         global $wpdb;
-        $prefix   = $wpdb->prefix;
-        $per_page = self::PER_PAGE;
+        $accruals_table = $wpdb->prefix . 'cashback_affiliate_accruals';
+        $per_page       = self::PER_PAGE;
 
         $where_clauses = array();
         $where_args    = array();
@@ -303,19 +303,26 @@ class Cashback_Affiliate_Admin {
             $where_args[]    = $like;
         }
 
-        $where_sql = !empty($where_clauses) ? 'WHERE ' . implode(' AND ', $where_clauses) : '';
-
-        $joins = "LEFT JOIN `{$wpdb->users}` u1 ON u1.ID = a.referrer_id
-                  LEFT JOIN `{$wpdb->users}` u2 ON u2.ID = a.referred_user_id";
-
-        $count_sql = "SELECT COUNT(*) FROM `{$prefix}cashback_affiliate_accruals` a {$joins} {$where_sql}";
+        $where_sql  = !empty($where_clauses) ? 'WHERE ' . implode(' AND ', $where_clauses) : '';
+        $table_args = array( $accruals_table, $wpdb->users, $wpdb->users );
 
         if (!empty($where_args)) {
-            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-            $total = (int) $wpdb->get_var($wpdb->prepare($count_sql, ...$where_args));
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_sql from allowlist (status IN array / LIKE %s); values bound via prepare().
+            $total = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM %i a
+                 LEFT JOIN %i u1 ON u1.ID = a.referrer_id
+                 LEFT JOIN %i u2 ON u2.ID = a.referred_user_id
+                 {$where_sql}",
+                array_merge( $table_args, $where_args )
+            ));
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         } else {
-            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-            $total = (int) $wpdb->get_var($count_sql);
+            $total = (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*) FROM %i a
+                 LEFT JOIN %i u1 ON u1.ID = a.referrer_id
+                 LEFT JOIN %i u2 ON u2.ID = a.referred_user_id',
+                $accruals_table, $wpdb->users, $wpdb->users
+            ));
         }
 
         $current_page = max(1, absint($_GET['paged'] ?? 1));
@@ -323,15 +330,18 @@ class Cashback_Affiliate_Admin {
         $current_page = min($current_page, $total_pages);
         $offset       = ( $current_page - 1 ) * $per_page;
 
-        $data_sql = "SELECT a.*, u1.display_name AS referrer_name, u2.display_name AS referred_name
-                     FROM `{$prefix}cashback_affiliate_accruals` a {$joins}
-                     {$where_sql}
-                     ORDER BY a.created_at DESC
-                     LIMIT %d OFFSET %d";
-
-        $all_args = array_merge($where_args, array( $per_page, $offset ));
-        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-        $rows = $wpdb->get_results($wpdb->prepare($data_sql, ...$all_args), ARRAY_A);
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_sql from allowlist (status IN array / LIKE %s); values bound via prepare().
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT a.*, u1.display_name AS referrer_name, u2.display_name AS referred_name
+             FROM %i a
+             LEFT JOIN %i u1 ON u1.ID = a.referrer_id
+             LEFT JOIN %i u2 ON u2.ID = a.referred_user_id
+             {$where_sql}
+             ORDER BY a.created_at DESC
+             LIMIT %d OFFSET %d",
+            array_merge( $table_args, $where_args, array( $per_page, $offset ) )
+        ), ARRAY_A);
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         return compact('rows', 'total', 'current_page', 'total_pages');
     }
@@ -444,40 +454,53 @@ class Cashback_Affiliate_Admin {
             $where_args[]    = $like;
         }
 
-        $where_sql = !empty($where_clauses) ? 'WHERE ' . implode(' AND ', $where_clauses) : '';
-
-        $count_sql = "SELECT COUNT(*)
-                      FROM `{$prefix}cashback_affiliate_profiles` ap
-                      INNER JOIN `{$wpdb->users}` u ON u.ID = ap.user_id
-                      {$where_sql}";
+        $where_sql       = !empty($where_clauses) ? 'WHERE ' . implode(' AND ', $where_clauses) : '';
+        $profiles_table  = $prefix . 'cashback_affiliate_profiles';
+        $accruals_table  = $prefix . 'cashback_affiliate_accruals';
 
         if (!empty($where_args)) {
-            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-            $total = (int) $wpdb->get_var($wpdb->prepare($count_sql, ...$where_args));
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_sql from allowlist (affiliate_status IN array / LIKE %s); values bound via prepare().
+            $total = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*)
+                 FROM %i ap
+                 INNER JOIN %i u ON u.ID = ap.user_id
+                 {$where_sql}",
+                array_merge( array( $profiles_table, $wpdb->users ), $where_args )
+            ));
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         } else {
-            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-            $total = (int) $wpdb->get_var($count_sql);
+            $total = (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*)
+                 FROM %i ap
+                 INNER JOIN %i u ON u.ID = ap.user_id',
+                $profiles_table, $wpdb->users
+            ));
         }
 
         $total_pages  = max(1, (int) ceil($total / $per_page));
         $current_page = min($current_page, $total_pages);
         $offset       = ( $current_page - 1 ) * $per_page;
 
-        $data_sql = "SELECT ap.*, u.display_name, u.user_email,
-                        (SELECT COUNT(*) FROM `{$prefix}cashback_affiliate_profiles` r
-                         WHERE r.referred_by_user_id = ap.user_id) AS referral_count,
-                        (SELECT COALESCE(SUM(commission_amount), 0)
-                         FROM `{$prefix}cashback_affiliate_accruals`
-                         WHERE referrer_id = ap.user_id) AS total_earned
-                     FROM `{$prefix}cashback_affiliate_profiles` ap
-                     INNER JOIN `{$wpdb->users}` u ON u.ID = ap.user_id
-                     {$where_sql}
-                     ORDER BY ap.created_at DESC
-                     LIMIT %d OFFSET %d";
-
-        $all_args = array_merge($where_args, array( $per_page, $offset ));
-        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-        $partners = $wpdb->get_results($wpdb->prepare($data_sql, ...$all_args), ARRAY_A);
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_sql from allowlist (affiliate_status IN array / LIKE %s); values bound via prepare().
+        $partners = $wpdb->get_results($wpdb->prepare(
+            "SELECT ap.*, u.display_name, u.user_email,
+                    (SELECT COUNT(*) FROM %i r
+                     WHERE r.referred_by_user_id = ap.user_id) AS referral_count,
+                    (SELECT COALESCE(SUM(commission_amount), 0)
+                     FROM %i
+                     WHERE referrer_id = ap.user_id) AS total_earned
+             FROM %i ap
+             INNER JOIN %i u ON u.ID = ap.user_id
+             {$where_sql}
+             ORDER BY ap.created_at DESC
+             LIMIT %d OFFSET %d",
+            array_merge(
+                array( $profiles_table, $accruals_table, $profiles_table, $wpdb->users ),
+                $where_args,
+                array( $per_page, $offset )
+            )
+        ), ARRAY_A);
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $global_rate = Cashback_Affiliate_DB::get_global_rate();
 
@@ -651,9 +674,11 @@ class Cashback_Affiliate_Admin {
     private function update_partner_rate( int $user_id ): void {
         global $wpdb;
 
+        $profiles_table = $wpdb->prefix . 'cashback_affiliate_profiles';
+
         $old_rate = $wpdb->get_var($wpdb->prepare(
-            "SELECT affiliate_rate FROM `{$wpdb->prefix}cashback_affiliate_profiles` WHERE user_id = %d",
-            $user_id
+            'SELECT affiliate_rate FROM %i WHERE user_id = %d',
+            $profiles_table, $user_id
         ));
 
         $rate = isset($_POST['rate']) && $_POST['rate'] !== ''
@@ -673,10 +698,8 @@ class Cashback_Affiliate_Admin {
                 );
             } else {
                 $result = $wpdb->query($wpdb->prepare(
-                    "UPDATE `{$wpdb->prefix}cashback_affiliate_profiles`
-                     SET affiliate_rate = NULL
-                     WHERE user_id = %d",
-                    $user_id
+                    'UPDATE %i SET affiliate_rate = NULL WHERE user_id = %d',
+                    $profiles_table, $user_id
                 ));
             }
 
@@ -752,17 +775,15 @@ class Cashback_Affiliate_Admin {
         }
 
         global $wpdb;
-        $prefix = $wpdb->prefix;
+        $profiles_table = $wpdb->prefix . 'cashback_affiliate_profiles';
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names come from $wpdb->prefix / $wpdb->users; user_id bound via prepare().
         $profile = $wpdb->get_row($wpdb->prepare(
-            "SELECT ap.*, u.display_name, u.user_email
-             FROM `{$prefix}cashback_affiliate_profiles` ap
-             INNER JOIN `{$wpdb->users}` u ON u.ID = ap.user_id
-             WHERE ap.user_id = %d LIMIT 1",
-            $user_id
+            'SELECT ap.*, u.display_name, u.user_email
+             FROM %i ap
+             INNER JOIN %i u ON u.ID = ap.user_id
+             WHERE ap.user_id = %d LIMIT 1',
+            $profiles_table, $wpdb->users, $user_id
         ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$profile) {
             wp_send_json_error(array( 'message' => 'Профиль не найден.' ));
@@ -824,28 +845,27 @@ class Cashback_Affiliate_Admin {
         }
 
         // Count affected users (for preview or apply)
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table = $wpdb->prefix . 'cashback_affiliate_profiles'; rate values bound via prepare().
         if ($is_all) {
             $count = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM `{$table}` WHERE (affiliate_rate IS NULL OR affiliate_rate != %s)",
-                $new_rate
+                'SELECT COUNT(*) FROM %i WHERE (affiliate_rate IS NULL OR affiliate_rate != %s)',
+                $table, $new_rate
             ));
         } else {
             // Users with affiliate_rate = old_rate (including those using global rate when old_rate matches global)
             $global_rate = Cashback_Affiliate_DB::get_global_rate();
             $count       = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM `{$table}` WHERE affiliate_rate = %s",
-                $old_rate_raw
+                'SELECT COUNT(*) FROM %i WHERE affiliate_rate = %s',
+                $table, $old_rate_raw
             ));
             // Also count users using global rate if old_rate matches global
             if (bccomp($old_rate_raw, $global_rate, 2) === 0) {
                 $count_null = (int) $wpdb->get_var($wpdb->prepare(
-                    "SELECT COUNT(*) FROM `{$table}` WHERE affiliate_rate IS NULL"
+                    'SELECT COUNT(*) FROM %i WHERE affiliate_rate IS NULL',
+                    $table
                 ));
                 $count     += $count_null;
             }
         }
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if ($preview) {
             wp_send_json_success(array(
@@ -866,30 +886,26 @@ class Cashback_Affiliate_Admin {
         try {
             $global_rate = Cashback_Affiliate_DB::get_global_rate();
 
-            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table = $wpdb->prefix . 'cashback_affiliate_profiles'; rate values bound via prepare().
             if ($is_all) {
                 $result = $wpdb->query($wpdb->prepare(
-                    "UPDATE `{$table}` SET affiliate_rate = %s WHERE (affiliate_rate IS NULL OR affiliate_rate != %s)",
-                    $new_rate,
-                    $new_rate
+                    'UPDATE %i SET affiliate_rate = %s WHERE (affiliate_rate IS NULL OR affiliate_rate != %s)',
+                    $table, $new_rate, $new_rate
                 ));
             } else {
                 $result = $wpdb->query($wpdb->prepare(
-                    "UPDATE `{$table}` SET affiliate_rate = %s WHERE affiliate_rate = %s",
-                    $new_rate,
-                    $old_rate_raw
+                    'UPDATE %i SET affiliate_rate = %s WHERE affiliate_rate = %s',
+                    $table, $new_rate, $old_rate_raw
                 ));
                 if (bccomp($old_rate_raw, $global_rate, 2) === 0) {
                     $result_null = $wpdb->query($wpdb->prepare(
-                        "UPDATE `{$table}` SET affiliate_rate = %s WHERE affiliate_rate IS NULL",
-                        $new_rate
+                        'UPDATE %i SET affiliate_rate = %s WHERE affiliate_rate IS NULL',
+                        $table, $new_rate
                     ));
                     if ($result_null !== false) {
                         $result += $result_null;
                     }
                 }
             }
-            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
             if ($result === false) {
                 $wpdb->query('ROLLBACK');
@@ -973,7 +989,7 @@ class Cashback_Affiliate_Admin {
         }
 
         global $wpdb;
-        $prefix = $wpdb->prefix;
+        $accruals_table = $wpdb->prefix . 'cashback_affiliate_accruals';
 
         $accrual_id = absint($_POST['accrual_id'] ?? 0);
         if (!$accrual_id) {
@@ -981,12 +997,10 @@ class Cashback_Affiliate_Admin {
         }
 
         // Получаем текущую запись
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; id bound via prepare().
         $accrual = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM `{$prefix}cashback_affiliate_accruals` WHERE id = %d LIMIT 1",
-            $accrual_id
+            'SELECT * FROM %i WHERE id = %d LIMIT 1',
+            $accruals_table, $accrual_id
         ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$accrual) {
             wp_send_json_error(array( 'message' => 'Начисление не найдено.' ));
@@ -1044,7 +1058,7 @@ class Cashback_Affiliate_Admin {
         }
 
         $updated = $wpdb->update(
-            "{$prefix}cashback_affiliate_accruals",
+            $accruals_table,
             $update_data,
             array( 'id' => $accrual_id ),
             $update_formats,
