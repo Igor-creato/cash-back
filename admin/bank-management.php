@@ -124,37 +124,37 @@ class Cashback_Bank_Management_Admin {
         }
 
         // Общее количество банков
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->table_name из $wpdb->prefix; $where_clause собран из литералов с placeholder'ами %s/%d.
         if (!empty($where_values)) {
+            $count_query = "SELECT COUNT(*) FROM %i{$where_clause}";
+            $count_args  = array_merge(array( $this->table_name ), $where_values);
             $total_banks = (int) $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT COUNT(*) FROM {$this->table_name}{$where_clause}",
-                    ...$where_values
-                )
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- $where_clause собран из литералов с placeholder'ами %s/%d, имя таблицы экранируется через %i.
+                $wpdb->prepare($count_query, ...$count_args)
             );
 
             // Получаем банки с учётом фильтров и пагинации
-            $query_values = array_merge($where_values, array( $per_page, $offset ));
+            $select_query = "SELECT * FROM %i{$where_clause} ORDER BY sort_order ASC, name ASC LIMIT %d OFFSET %d";
+            $select_args  = array_merge(array( $this->table_name ), $where_values, array( $per_page, $offset ));
             $banks        = $wpdb->get_results(
-                $wpdb->prepare(
-                    "SELECT * FROM {$this->table_name}{$where_clause} ORDER BY sort_order ASC, name ASC LIMIT %d OFFSET %d",
-                    ...$query_values
-                ),
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- $where_clause собран из литералов с placeholder'ами %s/%d, имя таблицы экранируется через %i.
+                $wpdb->prepare($select_query, ...$select_args),
                 ARRAY_A
             );
         } else {
-            $total_banks = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$this->table_name} WHERE %d = %d", 1, 1));
+            $total_banks = (int) $wpdb->get_var(
+                $wpdb->prepare('SELECT COUNT(*) FROM %i WHERE %d = %d', $this->table_name, 1, 1)
+            );
 
             $banks = $wpdb->get_results(
                 $wpdb->prepare(
-                    "SELECT * FROM {$this->table_name} ORDER BY sort_order ASC, name ASC LIMIT %d OFFSET %d",
+                    'SELECT * FROM %i ORDER BY sort_order ASC, name ASC LIMIT %d OFFSET %d',
+                    $this->table_name,
                     $per_page,
                     $offset
                 ),
                 ARRAY_A
             );
         }
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         // Вычисляем общее количество страниц
         $total_pages = (int) ceil($total_banks / $per_page);
@@ -426,11 +426,11 @@ class Cashback_Bank_Management_Admin {
         }
 
         // Проверяем, существует ли уже банк с таким bank_code, name или short_name
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->table_name из $wpdb->prefix.
         if (!empty($short_name)) {
             $existing = (int) $wpdb->get_var(
                 $wpdb->prepare(
-                    "SELECT COUNT(*) FROM {$this->table_name} WHERE bank_code = %s OR name = %s OR short_name = %s",
+                    'SELECT COUNT(*) FROM %i WHERE bank_code = %s OR name = %s OR short_name = %s',
+                    $this->table_name,
                     $bank_code,
                     $name,
                     $short_name
@@ -439,13 +439,13 @@ class Cashback_Bank_Management_Admin {
         } else {
             $existing = (int) $wpdb->get_var(
                 $wpdb->prepare(
-                    "SELECT COUNT(*) FROM {$this->table_name} WHERE bank_code = %s OR name = %s",
+                    'SELECT COUNT(*) FROM %i WHERE bank_code = %s OR name = %s',
+                    $this->table_name,
                     $bank_code,
                     $name
                 )
             );
         }
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if ($existing > 0) {
             wp_send_json_error(array( 'message' => 'Такой банк уже добавлен, добавьте другой банк.' ));
