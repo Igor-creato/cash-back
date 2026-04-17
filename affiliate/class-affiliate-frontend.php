@@ -124,9 +124,11 @@ class Cashback_Affiliate_Frontend {
 
         // Проверяем affiliate_status
         global $wpdb;
+        $aff_table  = $wpdb->prefix . 'cashback_affiliate_profiles';
         $aff_status = $wpdb->get_var($wpdb->prepare(
-            "SELECT affiliate_status FROM `{$wpdb->prefix}cashback_affiliate_profiles`
+            "SELECT affiliate_status FROM %i
              WHERE user_id = %d LIMIT 1",
+            $aff_table,
             $user_id
         ));
 
@@ -239,33 +241,33 @@ class Cashback_Affiliate_Frontend {
             Cashback_Affiliate_Service::sync_pending_accruals();
         }
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имя таблицы из $wpdb->prefix, user_id биндится через prepare().
+        $accruals_table = $prefix . 'cashback_affiliate_accruals';
         $total = (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM `{$prefix}cashback_affiliate_accruals`
+            "SELECT COUNT(*) FROM %i
              WHERE referrer_id = %d",
+            $accruals_table,
             $user_id
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $total_pages = max(1, (int) ceil($total / $per_page));
         $page        = min($page, $total_pages);
         $offset      = ( $page - 1 ) * $per_page;
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имена таблиц из $wpdb->prefix/$wpdb->users, значения биндятся через prepare().
         $accruals = $wpdb->get_results($wpdb->prepare(
             "SELECT a.id, a.reference_id, a.commission_amount, a.commission_rate,
                     a.cashback_amount, a.status AS display_status, a.created_at,
                     u.display_name AS referred_name
-             FROM `{$prefix}cashback_affiliate_accruals` a
-             LEFT JOIN `{$wpdb->users}` u ON u.ID = a.referred_user_id
+             FROM %i a
+             LEFT JOIN %i u ON u.ID = a.referred_user_id
              WHERE a.referrer_id = %d
              ORDER BY a.created_at DESC
              LIMIT %d OFFSET %d",
+            $accruals_table,
+            $wpdb->users,
             $user_id,
             $per_page,
             $offset
         ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (empty($accruals)) {
             echo '<p class="cashback-affiliate-empty">'
@@ -376,37 +378,39 @@ class Cashback_Affiliate_Frontend {
         $per_page = self::PER_PAGE;
         $offset   = ( $page - 1 ) * $per_page;
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имя таблицы из $wpdb->prefix, user_id биндится через prepare().
+        $profiles_table = $prefix . 'cashback_affiliate_profiles';
+        $accruals_table = $prefix . 'cashback_affiliate_accruals';
         $total = (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM `{$prefix}cashback_affiliate_profiles`
+            "SELECT COUNT(*) FROM %i
              WHERE referred_by_user_id = %d",
+            $profiles_table,
             $user_id
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $total_pages = max(1, (int) ceil($total / $per_page));
         $page        = min($page, $total_pages);
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имена таблиц из $wpdb->prefix/$wpdb->users, значения биндятся через prepare().
         $referrals = $wpdb->get_results($wpdb->prepare(
             "SELECT ap.user_id, ap.referred_at, ap.affiliate_status,
                     u.display_name, u.user_registered,
                     COALESCE(SUM(aa.commission_amount), 0) AS total_earned
-             FROM `{$prefix}cashback_affiliate_profiles` ap
-             LEFT JOIN `{$wpdb->users}` u ON u.ID = ap.user_id
-             LEFT JOIN `{$prefix}cashback_affiliate_accruals` aa
+             FROM %i ap
+             LEFT JOIN %i u ON u.ID = ap.user_id
+             LEFT JOIN %i aa
                     ON aa.referred_user_id = ap.user_id AND aa.referrer_id = %d
              WHERE ap.referred_by_user_id = %d
              GROUP BY ap.user_id, ap.referred_at, ap.affiliate_status,
                       u.display_name, u.user_registered
              ORDER BY ap.referred_at DESC
              LIMIT %d OFFSET %d",
+            $profiles_table,
+            $wpdb->users,
+            $accruals_table,
             $user_id,
             $user_id,
             $per_page,
             $offset
         ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (empty($referrals)) {
             echo '<p class="cashback-affiliate-empty">'
