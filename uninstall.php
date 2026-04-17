@@ -280,12 +280,8 @@ function cashback_plugin_uninstall(): void {
         $values[]      = $wpdb->esc_like('_transient_' . $p) . '%';
         $values[]      = $wpdb->esc_like('_transient_timeout_' . $p) . '%';
     }
-    // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared -- $where_parts contains only static 'option_name LIKE %s' clauses; values bound through $wpdb->prepare().
-    $wpdb->query($wpdb->prepare(
-        "DELETE FROM {$wpdb->options} WHERE " . implode(' OR ', $where_parts),
-        ...$values
-    ));
-    // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared
+    // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $where_parts is static 'option_name LIKE %s' clauses; values bound via $wpdb->prepare().
+    $wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE " . implode( ' OR ', $where_parts ), ...$values ) );
 
     // Delete campaign status options (cashback_campaign_status_*)
     $wpdb->query($wpdb->prepare(

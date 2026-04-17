@@ -55,13 +55,14 @@ class Cashback_Health_Check {
         $table  = $wpdb->prefix . 'cashback_user_balance';
         $issues = array();
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix, no user input
         $negative = $wpdb->get_results(
-            "SELECT user_id, available_balance, pending_balance, paid_balance, frozen_balance
-             FROM `{$table}`
-             WHERE available_balance < 0 OR pending_balance < 0 OR paid_balance < 0 OR frozen_balance < 0"
+            $wpdb->prepare(
+                'SELECT user_id, available_balance, pending_balance, paid_balance, frozen_balance
+                 FROM %i
+                 WHERE available_balance < 0 OR pending_balance < 0 OR paid_balance < 0 OR frozen_balance < 0',
+                $table
+            )
         );
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         foreach ($negative as $row) {
             $details  = sprintf(
@@ -95,15 +96,14 @@ class Cashback_Health_Check {
         $table  = $wpdb->prefix . 'cashback_payout_requests';
         $issues = array();
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix, no user input
-        $stale = $wpdb->get_results($wpdb->prepare(
+        $stale = $wpdb->get_results( $wpdb->prepare(
             "SELECT id, user_id, total_amount, created_at
-             FROM `{$table}`
+             FROM %i
              WHERE status = 'waiting'
              AND created_at < DATE_SUB(NOW(), INTERVAL %d DAY)",
+            $table,
             self::STALE_PAYOUT_DAYS
-        ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        ) );
 
         foreach ($stale as $row) {
             $issues[] = array(
@@ -138,16 +138,18 @@ class Cashback_Health_Check {
         $issues         = array();
 
         // Пользователи с pending_balance > 0, но без активных заявок
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names from $wpdb->prefix, no user input
         $mismatched = $wpdb->get_results(
-            "SELECT b.user_id, b.pending_balance
-             FROM `{$table_balance}` b
-             LEFT JOIN `{$table_requests}` r
-                ON b.user_id = r.user_id AND r.status IN ('waiting', 'processing', 'needs_retry')
-             WHERE b.pending_balance > 0
-             AND r.id IS NULL"
+            $wpdb->prepare(
+                "SELECT b.user_id, b.pending_balance
+                 FROM %i b
+                 LEFT JOIN %i r
+                    ON b.user_id = r.user_id AND r.status IN ('waiting', 'processing', 'needs_retry')
+                 WHERE b.pending_balance > 0
+                 AND r.id IS NULL",
+                $table_balance,
+                $table_requests
+            )
         );
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         foreach ($mismatched as $row) {
             $issues[] = array(
@@ -182,21 +184,28 @@ class Cashback_Health_Check {
 
         // Пользователи WordPress без профиля кэшбэка
         // COUNT отдельно, затем LIMIT 20 для примеров — защита от OOM на больших сайтах
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names from $wpdb->prefix / $wpdb->users, no user input
         $orphaned_profile_count = (int) $wpdb->get_var(
-            "SELECT COUNT(*)
-             FROM `{$wpdb->users}` u
-             LEFT JOIN `{$table_profile}` p ON u.ID = p.user_id
-             WHERE p.user_id IS NULL"
+            $wpdb->prepare(
+                'SELECT COUNT(*)
+                 FROM %i u
+                 LEFT JOIN %i p ON u.ID = p.user_id
+                 WHERE p.user_id IS NULL',
+                $wpdb->users,
+                $table_profile
+            )
         );
 
         if ($orphaned_profile_count > 0) {
             $without_profile_sample = $wpdb->get_col(
-                "SELECT u.ID
-                 FROM `{$wpdb->users}` u
-                 LEFT JOIN `{$table_profile}` p ON u.ID = p.user_id
-                 WHERE p.user_id IS NULL
-                 LIMIT 20"
+                $wpdb->prepare(
+                    'SELECT u.ID
+                     FROM %i u
+                     LEFT JOIN %i p ON u.ID = p.user_id
+                     WHERE p.user_id IS NULL
+                     LIMIT 20',
+                    $wpdb->users,
+                    $table_profile
+                )
             );
             $issues[]               = array(
                 'severity' => 'WARNING',
@@ -212,19 +221,27 @@ class Cashback_Health_Check {
 
         // Пользователи WordPress без баланса кэшбэка
         $orphaned_balance_count = (int) $wpdb->get_var(
-            "SELECT COUNT(*)
-             FROM `{$wpdb->users}` u
-             LEFT JOIN `{$table_balance}` b ON u.ID = b.user_id
-             WHERE b.user_id IS NULL"
+            $wpdb->prepare(
+                'SELECT COUNT(*)
+                 FROM %i u
+                 LEFT JOIN %i b ON u.ID = b.user_id
+                 WHERE b.user_id IS NULL',
+                $wpdb->users,
+                $table_balance
+            )
         );
 
         if ($orphaned_balance_count > 0) {
             $without_balance_sample = $wpdb->get_col(
-                "SELECT u.ID
-                 FROM `{$wpdb->users}` u
-                 LEFT JOIN `{$table_balance}` b ON u.ID = b.user_id
-                 WHERE b.user_id IS NULL
-                 LIMIT 20"
+                $wpdb->prepare(
+                    'SELECT u.ID
+                     FROM %i u
+                     LEFT JOIN %i b ON u.ID = b.user_id
+                     WHERE b.user_id IS NULL
+                     LIMIT 20',
+                    $wpdb->users,
+                    $table_balance
+                )
             );
             $issues[]               = array(
                 'severity' => 'WARNING',
@@ -237,7 +254,6 @@ class Cashback_Health_Check {
                 ),
             );
         }
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         return $issues;
     }

@@ -62,13 +62,12 @@ class Cashback_Notifications_DB {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_notification_preferences';
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; user params bound via $wpdb->prepare().
-        $enabled = $wpdb->get_var($wpdb->prepare(
-            "SELECT enabled FROM `{$table}` WHERE user_id = %d AND notification_type = %s",
+        $enabled = $wpdb->get_var( $wpdb->prepare(
+            'SELECT enabled FROM %i WHERE user_id = %d AND notification_type = %s',
+            $table,
             $user_id,
             $notification_type
-        ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        ) );
 
         // Если записи нет — уведомление включено по умолчанию
         if ($enabled === null) {
@@ -88,12 +87,11 @@ class Cashback_Notifications_DB {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_notification_preferences';
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; user_id bound via $wpdb->prepare().
-        $rows = $wpdb->get_results($wpdb->prepare(
-            "SELECT notification_type, enabled FROM `{$table}` WHERE user_id = %d",
+        $rows = $wpdb->get_results( $wpdb->prepare(
+            'SELECT notification_type, enabled FROM %i WHERE user_id = %d',
+            $table,
             $user_id
-        ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        ), ARRAY_A );
 
         $prefs = array();
         if ($rows) {
@@ -116,16 +114,15 @@ class Cashback_Notifications_DB {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_notification_preferences';
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; all values bound via $wpdb->prepare().
-        $wpdb->query($wpdb->prepare(
-            "INSERT INTO `{$table}` (user_id, notification_type, enabled)
+        $wpdb->query( $wpdb->prepare(
+            "INSERT INTO %i (user_id, notification_type, enabled)
              VALUES (%d, %s, %d)
              ON DUPLICATE KEY UPDATE enabled = VALUES(enabled)",
+            $table,
             $user_id,
             $notification_type,
             $enabled ? 1 : 0
-        ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        ) );
     }
 
     /**

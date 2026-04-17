@@ -127,19 +127,17 @@ class Cashback_Rate_History_Admin {
             $where_sql = 'WHERE ' . implode(' AND ', $where_clauses);
         }
 
-        // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared -- Table name from $wpdb->prefix; $where_sql built from allowlisted clauses with %s/%d placeholders, values bound via $wpdb->prepare().
-        $count_sql = "SELECT COUNT(*) FROM {$this->rate_history_table} {$where_sql}";
         if (!empty($where_values)) {
-            $total_items = (int) $wpdb->get_var($wpdb->prepare($count_sql, $where_values));
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- $where_sql from allowlist conditions with %s/%d/%f.
+            $total_items = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i {$where_sql}", array_merge( array( $this->rate_history_table ), $where_values ) ) );
         } else {
-            $total_items = (int) $wpdb->get_var($count_sql);
+            $total_items = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE %d = %d', $this->rate_history_table, 1, 1 ) );
         }
 
         $offset     = ( $paged - 1 ) * $per_page;
-        $data_sql   = "SELECT * FROM {$this->rate_history_table} {$where_sql} ORDER BY created_at DESC LIMIT %d OFFSET %d";
-        $all_params = array_merge($where_values, array( $per_page, $offset ));
-        $records    = $wpdb->get_results($wpdb->prepare($data_sql, $all_params));
-        // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared
+        $all_params = array_merge( array( $this->rate_history_table ), $where_values, array( $per_page, $offset ) );
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- $where_sql from allowlist conditions with %s/%d/%f.
+        $records = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM %i {$where_sql} ORDER BY created_at DESC LIMIT %d OFFSET %d", $all_params ) );
 
         $total_pages = ceil($total_items / $per_page);
 
