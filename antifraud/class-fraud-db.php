@@ -151,17 +151,22 @@ class Cashback_Fraud_DB {
         }
 
         // Удаление старых fingerprints
+        $fp_table = $wpdb->prefix . 'cashback_user_fingerprints';
         $deleted_fp = $wpdb->query($wpdb->prepare(
-            "DELETE FROM `{$wpdb->prefix}cashback_user_fingerprints`
-             WHERE created_at < DATE_SUB(NOW(), INTERVAL %d DAY)",
+            'DELETE FROM %i
+             WHERE created_at < DATE_SUB(NOW(), INTERVAL %d DAY)',
+            $fp_table,
             $retention_days
         ));
 
         // Удаление dismissed-алертов старше 90 дней
+        $alerts_table = $wpdb->prefix . 'cashback_fraud_alerts';
         $deleted_alerts = $wpdb->query($wpdb->prepare(
-            "DELETE FROM `{$wpdb->prefix}cashback_fraud_alerts`
-             WHERE status = 'dismissed'
-             AND updated_at < DATE_SUB(NOW(), INTERVAL %d DAY)",
+            'DELETE FROM %i
+             WHERE status = %s
+             AND updated_at < DATE_SUB(NOW(), INTERVAL %d DAY)',
+            $alerts_table,
+            'dismissed',
             90
         ));
 
