@@ -295,32 +295,38 @@ class Cashback_REST_API {
         $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
 
         // Получаем все товары-магазины с заполненным доменом
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery -- $networks_table из $wpdb->prefix; post_type биндится через prepare().
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin query.
         $products = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT p.ID, p.post_title,
+                'SELECT p.ID, p.post_title,
                         pm_domain.meta_value AS store_domain,
                         pm_label.meta_value AS cashback_label,
                         pm_value.meta_value AS cashback_value,
                         pm_popup.meta_value AS popup_mode,
                         n.name AS network_name,
                         n.slug AS network_slug
-                 FROM {$wpdb->posts} p
-                 INNER JOIN {$wpdb->postmeta} pm_net ON p.ID = pm_net.post_id AND pm_net.meta_key = '_affiliate_network_id'
-                 INNER JOIN {$wpdb->postmeta} pm_domain ON p.ID = pm_domain.post_id AND pm_domain.meta_key = '_store_domain'
-                 LEFT JOIN {$wpdb->postmeta} pm_label ON p.ID = pm_label.post_id AND pm_label.meta_key = '_cashback_display_label'
-                 LEFT JOIN {$wpdb->postmeta} pm_value ON p.ID = pm_value.post_id AND pm_value.meta_key = '_cashback_display_value'
-                 LEFT JOIN {$wpdb->postmeta} pm_popup ON p.ID = pm_popup.post_id AND pm_popup.meta_key = '_store_popup_mode'
-                 LEFT JOIN {$networks_table} n ON n.id = pm_net.meta_value AND n.is_active = 1
+                 FROM %i p
+                 INNER JOIN %i pm_net ON p.ID = pm_net.post_id AND pm_net.meta_key = \'_affiliate_network_id\'
+                 INNER JOIN %i pm_domain ON p.ID = pm_domain.post_id AND pm_domain.meta_key = \'_store_domain\'
+                 LEFT JOIN %i pm_label ON p.ID = pm_label.post_id AND pm_label.meta_key = \'_cashback_display_label\'
+                 LEFT JOIN %i pm_value ON p.ID = pm_value.post_id AND pm_value.meta_key = \'_cashback_display_value\'
+                 LEFT JOIN %i pm_popup ON p.ID = pm_popup.post_id AND pm_popup.meta_key = \'_store_popup_mode\'
+                 LEFT JOIN %i n ON n.id = pm_net.meta_value AND n.is_active = 1
                  WHERE p.post_type = %s
-                   AND p.post_status = 'publish'
+                   AND p.post_status = \'publish\'
                    AND pm_net.meta_value > 0
-                   AND pm_domain.meta_value != ''",
+                   AND pm_domain.meta_value != \'\'',
+                $wpdb->posts,
+                $wpdb->postmeta,
+                $wpdb->postmeta,
+                $wpdb->postmeta,
+                $wpdb->postmeta,
+                $wpdb->postmeta,
+                $networks_table,
                 'product'
             ),
             ARRAY_A
         );
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery
 
         if (empty($products)) {
             $stores = array();
@@ -372,18 +378,20 @@ class Cashback_REST_API {
         $balance_table = $wpdb->prefix . 'cashback_user_balance';
         $profile_table = $wpdb->prefix . 'cashback_user_profile';
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery -- $balance_table/$profile_table из $wpdb->prefix; user_id биндится через prepare().
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
         $balance = $wpdb->get_row($wpdb->prepare(
-            "SELECT available_balance, pending_balance, paid_balance
-             FROM {$balance_table} WHERE user_id = %d",
+            'SELECT available_balance, pending_balance, paid_balance
+             FROM %i WHERE user_id = %d',
+            $balance_table,
             $user_id
         ), ARRAY_A);
 
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
         $profile = $wpdb->get_row($wpdb->prepare(
-            "SELECT cashback_rate, status FROM {$profile_table} WHERE user_id = %d",
+            'SELECT cashback_rate, status FROM %i WHERE user_id = %d',
+            $profile_table,
             $user_id
         ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery
 
         return new \WP_REST_Response(array(
             'user_id'       => $user_id,
@@ -411,23 +419,25 @@ class Cashback_REST_API {
 
         $table = $wpdb->prefix . 'cashback_transactions';
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery -- $table = $wpdb->prefix . 'cashback_transactions'; значения через prepare().
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
         $total = (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM {$table} WHERE user_id = %d",
+            'SELECT COUNT(*) FROM %i WHERE user_id = %d',
+            $table,
             $user_id
         ));
 
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
         $items = $wpdb->get_results($wpdb->prepare(
-            "SELECT offer_name, cashback, order_status, currency, partner, action_date, created_at
-             FROM {$table}
+            'SELECT offer_name, cashback, order_status, currency, partner, action_date, created_at
+             FROM %i
              WHERE user_id = %d
              ORDER BY created_at DESC
-             LIMIT %d OFFSET %d",
+             LIMIT %d OFFSET %d',
+            $table,
             $user_id,
             $per_page,
             $offset
         ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery
 
         $formatted = array();
         foreach ($items as $item) {
@@ -560,16 +570,16 @@ class Cashback_REST_API {
             $click_log_table = $wpdb->prefix . 'cashback_click_log';
             $threshold       = gmdate('Y-m-d H:i:s', time() - self::ACTIVATION_WINDOW);
 
-            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery -- $click_log_table из $wpdb->prefix; значения через prepare().
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
             $click = $wpdb->get_row($wpdb->prepare(
-                "SELECT click_id, created_at, product_id
-                 FROM {$click_log_table}
-                 WHERE click_id = %s AND user_id = %d AND created_at >= %s LIMIT 1",
+                'SELECT click_id, created_at, product_id
+                 FROM %i
+                 WHERE click_id = %s AND user_id = %d AND created_at >= %s LIMIT 1',
+                $click_log_table,
                 $click_id,
                 $user_id,
                 $threshold
             ), ARRAY_A);
-            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery
 
             if ($click) {
                 // Домен из _store_domain meta (не из affiliate_url, который указывает на CPA-сеть)
@@ -634,20 +644,14 @@ class Cashback_REST_API {
 
         // Ищем последний клик пользователя на товары этого домена
         $placeholders = implode(',', array_fill(0, count($product_ids), '%d'));
-        $query_args   = array_merge(array( $user_id ), array_map('intval', $product_ids), array( $threshold ));
+        $query_args   = array_merge(array( $click_log_table, $user_id ), array_map('intval', $product_ids), array( $threshold ));
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery -- $click_log_table из $wpdb->prefix; $placeholders — array_fill '%d', значения через prepare().
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
         $click = $wpdb->get_row($wpdb->prepare(
-            "SELECT click_id, created_at
-             FROM {$click_log_table}
-             WHERE user_id = %d
-               AND product_id IN ({$placeholders})
-               AND created_at >= %s
-             ORDER BY created_at DESC
-             LIMIT 1",
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders — array_fill '%d'; таблица через %i.
+            "SELECT click_id, created_at FROM %i WHERE user_id = %d AND product_id IN ({$placeholders}) AND created_at >= %s ORDER BY created_at DESC LIMIT 1",
             ...$query_args
         ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery
 
         if ($click) {
             $activated_at = $click['created_at'];
@@ -701,17 +705,17 @@ class Cashback_REST_API {
         $table     = $wpdb->prefix . 'cashback_click_log';
         $threshold = gmdate('Y-m-d H:i:s', time() - self::ACTIVATION_WINDOW);
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery -- $table = $wpdb->prefix . 'cashback_click_log'; значения через prepare().
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
         $row = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT affiliate_url, product_id FROM {$table}
-                 WHERE click_id = %s AND created_at >= %s LIMIT 1",
+                'SELECT affiliate_url, product_id FROM %i
+                 WHERE click_id = %s AND created_at >= %s LIMIT 1',
+                $table,
                 $click_id,
                 $threshold
             ),
             ARRAY_A
         );
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery
 
         if (empty($row) || empty($row['affiliate_url'])) {
             wp_safe_redirect(home_url(), 302);
@@ -1028,15 +1032,15 @@ HTML;
 
         // Сначала загружаем параметры сети
         $params_table = $wpdb->prefix . 'cashback_affiliate_network_params';
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery -- $params_table из $wpdb->prefix; network_id через prepare().
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
         $network_rows = $wpdb->get_results($wpdb->prepare(
-            "SELECT param_name, param_type
-             FROM {$params_table}
+            'SELECT param_name, param_type
+             FROM %i
              WHERE network_id = %d
-             ORDER BY id ASC",
+             ORDER BY id ASC',
+            $params_table,
             $network_id
         ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery
 
         $merged       = array();
         $key_to_index = array();
@@ -1109,12 +1113,12 @@ HTML;
         }
 
         $table = $wpdb->prefix . 'cashback_affiliate_networks';
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery -- $table из $wpdb->prefix; id через prepare().
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
         $slug = $wpdb->get_var($wpdb->prepare(
-            "SELECT slug FROM {$table} WHERE id = %d AND is_active = 1",
+            'SELECT slug FROM %i WHERE id = %d AND is_active = 1',
+            $table,
             $network_id
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery
 
         return $slug ?: null;
     }
@@ -1145,11 +1149,12 @@ HTML;
         $table      = $wpdb->prefix . 'cashback_click_log';
         $created_at = ( new \DateTimeImmutable('now', new \DateTimeZone('UTC')) )->format('Y-m-d H:i:s.u');
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery -- $table = $wpdb->prefix . 'cashback_click_log'; значения через prepare().
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
         $result = $wpdb->query($wpdb->prepare(
-            "INSERT INTO {$table}
+            'INSERT INTO %i
                 (click_id, user_id, product_id, cpa_network, affiliate_url, ip_address, user_agent, referer, spam_click, created_at)
-             VALUES (%s, %d, %d, %s, %s, %s, %s, %s, %d, %s)",
+             VALUES (%s, %d, %d, %s, %s, %s, %s, %s, %d, %s)',
+            $table,
             $data['click_id'],
             $data['user_id'],
             $data['product_id'],
@@ -1161,7 +1166,6 @@ HTML;
             $data['spam_click'] ?? 0,
             $created_at
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery
 
         if (false === $result) {
             error_log('[Cashback REST API] Failed to log click: ' . $wpdb->last_error);
