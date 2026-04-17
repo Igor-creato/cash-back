@@ -507,6 +507,7 @@ class Mariadb_Plugin {
             // dbDelta() парсит CREATE TABLE IF NOT EXISTS некорректно
             // (regex захватывает "IF" как имя таблицы) и не поддерживает
             // CONSTRAINT, CHECK, FOREIGN KEY, GENERATED конструкции
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- static DDL from local $tables array, $wpdb->prefix validated.
             $result = $wpdb->query($sql);
 
             if ($result === false) {
@@ -626,6 +627,7 @@ class Mariadb_Plugin {
         $suppress = $wpdb->suppress_errors(true);
 
         foreach ($constraints as $sql) {
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- static DDL ALTER TABLE from local $constraints array, $wpdb->prefix validated.
             $wpdb->query($sql);
             // Ошибки типа "Duplicate key name" (constraint already exists) — ожидаемы
             if ($wpdb->last_error && strpos($wpdb->last_error, 'Duplicate') === false) {
@@ -646,8 +648,7 @@ class Mariadb_Plugin {
         $table = $wpdb->prefix . 'cashback_payout_methods';
 
         // Проверяем, есть ли уже записи
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix, not user input
-        $count = $wpdb->get_var("SELECT COUNT(*) FROM `{$table}`");
+        $count = $wpdb->get_var($wpdb->prepare('SELECT COUNT(*) FROM %i', $table));
         if ($count > 0) {
             error_log('Mariadb Plugin: Payout methods already exist, skipping initialization');
             return;
@@ -683,8 +684,7 @@ class Mariadb_Plugin {
         $table = $wpdb->prefix . 'cashback_banks';
 
         // Проверяем, есть ли уже записи
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->prefix, not user input
-        $count = $wpdb->get_var("SELECT COUNT(*) FROM `{$table}`");
+        $count = $wpdb->get_var($wpdb->prepare('SELECT COUNT(*) FROM %i', $table));
         if ($count > 0) {
             error_log('Mariadb Plugin: Banks already exist, skipping initialization');
             return;
@@ -721,7 +721,8 @@ class Mariadb_Plugin {
 
         // Admitad
         $admitad_url = $wpdb->get_var($wpdb->prepare(
-            "SELECT api_base_url FROM `{$table}` WHERE slug = %s",
+            'SELECT api_base_url FROM %i WHERE slug = %s',
+            $table,
             'admitad'
         ));
 
@@ -757,7 +758,8 @@ class Mariadb_Plugin {
 
         // EPN
         $epn_url = $wpdb->get_var($wpdb->prepare(
-            "SELECT api_base_url FROM `{$table}` WHERE slug = %s",
+            'SELECT api_base_url FROM %i WHERE slug = %s',
+            $table,
             'epn'
         ));
 
@@ -814,6 +816,7 @@ class Mariadb_Plugin {
             KEY `idx_created` (`created_at`)
         ) ENGINE=InnoDB {$charset_collate} COMMENT='Аудит-лог действий с чувствительными данными';";
 
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- static DDL, $wpdb->prefix and $charset_collate come from WP core.
         $result = $wpdb->query($sql);
         if ($result === false) {
             error_log('[Cashback] Failed to create audit_log table: ' . $wpdb->last_error);
@@ -838,24 +841,25 @@ class Mariadb_Plugin {
 
         // Удаляем существующие триггеры перед созданием новых
         $drop_triggers = array(
-            "DROP TRIGGER IF EXISTS `{$safe_prefix}calculate_cashback_before_insert`;",
-            "DROP TRIGGER IF EXISTS `{$safe_prefix}calculate_cashback_before_insert_unregistered`;",
-            "DROP TRIGGER IF EXISTS `{$safe_prefix}calculate_cashback_before_update`;",
-            "DROP TRIGGER IF EXISTS `{$safe_prefix}calculate_cashback_before_update_unregistered`;",
-            "DROP TRIGGER IF EXISTS `{$safe_prefix}cashback_tr_prevent_delete_final_status`;",
-            "DROP TRIGGER IF EXISTS `{$safe_prefix}cashback_tr_prevent_update_final_status`;",
-            "DROP TRIGGER IF EXISTS `{$safe_prefix}cashback_tr_validate_status_transition`;",
-            "DROP TRIGGER IF EXISTS `{$safe_prefix}cashback_tr_validate_status_transition_unregistered`;",
-            "DROP TRIGGER IF EXISTS `{$safe_prefix}tr_prevent_delete_paid_payout`;",
-            "DROP TRIGGER IF EXISTS `{$safe_prefix}tr_prevent_update_paid_payout`;",
-            "DROP TRIGGER IF EXISTS `{$safe_prefix}tr_prevent_delete_failed_payout`;",
-            "DROP TRIGGER IF EXISTS `{$safe_prefix}tr_prevent_update_failed_payout`;",
-            "DROP TRIGGER IF EXISTS `{$safe_prefix}tr_banned_user_update_banned_at`;",
-            "DROP TRIGGER IF EXISTS `{$safe_prefix}tr_webhook_payload_hash`;",
+            'calculate_cashback_before_insert',
+            'calculate_cashback_before_insert_unregistered',
+            'calculate_cashback_before_update',
+            'calculate_cashback_before_update_unregistered',
+            'cashback_tr_prevent_delete_final_status',
+            'cashback_tr_prevent_update_final_status',
+            'cashback_tr_validate_status_transition',
+            'cashback_tr_validate_status_transition_unregistered',
+            'tr_prevent_delete_paid_payout',
+            'tr_prevent_update_paid_payout',
+            'tr_prevent_delete_failed_payout',
+            'tr_prevent_update_failed_payout',
+            'tr_banned_user_update_banned_at',
+            'tr_webhook_payload_hash',
         );
 
-        foreach ($drop_triggers as $drop_trigger) {
-            $result = $wpdb->query($drop_trigger);
+        foreach ($drop_triggers as $trigger_base) {
+            $trigger_full = $safe_prefix . $trigger_base;
+            $result       = $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS %i', $trigger_full));
             if ($result === false) {
                 error_log('Mariadb Plugin Warning: Failed to drop trigger. Error: ' . $wpdb->last_error);
             }
@@ -1116,6 +1120,7 @@ class Mariadb_Plugin {
 
         $failed_triggers = array();
         foreach ($triggers as $trigger) {
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- static CREATE TRIGGER DDL from local $triggers array, $safe_prefix validated by regex.
             $result = $wpdb->query($trigger);
             if ($result === false) {
                 $failed_triggers[] = $wpdb->last_error;
@@ -1144,17 +1149,17 @@ class Mariadb_Plugin {
         // Дропаем cashback_ev_confirmed_cashback если он остался от старых версий плагина.
         // Начисление баланса теперь выполняется через PHP (process_ready_transactions),
         // вызываемый после каждой синхронизации с CPA-сетями — событие больше не нужно.
-        $wpdb->query("DROP EVENT IF EXISTS `{$safe_prefix}cashback_ev_confirmed_cashback`");
+        $wpdb->query($wpdb->prepare('DROP EVENT IF EXISTS %i', $safe_prefix . 'cashback_ev_confirmed_cashback'));
 
         // Дропаем остальные события перед пересозданием
         $drops = array(
-            "DROP EVENT IF EXISTS `{$safe_prefix}cashback_ev_cleanup_cashback_webhooks_old`",
-            "DROP EVENT IF EXISTS `{$safe_prefix}cashback_ev_cleanup_click_log`",
-            "DROP EVENT IF EXISTS `{$safe_prefix}cashback_ev_mark_inactive_profiles`",
+            $safe_prefix . 'cashback_ev_cleanup_cashback_webhooks_old',
+            $safe_prefix . 'cashback_ev_cleanup_click_log',
+            $safe_prefix . 'cashback_ev_mark_inactive_profiles',
         );
 
-        foreach ($drops as $drop) {
-            $wpdb->query($drop);
+        foreach ($drops as $drop_event) {
+            $wpdb->query($wpdb->prepare('DROP EVENT IF EXISTS %i', $drop_event));
         }
 
         $events = array(
@@ -1204,6 +1209,7 @@ class Mariadb_Plugin {
 
         $failed_events = array();
         foreach ($events as $event) {
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- static CREATE EVENT DDL from local $events array, $safe_prefix validated by regex.
             $result = $wpdb->query($event);
             if ($result === false) {
                 $error = $wpdb->last_error;
@@ -1288,7 +1294,8 @@ class Mariadb_Plugin {
             // Защита от race condition
             $partner_token = self::generate_partner_token();
             $result        = $wpdb->query($wpdb->prepare(
-                "INSERT IGNORE INTO {$table_name} (user_id, partner_token, status, created_at) VALUES (%d, %s, 'active', NOW())",
+                "INSERT IGNORE INTO %i (user_id, partner_token, status, created_at) VALUES (%d, %s, 'active', NOW())",
+                $table_name,
                 $user_id,
                 $partner_token
             ));
@@ -1332,9 +1339,10 @@ class Mariadb_Plugin {
 
         // INSERT IGNORE атомарно игнорирует дубли по PRIMARY KEY
         $result = $wpdb->query($wpdb->prepare(
-            "INSERT IGNORE INTO {$table_name}
+            'INSERT IGNORE INTO %i
             (user_id, available_balance, pending_balance, paid_balance, frozen_balance, version, updated_at)
-            VALUES (%d, 0.00, 0.00, 0.00, 0.00, 0, NOW())",
+            VALUES (%d, 0.00, 0.00, 0.00, 0.00, 0, NOW())',
+            $table_name,
             $user_id
         ));
 
@@ -1365,12 +1373,14 @@ class Mariadb_Plugin {
         $table_balance = $wpdb->prefix . 'cashback_user_balance';
 
         $profile_exists = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM {$table_profile} WHERE user_id = %d",
+            'SELECT COUNT(*) FROM %i WHERE user_id = %d',
+            $table_profile,
             $user_id
         ));
 
         $balance_exists = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM {$table_balance} WHERE user_id = %d",
+            'SELECT COUNT(*) FROM %i WHERE user_id = %d',
+            $table_balance,
             $user_id
         ));
 
@@ -1441,7 +1451,11 @@ class Mariadb_Plugin {
      */
     public static function process_ready_transactions(): array {
         global $wpdb;
-        $prefix = $wpdb->prefix;
+        $prefix           = $wpdb->prefix;
+        $tx_table         = $prefix . 'cashback_transactions';
+        $profile_table    = $prefix . 'cashback_user_profile';
+        $ledger_table     = $prefix . 'cashback_balance_ledger';
+        $balance_table    = $prefix . 'cashback_user_balance';
 
         // Проверяем что глобальный lock удержан (вызов разрешён только из sync)
         if (class_exists('Cashback_Lock') && !Cashback_Lock::is_lock_held_by_current_process()) {
@@ -1461,24 +1475,14 @@ class Mariadb_Plugin {
             $batch_id = cashback_generate_uuid7(false);
 
             $delay_days = (int) get_option('cashback_balance_delay_days', 0);
-            $delay_sql  = '';
-            if ($delay_days > 0) {
-                // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-                $delay_sql = $wpdb->prepare(
-                    ' AND t.updated_at <= DATE_SUB(NOW(), INTERVAL %d DAY)',
-                    $delay_days
-                );
-            }
 
             $wpdb->query('START TRANSACTION');
 
             // ШАГ 1: SELECT FOR UPDATE — блокируем транзакции-кандидаты для начисления
             // Исключаем забаненных пользователей — их баланс заморожен триггером tr_freeze_balance_on_ban
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-            $candidates = $wpdb->get_results(
-                "SELECT t.id, t.user_id, t.cashback
-                 FROM `{$prefix}cashback_transactions` t
-                 INNER JOIN `{$prefix}cashback_user_profile` p
+            $candidates_sql  = "SELECT t.id, t.user_id, t.cashback
+                 FROM %i t
+                 INNER JOIN %i p
                      ON p.user_id = t.user_id AND p.status != 'banned'
                  WHERE t.order_status = 'completed'
                    AND t.api_verified = 1
@@ -1486,9 +1490,17 @@ class Mariadb_Plugin {
                    AND t.processed_at IS NULL
                    AND t.cashback IS NOT NULL
                    AND t.cashback > 0
-                   AND t.spam_click = 0"
-                    . $delay_sql // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-                    . ' FOR UPDATE',
+                   AND t.spam_click = 0";
+            $candidates_args = array( $tx_table, $profile_table );
+            if ($delay_days > 0) {
+                $candidates_sql    .= ' AND t.updated_at <= DATE_SUB(NOW(), INTERVAL %d DAY)';
+                $candidates_args[] = $delay_days;
+            }
+            $candidates_sql .= ' FOR UPDATE';
+
+            $candidates = $wpdb->get_results(
+                // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $candidates_sql composed from static literals + optional '%d DAY' delay fragment, args passed via prepare().
+                $wpdb->prepare($candidates_sql, ...$candidates_args),
                 ARRAY_A
             );
 
@@ -1513,14 +1525,16 @@ class Mariadb_Plugin {
                 }
 
                 $values_sql = implode(', ', $ledger_values);
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+                // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $values_sql is static placeholder list built from a fixed literal '(%d, %s, %s, %d, %s)' repeated per candidate, args passed via prepare().
                 $ledger_result = $wpdb->query($wpdb->prepare(
-                    "INSERT INTO `{$prefix}cashback_balance_ledger`
+                    "INSERT INTO %i
                          (user_id, type, amount, transaction_id, idempotency_key)
                      VALUES {$values_sql}
                      ON DUPLICATE KEY UPDATE id = id",
+                    $ledger_table,
                     ...$ledger_args
                 ));
+                // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
                 if ($ledger_result === false) {
                     throw new \RuntimeException('Step 2 (ledger INSERT) failed: ' . $wpdb->last_error);
@@ -1529,14 +1543,16 @@ class Mariadb_Plugin {
 
                 // ШАГ 3: Маркируем транзакции как обработанные
                 $id_placeholders = implode(',', array_fill(0, count($candidate_ids), '%d'));
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+                // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $id_placeholders is '%d,%d,...' from array_fill(), ids passed as %d args via prepare().
                 $step3 = $wpdb->query($wpdb->prepare(
-                    "UPDATE `{$prefix}cashback_transactions`
+                    "UPDATE %i
                      SET processed_at = NOW(), processed_batch_id = %s
                      WHERE id IN ({$id_placeholders}) AND processed_at IS NULL",
+                    $tx_table,
                     $batch_id,
                     ...$candidate_ids
                 ));
+                // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
                 if ($step3 === false) {
                     throw new \RuntimeException('Step 3 (mark processed) failed: ' . $wpdb->last_error);
@@ -1544,17 +1560,18 @@ class Mariadb_Plugin {
                 $total_processed = (int) $wpdb->rows_affected;
 
                 // ШАГ 4: Обновляем кэш available_balance (из леджера — SUM за этот батч)
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
                 $step4 = $wpdb->query($wpdb->prepare(
-                    "INSERT INTO `{$prefix}cashback_user_balance`
+                    'INSERT INTO %i
                          (user_id, available_balance, version)
                      SELECT user_id, SUM(cashback), 0
-                     FROM `{$prefix}cashback_transactions`
+                     FROM %i
                      WHERE processed_batch_id = %s AND cashback > 0
                      GROUP BY user_id
                      ON DUPLICATE KEY UPDATE
                          available_balance = available_balance + VALUES(available_balance),
-                         version = version + 1",
+                         version = version + 1',
+                    $balance_table,
+                    $tx_table,
                     $batch_id
                 ));
 
@@ -1582,11 +1599,11 @@ class Mariadb_Plugin {
                 }
 
                 // ��АГ 5: Переводим в финальный статус balance
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
                 $step5 = $wpdb->query($wpdb->prepare(
-                    "UPDATE `{$prefix}cashback_transactions`
+                    "UPDATE %i
                      SET order_status = 'balance'
                      WHERE processed_batch_id = %s AND order_status = 'completed'",
+                    $tx_table,
                     $batch_id
                 ));
 
@@ -1629,16 +1646,18 @@ class Mariadb_Plugin {
      */
     public static function validate_user_balance_consistency( int $user_id ): array {
         global $wpdb;
-        $prefix = $wpdb->prefix;
+        $ledger_table  = $wpdb->prefix . 'cashback_balance_ledger';
+        $balance_table = $wpdb->prefix . 'cashback_user_balance';
 
         $issues = array();
 
         // 1. Суммы из леджера по типам операций
         $ledger_sums = $wpdb->get_results($wpdb->prepare(
-            "SELECT type, SUM(amount) as total, COUNT(*) as cnt
-             FROM `{$prefix}cashback_balance_ledger`
+            'SELECT type, SUM(amount) as total, COUNT(*) as cnt
+             FROM %i
              WHERE user_id = %d
-             GROUP BY type",
+             GROUP BY type',
+            $ledger_table,
             $user_id
         ), ARRAY_A);
 
@@ -1710,9 +1729,10 @@ class Mariadb_Plugin {
 
         // 2. Кэш из cashback_user_balance
         $cache = $wpdb->get_row($wpdb->prepare(
-            "SELECT available_balance, pending_balance, paid_balance, frozen_balance
-             FROM `{$prefix}cashback_user_balance`
-             WHERE user_id = %d",
+            'SELECT available_balance, pending_balance, paid_balance, frozen_balance
+             FROM %i
+             WHERE user_id = %d',
+            $balance_table,
             $user_id
         ), ARRAY_A);
 
@@ -1789,11 +1809,12 @@ class Mariadb_Plugin {
         $dup_accruals = (int) $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM (
                 SELECT transaction_id, COUNT(*) as cnt
-                FROM `{$prefix}cashback_balance_ledger`
+                FROM %i
                 WHERE user_id = %d AND type = 'accrual' AND transaction_id IS NOT NULL
                 GROUP BY transaction_id
                 HAVING cnt > 1
             ) dups",
+            $ledger_table,
             $user_id
         ));
 
@@ -1809,16 +1830,18 @@ class Mariadb_Plugin {
         // 6. Выплаченные payout без hold записи
         $payouts_without_hold = (int) $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(DISTINCT l.payout_request_id)
-             FROM `{$prefix}cashback_balance_ledger` l
+             FROM %i l
              WHERE l.user_id = %d
                AND l.type = 'payout_complete'
                AND l.payout_request_id IS NOT NULL
                AND l.payout_request_id NOT IN (
                    SELECT payout_request_id
-                   FROM `{$prefix}cashback_balance_ledger`
+                   FROM %i
                    WHERE user_id = %d AND type = 'payout_hold' AND payout_request_id IS NOT NULL
                )",
+            $ledger_table,
             $user_id,
+            $ledger_table,
             $user_id
         ));
 
@@ -1878,7 +1901,8 @@ class Mariadb_Plugin {
 
         // Быстрый путь: токен уже есть
         $token = $wpdb->get_var($wpdb->prepare(
-            "SELECT partner_token FROM `{$table}` WHERE user_id = %d",
+            'SELECT partner_token FROM %i WHERE user_id = %d',
+            $table,
             $user_id
         ));
 
@@ -1888,7 +1912,8 @@ class Mariadb_Plugin {
 
         // Проверяем, существует ли профиль вообще
         $profile_exists = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM `{$table}` WHERE user_id = %d",
+            'SELECT COUNT(*) FROM %i WHERE user_id = %d',
+            $table,
             $user_id
         ));
 
@@ -1903,7 +1928,8 @@ class Mariadb_Plugin {
 
             // Атомарное обновление: только если partner_token ещё NULL
             $updated = $wpdb->query($wpdb->prepare(
-                "UPDATE `{$table}` SET partner_token = %s WHERE user_id = %d AND partner_token IS NULL",
+                'UPDATE %i SET partner_token = %s WHERE user_id = %d AND partner_token IS NULL',
+                $table,
                 $new_token,
                 $user_id
             ));
@@ -1916,7 +1942,8 @@ class Mariadb_Plugin {
             if ($updated === 0) {
                 // Другой процесс уже установил токен — читаем его
                 return $wpdb->get_var($wpdb->prepare(
-                    "SELECT partner_token FROM `{$table}` WHERE user_id = %d",
+                    'SELECT partner_token FROM %i WHERE user_id = %d',
+                    $table,
                     $user_id
                 ));
             }
@@ -1946,7 +1973,8 @@ class Mariadb_Plugin {
         $table = $wpdb->prefix . 'cashback_user_profile';
 
         $user_id = $wpdb->get_var($wpdb->prepare(
-            "SELECT user_id FROM `{$table}` WHERE partner_token = %s LIMIT 1",
+            'SELECT user_id FROM %i WHERE partner_token = %s LIMIT 1',
+            $table,
             $token
         ));
 
@@ -1980,10 +2008,13 @@ class Mariadb_Plugin {
         $table        = $wpdb->prefix . 'cashback_user_profile';
         $placeholders = implode(',', array_fill(0, count($valid_tokens), '%s'));
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is '%s,%s,...' from array_fill(), tokens passed as %s args via prepare().
         $rows = $wpdb->get_results($wpdb->prepare(
-            "SELECT partner_token, user_id FROM `{$table}` WHERE partner_token IN ({$placeholders})",
+            "SELECT partner_token, user_id FROM %i WHERE partner_token IN ({$placeholders})",
+            $table,
             ...$valid_tokens
         ), ARRAY_A);
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $map = array();
         foreach ($rows as $row) {
@@ -2025,11 +2056,12 @@ class Mariadb_Plugin {
             return;
         }
 
-        $wpdb->query(
-            "ALTER TABLE `{$table}`
+        $wpdb->query($wpdb->prepare(
+            "ALTER TABLE %i
              MODIFY COLUMN `rate_type` ENUM('cashback','cashback_global','affiliate_commission','affiliate_global')
-             NOT NULL COMMENT 'Тип изменённой ставки'"
-        );
+             NOT NULL COMMENT 'Тип изменённой ставки'",
+            $table
+        ));
 
         if ($wpdb->last_error) {
             error_log('[Cashback] Failed to migrate rate_history ENUM: ' . $wpdb->last_error);
@@ -2052,7 +2084,7 @@ class Mariadb_Plugin {
         );
 
         foreach ($triggers as $trigger) {
-            $wpdb->query("DROP TRIGGER IF EXISTS `{$trigger}`");
+            $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS %i', $trigger));
         }
     }
 
@@ -2078,9 +2110,10 @@ class Mariadb_Plugin {
             );
 
             if (! $column_exists) {
-                $wpdb->query(
-                    "ALTER TABLE `{$table}` ADD COLUMN `reference_id` varchar(11) NOT NULL DEFAULT '' COMMENT 'Public transaction ID, format TX-XXXXXXXX'"
-                );
+                $wpdb->query($wpdb->prepare(
+                    "ALTER TABLE %i ADD COLUMN `reference_id` varchar(11) NOT NULL DEFAULT '' COMMENT 'Public transaction ID, format TX-XXXXXXXX'",
+                    $table
+                ));
                 if ($wpdb->last_error) {
                     error_log("[Cashback Migration] ALTER TABLE {$table}: " . $wpdb->last_error);
                     continue;
@@ -2090,7 +2123,7 @@ class Mariadb_Plugin {
             // Бэкфилл: генерируем reference_id для записей где он пустой.
             // Сначала проверяем есть ли что заполнять — если нет, не трогаем триггер.
             $empty_count = (int) $wpdb->get_var(
-                $wpdb->prepare("SELECT COUNT(*) FROM `{$table}` WHERE reference_id = %s", '')
+                $wpdb->prepare('SELECT COUNT(*) FROM %i WHERE reference_id = %s', $table, '')
             );
 
             if ($empty_count > 0) {
@@ -2100,13 +2133,13 @@ class Mariadb_Plugin {
                     ? $wpdb->prefix . 'cashback_tr_validate_status_transition'
                     : $wpdb->prefix . 'cashback_tr_validate_status_transition_unregistered';
 
-                $wpdb->query("DROP TRIGGER IF EXISTS `{$trigger_name}`");
+                $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS %i', $trigger_name));
 
                 $total_filled = 0;
 
                 for ($i = 0; $i < 10000; $i++) {
                     $ids = $wpdb->get_col(
-                        $wpdb->prepare("SELECT id FROM `{$table}` WHERE reference_id = %s LIMIT 500", '')
+                        $wpdb->prepare('SELECT id FROM %i WHERE reference_id = %s LIMIT 500', $table, '')
                     );
 
                     if (empty($ids)) {
@@ -2121,7 +2154,8 @@ class Mariadb_Plugin {
 
                     $ids_list = implode(',', array_map('intval', $ids));
                     $case_sql = implode(' ', $cases);
-                    $wpdb->query("UPDATE `{$table}` SET reference_id = CASE id {$case_sql} END WHERE id IN ({$ids_list})");
+                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $case_sql is pre-prepared WHEN/THEN pairs (integer ids + TX-XXXXXXXX strings), $ids_list is intval-cast list.
+                    $wpdb->query($wpdb->prepare("UPDATE %i SET reference_id = CASE id {$case_sql} END WHERE id IN ({$ids_list})", $table));
 
                     if ($wpdb->last_error) {
                         error_log("[Cashback Migration] Backfill error on {$table}: " . $wpdb->last_error);
@@ -2142,7 +2176,7 @@ class Mariadb_Plugin {
             );
 
             if (! $index_exists) {
-                $wpdb->query("ALTER TABLE `{$table}` ADD UNIQUE KEY `{$uk_name}` (`reference_id`)");
+                $wpdb->query($wpdb->prepare('ALTER TABLE %i ADD UNIQUE KEY %i (`reference_id`)', $table, $uk_name));
                 if ($wpdb->last_error) {
                     error_log("[Cashback Migration] UNIQUE KEY on {$table}: " . $wpdb->last_error);
                 }
