@@ -385,11 +385,12 @@ class Cashback_Affiliate_Service {
 
         // Атомарная привязка (UPDATE WHERE referred_by_user_id IS NULL — immutable)
         $updated = $wpdb->query($wpdb->prepare(
-            "UPDATE `{$table}`
+            'UPDATE %i
              SET referred_by_user_id = %d,
                  referral_click_id   = %s,
                  referred_at         = NOW()
-             WHERE user_id = %d AND referred_by_user_id IS NULL",
+             WHERE user_id = %d AND referred_by_user_id IS NULL',
+            $table,
             $referrer_id,
             $click_id,
             $user_id
@@ -470,21 +471,27 @@ class Cashback_Affiliate_Service {
         }
 
         // Находим у кого из этих пользователей есть активный реферер
-        $id_placeholders = implode(',', array_fill(0, count($user_ids), '%d'));
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+        $profiles_table     = $prefix . 'cashback_affiliate_profiles';
+        $user_profile_table = $prefix . 'cashback_user_profile';
+        $id_placeholders    = implode(',', array_fill(0, count($user_ids), '%d'));
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $id_placeholders из array_fill('%d').
         $referrals = $wpdb->get_results($wpdb->prepare(
             "SELECT ap.user_id, ap.referred_by_user_id
-             FROM `{$prefix}cashback_affiliate_profiles` ap
-             INNER JOIN `{$prefix}cashback_affiliate_profiles` rp
+             FROM %i ap
+             INNER JOIN %i rp
                  ON rp.user_id = ap.referred_by_user_id
                  AND rp.affiliate_status = 'active'
-             INNER JOIN `{$prefix}cashback_user_profile` up
+             INNER JOIN %i up
                  ON up.user_id = ap.referred_by_user_id
                  AND up.status != 'banned'
              WHERE ap.user_id IN ({$id_placeholders})
                AND ap.referred_by_user_id IS NOT NULL",
+            $profiles_table,
+            $profiles_table,
+            $user_profile_table,
             ...$user_ids
         ), ARRAY_A);
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
 
         if (empty($referrals)) {
             return $result;
@@ -563,6 +570,10 @@ class Cashback_Affiliate_Service {
         }
 
         try {
+            $accruals_table = $prefix . 'cashback_affiliate_accruals';
+            $ledger_table   = $prefix . 'cashback_balance_ledger';
+            $balance_table  = $prefix . 'cashback_user_balance';
+
             // Сначала пробуем UPDATE pending → available (accruals могли быть созданы sync_pending_accruals)
             $updated_count         = 0;
             $insert_accrual_values = array();
@@ -575,13 +586,14 @@ class Cashback_Affiliate_Service {
 
                 // Пробуем обновить существующую pending-запись
                 $upd = $wpdb->query($wpdb->prepare(
-                    "UPDATE `{$prefix}cashback_affiliate_accruals`
+                    "UPDATE %i
                      SET status = 'available',
                          cashback_amount   = %s,
                          commission_rate   = %s,
                          commission_amount = %s
                      WHERE transaction_id = %d AND status IN ('pending','declined')
                      LIMIT 1",
+                    $accruals_table,
                     $accrual_args[ $offset + 4 ], // cashback_amount
                     $accrual_args[ $offset + 5 ], // commission_rate
                     $accrual_args[ $offset + 6 ], // commission_amount
@@ -602,9 +614,9 @@ class Cashback_Affiliate_Service {
             // INSERT оставшихся (без pending-записи) — идемпотентно
             if (!empty($insert_accrual_values)) {
                 $accrual_sql = implode(', ', $insert_accrual_values);
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+                // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $accrual_sql из array_fill-шаблонов.
                 $accrual_result = $wpdb->query($wpdb->prepare(
-                    "INSERT INTO `{$prefix}cashback_affiliate_accruals`
+                    "INSERT INTO %i
                          (reference_id, referrer_id, referred_user_id, transaction_id,
                           cashback_amount, commission_rate, commission_amount, status, idempotency_key)
                      VALUES {$accrual_sql}
@@ -613,8 +625,10 @@ class Cashback_Affiliate_Service {
                          cashback_amount = VALUES(cashback_amount),
                          commission_rate = VALUES(commission_rate),
                          commission_amount = VALUES(commission_amount)",
+                    $accruals_table,
                     ...$insert_accrual_args
                 ));
+                // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
 
                 if ($accrual_result === false) {
                     throw new \RuntimeException('Affiliate accruals INSERT failed: ' . $wpdb->last_error);
@@ -623,14 +637,16 @@ class Cashback_Affiliate_Service {
 
             // INSERT IGNORE в единый ledger (идемпотентно)
             $ledger_sql = implode(', ', $ledger_values);
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $ledger_sql из array_fill-шаблонов.
             $ledger_result = $wpdb->query($wpdb->prepare(
-                "INSERT INTO `{$prefix}cashback_balance_ledger`
+                "INSERT INTO %i
                      (user_id, type, amount, transaction_id, reference_type, reference_id, idempotency_key)
                  VALUES {$ledger_sql}
                  ON DUPLICATE KEY UPDATE id = id",
+                $ledger_table,
                 ...$ledger_args
             ));
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
 
             if ($ledger_result === false) {
                 throw new \RuntimeException('Affiliate balance_ledger INSERT failed: ' . $wpdb->last_error);
@@ -640,12 +656,13 @@ class Cashback_Affiliate_Service {
             $total_commission = 0.0;
             foreach ($balance_deltas as $referrer_id => $delta) {
                 $balance_update = $wpdb->query($wpdb->prepare(
-                    "INSERT INTO `{$prefix}cashback_user_balance`
+                    'INSERT INTO %i
                          (user_id, available_balance, version)
                      VALUES (%d, %s, 0)
                      ON DUPLICATE KEY UPDATE
                          available_balance = available_balance + CAST(%s AS DECIMAL(18,2)),
-                         version = version + 1",
+                         version = version + 1',
+                    $balance_table,
                     $referrer_id,
                     number_format($delta, 2, '.', ''),
                     number_format($delta, 2, '.', '')
@@ -704,14 +721,17 @@ class Cashback_Affiliate_Service {
             return array();
         }
 
-        $placeholders = implode(',', array_fill(0, count($referrer_ids), '%d'));
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared
+        $profiles_table = $prefix . 'cashback_affiliate_profiles';
+        $placeholders   = implode(',', array_fill(0, count($referrer_ids), '%d'));
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders из array_fill('%d').
         $rows = $wpdb->get_results($wpdb->prepare(
             "SELECT user_id, affiliate_rate
-             FROM `{$prefix}cashback_affiliate_profiles`
+             FROM %i
              WHERE user_id IN ({$placeholders}) AND affiliate_rate IS NOT NULL",
+            $profiles_table,
             ...$referrer_ids
         ), ARRAY_A);
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
 
         $rates = array();
         foreach ($rows as $row) {
@@ -748,30 +768,39 @@ class Cashback_Affiliate_Service {
 
         $global_rate = (float) Cashback_Affiliate_DB::get_global_rate();
 
+        $tx_table           = $prefix . 'cashback_transactions';
+        $profiles_table     = $prefix . 'cashback_affiliate_profiles';
+        $user_profile_table = $prefix . 'cashback_user_profile';
+        $accruals_table     = $prefix . 'cashback_affiliate_accruals';
+
         // 1. Найти транзакции рефералов без accrual (waiting/completed/hold/declined)
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         $missing = $wpdb->get_results($wpdb->prepare(
-            "SELECT t.id AS tx_id, t.user_id, t.cashback, t.order_status,
+            'SELECT t.id AS tx_id, t.user_id, t.cashback, t.order_status,
                     ap.referred_by_user_id AS referrer_id,
                     COALESCE(ap_ref.affiliate_rate, %f) AS eff_rate
-             FROM `{$prefix}cashback_transactions` t
-             INNER JOIN `{$prefix}cashback_affiliate_profiles` ap
+             FROM %i t
+             INNER JOIN %i ap
                      ON ap.user_id = t.user_id
                     AND ap.referred_by_user_id IS NOT NULL
-             INNER JOIN `{$prefix}cashback_affiliate_profiles` ap_ref
+             INNER JOIN %i ap_ref
                      ON ap_ref.user_id = ap.referred_by_user_id
-                    AND ap_ref.affiliate_status = 'active'
-             INNER JOIN `{$prefix}cashback_user_profile` up
+                    AND ap_ref.affiliate_status = \'active\'
+             INNER JOIN %i up
                      ON up.user_id = ap.referred_by_user_id
-                    AND up.status != 'banned'
-             WHERE t.order_status IN ('waiting','completed','hold','declined')
+                    AND up.status != \'banned\'
+             WHERE t.order_status IN (\'waiting\',\'completed\',\'hold\',\'declined\')
                AND t.cashback > 0
                AND NOT EXISTS (
-                   SELECT 1 FROM `{$prefix}cashback_affiliate_accruals` aa
+                   SELECT 1 FROM %i aa
                    WHERE aa.transaction_id = t.id AND aa.referrer_id = ap.referred_by_user_id
                )
-             LIMIT 500",
-            $global_rate
+             LIMIT 500',
+            $global_rate,
+            $tx_table,
+            $profiles_table,
+            $profiles_table,
+            $user_profile_table,
+            $accruals_table
         ), ARRAY_A);
 
         // Создаём pending/declined accruals
@@ -788,10 +817,11 @@ class Cashback_Affiliate_Service {
             $idempotency_key = 'aff_accrual_' . $row['tx_id'];
 
             $inserted = $wpdb->query($wpdb->prepare(
-                "INSERT IGNORE INTO `{$prefix}cashback_affiliate_accruals`
+                'INSERT IGNORE INTO %i
                      (reference_id, referrer_id, referred_user_id, transaction_id,
                       cashback_amount, commission_rate, commission_amount, status, idempotency_key)
-                 VALUES (%s, %d, %d, %d, %s, %s, %s, %s, %s)",
+                 VALUES (%s, %d, %d, %d, %s, %s, %s, %s, %s)',
+                $accruals_table,
                 $reference_id,
                 (int) $row['referrer_id'],
                 (int) $row['user_id'],
@@ -810,32 +840,38 @@ class Cashback_Affiliate_Service {
 
         // 2. Синхронизация статусов: pending ↔ declined
         // pending → declined (транзакция была отклонена)
-        $updated_declined   = $wpdb->query(
-            "UPDATE `{$prefix}cashback_affiliate_accruals` aa
-             INNER JOIN `{$prefix}cashback_transactions` t ON t.id = aa.transaction_id
-             SET aa.status = 'declined'
-             WHERE aa.status = 'pending' AND t.order_status = 'declined'"
-        );
+        $updated_declined   = $wpdb->query($wpdb->prepare(
+            'UPDATE %i aa
+             INNER JOIN %i t ON t.id = aa.transaction_id
+             SET aa.status = \'declined\'
+             WHERE aa.status = \'pending\' AND t.order_status = \'declined\'',
+            $accruals_table,
+            $tx_table
+        ));
         $result['updated'] += (int) $updated_declined;
 
         // declined → pending (транзакция вернулась в активный статус после апелляции)
-        $updated_pending    = $wpdb->query(
-            "UPDATE `{$prefix}cashback_affiliate_accruals` aa
-             INNER JOIN `{$prefix}cashback_transactions` t ON t.id = aa.transaction_id
-             SET aa.status = 'pending'
-             WHERE aa.status = 'declined' AND t.order_status IN ('waiting','completed','hold')"
-        );
+        $updated_pending    = $wpdb->query($wpdb->prepare(
+            'UPDATE %i aa
+             INNER JOIN %i t ON t.id = aa.transaction_id
+             SET aa.status = \'pending\'
+             WHERE aa.status = \'declined\' AND t.order_status IN (\'waiting\',\'completed\',\'hold\')',
+            $accruals_table,
+            $tx_table
+        ));
         $result['updated'] += (int) $updated_pending;
 
         // 3. Обновляем суммы если comission транзакции изменилась (пересчёт кешбэка триггером)
-        $wpdb->query(
-            "UPDATE `{$prefix}cashback_affiliate_accruals` aa
-             INNER JOIN `{$prefix}cashback_transactions` t ON t.id = aa.transaction_id
+        $wpdb->query($wpdb->prepare(
+            'UPDATE %i aa
+             INNER JOIN %i t ON t.id = aa.transaction_id
              SET aa.cashback_amount = t.cashback,
                  aa.commission_amount = ROUND(t.cashback * aa.commission_rate / 100, 2)
-             WHERE aa.status IN ('pending','declined')
-               AND ABS(aa.cashback_amount - t.cashback) >= 0.01"
-        );
+             WHERE aa.status IN (\'pending\',\'declined\')
+               AND ABS(aa.cashback_amount - t.cashback) >= 0.01',
+            $accruals_table,
+            $tx_table
+        ));
 
         return $result;
     }
@@ -854,16 +890,21 @@ class Cashback_Affiliate_Service {
      */
     public static function freeze_affiliate_balance( int $user_id, int $admin_id ): bool {
         global $wpdb;
-        $prefix = $wpdb->prefix;
+        $prefix          = $wpdb->prefix;
+        $profiles_table  = $prefix . 'cashback_affiliate_profiles';
+        $ledger_table    = $prefix . 'cashback_balance_ledger';
+        $balance_table   = $prefix . 'cashback_user_balance';
+        $accruals_table  = $prefix . 'cashback_affiliate_accruals';
 
         try {
             $wpdb->query('START TRANSACTION');
 
             // Lock affiliate profile
             $profile = $wpdb->get_row($wpdb->prepare(
-                "SELECT affiliate_status, affiliate_frozen_amount
-                 FROM `{$prefix}cashback_affiliate_profiles`
-                 WHERE user_id = %d FOR UPDATE",
+                'SELECT affiliate_status, affiliate_frozen_amount
+                 FROM %i
+                 WHERE user_id = %d FOR UPDATE',
+                $profiles_table,
                 $user_id
             ), ARRAY_A);
 
@@ -874,19 +915,21 @@ class Cashback_Affiliate_Service {
 
             // Считаем net affiliate balance из единого леджера
             $net_affiliate = $wpdb->get_var($wpdb->prepare(
-                "SELECT COALESCE(SUM(amount), 0)
-                 FROM `{$prefix}cashback_balance_ledger`
+                'SELECT COALESCE(SUM(amount), 0)
+                 FROM %i
                  WHERE user_id = %d
-                   AND type IN ('affiliate_accrual','affiliate_reversal','affiliate_freeze','affiliate_unfreeze')",
+                   AND type IN (\'affiliate_accrual\',\'affiliate_reversal\',\'affiliate_freeze\',\'affiliate_unfreeze\')',
+                $ledger_table,
                 $user_id
             ));
             $net_affiliate = (float) $net_affiliate;
 
             // Lock balance row
             $balance = $wpdb->get_row($wpdb->prepare(
-                "SELECT available_balance, frozen_balance
-                 FROM `{$prefix}cashback_user_balance`
-                 WHERE user_id = %d FOR UPDATE",
+                'SELECT available_balance, frozen_balance
+                 FROM %i
+                 WHERE user_id = %d FOR UPDATE',
+                $balance_table,
                 $user_id
             ), ARRAY_A);
 
@@ -903,10 +946,11 @@ class Cashback_Affiliate_Service {
 
                 // Запись в единый balance ledger
                 $wpdb->query($wpdb->prepare(
-                    "INSERT INTO `{$prefix}cashback_balance_ledger`
+                    'INSERT INTO %i
                          (user_id, type, amount, reference_type, idempotency_key)
-                     VALUES (%d, 'affiliate_freeze', %s, 'affiliate_freeze', %s)
-                     ON DUPLICATE KEY UPDATE id = id",
+                     VALUES (%d, \'affiliate_freeze\', %s, \'affiliate_freeze\', %s)
+                     ON DUPLICATE KEY UPDATE id = id',
+                    $ledger_table,
                     $user_id,
                     number_format(-$freeze_amount, 2, '.', ''),
                     $idemp_key
@@ -914,11 +958,12 @@ class Cashback_Affiliate_Service {
 
                 // Обновляем balance cache
                 $wpdb->query($wpdb->prepare(
-                    "UPDATE `{$prefix}cashback_user_balance`
+                    'UPDATE %i
                      SET available_balance = available_balance - CAST(%s AS DECIMAL(18,2)),
                          frozen_balance    = frozen_balance + CAST(%s AS DECIMAL(18,2)),
                          version = version + 1
-                     WHERE user_id = %d AND available_balance >= CAST(%s AS DECIMAL(18,2))",
+                     WHERE user_id = %d AND available_balance >= CAST(%s AS DECIMAL(18,2))',
+                    $balance_table,
                     number_format($freeze_amount, 2, '.', ''),
                     number_format($freeze_amount, 2, '.', ''),
                     $user_id,
@@ -928,20 +973,22 @@ class Cashback_Affiliate_Service {
 
             // Обновляем affiliate profile
             $wpdb->query($wpdb->prepare(
-                "UPDATE `{$prefix}cashback_affiliate_profiles`
-                 SET affiliate_status = 'disabled',
+                'UPDATE %i
+                 SET affiliate_status = \'disabled\',
                      affiliate_frozen_amount = %s,
                      disabled_at = NOW()
-                 WHERE user_id = %d",
+                 WHERE user_id = %d',
+                $profiles_table,
                 number_format($freeze_amount, 2, '.', ''),
                 $user_id
             ));
 
             // Помечаем все available accruals как frozen
             $wpdb->query($wpdb->prepare(
-                "UPDATE `{$prefix}cashback_affiliate_accruals`
-                 SET status = 'frozen'
-                 WHERE referrer_id = %d AND status = 'available'",
+                'UPDATE %i
+                 SET status = \'frozen\'
+                 WHERE referrer_id = %d AND status = \'available\'',
+                $accruals_table,
                 $user_id
             ));
 
@@ -975,16 +1022,22 @@ class Cashback_Affiliate_Service {
      */
     public static function unfreeze_affiliate_balance( int $user_id, int $admin_id ): bool {
         global $wpdb;
-        $prefix = $wpdb->prefix;
+        $prefix             = $wpdb->prefix;
+        $profiles_table     = $prefix . 'cashback_affiliate_profiles';
+        $user_profile_table = $prefix . 'cashback_user_profile';
+        $balance_table      = $prefix . 'cashback_user_balance';
+        $ledger_table       = $prefix . 'cashback_balance_ledger';
+        $accruals_table     = $prefix . 'cashback_affiliate_accruals';
 
         try {
             $wpdb->query('START TRANSACTION');
 
             // Lock affiliate profile
             $profile = $wpdb->get_row($wpdb->prepare(
-                "SELECT affiliate_status, affiliate_frozen_amount
-                 FROM `{$prefix}cashback_affiliate_profiles`
-                 WHERE user_id = %d FOR UPDATE",
+                'SELECT affiliate_status, affiliate_frozen_amount
+                 FROM %i
+                 WHERE user_id = %d FOR UPDATE',
+                $profiles_table,
                 $user_id
             ), ARRAY_A);
 
@@ -995,8 +1048,9 @@ class Cashback_Affiliate_Service {
 
             // Проверяем что пользователь не забанен
             $user_status = $wpdb->get_var($wpdb->prepare(
-                "SELECT status FROM `{$prefix}cashback_user_profile`
-                 WHERE user_id = %d LIMIT 1",
+                'SELECT status FROM %i
+                 WHERE user_id = %d LIMIT 1',
+                $user_profile_table,
                 $user_id
             ));
             if ($user_status === 'banned') {
@@ -1009,8 +1063,9 @@ class Cashback_Affiliate_Service {
             if ($frozen_amount > 0) {
                 // Lock balance
                 $balance = $wpdb->get_row($wpdb->prepare(
-                    "SELECT frozen_balance FROM `{$prefix}cashback_user_balance`
-                     WHERE user_id = %d FOR UPDATE",
+                    'SELECT frozen_balance FROM %i
+                     WHERE user_id = %d FOR UPDATE',
+                    $balance_table,
                     $user_id
                 ), ARRAY_A);
 
@@ -1022,10 +1077,11 @@ class Cashback_Affiliate_Service {
 
                     // Запись в единый balance ledger
                     $wpdb->query($wpdb->prepare(
-                        "INSERT INTO `{$prefix}cashback_balance_ledger`
+                        'INSERT INTO %i
                              (user_id, type, amount, reference_type, idempotency_key)
-                         VALUES (%d, 'affiliate_unfreeze', %s, 'affiliate_unfreeze', %s)
-                         ON DUPLICATE KEY UPDATE id = id",
+                         VALUES (%d, \'affiliate_unfreeze\', %s, \'affiliate_unfreeze\', %s)
+                         ON DUPLICATE KEY UPDATE id = id',
+                        $ledger_table,
                         $user_id,
                         number_format($unfreeze_amount, 2, '.', ''),
                         $idemp_key
@@ -1033,11 +1089,12 @@ class Cashback_Affiliate_Service {
 
                     // Обновляем balance
                     $wpdb->query($wpdb->prepare(
-                        "UPDATE `{$prefix}cashback_user_balance`
+                        'UPDATE %i
                          SET frozen_balance    = frozen_balance - CAST(%s AS DECIMAL(18,2)),
                              available_balance = available_balance + CAST(%s AS DECIMAL(18,2)),
                              version = version + 1
-                         WHERE user_id = %d AND frozen_balance >= CAST(%s AS DECIMAL(18,2))",
+                         WHERE user_id = %d AND frozen_balance >= CAST(%s AS DECIMAL(18,2))',
+                        $balance_table,
                         number_format($unfreeze_amount, 2, '.', ''),
                         number_format($unfreeze_amount, 2, '.', ''),
                         $user_id,
@@ -1048,19 +1105,21 @@ class Cashback_Affiliate_Service {
 
             // Обновляем affiliate profile
             $wpdb->query($wpdb->prepare(
-                "UPDATE `{$prefix}cashback_affiliate_profiles`
-                 SET affiliate_status = 'active',
+                'UPDATE %i
+                 SET affiliate_status = \'active\',
                      affiliate_frozen_amount = 0.00,
                      disabled_at = NULL
-                 WHERE user_id = %d",
+                 WHERE user_id = %d',
+                $profiles_table,
                 $user_id
             ));
 
             // Помечаем frozen accruals обратно как available
             $wpdb->query($wpdb->prepare(
-                "UPDATE `{$prefix}cashback_affiliate_accruals`
-                 SET status = 'available'
-                 WHERE referrer_id = %d AND status = 'frozen'",
+                'UPDATE %i
+                 SET status = \'available\'
+                 WHERE referrer_id = %d AND status = \'frozen\'',
+                $accruals_table,
                 $user_id
             ));
 
@@ -1091,12 +1150,16 @@ class Cashback_Affiliate_Service {
      */
     public static function re_freeze_after_unban( int $user_id ): void {
         global $wpdb;
-        $prefix = $wpdb->prefix;
+        $prefix         = $wpdb->prefix;
+        $profiles_table = $prefix . 'cashback_affiliate_profiles';
+        $balance_table  = $prefix . 'cashback_user_balance';
+        $ledger_table   = $prefix . 'cashback_balance_ledger';
 
         $profile = $wpdb->get_row($wpdb->prepare(
-            "SELECT affiliate_status, affiliate_frozen_amount
-             FROM `{$prefix}cashback_affiliate_profiles`
-             WHERE user_id = %d LIMIT 1",
+            'SELECT affiliate_status, affiliate_frozen_amount
+             FROM %i
+             WHERE user_id = %d LIMIT 1',
+            $profiles_table,
             $user_id
         ), ARRAY_A);
 
@@ -1112,8 +1175,9 @@ class Cashback_Affiliate_Service {
         // После разбана всё frozen ушло в available через триггер.
         // Нужно вернуть affiliate-часть обратно в frozen.
         $balance = $wpdb->get_row($wpdb->prepare(
-            "SELECT available_balance FROM `{$prefix}cashback_user_balance`
-             WHERE user_id = %d LIMIT 1",
+            'SELECT available_balance FROM %i
+             WHERE user_id = %d LIMIT 1',
+            $balance_table,
             $user_id
         ), ARRAY_A);
 
@@ -1124,21 +1188,23 @@ class Cashback_Affiliate_Service {
             $idemp_key = 'aff_refreeze_' . $user_id . '_' . time();
 
             $wpdb->query($wpdb->prepare(
-                "INSERT INTO `{$prefix}cashback_balance_ledger`
+                'INSERT INTO %i
                      (user_id, type, amount, reference_type, idempotency_key)
-                 VALUES (%d, 'affiliate_freeze', %s, 'affiliate_freeze', %s)
-                 ON DUPLICATE KEY UPDATE id = id",
+                 VALUES (%d, \'affiliate_freeze\', %s, \'affiliate_freeze\', %s)
+                 ON DUPLICATE KEY UPDATE id = id',
+                $ledger_table,
                 $user_id,
                 number_format(-$re_freeze, 2, '.', ''),
                 $idemp_key
             ));
 
             $wpdb->query($wpdb->prepare(
-                "UPDATE `{$prefix}cashback_user_balance`
+                'UPDATE %i
                  SET available_balance = available_balance - CAST(%s AS DECIMAL(18,2)),
                      frozen_balance    = frozen_balance + CAST(%s AS DECIMAL(18,2)),
                      version = version + 1
-                 WHERE user_id = %d AND available_balance >= CAST(%s AS DECIMAL(18,2))",
+                 WHERE user_id = %d AND available_balance >= CAST(%s AS DECIMAL(18,2))',
+                $balance_table,
                 number_format($re_freeze, 2, '.', ''),
                 number_format($re_freeze, 2, '.', ''),
                 $user_id,
@@ -1157,10 +1223,13 @@ class Cashback_Affiliate_Service {
     public static function get_effective_rate( int $referrer_id ): string {
         global $wpdb;
 
+        $profiles_table = $wpdb->prefix . 'cashback_affiliate_profiles';
+
         $rate = $wpdb->get_var($wpdb->prepare(
-            "SELECT affiliate_rate
-             FROM `{$wpdb->prefix}cashback_affiliate_profiles`
-             WHERE user_id = %d LIMIT 1",
+            'SELECT affiliate_rate
+             FROM %i
+             WHERE user_id = %d LIMIT 1',
+            $profiles_table,
             $referrer_id
         ));
 
@@ -1190,47 +1259,55 @@ class Cashback_Affiliate_Service {
      */
     public static function get_referrer_stats( int $user_id ): array {
         global $wpdb;
-        $prefix = $wpdb->prefix;
+        $prefix         = $wpdb->prefix;
+        $profiles_table = $prefix . 'cashback_affiliate_profiles';
+        $accruals_table = $prefix . 'cashback_affiliate_accruals';
 
         $total_referrals = (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*)
-             FROM `{$prefix}cashback_affiliate_profiles`
-             WHERE referred_by_user_id = %d",
+            'SELECT COUNT(*)
+             FROM %i
+             WHERE referred_by_user_id = %d',
+            $profiles_table,
             $user_id
         ));
 
         $total_earned = $wpdb->get_var($wpdb->prepare(
-            "SELECT COALESCE(SUM(commission_amount), 0)
-             FROM `{$prefix}cashback_affiliate_accruals`
-             WHERE referrer_id = %d AND status IN ('available','frozen','paid')",
+            'SELECT COALESCE(SUM(commission_amount), 0)
+             FROM %i
+             WHERE referrer_id = %d AND status IN (\'available\',\'frozen\',\'paid\')',
+            $accruals_table,
             $user_id
         )) ?: '0.00';
 
         $total_available = $wpdb->get_var($wpdb->prepare(
-            "SELECT COALESCE(SUM(commission_amount), 0)
-             FROM `{$prefix}cashback_affiliate_accruals`
-             WHERE referrer_id = %d AND status = 'available'",
+            'SELECT COALESCE(SUM(commission_amount), 0)
+             FROM %i
+             WHERE referrer_id = %d AND status = \'available\'',
+            $accruals_table,
             $user_id
         )) ?: '0.00';
 
         $total_frozen = $wpdb->get_var($wpdb->prepare(
-            "SELECT COALESCE(SUM(commission_amount), 0)
-             FROM `{$prefix}cashback_affiliate_accruals`
-             WHERE referrer_id = %d AND status = 'frozen'",
+            'SELECT COALESCE(SUM(commission_amount), 0)
+             FROM %i
+             WHERE referrer_id = %d AND status = \'frozen\'',
+            $accruals_table,
             $user_id
         )) ?: '0.00';
 
         $total_pending = $wpdb->get_var($wpdb->prepare(
-            "SELECT COALESCE(SUM(commission_amount), 0)
-             FROM `{$prefix}cashback_affiliate_accruals`
-             WHERE referrer_id = %d AND status = 'pending'",
+            'SELECT COALESCE(SUM(commission_amount), 0)
+             FROM %i
+             WHERE referrer_id = %d AND status = \'pending\'',
+            $accruals_table,
             $user_id
         )) ?: '0.00';
 
         $total_declined = $wpdb->get_var($wpdb->prepare(
-            "SELECT COALESCE(SUM(commission_amount), 0)
-             FROM `{$prefix}cashback_affiliate_accruals`
-             WHERE referrer_id = %d AND status = 'declined'",
+            'SELECT COALESCE(SUM(commission_amount), 0)
+             FROM %i
+             WHERE referrer_id = %d AND status = \'declined\'',
+            $accruals_table,
             $user_id
         )) ?: '0.00';
 
