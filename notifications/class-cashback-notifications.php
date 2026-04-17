@@ -561,8 +561,10 @@ ID заявки: %4$d
     public function on_claim_status_changed( int $claim_id, string $old_status, string $new_status, string $note, string $actor_type, ?int $actor_id ): void {
         global $wpdb;
 
-        $claim = $wpdb->get_row($wpdb->prepare(
-            "SELECT user_id FROM `{$wpdb->prefix}cashback_claims` WHERE claim_id = %d",
+        $claims_table = $wpdb->prefix . 'cashback_claims';
+        $claim        = $wpdb->get_row($wpdb->prepare(
+            'SELECT user_id FROM %i WHERE claim_id = %d',
+            $claims_table,
             $claim_id
         ), ARRAY_A);
 
@@ -750,16 +752,16 @@ ID заявки: %4$d
         $tx_table    = $wpdb->prefix . 'cashback_transactions';
 
         // Берём до 50 необработанных записей
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names from $wpdb->prefix; static SELECT без user-input.
-        $items = $wpdb->get_results(
-            "SELECT q.*, t.partner, t.offer_name, t.sum_order, t.comission, t.cashback
-             FROM `{$queue_table}` q
-             LEFT JOIN `{$tx_table}` t ON t.id = q.transaction_id
+        $items = $wpdb->get_results($wpdb->prepare(
+            'SELECT q.*, t.partner, t.offer_name, t.sum_order, t.comission, t.cashback
+             FROM %i q
+             LEFT JOIN %i t ON t.id = q.transaction_id
              WHERE q.processed = 0
              ORDER BY q.created_at ASC
-             LIMIT 50"
-        );
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+             LIMIT 50',
+            $queue_table,
+            $tx_table
+        ));
 
         if (empty($items)) {
             return;
@@ -812,19 +814,18 @@ ID заявки: %4$d
         // Помечаем обработанными
         if (!empty($processed_ids)) {
             $placeholders = implode(',', array_fill(0, count($processed_ids), '%d'));
-            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; $placeholders — '%d'-список фиксированной длины = count($processed_ids), id-шники биндятся через $wpdb->prepare().
             $wpdb->query($wpdb->prepare(
-                "UPDATE `{$queue_table}` SET processed = 1 WHERE id IN ({$placeholders})",
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is a '%d'-list of fixed length, IDs bound via $wpdb->prepare().
+                "UPDATE %i SET processed = 1 WHERE id IN ({$placeholders})",
+                $queue_table,
                 ...$processed_ids
             ));
-            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         }
 
         // Очистка старых записей (старше 7 дней)
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix; статичный DELETE без user-input.
-        $wpdb->query(
-            "DELETE FROM `{$queue_table}` WHERE processed = 1 AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY) LIMIT 500"
-        );
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $wpdb->query($wpdb->prepare(
+            'DELETE FROM %i WHERE processed = 1 AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY) LIMIT 500',
+            $queue_table
+        ));
     }
 }
