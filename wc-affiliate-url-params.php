@@ -109,12 +109,13 @@ class WC_Affiliate_URL_Params {
         $params_table   = $wpdb->prefix . 'cashback_affiliate_network_params';
 
         // Получаем все сети
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $networks_table from $wpdb->prefix; no user input.
         $networks = $wpdb->get_results(
-            "SELECT id, name, is_active FROM `{$networks_table}` ORDER BY sort_order ASC, name ASC",
+            $wpdb->prepare(
+                'SELECT id, name, is_active FROM %i ORDER BY sort_order ASC, name ASC',
+                $networks_table
+            ),
             ARRAY_A
         );
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         // Текущая выбранная сеть
         $selected_network_id = (int) get_post_meta($post->ID, '_affiliate_network_id', true);
@@ -133,15 +134,14 @@ class WC_Affiliate_URL_Params {
         // Параметры выбранной сети (для начальной отрисовки)
         $network_params = array();
         if ($selected_network_id > 0) {
-            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $params_table from $wpdb->prefix; network_id bound via prepare().
             $network_params = $wpdb->get_results(
                 $wpdb->prepare(
-                    "SELECT id, param_name, param_type FROM {$params_table} WHERE network_id = %d ORDER BY id ASC",
+                    'SELECT id, param_name, param_type FROM %i WHERE network_id = %d ORDER BY id ASC',
+                    $params_table,
                     $selected_network_id
                 ),
                 ARRAY_A
             ) ?: array();
-            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         }
 
         echo '<div class="options_group show_if_external">';
@@ -527,12 +527,11 @@ class WC_Affiliate_URL_Params {
         // Проверяем активность выбранной сети
         global $wpdb;
         $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $networks_table from $wpdb->prefix; id bound via prepare().
         $is_active      = (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT is_active FROM {$networks_table} WHERE id = %d",
+            'SELECT is_active FROM %i WHERE id = %d',
+            $networks_table,
             $network_id
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if ($is_active === 0) {
             // Переводим товар в статус "На утверждении"
@@ -653,9 +652,9 @@ class WC_Affiliate_URL_Params {
 
         // Проверяем активность сети
         $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $networks_table/$params_table from $wpdb->prefix; network_id bound via prepare().
         $is_active      = (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT is_active FROM {$networks_table} WHERE id = %d",
+            'SELECT is_active FROM %i WHERE id = %d',
+            $networks_table,
             $network_id
         ));
 
@@ -665,10 +664,10 @@ class WC_Affiliate_URL_Params {
 
         $params_table = $wpdb->prefix . 'cashback_affiliate_network_params';
         $rows         = $wpdb->get_results($wpdb->prepare(
-            "SELECT param_name, param_type FROM {$params_table} WHERE network_id = %d ORDER BY id ASC",
+            'SELECT param_name, param_type FROM %i WHERE network_id = %d ORDER BY id ASC',
+            $params_table,
             $network_id
         ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $params = array();
         if (!empty($rows)) {
@@ -946,12 +945,12 @@ class WC_Affiliate_URL_Params {
         if (!is_user_logged_in()) {
             global $wpdb;
             $table = $wpdb->prefix . 'cashback_click_log';
-            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery -- $table from $wpdb->prefix; click_id bound via prepare().
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table, no cache needed for single redirect lookup.
             $row = $wpdb->get_var($wpdb->prepare(
-                "SELECT affiliate_url FROM `{$table}` WHERE click_id = %s LIMIT 1",
+                'SELECT affiliate_url FROM %i WHERE click_id = %s LIMIT 1',
+                $table,
                 $click_id
             ));
-            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery
             $url = ( $row && in_array(parse_url($row, PHP_URL_SCHEME), array( 'http', 'https' ), true) )
                 ? $row
                 : home_url();
@@ -963,12 +962,12 @@ class WC_Affiliate_URL_Params {
 
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_click_log';
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery -- $table from $wpdb->prefix; click_id bound via prepare().
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table, no cache needed for activation page lookup.
         $click = $wpdb->get_row($wpdb->prepare(
-            "SELECT affiliate_url, product_id FROM `{$table}` WHERE click_id = %s LIMIT 1",
+            'SELECT affiliate_url, product_id FROM %i WHERE click_id = %s LIMIT 1',
+            $table,
             $click_id
         ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery
 
         $affiliate_url = '';
         if (!empty($click['affiliate_url'])) {
@@ -1334,12 +1333,11 @@ HTML;
         }
 
         $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $networks_table from $wpdb->prefix; id bound via prepare().
         $slug           = $wpdb->get_var($wpdb->prepare(
-            "SELECT slug FROM {$networks_table} WHERE id = %d AND is_active = 1",
+            'SELECT slug FROM %i WHERE id = %d AND is_active = 1',
+            $networks_table,
             $network_id
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         return $slug ?: null;
     }
@@ -1527,10 +1525,10 @@ HTML;
         // Время в UTC с микросекундами
         $created_at = ( new \DateTimeImmutable('now', new \DateTimeZone('UTC')) )->format('Y-m-d H:i:s.u');
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table from $wpdb->prefix; all values bound via prepare().
         $result = $wpdb->query($wpdb->prepare(
-            "INSERT INTO `{$table}` (click_id, user_id, session_id, product_id, cpa_network, affiliate_url, ip_address, user_agent, referer, spam_click, created_at)
-             VALUES (%s, %d, %s, %d, %s, %s, %s, %s, %s, %d, %s)",
+            'INSERT INTO %i (click_id, user_id, session_id, product_id, cpa_network, affiliate_url, ip_address, user_agent, referer, spam_click, created_at)
+             VALUES (%s, %d, %s, %d, %s, %s, %s, %s, %s, %d, %s)',
+            $table,
             $data['click_id'],
             absint($data['user_id']),
             $data['session_id'],
@@ -1543,7 +1541,6 @@ HTML;
             absint($data['spam_click'] ?? 0),
             $created_at
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if ($result === false) {
             $logger = wc_get_logger();
@@ -1574,39 +1571,40 @@ HTML;
 
         $table = $wpdb->prefix . 'cashback_click_log';
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table from $wpdb->prefix; hours bound via prepare().
         // Топ IP по спам-кликам
         $top_ips = $wpdb->get_results($wpdb->prepare(
-            "SELECT ip_address, COUNT(*) as total, SUM(spam_click) as spam_count
-             FROM `{$table}`
+            'SELECT ip_address, COUNT(*) as total, SUM(spam_click) as spam_count
+             FROM %i
              WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d HOUR)
              GROUP BY ip_address
              HAVING spam_count > 0
              ORDER BY spam_count DESC
-             LIMIT 20",
+             LIMIT 20',
+            $table,
             $hours
         ), ARRAY_A);
 
         // Топ товаров по спам-кликам
         $top_products = $wpdb->get_results($wpdb->prepare(
-            "SELECT product_id, COUNT(*) as total, SUM(spam_click) as spam_count
-             FROM `{$table}`
+            'SELECT product_id, COUNT(*) as total, SUM(spam_click) as spam_count
+             FROM %i
              WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d HOUR)
              GROUP BY product_id
              HAVING spam_count > 0
              ORDER BY spam_count DESC
-             LIMIT 20",
+             LIMIT 20',
+            $table,
             $hours
         ), ARRAY_A);
 
         // Общие цифры
         $totals = $wpdb->get_row($wpdb->prepare(
-            "SELECT COUNT(*) as total_clicks, SUM(spam_click) as total_spam
-             FROM `{$table}`
-             WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d HOUR)",
+            'SELECT COUNT(*) as total_clicks, SUM(spam_click) as total_spam
+             FROM %i
+             WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d HOUR)',
+            $table,
             $hours
         ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         return array(
             'period_hours' => $hours,
