@@ -104,30 +104,30 @@ class Cashback_Affiliate_Antifraud {
         global $wpdb;
         $prefix = $wpdb->prefix;
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имя таблицы из $wpdb->prefix, user_id биндится через prepare().
+        $profile_table = $prefix . 'cashback_user_profile';
         $status = $wpdb->get_var($wpdb->prepare(
             "SELECT p.status
-             FROM `{$prefix}cashback_user_profile` p
+             FROM %i p
              WHERE p.user_id = %d
              LIMIT 1",
+            $profile_table,
             $referrer_id
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$status || $status === 'banned' || $status === 'deleted') {
             return false;
         }
 
         // Проверяем affiliate_status
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имя таблицы из $wpdb->prefix, user_id биндится через prepare().
+        $aff_table = $prefix . 'cashback_affiliate_profiles';
         $aff_status = $wpdb->get_var($wpdb->prepare(
             "SELECT affiliate_status
-             FROM `{$prefix}cashback_affiliate_profiles`
+             FROM %i
              WHERE user_id = %d
              LIMIT 1",
+            $aff_table,
             $referrer_id
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         // Если профиля нет — реферер валиден (профиль создастся)
         // Если disabled — не принимаем реферала
@@ -144,11 +144,13 @@ class Cashback_Affiliate_Antifraud {
     public static function already_has_referrer( int $user_id ): bool {
         global $wpdb;
 
+        $aff_table = $wpdb->prefix . 'cashback_affiliate_profiles';
         $referred_by = $wpdb->get_var($wpdb->prepare(
             "SELECT referred_by_user_id
-             FROM `{$wpdb->prefix}cashback_affiliate_profiles`
+             FROM %i
              WHERE user_id = %d AND referred_by_user_id IS NOT NULL
              LIMIT 1",
+            $aff_table,
             $user_id
         ));
 
@@ -164,36 +166,36 @@ class Cashback_Affiliate_Antifraud {
         $prefix = $wpdb->prefix;
 
         // Проверяем по fingerprints реферера за последние 30 дней
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имя таблицы из $wpdb->prefix, значения биндятся через prepare().
+        $fp_table = $prefix . 'cashback_user_fingerprints';
         $fp_match = $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*)
-             FROM `{$prefix}cashback_user_fingerprints`
+             FROM %i
              WHERE user_id = %d
                AND ip_address = %s
                AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
              LIMIT 1",
+            $fp_table,
             $referrer_id,
             $referred_ip
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if ((int) $fp_match > 0) {
             return true;
         }
 
         // Проверяем по кликам реферера (cashback_click_log)
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имя таблицы из $wpdb->prefix, значения биндятся через prepare().
+        $click_table = $prefix . 'cashback_click_log';
         $click_match = $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*)
-             FROM `{$prefix}cashback_click_log`
+             FROM %i
              WHERE user_id = %d
                AND ip_address = %s
                AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
              LIMIT 1",
+            $click_table,
             $referrer_id,
             $referred_ip
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         return (int) $click_match > 0;
     }
@@ -204,11 +206,13 @@ class Cashback_Affiliate_Antifraud {
     public static function is_suspicious_timing( string $click_id ): bool {
         global $wpdb;
 
+        $clicks_table = $wpdb->prefix . 'cashback_affiliate_clicks';
         $click_time = $wpdb->get_var($wpdb->prepare(
             "SELECT created_at
-             FROM `{$wpdb->prefix}cashback_affiliate_clicks`
+             FROM %i
              WHERE click_id = %s
              LIMIT 1",
+            $clicks_table,
             $click_id
         ));
 
