@@ -24,8 +24,10 @@ class Cashback_Trigger_Fallbacks {
             $rate = 60.00;
 
             if (!empty($data['user_id'])) {
+                $profile_table = $wpdb->prefix . 'cashback_user_profile';
                 $user_rate = $wpdb->get_var($wpdb->prepare(
-                    "SELECT cashback_rate FROM {$wpdb->prefix}cashback_user_profile WHERE user_id = %d LIMIT 1",
+                    'SELECT cashback_rate FROM %i WHERE user_id = %d LIMIT 1',
+                    $profile_table,
                     (int) $data['user_id']
                 ));
                 if ($user_rate !== null) {
@@ -170,17 +172,16 @@ class Cashback_Trigger_Fallbacks {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_user_balance';
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix, safe interpolation.
         $wpdb->query($wpdb->prepare(
-            "UPDATE {$table}
+            'UPDATE %i
              SET frozen_balance = frozen_balance + available_balance + pending_balance,
                  available_balance = 0,
                  pending_balance = 0,
                  version = version + 1
-             WHERE user_id = %d AND (available_balance > 0 OR pending_balance > 0)",
+             WHERE user_id = %d AND (available_balance > 0 OR pending_balance > 0)',
+            $table,
             $user_id
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
     }
 
     /**
@@ -193,16 +194,15 @@ class Cashback_Trigger_Fallbacks {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_user_balance';
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix, safe interpolation.
         $wpdb->query($wpdb->prepare(
-            "UPDATE {$table}
+            'UPDATE %i
              SET available_balance = available_balance + frozen_balance,
                  frozen_balance = 0,
                  version = version + 1
-             WHERE user_id = %d AND frozen_balance > 0",
+             WHERE user_id = %d AND frozen_balance > 0',
+            $table,
             $user_id
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
     }
 
     /**

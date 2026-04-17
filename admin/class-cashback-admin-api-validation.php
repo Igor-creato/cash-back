@@ -949,8 +949,10 @@ echo 'style="display:none"';}
             }
 
             // Инвалидируем кеш токена, чтобы новый scope/credentials вступили в силу
+            $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
             $slug = $wpdb->get_var($wpdb->prepare(
-                "SELECT slug FROM {$wpdb->prefix}cashback_affiliate_networks WHERE id = %d",
+                'SELECT slug FROM %i WHERE id = %d',
+                $networks_table,
                 $network_id
             ));
             if ($slug) {
@@ -1036,13 +1038,17 @@ echo 'style="display:none"';}
         $days = (int) ( $_POST['days'] ?? 7 );
         $days = max(1, min($days, 90));
 
+        $sync_log_table = $wpdb->prefix . 'cashback_sync_log';
+        $tx_table       = $wpdb->prefix . 'cashback_transactions';
         $rows = $wpdb->get_results($wpdb->prepare(
-            "SELECT sl.*, ct.user_id, ct.order_number
-             FROM {$wpdb->prefix}cashback_sync_log sl
-             LEFT JOIN {$wpdb->prefix}cashback_transactions ct ON sl.transaction_id = ct.id
+            'SELECT sl.*, ct.user_id, ct.order_number
+             FROM %i sl
+             LEFT JOIN %i ct ON sl.transaction_id = ct.id
              WHERE sl.synced_at >= DATE_SUB(NOW(), INTERVAL %d DAY)
              ORDER BY sl.synced_at DESC
-             LIMIT 500",
+             LIMIT 500',
+            $sync_log_table,
+            $tx_table,
             $days
         ), ARRAY_A);
 
@@ -1069,8 +1075,10 @@ echo 'style="display:none"';}
 
         global $wpdb;
 
+        $checkpoints_table = $wpdb->prefix . 'cashback_validation_checkpoints';
         $checkpoints = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}cashback_validation_checkpoints WHERE user_id = %d",
+            'SELECT * FROM %i WHERE user_id = %d',
+            $checkpoints_table,
             $user_id
         ), ARRAY_A);
 
@@ -1115,12 +1123,11 @@ echo 'style="display:none"';}
         $table = $wpdb->prefix . ( $is_unregistered ? 'cashback_unregistered_transactions' : 'cashback_transactions' );
 
         // Проверяем существование и текущий статус.
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table построен из $wpdb->prefix + жёстко заданный суффикс, SQLi невозможен.
         $current = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, order_status, comission, applied_cashback_rate FROM {$table} WHERE id = %d",
+            'SELECT id, order_status, comission, applied_cashback_rate FROM %i WHERE id = %d',
+            $table,
             $transaction_id
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$current) {
             wp_send_json_error(array( 'message' => 'Транзакция не найдена' ));
@@ -1350,12 +1357,11 @@ echo 'style="display:none"';}
         $table = $wpdb->prefix . ( $is_unregistered ? 'cashback_unregistered_transactions' : 'cashback_transactions' );
 
         // Проверяем существование и текущий статус.
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table построен из $wpdb->prefix + жёстко заданный суффикс, SQLi невозможен.
         $current = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, order_status, comission, sum_order, applied_cashback_rate FROM {$table} WHERE id = %d",
+            'SELECT id, order_status, comission, sum_order, applied_cashback_rate FROM %i WHERE id = %d',
+            $table,
             $local_id
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if (!$current) {
             wp_send_json_error(array( 'message' => 'Транзакция не найдена' ));

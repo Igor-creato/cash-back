@@ -84,14 +84,13 @@ class Cashback_Shortcodes {
         global $wpdb;
 
         $table = $wpdb->prefix . 'cashback_user_balance';
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix, safe interpolation.
         $row = $wpdb->get_row($wpdb->prepare(
-            "SELECT available_balance, pending_balance, paid_balance
-             FROM `{$table}`
-             WHERE user_id = %d",
+            'SELECT available_balance, pending_balance, paid_balance
+             FROM %i
+             WHERE user_id = %d',
+            $table,
             $user_id
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         return array(
             'available' => (float) ( $row->available_balance ?? 0.0 ),
