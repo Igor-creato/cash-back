@@ -176,20 +176,21 @@ class Cashback_Click_Log_Admin {
         $users_table = $wpdb->users;
 
         // Подсчет записей.
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $this->table_name из $wpdb->prefix; $users_table = $wpdb->users (ядро WP); $where_clause собран из жёстко заданных условий только с %s/%d и подставляется через $wpdb->prepare().
         if (!empty($where_params)) {
-            $total_items = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM {$this->table_name} cl LEFT JOIN {$users_table} u ON cl.user_id = u.ID {$where_clause}",
-                $where_params
-            ));
+            $total_items = (int) $wpdb->get_var( $wpdb->prepare(
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_clause from allowlist conditions with %s/%d only.
+                "SELECT COUNT(*) FROM %i cl LEFT JOIN %i u ON cl.user_id = u.ID {$where_clause}",
+                array_merge( array( $this->table_name, $users_table ), $where_params )
+            ) );
         } else {
-            $total_items = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM {$this->table_name} cl LEFT JOIN {$users_table} u ON cl.user_id = u.ID WHERE %d = %d",
+            $total_items = (int) $wpdb->get_var( $wpdb->prepare(
+                'SELECT COUNT(*) FROM %i cl LEFT JOIN %i u ON cl.user_id = u.ID WHERE %d = %d',
+                $this->table_name,
+                $users_table,
                 1,
                 1
-            ));
+            ) );
         }
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $total_pages = (int) ceil($total_items / $this->per_page);
 
@@ -197,16 +198,16 @@ class Cashback_Click_Log_Admin {
         $select_query = "SELECT cl.id, cl.click_id, cl.user_id, cl.ip_address, cl.affiliate_url,
                                 cl.referer, cl.created_at, cl.spam_click,
                                 u.display_name, u.user_email
-                         FROM {$this->table_name} cl
-                         LEFT JOIN {$users_table} u ON cl.user_id = u.ID
+                         FROM %i cl
+                         LEFT JOIN %i u ON cl.user_id = u.ID
                          {$where_clause}
                          ORDER BY cl.created_at DESC
                          LIMIT %d OFFSET %d";
 
-        $query_params = array_merge($where_params, array( $this->per_page, $offset ));
+        $query_params = array_merge( array( $this->table_name, $users_table ), $where_params, array( $this->per_page, $offset ) );
 
-        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $select_query собран из контролируемых источников ($wpdb->prefix/$wpdb->users/allowlist-условий) и передан в $wpdb->prepare().
-        $rows = $wpdb->get_results($wpdb->prepare($select_query, $query_params), ARRAY_A);
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- $where_clause from allowlist conditions; $select_query in variable for readability.
+        $rows = $wpdb->get_results( $wpdb->prepare( $select_query, $query_params ), ARRAY_A );
 
         ?>
         <div class="wrap">

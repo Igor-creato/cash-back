@@ -121,44 +121,54 @@ class Cashback_Claims_Eligibility {
 
         $offset = ( $page - 1 ) * $per_page;
 
+        $click_log_table = $wpdb->prefix . 'cashback_click_log';
+        $tx_table        = $wpdb->prefix . 'cashback_transactions';
+        $claims_table    = $wpdb->prefix . 'cashback_claims';
+
         $eligible_where = "cl.user_id = %d
                AND cl.created_at >= %s
                AND cl.created_at <= %s
                AND cl.spam_click = 0
                AND NOT EXISTS (
-                   SELECT 1 FROM `{$wpdb->prefix}cashback_transactions` t
+                   SELECT 1 FROM %i t
                    WHERE t.click_id = cl.click_id AND t.user_id = cl.user_id
                    AND t.order_status IN ('waiting', 'completed', 'balance', 'hold')
                )
                AND NOT EXISTS (
-                   SELECT 1 FROM `{$wpdb->prefix}cashback_claims` c
+                   SELECT 1 FROM %i c
                    WHERE c.click_id = cl.click_id AND c.user_id = cl.user_id
                    AND c.status IN ('draft', 'submitted', 'sent_to_network', 'approved')
                )";
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names from $wpdb->prefix; $eligible_where is a static fragment with only %s/%d placeholders, values bound via $wpdb->prepare().
-        $clicks = $wpdb->get_results($wpdb->prepare(
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $eligible_where is a static SQL fragment with %d/%s/%i placeholders, values bound via $wpdb->prepare().
+        $clicks = $wpdb->get_results( $wpdb->prepare(
             "SELECT cl.click_id, cl.product_id, cl.created_at, cl.cpa_network, cl.offer_id,
                     cl.ip_address, cl.user_agent
-             FROM `{$wpdb->prefix}cashback_click_log` cl
+             FROM %i cl
              WHERE {$eligible_where}
              ORDER BY cl.created_at DESC
              LIMIT %d OFFSET %d",
+            $click_log_table,
             $user_id,
             $cutoff_min,
             $cutoff_max,
+            $tx_table,
+            $claims_table,
             $per_page,
             $offset
-        ), ARRAY_A);
+        ), ARRAY_A );
 
-        $total = (int) $wpdb->get_var($wpdb->prepare(
+        $total = (int) $wpdb->get_var( $wpdb->prepare(
             "SELECT COUNT(*)
-             FROM `{$wpdb->prefix}cashback_click_log` cl
+             FROM %i cl
              WHERE {$eligible_where}",
+            $click_log_table,
             $user_id,
             $cutoff_min,
-            $cutoff_max
-        ));
+            $cutoff_max,
+            $tx_table,
+            $claims_table
+        ) );
         // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         $pages = (int) ceil($total / $per_page);
@@ -237,39 +247,43 @@ class Cashback_Claims_Eligibility {
             $where_extra   .= ' AND c_active.claim_id IS NULL';
         }
 
+        $click_log_table = $wpdb->prefix . 'cashback_click_log';
+        $tx_table        = $wpdb->prefix . 'cashback_transactions';
+        $claims_table    = $wpdb->prefix . 'cashback_claims';
+
         $select_query = "SELECT cl.click_id, cl.product_id, cl.created_at, cl.cpa_network, cl.offer_id,
                     cl.ip_address, cl.user_agent, cl.spam_click,
                     CASE WHEN t.id IS NOT NULL THEN 1 ELSE 0 END AS has_cashback,
                     t.order_status AS cashback_status,
                     CASE WHEN c_active.claim_id IS NOT NULL THEN 1 ELSE 0 END AS has_active_claim,
                     c_active.status AS claim_status
-             FROM `{$wpdb->prefix}cashback_click_log` cl
-             LEFT JOIN `{$wpdb->prefix}cashback_transactions` t
+             FROM %i cl
+             LEFT JOIN %i t
                  ON t.click_id = cl.click_id AND t.user_id = cl.user_id
                  AND t.order_status IN ('waiting', 'completed', 'balance', 'hold')
-             LEFT JOIN `{$wpdb->prefix}cashback_claims` c_active
+             LEFT JOIN %i c_active
                  ON c_active.click_id = cl.click_id AND c_active.user_id = cl.user_id
                  AND c_active.status IN ('draft', 'submitted', 'sent_to_network', 'approved', 'declined')
              WHERE cl.user_id = %d{$where_extra}
              ORDER BY cl.created_at DESC
              LIMIT %d OFFSET %d";
 
-        $data_args = array_merge($prepare_args, array( $per_page, $offset ));
-        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $select_query assembled from static fragments with %s/%d placeholders (table names from $wpdb->prefix, IN-list via array_fill), values bound via $wpdb->prepare().
-        $clicks = $wpdb->get_results($wpdb->prepare($select_query, ...$data_args), ARRAY_A);
+        $data_args = array_merge( array( $click_log_table, $tx_table, $claims_table ), $prepare_args, array( $per_page, $offset ) );
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $select_query in variable for readability; all values bound via $wpdb->prepare().
+        $clicks = $wpdb->get_results( $wpdb->prepare( $select_query, ...$data_args ), ARRAY_A );
 
         $count_query = "SELECT COUNT(*)
-             FROM `{$wpdb->prefix}cashback_click_log` cl
-             LEFT JOIN `{$wpdb->prefix}cashback_transactions` t
+             FROM %i cl
+             LEFT JOIN %i t
                  ON t.click_id = cl.click_id AND t.user_id = cl.user_id
                  AND t.order_status IN ('waiting', 'completed', 'balance', 'hold')
-             LEFT JOIN `{$wpdb->prefix}cashback_claims` c_active
+             LEFT JOIN %i c_active
                  ON c_active.click_id = cl.click_id AND c_active.user_id = cl.user_id
                  AND c_active.status IN ('draft', 'submitted', 'sent_to_network', 'approved', 'declined')
              WHERE cl.user_id = %d{$where_extra}";
 
-        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $count_query assembled from static fragments with %s/%d placeholders (table names from $wpdb->prefix, IN-list via array_fill), values bound via $wpdb->prepare().
-        $total = (int) $wpdb->get_var($wpdb->prepare($count_query, ...$prepare_args));
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $count_query in variable for readability; all values bound via $wpdb->prepare().
+        $total = (int) $wpdb->get_var( $wpdb->prepare( $count_query, ...array_merge( array( $click_log_table, $tx_table, $claims_table ), $prepare_args ) ) );
 
         $pages = (int) ceil($total / $per_page);
 
@@ -373,13 +387,15 @@ class Cashback_Claims_Eligibility {
     private static function get_click( int $user_id, string $click_id ): ?array {
         global $wpdb;
 
-        $result = $wpdb->get_row($wpdb->prepare(
-            "SELECT click_id, user_id, product_id, offer_id, cpa_network, created_at, ip_address, user_agent
-             FROM `{$wpdb->prefix}cashback_click_log`
-             WHERE click_id = %s AND user_id = %d",
+        $click_log_table = $wpdb->prefix . 'cashback_click_log';
+        $result          = $wpdb->get_row( $wpdb->prepare(
+            'SELECT click_id, user_id, product_id, offer_id, cpa_network, created_at, ip_address, user_agent
+             FROM %i
+             WHERE click_id = %s AND user_id = %d',
+            $click_log_table,
             $click_id,
             $user_id
-        ), ARRAY_A);
+        ), ARRAY_A );
 
         return $result ?: null;
     }
@@ -420,11 +436,13 @@ class Cashback_Claims_Eligibility {
     private static function check_no_cashback( string $click_id ) {
         global $wpdb;
 
-        $has_cashback = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM `{$wpdb->prefix}cashback_transactions`
+        $tx_table     = $wpdb->prefix . 'cashback_transactions';
+        $has_cashback = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM %i
              WHERE click_id = %s AND order_status IN ('waiting', 'completed', 'balance', 'hold')",
+            $tx_table,
             $click_id
-        ));
+        ) );
 
         if ((int) $has_cashback > 0) {
             return __('Кэшбэк уже начислен или в процессе по этому переходу.', 'cashback-plugin');
@@ -443,34 +461,38 @@ class Cashback_Claims_Eligibility {
     private static function check_no_existing_claim( int $user_id, string $click_id ) {
         global $wpdb;
 
-        $has_active_claim = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM `{$wpdb->prefix}cashback_claims`
+        $claims_table     = $wpdb->prefix . 'cashback_claims';
+        $has_active_claim = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM %i
              WHERE click_id = %s AND user_id = %d AND status IN ('draft', 'submitted', 'sent_to_network')",
+            $claims_table,
             $click_id,
             $user_id
-        ));
+        ) );
 
         if ((int) $has_active_claim > 0) {
             return __('Заявка по этому переходу уже существует.', 'cashback-plugin');
         }
 
-        $has_approved_claim = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM `{$wpdb->prefix}cashback_claims`
+        $has_approved_claim = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM %i
              WHERE click_id = %s AND user_id = %d AND status = 'approved'",
+            $claims_table,
             $click_id,
             $user_id
-        ));
+        ) );
 
         if ((int) $has_approved_claim > 0) {
             return __('Заявка по этому переходу уже одобрена.', 'cashback-plugin');
         }
 
-        $has_declined_claim = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM `{$wpdb->prefix}cashback_claims`
+        $has_declined_claim = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM %i
              WHERE click_id = %s AND user_id = %d AND status = 'declined'",
+            $claims_table,
             $click_id,
             $user_id
-        ));
+        ) );
 
         if ((int) $has_declined_claim > 0) {
             return __('Заявка по этому переходу уже подана и отклонена. Повторная подача невозможна.', 'cashback-plugin');
