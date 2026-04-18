@@ -105,11 +105,11 @@ class Cashback_Affiliate_Antifraud {
         $prefix = $wpdb->prefix;
 
         $profile_table = $prefix . 'cashback_user_profile';
-        $status = $wpdb->get_var($wpdb->prepare(
-            "SELECT p.status
+        $status        = $wpdb->get_var($wpdb->prepare(
+            'SELECT p.status
              FROM %i p
              WHERE p.user_id = %d
-             LIMIT 1",
+             LIMIT 1',
             $profile_table,
             $referrer_id
         ));
@@ -119,12 +119,12 @@ class Cashback_Affiliate_Antifraud {
         }
 
         // Проверяем affiliate_status
-        $aff_table = $prefix . 'cashback_affiliate_profiles';
+        $aff_table  = $prefix . 'cashback_affiliate_profiles';
         $aff_status = $wpdb->get_var($wpdb->prepare(
-            "SELECT affiliate_status
+            'SELECT affiliate_status
              FROM %i
              WHERE user_id = %d
-             LIMIT 1",
+             LIMIT 1',
             $aff_table,
             $referrer_id
         ));
@@ -144,12 +144,12 @@ class Cashback_Affiliate_Antifraud {
     public static function already_has_referrer( int $user_id ): bool {
         global $wpdb;
 
-        $aff_table = $wpdb->prefix . 'cashback_affiliate_profiles';
+        $aff_table   = $wpdb->prefix . 'cashback_affiliate_profiles';
         $referred_by = $wpdb->get_var($wpdb->prepare(
-            "SELECT referred_by_user_id
+            'SELECT referred_by_user_id
              FROM %i
              WHERE user_id = %d AND referred_by_user_id IS NOT NULL
-             LIMIT 1",
+             LIMIT 1',
             $aff_table,
             $user_id
         ));
@@ -168,12 +168,12 @@ class Cashback_Affiliate_Antifraud {
         // Проверяем по fingerprints реферера за последние 30 дней
         $fp_table = $prefix . 'cashback_user_fingerprints';
         $fp_match = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*)
+            'SELECT COUNT(*)
              FROM %i
              WHERE user_id = %d
                AND ip_address = %s
                AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-             LIMIT 1",
+             LIMIT 1',
             $fp_table,
             $referrer_id,
             $referred_ip
@@ -186,12 +186,12 @@ class Cashback_Affiliate_Antifraud {
         // Проверяем по кликам реферера (cashback_click_log)
         $click_table = $prefix . 'cashback_click_log';
         $click_match = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*)
+            'SELECT COUNT(*)
              FROM %i
              WHERE user_id = %d
                AND ip_address = %s
                AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-             LIMIT 1",
+             LIMIT 1',
             $click_table,
             $referrer_id,
             $referred_ip
@@ -207,11 +207,11 @@ class Cashback_Affiliate_Antifraud {
         global $wpdb;
 
         $clicks_table = $wpdb->prefix . 'cashback_affiliate_clicks';
-        $click_time = $wpdb->get_var($wpdb->prepare(
-            "SELECT created_at
+        $click_time   = $wpdb->get_var($wpdb->prepare(
+            'SELECT created_at
              FROM %i
              WHERE click_id = %s
-             LIMIT 1",
+             LIMIT 1',
             $clicks_table,
             $click_id
         ));

@@ -139,13 +139,13 @@ class Cashback_Fraud_Detector {
         $alert_ids = array();
 
         $results = $wpdb->get_results($wpdb->prepare(
-            "SELECT fingerprint_hash, GROUP_CONCAT(DISTINCT user_id ORDER BY user_id) as user_ids,
+            'SELECT fingerprint_hash, GROUP_CONCAT(DISTINCT user_id ORDER BY user_id) as user_ids,
                     COUNT(DISTINCT user_id) as user_count
              FROM %i
              WHERE fingerprint_hash IS NOT NULL
                AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
              GROUP BY fingerprint_hash
-             HAVING user_count > %d",
+             HAVING user_count > %d',
             $fp_table,
             $threshold
         ));
@@ -354,11 +354,11 @@ class Cashback_Fraud_Detector {
 
         // Per day
         $daily = $wpdb->get_results($wpdb->prepare(
-            "SELECT user_id, DATE(created_at) as req_date, COUNT(*) as req_count
+            'SELECT user_id, DATE(created_at) as req_date, COUNT(*) as req_count
              FROM %i
              WHERE created_at > DATE_SUB(NOW(), INTERVAL 7 DAY)
              GROUP BY user_id, DATE(created_at)
-             HAVING req_count > %d",
+             HAVING req_count > %d',
             $req_table,
             $max_day
         ));
@@ -406,11 +406,11 @@ class Cashback_Fraud_Detector {
 
         // Per week
         $weekly = $wpdb->get_results($wpdb->prepare(
-            "SELECT user_id, YEARWEEK(created_at, 1) as req_week, COUNT(*) as req_count
+            'SELECT user_id, YEARWEEK(created_at, 1) as req_week, COUNT(*) as req_count
              FROM %i
              WHERE created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
              GROUP BY user_id, YEARWEEK(created_at, 1)
-             HAVING req_count > %d",
+             HAVING req_count > %d',
             $req_table,
             $max_week
         ));
@@ -551,12 +551,12 @@ class Cashback_Fraud_Detector {
         $alert_ids = array();
 
         $results = $wpdb->get_results($wpdb->prepare(
-            "SELECT r.user_id, u.user_registered, r.id as request_id, r.total_amount,
+            'SELECT r.user_id, u.user_registered, r.id as request_id, r.total_amount,
                     DATEDIFF(r.created_at, u.user_registered) as days_since_reg
              FROM %i r
              INNER JOIN %i u ON r.user_id = u.ID
              WHERE u.user_registered > DATE_SUB(NOW(), INTERVAL %d DAY)
-               AND r.created_at > DATE_SUB(NOW(), INTERVAL 1 DAY)",
+               AND r.created_at > DATE_SUB(NOW(), INTERVAL 1 DAY)',
             $req_table,
             $wpdb->users,
             $cooling_days

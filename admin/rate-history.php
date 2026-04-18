@@ -83,7 +83,7 @@ class Cashback_Rate_History_Admin {
         $filter_user      = isset($_GET['filter_user']) ? sanitize_text_field(wp_unslash($_GET['filter_user'])) : '';
         $paged            = isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1;
         // phpcs:enable WordPress.Security.NonceVerification.Recommended
-        $per_page         = 20;
+        $per_page = 20;
 
         if (!empty($filter_date_from) && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $filter_date_from)) {
             $filter_date_from = '';

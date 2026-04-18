@@ -108,7 +108,7 @@ class Cashback_Partner_Management_Admin {
         $is_filtered   = ( $filter_status !== '' && $filter_status !== 'all' );
 
         // Пагинация: настройки
-        $per_page     = 10;
+        $per_page = 10;
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination, intval-cast.
         $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
         $offset       = ( $current_page - 1 ) * $per_page;
@@ -136,7 +136,7 @@ class Cashback_Partner_Management_Admin {
 
         // Общее количество партнеров
         if (!empty($where_values)) {
-            $count_args = array_merge(array( $this->table_name ), $where_values);
+            $count_args     = array_merge(array( $this->table_name ), $where_values);
             $total_partners = (int) $wpdb->get_var(
                 // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_clause из allowlist (`is_active = %d`, LIKE %s), значения через prepare().
                 $wpdb->prepare( "SELECT COUNT(*) FROM %i{$where_clause}", ...$count_args )

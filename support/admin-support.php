@@ -116,7 +116,7 @@ class Cashback_Support_Admin {
 
         // Определяем текущее действие
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin UI routing, allowlist-compared below.
-        $action    = isset($_GET['action']) && is_string($_GET['action']) ? sanitize_text_field(wp_unslash($_GET['action'])) : '';
+        $action = isset($_GET['action']) && is_string($_GET['action']) ? sanitize_text_field(wp_unslash($_GET['action'])) : '';
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin UI routing, absint-cast.
         $ticket_id = isset($_GET['ticket_id']) ? absint(wp_unslash($_GET['ticket_id'])) : 0;
 
@@ -238,11 +238,11 @@ class Cashback_Support_Admin {
 
         // Фильтры
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, allowlist-validated below.
-        $filter_status   = isset($_GET['filter_status']) && is_string($_GET['filter_status']) ? sanitize_text_field(wp_unslash($_GET['filter_status'])) : '';
+        $filter_status = isset($_GET['filter_status']) && is_string($_GET['filter_status']) ? sanitize_text_field(wp_unslash($_GET['filter_status'])) : '';
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, allowlist-validated below.
         $filter_priority = isset($_GET['filter_priority']) && is_string($_GET['filter_priority']) ? sanitize_text_field(wp_unslash($_GET['filter_priority'])) : '';
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, compared to literal '1'.
-        $filter_unread   = isset($_GET['filter_unread']) && is_string($_GET['filter_unread']) ? sanitize_text_field(wp_unslash($_GET['filter_unread'])) : '';
+        $filter_unread = isset($_GET['filter_unread']) && is_string($_GET['filter_unread']) ? sanitize_text_field(wp_unslash($_GET['filter_unread'])) : '';
 
         // Пагинация
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination, absint-cast.
@@ -280,7 +280,7 @@ class Cashback_Support_Admin {
         $count_sql    = "SELECT COUNT(*) FROM %i t {$where_clause}";
         $count_params = array_merge(array( $this->tickets_table ), $where_params);
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $count_sql хранит SQL с %i/%s плейсхолдерами, передаётся в prepare().
-        $total_items  = (int) $wpdb->get_var($wpdb->prepare($count_sql, $count_params));
+        $total_items = (int) $wpdb->get_var($wpdb->prepare($count_sql, $count_params));
 
         $total_pages = (int) ceil($total_items / $per_page);
 
@@ -300,7 +300,7 @@ class Cashback_Support_Admin {
 
         $query_params = array_merge(array( $this->messages_table, $this->tickets_table, $wpdb->users ), $where_params, array( $per_page, $offset ));
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $select_sql хранит SQL с %i/%s/%d плейсхолдерами, передаётся в prepare().
-        $tickets      = $wpdb->get_results($wpdb->prepare($select_sql, $query_params));
+        $tickets = $wpdb->get_results($wpdb->prepare($select_sql, $query_params));
 
         ?>
         <style>
@@ -530,10 +530,10 @@ class Cashback_Support_Admin {
 
         // Получаем тикет
         $ticket = $wpdb->get_row($wpdb->prepare(
-            "SELECT t.*, u.user_login, u.user_email
+            'SELECT t.*, u.user_login, u.user_email
              FROM %i t
              LEFT JOIN %i u ON t.user_id = u.ID
-             WHERE t.id = %d",
+             WHERE t.id = %d',
             $this->tickets_table,
             $wpdb->users,
             $ticket_id
@@ -559,11 +559,11 @@ class Cashback_Support_Admin {
 
         // Получаем все сообщения
         $messages = $wpdb->get_results($wpdb->prepare(
-            "SELECT m.*, u.user_login
+            'SELECT m.*, u.user_login
              FROM %i m
              LEFT JOIN %i u ON m.user_id = u.ID
              WHERE m.ticket_id = %d
-             ORDER BY m.created_at ASC",
+             ORDER BY m.created_at ASC',
             $this->messages_table,
             $wpdb->users,
             $ticket_id
@@ -954,7 +954,7 @@ class Cashback_Support_Admin {
         $wpdb->query('START TRANSACTION');
 
         $ticket = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, user_id, subject, status FROM %i WHERE id = %d FOR UPDATE",
+            'SELECT id, user_id, subject, status FROM %i WHERE id = %d FOR UPDATE',
             $this->tickets_table,
             $ticket_id
         ));
@@ -1077,7 +1077,7 @@ class Cashback_Support_Admin {
         $wpdb->query('START TRANSACTION');
 
         $ticket = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, status FROM %i WHERE id = %d FOR UPDATE",
+            'SELECT id, status FROM %i WHERE id = %d FOR UPDATE',
             $this->tickets_table,
             $ticket_id
         ));

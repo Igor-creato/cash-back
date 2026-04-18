@@ -84,7 +84,7 @@ class Cashback_Shortcodes {
         global $wpdb;
 
         $table = $wpdb->prefix . 'cashback_user_balance';
-        $row = $wpdb->get_row($wpdb->prepare(
+        $row   = $wpdb->get_row($wpdb->prepare(
             'SELECT available_balance, pending_balance, paid_balance
              FROM %i
              WHERE user_id = %d',

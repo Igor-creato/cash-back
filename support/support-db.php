@@ -116,9 +116,9 @@ class Cashback_Support_DB {
         if (!$fk_exists) {
             $users_table = $wpdb->users;
             $wpdb->query($wpdb->prepare(
-                "ALTER TABLE %i
+                'ALTER TABLE %i
                 ADD CONSTRAINT `fk_support_ticket_user`
-                FOREIGN KEY (`user_id`) REFERENCES %i (`ID`) ON DELETE CASCADE",
+                FOREIGN KEY (`user_id`) REFERENCES %i (`ID`) ON DELETE CASCADE',
                 $tickets_table,
                 $users_table
             ));
@@ -132,16 +132,16 @@ class Cashback_Support_DB {
         if (!$fk_exists) {
             $users_table = $wpdb->users;
             $wpdb->query($wpdb->prepare(
-                "ALTER TABLE %i
+                'ALTER TABLE %i
                 ADD CONSTRAINT `fk_support_message_ticket`
-                FOREIGN KEY (`ticket_id`) REFERENCES %i (`id`) ON DELETE CASCADE",
+                FOREIGN KEY (`ticket_id`) REFERENCES %i (`id`) ON DELETE CASCADE',
                 $messages_table,
                 $tickets_table
             ));
             $wpdb->query($wpdb->prepare(
-                "ALTER TABLE %i
+                'ALTER TABLE %i
                 ADD CONSTRAINT `fk_support_message_user`
-                FOREIGN KEY (`user_id`) REFERENCES %i (`ID`) ON DELETE CASCADE",
+                FOREIGN KEY (`user_id`) REFERENCES %i (`ID`) ON DELETE CASCADE',
                 $messages_table,
                 $users_table
             ));
@@ -155,16 +155,16 @@ class Cashback_Support_DB {
         );
         if (!$fk_exists) {
             $wpdb->query($wpdb->prepare(
-                "ALTER TABLE %i
+                'ALTER TABLE %i
                 ADD CONSTRAINT `fk_attachment_message`
-                FOREIGN KEY (`message_id`) REFERENCES %i (`id`) ON DELETE CASCADE",
+                FOREIGN KEY (`message_id`) REFERENCES %i (`id`) ON DELETE CASCADE',
                 $attachments_table,
                 $messages_table
             ));
             $wpdb->query($wpdb->prepare(
-                "ALTER TABLE %i
+                'ALTER TABLE %i
                 ADD CONSTRAINT `fk_attachment_ticket`
-                FOREIGN KEY (`ticket_id`) REFERENCES %i (`id`) ON DELETE CASCADE",
+                FOREIGN KEY (`ticket_id`) REFERENCES %i (`id`) ON DELETE CASCADE',
                 $attachments_table,
                 $tickets_table
             ));

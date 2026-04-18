@@ -954,7 +954,7 @@ echo 'style="display:none"';}
 
             // Инвалидируем кеш токена, чтобы новый scope/credentials вступили в силу
             $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
-            $slug = $wpdb->get_var($wpdb->prepare(
+            $slug           = $wpdb->get_var($wpdb->prepare(
                 'SELECT slug FROM %i WHERE id = %d',
                 $networks_table,
                 $network_id
@@ -1044,7 +1044,7 @@ echo 'style="display:none"';}
 
         $sync_log_table = $wpdb->prefix . 'cashback_sync_log';
         $tx_table       = $wpdb->prefix . 'cashback_transactions';
-        $rows = $wpdb->get_results($wpdb->prepare(
+        $rows           = $wpdb->get_results($wpdb->prepare(
             'SELECT sl.*, ct.user_id, ct.order_number
              FROM %i sl
              LEFT JOIN %i ct ON sl.transaction_id = ct.id
@@ -1080,7 +1080,7 @@ echo 'style="display:none"';}
         global $wpdb;
 
         $checkpoints_table = $wpdb->prefix . 'cashback_validation_checkpoints';
-        $checkpoints = $wpdb->get_results($wpdb->prepare(
+        $checkpoints       = $wpdb->get_results($wpdb->prepare(
             'SELECT * FROM %i WHERE user_id = %d',
             $checkpoints_table,
             $user_id

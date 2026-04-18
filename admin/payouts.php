@@ -157,7 +157,7 @@ class Cashback_Payouts_Admin {
 
         // Роутинг: если action=view — показываем детальную страницу
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin routing; nonce enforced on update AJAX actions.
-        $action         = sanitize_text_field(wp_unslash($_GET['action'] ?? ''));
+        $action = sanitize_text_field(wp_unslash($_GET['action'] ?? ''));
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin routing; nonce enforced on update AJAX actions.
         $view_payout_id = absint($_GET['payout_id'] ?? 0);
         if ($action === 'view' && $view_payout_id > 0) {
@@ -170,7 +170,7 @@ class Cashback_Payouts_Admin {
         // Получаем параметры для пагинации и фильтрации
         $max_allowed_pages = 1000;
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination (absint + capped).
-        $current_page      = max(1, absint($_GET['paged'] ?? 1));
+        $current_page = max(1, absint($_GET['paged'] ?? 1));
         if ($current_page > $max_allowed_pages) {
             $current_page = $max_allowed_pages;
         }

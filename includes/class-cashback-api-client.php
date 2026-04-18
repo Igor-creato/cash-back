@@ -1820,8 +1820,8 @@ class Cashback_API_Client {
                 $potential_user_ids = array_unique($potential_user_ids);
                 $placeholders       = implode(',', array_fill(0, count($potential_user_ids), '%d'));
                 // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %d literals; sniff can't see %d inside $placeholders.
-                $rows               = $wpdb->get_col( $wpdb->prepare( "SELECT ID FROM %i WHERE ID IN ({$placeholders})", $wpdb->users, ...$potential_user_ids ) );
-                $existing_user_ids  = array_flip(array_map('intval', $rows));
+                $rows              = $wpdb->get_col( $wpdb->prepare( "SELECT ID FROM %i WHERE ID IN ({$placeholders})", $wpdb->users, ...$potential_user_ids ) );
+                $existing_user_ids = array_flip(array_map('intval', $rows));
             }
 
             // ─── Обработка actions ───

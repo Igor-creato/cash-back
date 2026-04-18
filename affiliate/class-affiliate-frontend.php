@@ -126,8 +126,8 @@ class Cashback_Affiliate_Frontend {
         global $wpdb;
         $aff_table  = $wpdb->prefix . 'cashback_affiliate_profiles';
         $aff_status = $wpdb->get_var($wpdb->prepare(
-            "SELECT affiliate_status FROM %i
-             WHERE user_id = %d LIMIT 1",
+            'SELECT affiliate_status FROM %i
+             WHERE user_id = %d LIMIT 1',
             $aff_table,
             $user_id
         ));
@@ -242,9 +242,9 @@ class Cashback_Affiliate_Frontend {
         }
 
         $accruals_table = $prefix . 'cashback_affiliate_accruals';
-        $total = (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM %i
-             WHERE referrer_id = %d",
+        $total          = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM %i
+             WHERE referrer_id = %d',
             $accruals_table,
             $user_id
         ));
@@ -254,14 +254,14 @@ class Cashback_Affiliate_Frontend {
         $offset      = ( $page - 1 ) * $per_page;
 
         $accruals = $wpdb->get_results($wpdb->prepare(
-            "SELECT a.id, a.reference_id, a.commission_amount, a.commission_rate,
+            'SELECT a.id, a.reference_id, a.commission_amount, a.commission_rate,
                     a.cashback_amount, a.status AS display_status, a.created_at,
                     u.display_name AS referred_name
              FROM %i a
              LEFT JOIN %i u ON u.ID = a.referred_user_id
              WHERE a.referrer_id = %d
              ORDER BY a.created_at DESC
-             LIMIT %d OFFSET %d",
+             LIMIT %d OFFSET %d',
             $accruals_table,
             $wpdb->users,
             $user_id,
@@ -380,9 +380,9 @@ class Cashback_Affiliate_Frontend {
 
         $profiles_table = $prefix . 'cashback_affiliate_profiles';
         $accruals_table = $prefix . 'cashback_affiliate_accruals';
-        $total = (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM %i
-             WHERE referred_by_user_id = %d",
+        $total          = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM %i
+             WHERE referred_by_user_id = %d',
             $profiles_table,
             $user_id
         ));
@@ -391,7 +391,7 @@ class Cashback_Affiliate_Frontend {
         $page        = min($page, $total_pages);
 
         $referrals = $wpdb->get_results($wpdb->prepare(
-            "SELECT ap.user_id, ap.referred_at, ap.affiliate_status,
+            'SELECT ap.user_id, ap.referred_at, ap.affiliate_status,
                     u.display_name, u.user_registered,
                     COALESCE(SUM(aa.commission_amount), 0) AS total_earned
              FROM %i ap
@@ -402,7 +402,7 @@ class Cashback_Affiliate_Frontend {
              GROUP BY ap.user_id, ap.referred_at, ap.affiliate_status,
                       u.display_name, u.user_registered
              ORDER BY ap.referred_at DESC
-             LIMIT %d OFFSET %d",
+             LIMIT %d OFFSET %d',
             $profiles_table,
             $wpdb->users,
             $accruals_table,

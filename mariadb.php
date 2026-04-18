@@ -1482,11 +1482,11 @@ class Mariadb_Plugin {
      */
     public static function process_ready_transactions(): array {
         global $wpdb;
-        $prefix           = $wpdb->prefix;
-        $tx_table         = $prefix . 'cashback_transactions';
-        $profile_table    = $prefix . 'cashback_user_profile';
-        $ledger_table     = $prefix . 'cashback_balance_ledger';
-        $balance_table    = $prefix . 'cashback_user_balance';
+        $prefix        = $wpdb->prefix;
+        $tx_table      = $prefix . 'cashback_transactions';
+        $profile_table = $prefix . 'cashback_user_profile';
+        $ledger_table  = $prefix . 'cashback_balance_ledger';
+        $balance_table = $prefix . 'cashback_user_balance';
 
         // Проверяем что глобальный lock удержан (вызов разрешён только из sync)
         if (class_exists('Cashback_Lock') && !Cashback_Lock::is_lock_held_by_current_process()) {
@@ -1525,7 +1525,7 @@ class Mariadb_Plugin {
                    AND t.spam_click = 0";
             $candidates_args = array( $tx_table, $profile_table );
             if ($delay_days > 0) {
-                $candidates_sql    .= ' AND t.updated_at <= DATE_SUB(NOW(), INTERVAL %d DAY)';
+                $candidates_sql   .= ' AND t.updated_at <= DATE_SUB(NOW(), INTERVAL %d DAY)';
                 $candidates_args[] = $delay_days;
             }
             $candidates_sql .= ' FOR UPDATE';
