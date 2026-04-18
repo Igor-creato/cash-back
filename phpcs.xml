@@ -37,6 +37,16 @@
     <rule ref="WordPress-VIP-Go">
         <exclude name="WordPressVIPMinimum.Files.IncludingFile"/>
         <exclude name="WordPressVIPMinimum.Functions.RestrictedFunctions"/>
+        <!-- Self-hosted plugin (not VIP platform): plugin JOINs custom tables with wp_users as a domain requirement; no object-cache layer applies. -->
+        <exclude name="WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users"/>
+        <!-- UA and cookies are request-scoped inputs (bot detection, referral HMAC cookie); caching across requests is semantically wrong. -->
+        <exclude name="WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__HTTP_USER_AGENT__"/>
+        <exclude name="WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___COOKIE"/>
+    </rule>
+
+    <!-- meta_query used only in admin-only CPA network activate/deactivate toggle (cold path). -->
+    <rule ref="WordPress.DB.SlowDBQuery.slow_db_query_meta_query">
+        <severity>0</severity>
     </rule>
 
     <!-- Force critical security sniffs to be errors, not warnings. -->

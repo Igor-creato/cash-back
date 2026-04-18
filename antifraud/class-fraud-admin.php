@@ -227,7 +227,6 @@ class Cashback_Fraud_Admin {
         $total_pages = (int) ceil($total_items / self::PER_PAGE);
 
         // Data
-        // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
         $data_params = array_merge( array( $table, $wpdb->users ), $params, array( self::PER_PAGE, $offset ) );
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql из allowlist условий со %s (добавляет плейсхолдеры, которые phpcs не видит); таблицы через %i, значения через prepare().
         $alerts = $wpdb->get_results( $wpdb->prepare( "SELECT a.*, u.user_login, u.user_email FROM %i a LEFT JOIN %i u ON a.user_id = u.ID WHERE {$where_sql} ORDER BY a.created_at DESC LIMIT %d OFFSET %d", ...$data_params ) );
@@ -389,7 +388,6 @@ class Cashback_Fraud_Admin {
              ORDER BY total_risk_score DESC
              LIMIT %d OFFSET %d",
             $alerts_table,
-            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
             $wpdb->users,
             $profile_table,
             self::PER_PAGE,
@@ -1002,7 +1000,6 @@ class Cashback_Fraud_Admin {
              LEFT JOIN %i u ON a.user_id = u.ID
              WHERE a.id = %d',
             $alerts_table,
-            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
             $wpdb->users,
             $alert_id
         ), ARRAY_A);

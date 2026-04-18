@@ -142,9 +142,7 @@ class Cashback_Affiliate_Service {
         ));
 
         // Делаем cookie доступной в текущем запросе (setcookie работает только со следующего)
-        // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___COOKIE -- Per-request referral cookie read/write; HMAC-verified, caching would bypass signature check.
         $_COOKIE[ self::COOKIE_NAME ]     = $payload;
-        // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___COOKIE -- Per-request referral cookie read/write; HMAC-verified, caching would bypass signature check.
         $_COOKIE[ self::COOKIE_SIG_NAME ] = $signature;
     }
 
@@ -158,9 +156,9 @@ class Cashback_Affiliate_Service {
             return null;
         }
 
-        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___COOKIE -- HMAC-signed JSON payload, byte-exact verification required before sanitation would corrupt signature; per-field validation follows json_decode(). Per-request referral cookie; HMAC-verified, caching would bypass signature check.
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- HMAC-signed JSON payload, byte-exact verification required before sanitation would corrupt signature; per-field validation follows json_decode().
         $payload   = wp_unslash($_COOKIE[ self::COOKIE_NAME ]);
-        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___COOKIE -- HMAC signature value, hash_equals-compared as-is; sanitation would alter bytes. Per-request referral cookie; HMAC-verified, caching would bypass signature check.
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- HMAC signature value, hash_equals-compared as-is; sanitation would alter bytes.
         $signature = wp_unslash($_COOKIE[ self::COOKIE_SIG_NAME ]);
 
         // Верификация HMAC
@@ -303,9 +301,7 @@ class Cashback_Affiliate_Service {
     private function log_click( string $click_id, int $referrer_id, string $ip ): void {
         global $wpdb;
 
-        // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__HTTP_USER_AGENT__ -- Request-scoped UA for bot detection/logging; not cacheable across requests.
         $user_agent  = isset($_SERVER['HTTP_USER_AGENT'])
-            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__HTTP_USER_AGENT__ -- Request-scoped UA for bot detection/logging; not cacheable across requests.
             ? mb_substr(sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])), 0, 512)
             : null;
         $referer_url = isset($_SERVER['HTTP_REFERER'])

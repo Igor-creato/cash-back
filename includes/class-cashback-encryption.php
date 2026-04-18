@@ -342,7 +342,6 @@ class Cashback_Encryption {
                 'entity_type' => $entity_type,
                 'entity_id'   => $entity_id,
                 'ip_address'  => self::get_client_ip(),
-                // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__HTTP_USER_AGENT__ -- Request-scoped UA for bot detection/logging; not cacheable across requests.
                 'user_agent'  => isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : null,
                 'details'     => $extra_details ? wp_json_encode($extra_details, JSON_UNESCAPED_UNICODE) : null,
                 'created_at'  => current_time('mysql'),

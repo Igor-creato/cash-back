@@ -242,7 +242,6 @@ class Cashback_Fraud_Collector {
      * @return string
      */
     private static function hash_user_agent(): string {
-        // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__HTTP_USER_AGENT__ -- Request-scoped UA for bot detection/logging; not cacheable across requests.
         $ua = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : 'unknown';
 
         return hash('sha256', $ua);
