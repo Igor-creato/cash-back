@@ -314,6 +314,7 @@ class Cashback_Rate_History_Admin {
                     <span class="cashback-pagination-info">
                         <?php
                         printf(
+                            /* translators: %1$d: текущая страница, %2$d: всего страниц, %3$d: всего записей. */
                             esc_html__('Страница %1$d из %2$d (%3$d записей)', 'cashback-plugin'),
                             (int) $paged,
                             (int) $total_pages,

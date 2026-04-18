@@ -84,6 +84,7 @@ class Cashback_Claims_DB {
             $result = $wpdb->query($sql);
             if ($result === false) {
                 $failed[] = $name . ': ' . $wpdb->last_error;
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log("[Claims] Failed to create table {$name}: " . $wpdb->last_error);
             }
         }
@@ -94,6 +95,7 @@ class Cashback_Claims_DB {
 
         self::add_constraints();
 
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
         error_log('[Claims] Tables created successfully');
     }
 
@@ -117,6 +119,7 @@ class Cashback_Claims_DB {
             // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- DDL from local array (ALTER TABLE constraints), no user input.
             $wpdb->query($sql);
             if ($wpdb->last_error && strpos($wpdb->last_error, 'Duplicate') === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Claims] Constraint warning (non-fatal): ' . $wpdb->last_error);
             }
         }
@@ -138,6 +141,7 @@ class Cashback_Claims_DB {
             $wpdb->query( $wpdb->prepare( 'ALTER TABLE %i ADD KEY `idx_unread` (`is_read`, `actor_type`)', $table ) );
             // Mark all existing events as read so users don't get flooded
             $wpdb->query( $wpdb->prepare( 'UPDATE %i SET `is_read` = 1', $table ) );
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Claims] Migration: added is_read column to claim_events');
         }
     }
@@ -157,6 +161,7 @@ class Cashback_Claims_DB {
             $wpdb->query( $wpdb->prepare( 'ALTER TABLE %i ADD KEY `idx_unread_admin` (`is_read_admin`, `actor_type`)', $table ) );
             // Mark user-authored events from the last 30 days as unread; older ones stay read
             $wpdb->query( $wpdb->prepare( "UPDATE %i SET `is_read_admin` = 0 WHERE `actor_type` = %s AND `created_at` >= (NOW() - INTERVAL 30 DAY)", $table, 'user' ) );
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Claims] Migration: added is_read_admin column to claim_events');
         }
     }

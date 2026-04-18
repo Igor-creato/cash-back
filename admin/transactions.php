@@ -434,6 +434,7 @@ class Cashback_Transactions_Admin {
             if ($result === false) {
                 $db_error = $wpdb->last_error;
                 $wpdb->query('ROLLBACK');
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log(sprintf('[Cashback Transactions] Update failed for ID %d: %s', $transaction_id, $db_error));
                 wp_send_json_error(array( 'message' => 'Ошибка при обновлении транзакции.' ));
                 return;
@@ -470,6 +471,7 @@ class Cashback_Transactions_Admin {
             }
         } catch (\Throwable $e) {
             $wpdb->query('ROLLBACK');
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log(sprintf('[Cashback Transactions] Exception updating ID %d: %s', $transaction_id, $e->getMessage()));
             wp_send_json_error(array( 'message' => 'Ошибка при обновлении транзакции.' ));
             return;
@@ -667,6 +669,7 @@ class Cashback_Transactions_Admin {
             if ($insert_result === false) {
                 $db_error = $wpdb->last_error;
                 $wpdb->query('ROLLBACK');
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log(sprintf('[Cashback Transfer] Insert failed for unreg ID %d: %s', $transaction_id, $db_error));
                 wp_send_json_error(array( 'message' => 'Ошибка при переносе транзакции. Подробности в журнале ошибок.' ));
                 return;
@@ -721,6 +724,7 @@ class Cashback_Transactions_Admin {
             ));
         } catch (\Throwable $e) {
             $wpdb->query('ROLLBACK');
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log(sprintf('[Cashback Transfer] Exception for unreg ID %d: %s', $transaction_id, $e->getMessage()));
             wp_send_json_error(array( 'message' => 'Внутренняя ошибка при переносе транзакции.' ));
         }

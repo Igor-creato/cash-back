@@ -132,12 +132,14 @@ class Cashback_Captcha {
 
         if (is_wp_error($response)) {
             // API недоступен — graceful degradation, пропускаем
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Cashback Bot Protection] SmartCaptcha API error: ' . $response->get_error_message());
             return true;
         }
 
         $code = wp_remote_retrieve_response_code($response);
         if ($code !== 200) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Cashback Bot Protection] SmartCaptcha API HTTP ' . $code);
             return true;
         }

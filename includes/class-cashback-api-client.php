@@ -130,6 +130,7 @@ class Cashback_API_Client {
         global $wpdb;
 
         if (!class_exists('Cashback_Encryption') || !Cashback_Encryption::is_configured()) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback API Client: Encryption not configured');
             return false;
         }
@@ -423,6 +424,7 @@ class Cashback_API_Client {
 
         if ($endpoint !== '' && preg_match('#^https?://#i', $endpoint)) {
             if (!$this->is_safe_api_url($endpoint)) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback API] Blocked unsafe API endpoint URL: ' . $endpoint);
                 return $fallback_url;
             }
@@ -432,6 +434,7 @@ class Cashback_API_Client {
         if ($base !== '' && $endpoint !== '') {
             $full_url = $base . '/' . ltrim($endpoint, '/');
             if (!$this->is_safe_api_url($full_url)) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback API] Blocked unsafe API base URL: ' . $full_url);
                 return $fallback_url;
             }
@@ -490,6 +493,7 @@ class Cashback_API_Client {
         if ($auth_type === 'api_key') {
             $api_key = $credentials['api_key'] ?? '';
             if (empty($api_key)) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Cashback API Client: API key is empty');
                 return null;
             }
@@ -499,6 +503,7 @@ class Cashback_API_Client {
         // OAuth2: делегация адаптеру
         $adapter = $this->get_adapter($network_slug);
         if (!$adapter) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback API Client: No adapter registered for network: ' . $network_slug);
             return null;
         }
@@ -882,6 +887,7 @@ class Cashback_API_Client {
         // Debug: логируем только ключи первого action из API для диагностики маппинга
         // Данные не логируем — могут содержать PII (email, имя, телефон)
         if (defined('WP_DEBUG') && WP_DEBUG && !empty($api_actions)) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Cashback API Validate] First action keys: ' . implode(', ', array_keys($api_actions[0])));
         }
 
@@ -1609,6 +1615,7 @@ class Cashback_API_Client {
         // Защита от параллельного запуска (двойной cron, ручной + автоматический)
         $lock_acquired = $wpdb->get_var("SELECT GET_LOCK('cashback_sync_global_lock', 30)");
         if (!$lock_acquired) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback background_sync: could not acquire lock, another sync is running');
             return array();
         }
@@ -1921,6 +1928,7 @@ class Cashback_API_Client {
                     } else {
                         ++$insert_errors;
                         if (defined('WP_DEBUG') && WP_DEBUG) {
+                            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                             error_log(sprintf(
                                 '[Cashback Sync] Insert failed for action_id=%s: %s',
                                 $action[ $fm_uniq_id ] ?? 'unknown',
@@ -2084,6 +2092,7 @@ class Cashback_API_Client {
 
         if ($wpdb->last_error) {
             ++$update_errors;
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log(sprintf(
                 '[Cashback Sync] UPDATE error for %s id=%d: %s',
                 $table,
@@ -2495,6 +2504,7 @@ class Cashback_API_Client {
 
         if (!$api_result['success']) {
             $result['error'] = 'API error during stale check: ' . $api_result['error'];
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Cashback Auto-Decline] ' . $result['error']);
             return $result;
         }
@@ -2624,6 +2634,7 @@ class Cashback_API_Client {
 
         $total_declined = $result['declined_registered'] + $result['declined_unregistered'];
         if ($total_declined > 0) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log(sprintf(
                 '[Cashback Auto-Decline] Network=%s: declined %d registered + %d unregistered (checked %d stale, API returned %d actions)',
                 $slug,
@@ -2866,6 +2877,7 @@ class Cashback_API_Client {
                     $err = $wpdb->last_error;
                     $wpdb->query('ROLLBACK');
                     ++$result['errors'];
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log(sprintf(
                         '[Cashback AutoTransfer] INSERT failed for unreg_id=%d: %s',
                         (int) $candidate['unreg_id'],
@@ -2907,6 +2919,7 @@ class Cashback_API_Client {
                     $wpdb->query('ROLLBACK');
                 }
                 ++$result['errors'];
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log(sprintf(
                     '[Cashback AutoTransfer] Exception for unreg_id=%d: %s',
                     (int) $candidate['unreg_id'],
@@ -3080,6 +3093,7 @@ class Cashback_API_Client {
                     'success' => false,
                     'error'   => $campaign_result['error'],
                 );
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log(sprintf(
                     'Cashback Campaign Check [%s]: API error — %s',
                     $slug,
@@ -3103,6 +3117,7 @@ class Cashback_API_Client {
                     'success' => false,
                     'error'   => 'API вернул 0 кампаний — возможна проблема с API (неверный scope, token или website_id)',
                 );
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Cashback Campaign Check [' . $slug . ']: ' . $results[ $slug ]['error']);
                 continue;
             }
@@ -3270,6 +3285,7 @@ class Cashback_API_Client {
             );
         }
 
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
         error_log(sprintf(
             'Cashback Campaign Check: Product #%d deactivated (network: %s, offer: %s) — %s',
             $product_id,
@@ -3313,6 +3329,7 @@ class Cashback_API_Client {
             );
         }
 
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
         error_log(sprintf(
             'Cashback Campaign Check: Product #%d reactivated (network: %s, campaign: %s)',
             $product_id,

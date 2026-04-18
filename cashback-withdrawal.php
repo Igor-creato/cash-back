@@ -408,6 +408,7 @@ class CashbackWithdrawal {
                 $decrypted = Cashback_Encryption::decrypt_details($row['encrypted_details']);
                 return $decrypted['account'] ?? null;
             } catch (\Exception $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Cashback: Failed to decrypt payout account for user ' . $user_id . ': ' . $e->getMessage());
             }
         }
@@ -799,6 +800,7 @@ class CashbackWithdrawal {
                         $remaining = (int) ceil(( $cooling_days * DAY_IN_SECONDS - $seconds_since ) / DAY_IN_SECONDS);
                         wp_send_json_error(array(
                             'message' => sprintf(
+                                /* translators: %d: number of cooling-down days remaining before withdrawal is allowed. */
                                 __('Вывод средств будет доступен через %d дн. после регистрации.', 'cashback-plugin'),
                                 $remaining
                             ),
@@ -839,6 +841,7 @@ class CashbackWithdrawal {
 
         $max_withdrawal_str = number_format((float) get_option('cashback_max_withdrawal_amount', 50000.00), 2, '.', '');
         if (bccomp($withdrawal_str, $max_withdrawal_str, 2) > 0) {
+            /* translators: %s: maximum withdrawal amount formatted as price. */
             wp_send_json_error(sprintf(__('Максимальная сумма вывода %s', 'cashback-plugin'), wc_price((float) $max_withdrawal_str)));
             return;
         }
@@ -861,6 +864,7 @@ class CashbackWithdrawal {
         if ($user_payout_method_id > 0 && !$this->is_payout_method_active($user_payout_method_id)) {
             $method_name = $this->get_payout_method_name($user_payout_method_id);
             wp_send_json_error(array(
+                /* translators: %s: payout method name that is currently disabled. */
                 'message'   => sprintf(__('Через %s сейчас выплаты не производятся, выберите другую', 'cashback-plugin'), $method_name),
                 'show_form' => true,
             ));
@@ -870,6 +874,7 @@ class CashbackWithdrawal {
         if ($user_bank_id > 0 && !$this->is_bank_active($user_bank_id)) {
             $bank_name = $this->get_bank_name($user_bank_id);
             wp_send_json_error(array(
+                /* translators: %s: bank name that is currently disabled for payouts. */
                 'message'   => sprintf(__('Через %s сейчас выплаты не производятся, выберите другой', 'cashback-plugin'), $bank_name),
                 'show_form' => true,
             ));
@@ -889,6 +894,7 @@ class CashbackWithdrawal {
         if ($existing) {
             // Retry от клиента — заявка уже создана. Возвращаем успех с теми же данными.
             wp_send_json_success(sprintf(
+                /* translators: 1: withdrawal amount in rubles, 2: payout request reference ID. */
                 __('Заявка на вывод кэшбэка на сумму %1$s руб. успешно добавлена. Номер заявки: %2$s', 'cashback-plugin'),
                 number_format((float) $existing->total_amount, 2, '.', ' '),
                 $existing->reference_id
@@ -1036,6 +1042,7 @@ class CashbackWithdrawal {
                 }
 
                 // Неизвестная ошибка — логируем SQL error отдельно (не включаем в Exception)
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log(sprintf('[CashbackWithdrawal] Insert failed for user %d: %s', $user_id, $db_error));
                 throw new \Exception('Failed to insert payout request');
             }
@@ -1114,6 +1121,7 @@ class CashbackWithdrawal {
             ));
 
             wp_send_json_success(sprintf(
+                /* translators: 1: withdrawal amount in rubles, 2: payout request reference ID. */
                 __('Заявка на вывод кэшбэка на сумму %1$s руб. успешно добавлена. Номер заявки: %2$s', 'cashback-plugin'),
                 number_format((float) $withdrawal_amount, 2, '.', ' '),
                 $reference_id
@@ -1144,9 +1152,11 @@ class CashbackWithdrawal {
                 wp_send_json_error(__('Недостаточно средств для вывода.', 'cashback-plugin'));
             } elseif ($error_message === 'balance_below_min') {
                 $min_amt = $this->get_min_payout_amount($user_id);
+                /* translators: %s: minimum payout amount formatted as price. */
                 wp_send_json_error(sprintf(__('Ваш баланс меньше минимально допустимой суммы для вывода %s', 'cashback-plugin'), wc_price($min_amt)));
             } elseif ($error_message === 'amount_below_min') {
                 $min_amt = $this->get_min_payout_amount($user_id);
+                /* translators: %s: minimum withdrawal amount formatted as price. */
                 wp_send_json_error(sprintf(__('Введите сумму больше или равно %s', 'cashback-plugin'), wc_price($min_amt)));
             } elseif ($error_message === 'payout_details_missing') {
                 wp_send_json_error(array(
@@ -1162,6 +1172,7 @@ class CashbackWithdrawal {
                 ));
                 if ($dup) {
                     wp_send_json_success(sprintf(
+                        /* translators: 1: withdrawal amount in rubles, 2: payout request reference ID. */
                         __('Заявка на вывод кэшбэка на сумму %1$s руб. успешно добавлена. Номер заявки: %2$s', 'cashback-plugin'),
                         number_format((float) $dup->total_amount, 2, '.', ' '),
                         $dup->reference_id

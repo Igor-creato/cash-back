@@ -373,6 +373,7 @@ class Cashback_Affiliate_Service {
         Cashback_Affiliate_DB::ensure_profile($user_id);
 
         if (!$check['allowed']) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log(sprintf(
                 '[Affiliate] bind_referral BLOCKED: user=%d, referrer=%d, reason=%s',
                 $user_id,
@@ -705,6 +706,7 @@ class Cashback_Affiliate_Service {
             }
         } catch (\Throwable $e) {
             $result['errors'][] = $e->getMessage();
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Affiliate] process_affiliate_commissions error: ' . $e->getMessage());
         }
 
@@ -1012,6 +1014,7 @@ class Cashback_Affiliate_Service {
             return true;
         } catch (\Throwable $e) {
             $wpdb->query('ROLLBACK');
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Affiliate] freeze_affiliate_balance error: ' . $e->getMessage());
             return false;
         }
@@ -1143,6 +1146,7 @@ class Cashback_Affiliate_Service {
             return true;
         } catch (\Throwable $e) {
             $wpdb->query('ROLLBACK');
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Affiliate] unfreeze_affiliate_balance error: ' . $e->getMessage());
             return false;
         }

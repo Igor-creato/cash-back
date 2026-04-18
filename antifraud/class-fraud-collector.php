@@ -202,6 +202,7 @@ class Cashback_Fraud_Collector {
         );
 
         if ($wpdb->last_error) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback Fraud Collector: Insert error — ' . $wpdb->last_error);
         }
     }

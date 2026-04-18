@@ -157,17 +157,20 @@ class Cashback_Statistics_Admin {
                 <?php
                 if (!empty($filter_date_from) && !empty($filter_date_to)) {
                     printf(
+                        /* translators: %1$s: дата начала периода, %2$s: дата окончания периода. */
                         esc_html__('Данные за период: %1$s — %2$s', 'cashback-plugin'),
                         esc_html($filter_date_from),
                         esc_html($filter_date_to)
                     );
                 } elseif (!empty($filter_date_from)) {
                     printf(
+                        /* translators: %s: дата начала периода. */
                         esc_html__('Данные с %s', 'cashback-plugin'),
                         esc_html($filter_date_from)
                     );
                 } else {
                     printf(
+                        /* translators: %s: дата окончания периода. */
                         esc_html__('Данные до %s', 'cashback-plugin'),
                         esc_html($filter_date_to)
                     );

@@ -87,6 +87,7 @@ class Cashback_Fraud_DB {
         // Добавляем FK вручную (dbDelta не создаёт FK)
         self::add_foreign_keys();
 
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
         error_log('Cashback Fraud DB: Tables created successfully');
     }
 
@@ -130,6 +131,7 @@ class Cashback_Fraud_DB {
                 // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Static ALTER TABLE from local array, table names from $wpdb->prefix.
                 $result = $wpdb->query($info['sql']);
                 if ($result === false) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log("Cashback Fraud DB: Failed to add FK {$fk_name}: " . $wpdb->last_error);
                 }
             }
@@ -170,6 +172,7 @@ class Cashback_Fraud_DB {
             90
         ));
 
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
         error_log(sprintf(
             'Cashback Fraud DB: Cleanup completed — %d fingerprints, %d dismissed alerts removed',
             $deleted_fp ?: 0,

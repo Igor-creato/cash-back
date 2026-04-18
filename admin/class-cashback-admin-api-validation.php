@@ -1221,6 +1221,7 @@ echo 'style="display:none"';}
         $click_time_mysql  = $this->parse_api_date($click_time);
 
         if (defined('WP_DEBUG') && WP_DEBUG) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log(sprintf(
                 '[Cashback API Add TX] POST: date=%s, click_time=%s, website_id=%s | Parsed: action_date=%s, click_time=%s',
                 isset($_POST['date']) ? sanitize_text_field(wp_unslash($_POST['date'])) : '(empty)',

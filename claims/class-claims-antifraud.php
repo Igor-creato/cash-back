@@ -103,6 +103,7 @@ class Cashback_Claims_Antifraud {
 
         if ($today_count >= self::MAX_CLAIMS_PER_DAY * 0.8) {
             $suspicious[] = sprintf(
+                /* translators: 1: current claims today, 2: max claims per day */
                 __('Пользователь приближается к дневному лимиту (%1$d/%2$d).', 'cashback-plugin'),
                 $today_count,
                 self::MAX_CLAIMS_PER_DAY
@@ -145,6 +146,7 @@ class Cashback_Claims_Antifraud {
             } else {
                 $reasons[]    = __('Этот номер заказа уже используется в другой заявке.', 'cashback-plugin');
                 $suspicious[] = sprintf(
+                    /* translators: 1: order ID, 2: user ID */
                     __('Order ID %1$s уже заявлен пользователем %2$d.', 'cashback-plugin'),
                     $order_id,
                     $existing['user_id']
@@ -184,6 +186,7 @@ class Cashback_Claims_Antifraud {
 
         if ($other_users_same_ip > 0) {
             $reasons[] = sprintf(
+                /* translators: %d: number of other users sharing the same IP */
                 __('IP-адрес используется %d другими пользователями для заявок.', 'cashback-plugin'),
                 $other_users_same_ip
             );
@@ -198,6 +201,7 @@ class Cashback_Claims_Antifraud {
 
         if ($other_users_same_ua > 0) {
             $reasons[] = sprintf(
+                /* translators: %d: number of other users sharing the same User-Agent */
                 __('User-Agent совпадает с %d другими пользователями.', 'cashback-plugin'),
                 $other_users_same_ua
             );
@@ -211,6 +215,7 @@ class Cashback_Claims_Antifraud {
 
         if ($recent_claims_same_ip > 3) {
             $reasons[] = sprintf(
+                /* translators: %d: number of claims from this IP in the last 24 hours */
                 __('%d заявок с этого IP за последние 24 часа.', 'cashback-plugin'),
                 $recent_claims_same_ip
             );

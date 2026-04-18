@@ -50,6 +50,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
 
         if (empty($client_id) || empty($client_secret)) {
             $this->last_token_error = 'Admitad credentials incomplete (client_id или client_secret пустые)';
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback API Client: ' . $this->last_token_error);
             return null;
         }
@@ -80,6 +81,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
 
         if (is_wp_error($response)) {
             $this->last_token_error = 'Admitad token ошибка сети: ' . $response->get_error_message();
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback API Client: ' . $this->last_token_error);
             return null;
         }
@@ -93,6 +95,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
                 unset($safe_body['access_token'], $safe_body['refresh_token'], $safe_body['client_secret']);
             }
             $this->last_token_error = 'Admitad token failed (HTTP ' . $code . ')';
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback API Client: Admitad token failed. Code: ' . $code . ', Body: ' . wp_json_encode($safe_body));
             return null;
         }
@@ -185,6 +188,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
         if ($code === 401 && empty($params['_retry_after_401'])) {
             $this->invalidate_token($credentials);
 
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback Admitad: 401 on actions endpoint, invalidating token and retrying');
 
             $params['_retry_after_401'] = true;
@@ -196,6 +200,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             if (str_contains(wp_remote_retrieve_body($response), 'insufficient_scope')) {
                 $this->invalidate_token($credentials);
 
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Cashback Admitad: 403 insufficient_scope on actions, invalidating token and retrying');
 
                 $params['_retry_after_403'] = true;
@@ -331,6 +336,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
                     $retried = true;
                     $this->invalidate_token($credentials);
 
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log('Cashback Admitad: 403 insufficient_scope on advcampaigns, invalidating token and retrying');
 
                     $auth_headers = $this->build_auth_headers($credentials, $network_config);

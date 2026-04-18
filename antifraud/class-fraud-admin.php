@@ -274,6 +274,7 @@ class Cashback_Fraud_Admin {
 
         $last_run = get_option('cashback_fraud_last_run', '');
         if ($last_run) {
+            /* translators: %s: last fraud check timestamp */
             echo '<p class="description">' . sprintf(esc_html__('Последняя проверка: %s', 'cashback-plugin'), esc_html($last_run)) . '</p>';
         }
 
@@ -886,6 +887,7 @@ class Cashback_Fraud_Admin {
         echo '<td>';
         // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $safe_attrs is rebuilt above from allowlisted keys via esc_attr().
         echo '<input type="number" name="' . esc_attr($key) . '" value="' . esc_attr($value) . '" class="small-text"' . $safe_attrs . '>';
+        /* translators: %s: default field value */
         echo ' <span class="description">' . sprintf(esc_html__('По умолчанию: %s', 'cashback-plugin'), esc_html((string) $default)) . '</span>';
         echo '</td>';
         echo '</tr>';

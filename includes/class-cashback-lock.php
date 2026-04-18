@@ -186,6 +186,7 @@ class Cashback_Lock {
         }
 
         if (isset($lock_data['expires_at']) && time() > (int) $lock_data['expires_at']) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log(sprintf(
                 '[Cashback Lock] Cleaning up stale lock (pid=%s, started=%s, expired=%s)',
                 $lock_data['pid'] ?? '?',
@@ -207,6 +208,7 @@ class Cashback_Lock {
             } else {
                 // MySQL lock ещё занят другим соединением — логируем, но НЕ удаляем wp_options
                 // чтобы is_lock_active() продолжал возвращать true до реального освобождения
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback Lock] Stale lock: TTL expired but MySQL lock still held — waiting for connection to close');
             }
         }
