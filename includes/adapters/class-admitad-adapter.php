@@ -255,10 +255,11 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             ++$page;
 
             // Защита от rate limit — пауза между запросами (100ms)
-            if (count($actions) === $limit && $page < $max_pages) {
+            $actions_count = count($actions);
+            if ($actions_count === $limit && $page < $max_pages) {
                 usleep(100000);
             }
-        } while (count($actions) === $limit && $page < $max_pages);
+        } while ($actions_count === $limit && $page < $max_pages);
 
         return array(
             'success' => true,

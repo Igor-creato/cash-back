@@ -35,7 +35,9 @@ class Cashback_Affiliate_Admin {
     public function add_admin_menu(): void {
         add_submenu_page(
             'cashback-overview',
+            // phpcs:ignore WordPress.WP.I18n.NonSingularStringLiteralText -- Class constant holding a single translatable literal.
             __(self::LABEL_PAGE_TITLE, 'cashback-plugin'),
+            // phpcs:ignore WordPress.WP.I18n.NonSingularStringLiteralText -- Class constant holding a single translatable literal.
             __(self::LABEL_PAGE_TITLE, 'cashback-plugin'),
             'manage_options',
             'cashback-affiliate',
@@ -91,12 +93,14 @@ class Cashback_Affiliate_Admin {
 
     public function render_page(): void {
         if (!current_user_can('manage_options')) {
+            // phpcs:ignore WordPress.WP.I18n.NonSingularStringLiteralText -- Class constant holding a single translatable literal.
             wp_die(esc_html__(self::MSG_NO_PERMISSION, 'cashback-plugin'));
         }
 
         $enabled = Cashback_Affiliate_DB::is_module_enabled();
 
         echo '<div class="wrap cashback-affiliate-admin">';
+        // phpcs:ignore WordPress.WP.I18n.NonSingularStringLiteralText -- Class constant holding a single translatable literal.
         echo '<h1>' . esc_html__(self::LABEL_PAGE_TITLE, 'cashback-plugin') . '</h1>';
 
         // Toggle module

@@ -400,6 +400,7 @@ class WC_Affiliate_URL_Params {
             return;
         }
 
+        // phpcs:ignore WordPress.WP.Capabilities.Unknown -- WooCommerce-provided capability 'edit_product'.
         if (!current_user_can('edit_product', $post_id)) {
             return;
         }
@@ -456,8 +457,9 @@ class WC_Affiliate_URL_Params {
 
         $product_params     = array();
         $max_product_params = 5;
+        $param_count        = min(count($param_keys), $max_product_params);
 
-        for ($i = 0; $i < min(count($param_keys), $max_product_params); $i++) {
+        for ($i = 0; $i < $param_count; $i++) {
             $key   = trim($param_keys[ $i ]);
             $value = trim($param_values[ $i ]);
 
@@ -626,6 +628,7 @@ class WC_Affiliate_URL_Params {
 
         if (false === $cached_params) {
             $cached_params = $this->get_affiliate_params($product_id);
+            // phpcs:ignore WordPressVIPMinimum.Performance.LowExpiryCacheTime.CacheTimeUndetermined -- CACHE_EXPIRATION is an explicit class constant controlled by the plugin.
             wp_cache_set($cache_key, $cached_params, self::CACHE_GROUP, self::CACHE_EXPIRATION);
         }
 
@@ -812,21 +815,6 @@ class WC_Affiliate_URL_Params {
             // Для жёсткого режима (403) — замени на блок ниже.
             $force_spam = $this->is_bot_user_agent($user_agent ?? '');
 
-            // Жёсткий режим (403, бот не получает redirect):
-            // if ($this->is_bot_user_agent($user_agent ?? '')) {
-            //     if (defined('WP_DEBUG') && WP_DEBUG) {
-            //         error_log(sprintf(
-            //             '[wc-affiliate-url-params] Bot detected: IP=%s UA=%s product=%d',
-            //             $ip_address,
-            //             $user_agent ?? 'empty',
-            //             $product_id
-            //         ));
-            //     }
-            //     status_header(403);
-            //     nocache_headers();
-            //     exit;
-            // }
-
             // ─── Rate Limiting: 2 уровня по IP (без UA) ───
             $rate_status = $this->get_click_rate_status($ip_address, $product_id);
 
@@ -966,7 +954,7 @@ class WC_Affiliate_URL_Params {
                 $table,
                 $click_id
             ));
-            $url = ( $row && in_array(parse_url($row, PHP_URL_SCHEME), array( 'http', 'https' ), true) )
+            $url = ( $row && in_array(wp_parse_url($row, PHP_URL_SCHEME), array( 'http', 'https' ), true) )
                 ? $row
                 : home_url();
             // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
@@ -976,6 +964,7 @@ class WC_Affiliate_URL_Params {
 
         nocache_headers();
 
+        // phpcs:ignore VariableAnalysis.CodeAnalysis.VariableAnalysis.VariableRedeclaration -- Previous global declaration is inside an if-block that always exits; this path requires its own import.
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_click_log';
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table, no cache needed for activation page lookup.
@@ -987,7 +976,7 @@ class WC_Affiliate_URL_Params {
 
         $affiliate_url = '';
         if (!empty($click['affiliate_url'])) {
-            $scheme = parse_url($click['affiliate_url'], PHP_URL_SCHEME);
+            $scheme = wp_parse_url($click['affiliate_url'], PHP_URL_SCHEME);
             if (in_array($scheme, array( 'http', 'https' ), true)) {
                 $affiliate_url = $click['affiliate_url'];
             }
@@ -1297,7 +1286,7 @@ HTML;
         }
 
         // Защита от open redirect: разрешаем только http/https схемы
-        $scheme = parse_url($base_url, PHP_URL_SCHEME);
+        $scheme = wp_parse_url($base_url, PHP_URL_SCHEME);
         if (!in_array($scheme, array( 'http', 'https' ), true)) {
             return null;
         }

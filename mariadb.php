@@ -1283,8 +1283,9 @@ class Mariadb_Plugin {
                 }
             }
 
-            $offset += $batch_size;
-        } while (count($user_ids) === $batch_size);
+            $offset       += $batch_size;
+            $batch_fetched = count($user_ids);
+        } while ($batch_fetched === $batch_size);
 
         if ($total_initialized === 0 && $total_errors === 0) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
@@ -2087,6 +2088,7 @@ class Mariadb_Plugin {
             return;
         }
 
+        // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- MySQL information_schema column is returned as uppercase COLUMN_TYPE.
         if (strpos($column_type->COLUMN_TYPE, 'cashback_global') !== false) {
             return;
         }

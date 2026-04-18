@@ -33,6 +33,7 @@ class Cashback_Notifications {
         add_action('cashback_notification_process_queue', array( $this, 'process_queue' ));
 
         // Регистрация 1-минутного интервала
+        // phpcs:ignore WordPress.WP.CronInterval.CronSchedulesInterval -- Intentional short interval for near-real-time notification queue processing from MySQL triggers.
         add_filter('cron_schedules', array( $this, 'add_cron_interval' ));
 
         // Планирование откладываем до init — иначе cron_schedules фильтр
@@ -579,6 +580,7 @@ ID заявки: %4$d
     /**
      * Статус заявки изменён — уведомление пользователю
      */
+    // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter -- Required by cashback_claim_status_changed action signature.
     public function on_claim_status_changed( int $claim_id, string $old_status, string $new_status, string $note, string $actor_type, ?int $actor_id ): void {
         global $wpdb;
 

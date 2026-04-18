@@ -50,6 +50,7 @@ class Cashback_Support_Admin {
     /**
      * Подключение DOMPurify и safe-html на странице поддержки
      */
+    // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter -- Required by admin_enqueue_scripts hook signature.
     public function enqueue_admin_scripts( string $hook ): void {
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin page-detect, no state change.
         $page = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';

@@ -84,6 +84,7 @@ class Cashback_Contact_Form {
      * @param array|string $atts Атрибуты шорткода.
      * @return string HTML формы.
      */
+    // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- WordPress shortcode callback signature requires $atts parameter.
     public function render_shortcode( $atts = array() ): string {
         // Подключаем стили и скрипты
         wp_enqueue_style('cashback-contact-form');
@@ -323,7 +324,7 @@ class Cashback_Contact_Form {
         if (class_exists('Cashback_Encryption') && method_exists('Cashback_Encryption', 'get_client_ip')) {
             return Cashback_Encryption::get_client_ip();
         }
-        // phpcs:ignore WordPressVIPMinimum.Variables.ServerVariables.UserControlledHeaders -- REMOTE_ADDR is set by the web server from the TCP connection, not a client-controlled HTTP header; proxy headers trusted only via CASHBACK_TRUSTED_PROXIES allowlist.
+        // phpcs:ignore WordPressVIPMinimum.Variables.ServerVariables.UserControlledHeaders,WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__REMOTE_ADDR__ -- REMOTE_ADDR set by webserver from TCP connection, not client-controlled; per-request only.
         return sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'));
     }
 

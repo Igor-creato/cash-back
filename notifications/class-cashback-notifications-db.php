@@ -178,6 +178,7 @@ class Cashback_Notifications_DB {
      * @return bool
      */
     public static function is_globally_enabled( string $notification_type ): bool {
+        // phpcs:ignore WordPressVIPMinimum.Performance.TaxonomyMetaInOptions.PossibleTermMetaInOptions -- Plugin option key for notification-type toggle; not taxonomy term meta.
         $val = get_option('cashback_notify_' . $notification_type, '');
 
         // Если опция не существует (пустая строка при default='') — считаем включённой

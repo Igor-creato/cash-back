@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// phpcs:ignore PSR12.Files.FileHeader.IncorrectOrder -- WordPress bootstrap pattern: declare(strict_types) precedes file docblock, followed by ABSPATH guard.
 /**
  * Глобальный механизм блокировки для синхронизации кешбэка.
  *
@@ -14,6 +15,7 @@ declare(strict_types=1);
  * @since   6.0.0
  */
 
+// phpcs:ignore PSR12.Files.FileHeader.IncorrectOrder -- WordPress bootstrap guard must precede other statements.
 if (!defined('ABSPATH')) {
     exit;
 }
@@ -190,8 +192,8 @@ class Cashback_Lock {
             error_log(sprintf(
                 '[Cashback Lock] Cleaning up stale lock (pid=%s, started=%s, expired=%s)',
                 $lock_data['pid'] ?? '?',
-                isset($lock_data['started_at']) ? date('Y-m-d H:i:s', (int) $lock_data['started_at']) : '?',
-                date('Y-m-d H:i:s', (int) $lock_data['expires_at'])
+                isset($lock_data['started_at']) ? gmdate('Y-m-d H:i:s', (int) $lock_data['started_at']) : '?',
+                gmdate('Y-m-d H:i:s', (int) $lock_data['expires_at'])
             ));
 
             // RELEASE_LOCK работает только для текущего соединения.

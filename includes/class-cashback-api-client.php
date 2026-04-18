@@ -450,7 +450,7 @@ class Cashback_API_Client {
      * Разрешает только HTTPS и блокирует приватные/зарезервированные IP-адреса.
      */
     private function is_safe_api_url( string $url ): bool {
-        $parsed = parse_url($url);
+        $parsed = wp_parse_url($url);
 
         if (!$parsed || !isset($parsed['scheme'], $parsed['host'])) {
             return false;
@@ -573,6 +573,7 @@ class Cashback_API_Client {
             $url = $actions_url . '?' . http_build_query(array( 'limit' => 1 ));
 
             $response = wp_remote_get($url, array(
+                // phpcs:ignore WordPressVIPMinimum.Performance.RemoteRequestTimeout.timeout_timeout -- Admin connectivity test endpoint; synchronous check from admin UI, not user-facing request path.
                 'timeout' => 30,
                 'headers' => $auth_headers,
             ));
@@ -1918,23 +1919,20 @@ class Cashback_API_Client {
                         $insert_result['insert_id'],
                         (string) ( $action[ $fm_uniq_id ] ?? '' ),
                         $mapped_status,
-                        $api_payment,
-                        $insert_result['table_type']
+                        $api_payment
                     );
-                } else {
+                } elseif (strpos($insert_result['error'], 'Duplicate') !== false) {
                     // Дубликат — не ошибка, транзакция уже есть
-                    if (strpos($insert_result['error'], 'Duplicate') !== false) {
-                        ++$skipped;
-                    } else {
-                        ++$insert_errors;
-                        if (defined('WP_DEBUG') && WP_DEBUG) {
-                            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                            error_log(sprintf(
-                                '[Cashback Sync] Insert failed for action_id=%s: %s',
-                                $action[ $fm_uniq_id ] ?? 'unknown',
-                                $insert_result['error']
-                            ));
-                        }
+                    ++$skipped;
+                } else {
+                    ++$insert_errors;
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                        error_log(sprintf(
+                            '[Cashback Sync] Insert failed for action_id=%s: %s',
+                            $action[ $fm_uniq_id ] ?? 'unknown',
+                            $insert_result['error']
+                        ));
                     }
                 }
             }
@@ -2364,15 +2362,13 @@ class Cashback_API_Client {
      * @param string $action_id     ID действия из API
      * @param string $status        Статус вставленной транзакции
      * @param float  $api_payment   Комиссия из API
-     * @param string $table_type    'transactions' или 'unregistered'
      */
     private function log_sync_insert(
         string $network_slug,
         int $transaction_id,
         string $action_id,
         string $status,
-        float $api_payment,
-        string $table_type
+        float $api_payment
     ): void {
         global $wpdb;
 
