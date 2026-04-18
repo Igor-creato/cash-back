@@ -44,7 +44,8 @@
         var html = '<nav class="' + containerClass + '"><ul class="page-numbers">';
 
         if (currentPage > 1) {
-            html += '<li><a href="#" class="page-numbers prev" data-page="' + (currentPage - 1) + '">&lsaquo;</a></li>';
+            html += '<li><a href="#" class="page-numbers first" data-page="1" aria-label="Первая страница">&laquo;</a></li>';
+            html += '<li><a href="#" class="page-numbers prev" data-page="' + (currentPage - 1) + '" aria-label="Предыдущая страница">&lsaquo;</a></li>';
         }
 
         var prev = 0;
@@ -59,7 +60,8 @@
         }
 
         if (currentPage < totalPages) {
-            html += '<li><a href="#" class="page-numbers next" data-page="' + (currentPage + 1) + '">&rsaquo;</a></li>';
+            html += '<li><a href="#" class="page-numbers next" data-page="' + (currentPage + 1) + '" aria-label="Следующая страница">&rsaquo;</a></li>';
+            html += '<li><a href="#" class="page-numbers last" data-page="' + totalPages + '" aria-label="Последняя страница">&raquo;</a></li>';
         }
 
         html += '</ul></nav>';
