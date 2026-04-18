@@ -237,18 +237,13 @@ class Cashback_Payouts_Admin {
 
         // Подсчет общего количества выплат
         if (!empty($where_params)) {
-            $total_payouts = $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT COUNT(*) 
-            FROM {$this->table_name}
-            {$where_clause}",
-                    $where_params
-                )
-            );
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- %i for table; {$where_clause} built from allowlist (status, DATE(created_at) ranges, reference_id LIKE) with %s placeholders.
+            $total_payouts = $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i {$where_clause}", array_merge( array( $this->table_name ), $where_params ) ) );
         } else {
             $total_payouts = $wpdb->get_var(
                 $wpdb->prepare(
-                    "SELECT COUNT(*) FROM {$this->table_name} WHERE %d = %d",
+                    'SELECT COUNT(*) FROM %i WHERE %d = %d',
+                    $this->table_name,
                     1,
                     1
                 )
@@ -257,29 +252,15 @@ class Cashback_Payouts_Admin {
 
         // Получаем выплаты
         if (!empty($where_params)) {
-            $payouts = $wpdb->get_results(
-                $wpdb->prepare(
-                    "SELECT id, reference_id, user_id, total_amount, payout_method, payout_account, masked_details,
-                    encrypted_details, provider, provider_payout_id, attempts, fail_reason, status,
-                    created_at, updated_at
-            FROM {$this->table_name}
-            {$where_clause}
-            ORDER BY created_at DESC
-            LIMIT %d OFFSET %d",
-                    array_merge($where_params, array( $per_page, $offset ))
-                ),
-                'ARRAY_A'
-            );
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- %i for table; {$where_clause} built from allowlist (status, DATE(created_at) ranges, reference_id LIKE) with %s placeholders.
+            $payouts = $wpdb->get_results( $wpdb->prepare( "SELECT id, reference_id, user_id, total_amount, payout_method, payout_account, masked_details, encrypted_details, provider, provider_payout_id, attempts, fail_reason, status, created_at, updated_at FROM %i {$where_clause} ORDER BY created_at DESC LIMIT %d OFFSET %d", array_merge( array( $this->table_name ), $where_params, array( $per_page, $offset ) ) ), 'ARRAY_A' );
         } else {
             $payouts = $wpdb->get_results(
                 $wpdb->prepare(
-                    "SELECT id, reference_id, user_id, total_amount, payout_method, payout_account, masked_details,
-                    encrypted_details, provider, provider_payout_id, attempts, fail_reason, status,
-                    created_at, updated_at
-            FROM {$this->table_name}
-            ORDER BY created_at DESC
-            LIMIT %d OFFSET %d",
-                    array( $per_page, $offset )
+                    'SELECT id, reference_id, user_id, total_amount, payout_method, payout_account, masked_details, encrypted_details, provider, provider_payout_id, attempts, fail_reason, status, created_at, updated_at FROM %i ORDER BY created_at DESC LIMIT %d OFFSET %d',
+                    $this->table_name,
+                    $per_page,
+                    $offset
                 ),
                 'ARRAY_A'
             );
@@ -537,11 +518,12 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
         // Получаем данные заявки
         $payout = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, reference_id, user_id, total_amount, payout_method, payout_account, masked_details,
+                'SELECT id, reference_id, user_id, total_amount, payout_method, payout_account, masked_details,
                         encrypted_details, provider, provider_payout_id, attempts, fail_reason,
                         status, created_at, updated_at
-                 FROM {$this->table_name}
-                 WHERE id = %d",
+                 FROM %i
+                 WHERE id = %d',
+                $this->table_name,
                 $payout_id
             ),
             ARRAY_A
@@ -878,10 +860,11 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
             try {
                 // БЛОКИРУЕМ строку выплаты с FOR UPDATE
                 $payout_request = $wpdb->get_row($wpdb->prepare(
-                    "SELECT id, status, user_id, total_amount
-                     FROM {$this->table_name}
+                    'SELECT id, status, user_id, total_amount
+                     FROM %i
                      WHERE id = %d
-                     FOR UPDATE",
+                     FOR UPDATE',
+                    $this->table_name,
                     $payout_id
                 ), ARRAY_A);
 
@@ -914,7 +897,8 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
                 // Блокируем обработку/выплату через деактивированный способ оплаты
                 if ($old_status !== $status && in_array($status, array( 'processing', 'paid' ), true)) {
                     $payout_full = $wpdb->get_row($wpdb->prepare(
-                        "SELECT payout_method FROM {$this->table_name} WHERE id = %d",
+                        'SELECT payout_method FROM %i WHERE id = %d',
+                        $this->table_name,
                         $payout_id
                     ), ARRAY_A);
 
@@ -993,7 +977,8 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
             try {
                 // Блокируем строку для консистентного обновления
                 $payout_check = $wpdb->get_row($wpdb->prepare(
-                    "SELECT id FROM {$this->table_name} WHERE id = %d FOR UPDATE",
+                    'SELECT id FROM %i WHERE id = %d FOR UPDATE',
+                    $this->table_name,
                     $payout_id
                 ), ARRAY_A);
 
@@ -1050,9 +1035,10 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
         // Получаем обновленные данные из базы
         $updated_payout_data = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT reference_id, provider, provider_payout_id, attempts, fail_reason, status, encrypted_details, payout_account
-                 FROM {$this->table_name}
-                 WHERE id = %d",
+                'SELECT reference_id, provider, provider_payout_id, attempts, fail_reason, status, encrypted_details, payout_account
+                 FROM %i
+                 WHERE id = %d',
+                $this->table_name,
                 $payout_id
             ),
             ARRAY_A
@@ -1101,9 +1087,10 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
             if ($user_id <= 0 || $amount === '') {
                 $payout_request = $wpdb->get_row(
                     $wpdb->prepare(
-                        "SELECT user_id, total_amount, status
-                         FROM {$this->table_name}
-                         WHERE id = %d FOR UPDATE",
+                        'SELECT user_id, total_amount, status
+                         FROM %i
+                         WHERE id = %d FOR UPDATE',
+                        $this->table_name,
                         $payout_id
                     ),
                     ARRAY_A
@@ -1129,7 +1116,8 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
             $balance_table   = $wpdb->prefix . 'cashback_user_balance';
             $current_balance = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT pending_balance FROM {$balance_table} WHERE user_id = %d FOR UPDATE",
+                    'SELECT pending_balance FROM %i WHERE user_id = %d FOR UPDATE',
+                    $balance_table,
                     $user_id
                 ),
                 ARRAY_A
@@ -1146,12 +1134,13 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
             // Атомарный UPDATE: SQL-арифметика вместо PHP bcsub/bcadd
             // FOR UPDATE гарантирует эксклюзивность — version в WHERE не нужен
             $result = $wpdb->query($wpdb->prepare(
-                "UPDATE {$balance_table}
+                'UPDATE %i
                  SET pending_balance = pending_balance - CAST(%s AS DECIMAL(18,2)),
                      paid_balance = paid_balance + CAST(%s AS DECIMAL(18,2)),
                      version = version + 1
                  WHERE user_id = %d
-                   AND pending_balance >= CAST(%s AS DECIMAL(18,2))",
+                   AND pending_balance >= CAST(%s AS DECIMAL(18,2))',
+                $balance_table,
                 $amount,
                 $amount,
                 $user_id,
@@ -1165,10 +1154,11 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
             // Леджер: payout_complete
             $ledger_table  = $wpdb->prefix . 'cashback_balance_ledger';
             $ledger_result = $wpdb->query($wpdb->prepare(
-                "INSERT INTO `{$ledger_table}`
+                'INSERT INTO %i
                      (user_id, type, amount, payout_request_id, idempotency_key)
-                 VALUES (%d, 'payout_complete', %s, %d, %s)
-                 ON DUPLICATE KEY UPDATE id = id",
+                 VALUES (%d, \'payout_complete\', %s, %d, %s)
+                 ON DUPLICATE KEY UPDATE id = id',
+                $ledger_table,
                 $user_id,
                 '-' . $amount,
                 $payout_id,
@@ -1223,9 +1213,10 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
             if ($user_id <= 0 || $amount === '') {
                 $payout_request = $wpdb->get_row(
                     $wpdb->prepare(
-                        "SELECT user_id, total_amount, status
-                         FROM {$this->table_name}
-                         WHERE id = %d FOR UPDATE",
+                        'SELECT user_id, total_amount, status
+                         FROM %i
+                         WHERE id = %d FOR UPDATE',
+                        $this->table_name,
                         $payout_id
                     ),
                     ARRAY_A
@@ -1250,7 +1241,8 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
             $balance_table   = $wpdb->prefix . 'cashback_user_balance';
             $current_balance = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT pending_balance FROM {$balance_table} WHERE user_id = %d FOR UPDATE",
+                    'SELECT pending_balance FROM %i WHERE user_id = %d FOR UPDATE',
+                    $balance_table,
                     $user_id
                 ),
                 ARRAY_A
@@ -1265,12 +1257,13 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
             }
 
             $result = $wpdb->query($wpdb->prepare(
-                "UPDATE {$balance_table}
+                'UPDATE %i
                  SET pending_balance = pending_balance - CAST(%s AS DECIMAL(18,2)),
                      frozen_balance = frozen_balance + CAST(%s AS DECIMAL(18,2)),
                      version = version + 1
                  WHERE user_id = %d
-                   AND pending_balance >= CAST(%s AS DECIMAL(18,2))",
+                   AND pending_balance >= CAST(%s AS DECIMAL(18,2))',
+                $balance_table,
                 $amount,
                 $amount,
                 $user_id,
@@ -1283,10 +1276,11 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
 
             $ledger_table  = $wpdb->prefix . 'cashback_balance_ledger';
             $ledger_result = $wpdb->query($wpdb->prepare(
-                "INSERT INTO `{$ledger_table}`
+                'INSERT INTO %i
                      (user_id, type, amount, payout_request_id, idempotency_key)
-                 VALUES (%d, 'payout_declined', %s, %d, %s)
-                 ON DUPLICATE KEY UPDATE id = id",
+                 VALUES (%d, \'payout_declined\', %s, %d, %s)
+                 ON DUPLICATE KEY UPDATE id = id',
+                $ledger_table,
                 $user_id,
                 '-' . $amount,
                 $payout_id,
@@ -1343,9 +1337,10 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
             if ($user_id <= 0 || $amount === '') {
                 $payout_request = $wpdb->get_row(
                     $wpdb->prepare(
-                        "SELECT user_id, total_amount, status, refunded_at
-                         FROM {$this->table_name}
-                         WHERE id = %d FOR UPDATE",
+                        'SELECT user_id, total_amount, status, refunded_at
+                         FROM %i
+                         WHERE id = %d FOR UPDATE',
+                        $this->table_name,
                         $payout_id
                     ),
                     ARRAY_A
@@ -1372,7 +1367,8 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
             $balance_table   = $wpdb->prefix . 'cashback_user_balance';
             $current_balance = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT pending_balance FROM {$balance_table} WHERE user_id = %d FOR UPDATE",
+                    'SELECT pending_balance FROM %i WHERE user_id = %d FOR UPDATE',
+                    $balance_table,
                     $user_id
                 ),
                 ARRAY_A
@@ -1387,12 +1383,13 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
             }
 
             $result = $wpdb->query($wpdb->prepare(
-                "UPDATE {$balance_table}
+                'UPDATE %i
                  SET pending_balance = pending_balance - CAST(%s AS DECIMAL(18,2)),
                      available_balance = available_balance + CAST(%s AS DECIMAL(18,2)),
                      version = version + 1
                  WHERE user_id = %d
-                   AND pending_balance >= CAST(%s AS DECIMAL(18,2))",
+                   AND pending_balance >= CAST(%s AS DECIMAL(18,2))',
+                $balance_table,
                 $amount,
                 $amount,
                 $user_id,
@@ -1423,10 +1420,11 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
             // Леджер: payout_cancel (положительная сумма — возврат в available)
             $ledger_table  = $wpdb->prefix . 'cashback_balance_ledger';
             $ledger_result = $wpdb->query($wpdb->prepare(
-                "INSERT INTO `{$ledger_table}`
+                'INSERT INTO %i
                      (user_id, type, amount, payout_request_id, idempotency_key)
-                 VALUES (%d, 'payout_cancel', %s, %d, %s)
-                 ON DUPLICATE KEY UPDATE id = id",
+                 VALUES (%d, \'payout_cancel\', %s, %d, %s)
+                 ON DUPLICATE KEY UPDATE id = id',
+                $ledger_table,
                 $user_id,
                 $amount,
                 $payout_id,
@@ -1485,9 +1483,10 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
         // Получаем данные из базы
         $payout_data = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT reference_id, provider, provider_payout_id, attempts, fail_reason, status, encrypted_details, payout_account
-                 FROM {$this->table_name}
-                 WHERE id = %d",
+                'SELECT reference_id, provider, provider_payout_id, attempts, fail_reason, status, encrypted_details, payout_account
+                 FROM %i
+                 WHERE id = %d',
+                $this->table_name,
                 $payout_id
             ),
             ARRAY_A
@@ -1574,7 +1573,8 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
         // Получаем заявку и проверяем статус
         $payout = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id, user_id, status, encrypted_details, payout_account FROM {$this->table_name} WHERE id = %d",
+                'SELECT id, user_id, status, encrypted_details, payout_account FROM %i WHERE id = %d',
+                $this->table_name,
                 $payout_id
             ),
             ARRAY_A
@@ -1726,7 +1726,8 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
         $table_name = $wpdb->prefix . 'cashback_payout_methods';
         $row        = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT name, is_active FROM {$table_name} WHERE slug = %s",
+                'SELECT name, is_active FROM %i WHERE slug = %s',
+                $table_name,
                 $slug
             ),
             ARRAY_A
@@ -1775,7 +1776,8 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
         $table_name = $wpdb->prefix . 'cashback_banks';
         $row        = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT name, is_active FROM {$table_name} WHERE bank_code = %s",
+                'SELECT name, is_active FROM %i WHERE bank_code = %s',
+                $table_name,
                 $bank_code
             ),
             ARRAY_A
@@ -1810,7 +1812,8 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
         $table_name = $wpdb->prefix . 'cashback_banks';
         $bank_code  = $wpdb->get_var(
             $wpdb->prepare(
-                "SELECT bank_code FROM {$table_name} WHERE id = %d",
+                'SELECT bank_code FROM %i WHERE id = %d',
+                $table_name,
                 $bank_id
             )
         );
@@ -1829,7 +1832,8 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
         $table_name = $wpdb->prefix . 'cashback_banks';
         $banks      = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT id, bank_code, name FROM {$table_name} WHERE is_active = %d ORDER BY name ASC",
+                'SELECT id, bank_code, name FROM %i WHERE is_active = %d ORDER BY name ASC',
+                $table_name,
                 1
             ),
             ARRAY_A
@@ -1871,7 +1875,8 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
 
         // Получаем user_id из заявки
         $payout = $wpdb->get_row($wpdb->prepare(
-            "SELECT user_id, total_amount, status FROM {$this->table_name} WHERE id = %d",
+            'SELECT user_id, total_amount, status FROM %i WHERE id = %d',
+            $this->table_name,
             $payout_id
         ), ARRAY_A);
 
