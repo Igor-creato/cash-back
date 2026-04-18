@@ -1463,6 +1463,7 @@ echo 'style="display:none"';}
                 'entity_type' => 'user',
                 'entity_id'   => $entity_id,
                 'ip_address'  => $this->get_client_ip(),
+                // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__HTTP_USER_AGENT__ -- Request-scoped UA for bot detection/logging; not cacheable across requests.
                 'user_agent'  => isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '',
                 'details'     => wp_json_encode($details),
             )

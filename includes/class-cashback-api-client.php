@@ -749,6 +749,7 @@ class Cashback_API_Client {
                 $date_start = $dt->format('d.m.Y');
             } else {
                 $reg_date = $wpdb->get_var($wpdb->prepare(
+                    // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
                     "SELECT user_registered FROM {$wpdb->users} WHERE ID = %d",
                     $user_id
                 ));
@@ -1812,7 +1813,7 @@ class Cashback_API_Client {
             if (!empty($potential_user_ids)) {
                 $potential_user_ids = array_unique($potential_user_ids);
                 $placeholders       = implode(',', array_fill(0, count($potential_user_ids), '%d'));
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %d literals; sniff can't see %d inside $placeholders.
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- $placeholders is array_fill of %d literals; sniff can't see %d inside $placeholders. $wpdb->users passed as %i identifier placeholder via $wpdb->prepare(), not user input.
                 $rows               = $wpdb->get_col( $wpdb->prepare( "SELECT ID FROM %i WHERE ID IN ({$placeholders})", $wpdb->users, ...$potential_user_ids ) );
                 $existing_user_ids  = array_flip(array_map('intval', $rows));
             }

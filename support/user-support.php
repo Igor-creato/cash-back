@@ -1014,6 +1014,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
              WHERE m.ticket_id = %d
              ORDER BY m.created_at ASC',
             $this->messages_table,
+            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
             $wpdb->users,
             $ticket_id
         ));

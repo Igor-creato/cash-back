@@ -98,12 +98,14 @@ class Mariadb_Plugin {
 
         $engine = $wpdb->get_var($wpdb->prepare(
             'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
             $wpdb->users
         ));
 
         if ($engine && strtolower($engine) !== 'innodb') {
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->users, not user input
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- table name from $wpdb->users, not user input; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
             $wpdb->query("ALTER TABLE `{$wpdb->users}` ENGINE=InnoDB");
+            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
             error_log("Mariadb Plugin: Converted {$wpdb->users} from {$engine} to InnoDB");
         }
     }

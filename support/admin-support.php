@@ -298,6 +298,7 @@ class Cashback_Support_Admin {
                 t.updated_at DESC
             LIMIT %d OFFSET %d";
 
+        // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
         $query_params = array_merge(array( $this->messages_table, $this->tickets_table, $wpdb->users ), $where_params, array( $per_page, $offset ));
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $select_sql хранит SQL с %i/%s/%d плейсхолдерами, передаётся в prepare().
         $tickets      = $wpdb->get_results($wpdb->prepare($select_sql, $query_params));
@@ -531,6 +532,7 @@ class Cashback_Support_Admin {
              LEFT JOIN %i u ON t.user_id = u.ID
              WHERE t.id = %d",
             $this->tickets_table,
+            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
             $wpdb->users,
             $ticket_id
         ));
@@ -561,6 +563,7 @@ class Cashback_Support_Admin {
              WHERE m.ticket_id = %d
              ORDER BY m.created_at ASC",
             $this->messages_table,
+            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
             $wpdb->users,
             $ticket_id
         ));
