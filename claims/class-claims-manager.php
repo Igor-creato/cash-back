@@ -66,6 +66,7 @@ class Cashback_Claims_Manager {
             'comment'     => $data['comment'] ?? '',
         ));
 
+        // phpcs:ignore WordPressVIPMinimum.Variables.ServerVariables.UserControlledHeaders -- REMOTE_ADDR is set by the web server from the TCP connection, not a client-controlled HTTP header; proxy headers trusted only via CASHBACK_TRUSTED_PROXIES allowlist.
         $ip = class_exists('Cashback_Encryption') ? Cashback_Encryption::get_client_ip() : ( isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '0.0.0.0' );
         $ua = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '';
 

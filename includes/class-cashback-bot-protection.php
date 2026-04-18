@@ -89,6 +89,7 @@ class Cashback_Bot_Protection {
         }
 
         // 3. Honeypot (поле cb_website_url должно быть пустым)
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Honeypot field checked before nonce verification by caller; this is an anti-bot pre-check on a public endpoint protected by rate-limit and CAPTCHA.
         if (isset($_POST['cb_website_url']) && $_POST['cb_website_url'] !== '') {
             Cashback_Rate_Limiter::record_violation($ip, 'honeypot');
             // Тихий reject — бот не должен знать что его поймали
@@ -101,7 +102,9 @@ class Cashback_Bot_Protection {
         }
 
         // 4. Timing check (если поле передано)
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Anti-bot timing field pre-checked before form nonce validation by caller; public endpoint protected by rate-limit and CAPTCHA.
         if (isset($_POST['cb_form_ts'])) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Anti-bot timing field read as int before form nonce validation by caller; public endpoint protected by rate-limit and CAPTCHA.
             $form_ts = (int) $_POST['cb_form_ts'];
             $now_ms  = (int) ( microtime(true) * 1000 );
             $delta_s = ( $now_ms - $form_ts ) / 1000;
@@ -131,7 +134,9 @@ class Cashback_Bot_Protection {
             && in_array($tier, self::CAPTCHA_TIERS, true)
             && Cashback_Captcha::should_require($ip)
         ) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing -- CAPTCHA token read before form nonce validation by caller; token itself is independently verified via Cashback_Captcha::verify_token() on a public endpoint protected by rate-limit.
             $captcha_token = isset($_POST['cb_captcha_token'])
+                // phpcs:ignore WordPress.Security.NonceVerification.Missing -- CAPTCHA token value independently verified via Cashback_Captcha::verify_token() before the form nonce is checked by caller.
                 ? sanitize_text_field(wp_unslash($_POST['cb_captcha_token']))
                 : '';
 
@@ -205,6 +210,7 @@ class Cashback_Bot_Protection {
             return Cashback_Encryption::get_client_ip();
         }
 
+        // phpcs:ignore WordPressVIPMinimum.Variables.ServerVariables.UserControlledHeaders -- REMOTE_ADDR is set by the web server from the TCP connection, not a client-controlled HTTP header; proxy headers trusted only via CASHBACK_TRUSTED_PROXIES allowlist.
         return sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'));
     }
 

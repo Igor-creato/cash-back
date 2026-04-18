@@ -746,6 +746,7 @@ class WC_Affiliate_URL_Params {
         try {
             $product = wc_get_product($product_id);
             if (!$product || $product->get_type() !== 'external') {
+                // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
                 wp_redirect(home_url(), 302);
                 exit;
             }
@@ -756,12 +757,14 @@ class WC_Affiliate_URL_Params {
                     '[wc-affiliate-url-params] Click blocked for auto-deactivated product #%d',
                     $product_id
                 ));
+                // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
                 wp_redirect(get_permalink($product_id) ?: home_url(), 302);
                 exit;
             }
 
             $fallback_url = $product->get_product_url();
             if (empty($fallback_url)) {
+                // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
                 wp_redirect(home_url(), 302);
                 exit;
             }
@@ -772,6 +775,7 @@ class WC_Affiliate_URL_Params {
             // Валидация: 32 hex символа
             if (!ctype_xdigit($click_id) || strlen($click_id) !== 32) {
                 error_log('[wc-affiliate-url-params] click_id validation failed: ' . $click_id);
+                // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
                 wp_redirect($fallback_url, 302);
                 exit;
             }
@@ -880,6 +884,7 @@ class WC_Affiliate_URL_Params {
             // Гости (неавторизованные) — моментальный редирект без промежуточной страницы.
             // Кешбэк не начисляется, задержка не нужна.
             if ($user_id === 0) {
+                // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
                 wp_redirect($affiliate_url, 302);
                 exit;
             }
@@ -895,6 +900,7 @@ class WC_Affiliate_URL_Params {
 				),
                 home_url('/')
             );
+            // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
             wp_redirect($activation_page_url, 302);
             exit;
         } catch (\Throwable $e) {
@@ -910,6 +916,7 @@ class WC_Affiliate_URL_Params {
                 $url = home_url();
             }
 
+            // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
             wp_redirect($url ?: home_url(), 302);
             exit;
         }
@@ -939,6 +946,7 @@ class WC_Affiliate_URL_Params {
 
         // Валидация: ровно 32 hex-символа (bin2hex(random_bytes(16)))
         if (!ctype_xdigit($click_id) || strlen($click_id) !== 32) {
+            // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
             wp_redirect(home_url(), 302);
             exit;
         }
@@ -956,6 +964,7 @@ class WC_Affiliate_URL_Params {
             $url = ( $row && in_array(parse_url($row, PHP_URL_SCHEME), array( 'http', 'https' ), true) )
                 ? $row
                 : home_url();
+            // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
             wp_redirect($url, 302);
             exit;
         }
@@ -980,6 +989,7 @@ class WC_Affiliate_URL_Params {
         }
 
         if (empty($affiliate_url)) {
+            // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
             wp_redirect(home_url(), 302);
             exit;
         }

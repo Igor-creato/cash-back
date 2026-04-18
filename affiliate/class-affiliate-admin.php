@@ -647,9 +647,9 @@ class Cashback_Affiliate_Admin {
             $profiles_table, $user_id
         ));
 
-        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Nonce verified in handle_update_partner() caller.
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.NonceVerification.Recommended -- Nonce verified earlier in handle_update_partner() caller.
         $rate = isset($_POST['rate']) && $_POST['rate'] !== ''
-            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Nonce verified in handle_update_partner() caller.
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.NonceVerification.Recommended -- Nonce verified earlier in handle_update_partner() caller.
             ? max(0, min(100, (float) $_POST['rate']))
             : null;
 
