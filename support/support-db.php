@@ -84,10 +84,13 @@ class Cashback_Support_DB {
             $tickets_table
         ));
         if (!$has_related_type) {
-            $wpdb->query("ALTER TABLE `{$tickets_table}`
+            $wpdb->query($wpdb->prepare(
+                "ALTER TABLE %i
                 ADD COLUMN `related_type` ENUM('cashback_tx','affiliate_accrual','payout') DEFAULT NULL AFTER `status`,
                 ADD COLUMN `related_id` BIGINT(20) UNSIGNED DEFAULT NULL AFTER `related_type`,
-                ADD KEY `idx_related` (`related_type`, `related_id`)");
+                ADD KEY `idx_related` (`related_type`, `related_id`)",
+                $tickets_table
+            ));
         } else {
             // Расширяем ENUM на случай, если колонка создавалась старой версией без 'payout'.
             $enum_def = $wpdb->get_var($wpdb->prepare(
@@ -96,8 +99,11 @@ class Cashback_Support_DB {
                 $tickets_table
             ));
             if ($enum_def && strpos((string) $enum_def, "'payout'") === false) {
-                $wpdb->query("ALTER TABLE `{$tickets_table}`
-                    MODIFY COLUMN `related_type` ENUM('cashback_tx','affiliate_accrual','payout') DEFAULT NULL");
+                $wpdb->query($wpdb->prepare(
+                    "ALTER TABLE %i
+                    MODIFY COLUMN `related_type` ENUM('cashback_tx','affiliate_accrual','payout') DEFAULT NULL",
+                    $tickets_table
+                ));
             }
         }
 
@@ -108,9 +114,14 @@ class Cashback_Support_DB {
              AND TABLE_SCHEMA = DATABASE()"
         );
         if (!$fk_exists) {
-            $wpdb->query("ALTER TABLE `{$tickets_table}`
+            $users_table = $wpdb->users;
+            $wpdb->query($wpdb->prepare(
+                "ALTER TABLE %i
                 ADD CONSTRAINT `fk_support_ticket_user`
-                FOREIGN KEY (`user_id`) REFERENCES `{$wpdb->users}` (`ID`) ON DELETE CASCADE");
+                FOREIGN KEY (`user_id`) REFERENCES %i (`ID`) ON DELETE CASCADE",
+                $tickets_table,
+                $users_table
+            ));
         }
 
         $fk_exists = $wpdb->get_var(
@@ -119,12 +130,21 @@ class Cashback_Support_DB {
              AND TABLE_SCHEMA = DATABASE()"
         );
         if (!$fk_exists) {
-            $wpdb->query("ALTER TABLE `{$messages_table}`
+            $users_table = $wpdb->users;
+            $wpdb->query($wpdb->prepare(
+                "ALTER TABLE %i
                 ADD CONSTRAINT `fk_support_message_ticket`
-                FOREIGN KEY (`ticket_id`) REFERENCES `{$tickets_table}` (`id`) ON DELETE CASCADE");
-            $wpdb->query("ALTER TABLE `{$messages_table}`
+                FOREIGN KEY (`ticket_id`) REFERENCES %i (`id`) ON DELETE CASCADE",
+                $messages_table,
+                $tickets_table
+            ));
+            $wpdb->query($wpdb->prepare(
+                "ALTER TABLE %i
                 ADD CONSTRAINT `fk_support_message_user`
-                FOREIGN KEY (`user_id`) REFERENCES `{$wpdb->users}` (`ID`) ON DELETE CASCADE");
+                FOREIGN KEY (`user_id`) REFERENCES %i (`ID`) ON DELETE CASCADE",
+                $messages_table,
+                $users_table
+            ));
         }
 
         // FK для таблицы вложений
@@ -134,12 +154,20 @@ class Cashback_Support_DB {
              AND TABLE_SCHEMA = DATABASE()"
         );
         if (!$fk_exists) {
-            $wpdb->query("ALTER TABLE `{$attachments_table}`
+            $wpdb->query($wpdb->prepare(
+                "ALTER TABLE %i
                 ADD CONSTRAINT `fk_attachment_message`
-                FOREIGN KEY (`message_id`) REFERENCES `{$messages_table}` (`id`) ON DELETE CASCADE");
-            $wpdb->query("ALTER TABLE `{$attachments_table}`
+                FOREIGN KEY (`message_id`) REFERENCES %i (`id`) ON DELETE CASCADE",
+                $attachments_table,
+                $messages_table
+            ));
+            $wpdb->query($wpdb->prepare(
+                "ALTER TABLE %i
                 ADD CONSTRAINT `fk_attachment_ticket`
-                FOREIGN KEY (`ticket_id`) REFERENCES `{$tickets_table}` (`id`) ON DELETE CASCADE");
+                FOREIGN KEY (`ticket_id`) REFERENCES %i (`id`) ON DELETE CASCADE",
+                $attachments_table,
+                $tickets_table
+            ));
         }
     }
 
@@ -244,7 +272,8 @@ class Cashback_Support_DB {
         $table = $wpdb->prefix . 'cashback_support_attachments';
 
         $row = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM `{$table}` WHERE id = %d",
+            'SELECT * FROM %i WHERE id = %d',
+            $table,
             $attachment_id
         ));
 
@@ -266,10 +295,8 @@ class Cashback_Support_DB {
         $table = $wpdb->prefix . 'cashback_support_attachments';
 
         $placeholders = implode(',', array_fill(0, count($message_ids), '%d'));
-        $results      = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM `{$table}` WHERE message_id IN ({$placeholders}) ORDER BY message_id, id ASC",
-            ...$message_ids
-        ));
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders — статический список %d из array_fill, длина по count($message_ids); значения биндятся спред-оператором.
+        $results = $wpdb->get_results($wpdb->prepare("SELECT * FROM %i WHERE message_id IN ({$placeholders}) ORDER BY message_id, id ASC", $table, ...$message_ids));
 
         $grouped = array();
         foreach ($results as $row) {
@@ -470,7 +497,8 @@ class Cashback_Support_DB {
         global $wpdb;
         $tickets_table = $wpdb->prefix . 'cashback_support_tickets';
         $ticket_owner  = $wpdb->get_var($wpdb->prepare(
-            "SELECT user_id FROM `{$tickets_table}` WHERE id = %d",
+            'SELECT user_id FROM %i WHERE id = %d',
+            $tickets_table,
             $ticket_id
         ));
         if (!$ticket_owner) {
@@ -554,7 +582,8 @@ class Cashback_Support_DB {
             global $wpdb;
             $tickets_table = $wpdb->prefix . 'cashback_support_tickets';
             $owner         = $wpdb->get_var($wpdb->prepare(
-                "SELECT user_id FROM `{$tickets_table}` WHERE id = %d",
+                'SELECT user_id FROM %i WHERE id = %d',
+                $tickets_table,
                 $attachment->ticket_id
             ));
             if ((int) $owner !== $requesting_user_id) {
@@ -611,13 +640,15 @@ class Cashback_Support_DB {
         $tickets_table  = $wpdb->prefix . 'cashback_support_tickets';
         $messages_table = $wpdb->prefix . 'cashback_support_messages';
 
-        $count = $wpdb->get_var(
-            "SELECT COUNT(DISTINCT t.id)
-             FROM `{$tickets_table}` t
-             INNER JOIN `{$messages_table}` m ON t.id = m.ticket_id
+        $count = $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(DISTINCT t.id)
+             FROM %i t
+             INNER JOIN %i m ON t.id = m.ticket_id
              WHERE m.is_admin = 0
-             AND m.is_read = 0"
-        );
+             AND m.is_read = 0',
+            $tickets_table,
+            $messages_table
+        ));
 
         return (int) $count;
     }
@@ -632,12 +663,14 @@ class Cashback_Support_DB {
         $messages_table = $wpdb->prefix . 'cashback_support_messages';
 
         $count = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(DISTINCT t.id)
-             FROM `{$tickets_table}` t
-             INNER JOIN `{$messages_table}` m ON t.id = m.ticket_id
+            'SELECT COUNT(DISTINCT t.id)
+             FROM %i t
+             INNER JOIN %i m ON t.id = m.ticket_id
              WHERE t.user_id = %d
              AND m.is_admin = 1
-             AND m.is_read = 0",
+             AND m.is_read = 0',
+            $tickets_table,
+            $messages_table,
             $user_id
         ));
 
@@ -817,9 +850,10 @@ class Cashback_Support_DB {
         $table = $wpdb->prefix . 'cashback_support_tickets';
 
         // Собираем ID тикетов для удаления файлов с диска
-        $ticket_ids = $wpdb->get_col(
-            "SELECT id FROM `{$table}` WHERE status = 'closed' AND closed_at IS NOT NULL AND closed_at < DATE_SUB(NOW(), INTERVAL 1 MONTH)"
-        );
+        $ticket_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT id FROM %i WHERE status = 'closed' AND closed_at IS NOT NULL AND closed_at < DATE_SUB(NOW(), INTERVAL 1 MONTH)",
+            $table
+        ));
 
         if (!empty($ticket_ids)) {
             foreach ($ticket_ids as $tid) {
@@ -827,9 +861,10 @@ class Cashback_Support_DB {
             }
         }
 
-        $deleted = $wpdb->query(
-            "DELETE FROM `{$table}` WHERE status = 'closed' AND closed_at IS NOT NULL AND closed_at < DATE_SUB(NOW(), INTERVAL 1 MONTH)"
-        );
+        $deleted = $wpdb->query($wpdb->prepare(
+            "DELETE FROM %i WHERE status = 'closed' AND closed_at IS NOT NULL AND closed_at < DATE_SUB(NOW(), INTERVAL 1 MONTH)",
+            $table
+        ));
 
         return max(0, (int) $deleted);
     }
