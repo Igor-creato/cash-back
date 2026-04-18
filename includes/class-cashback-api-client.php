@@ -165,7 +165,8 @@ class Cashback_API_Client {
         global $wpdb;
 
         $encrypted = $wpdb->get_var($wpdb->prepare(
-            "SELECT api_credentials FROM {$this->networks_table} WHERE id = %d",
+            'SELECT api_credentials FROM %i WHERE id = %d',
+            $this->networks_table,
             $network_id
         ));
 
@@ -196,7 +197,8 @@ class Cashback_API_Client {
         global $wpdb;
 
         $network = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$this->networks_table} WHERE slug = %s AND is_active = 1",
+            'SELECT * FROM %i WHERE slug = %s AND is_active = 1',
+            $this->networks_table,
             $slug
         ), ARRAY_A);
 
@@ -232,10 +234,13 @@ class Cashback_API_Client {
         global $wpdb;
 
         return $wpdb->get_results(
-            "SELECT id, name, slug, api_base_url, api_user_field, api_click_field, api_website_id, api_status_map, is_active
-             FROM {$this->networks_table}
-             WHERE is_active = 1 AND api_base_url IS NOT NULL AND api_base_url != ''
-             ORDER BY sort_order, name",
+            $wpdb->prepare(
+                "SELECT id, name, slug, api_base_url, api_user_field, api_click_field, api_website_id, api_status_map, is_active
+                 FROM %i
+                 WHERE is_active = 1 AND api_base_url IS NOT NULL AND api_base_url != ''
+                 ORDER BY sort_order, name",
+                $this->networks_table
+            ),
             ARRAY_A
         ) ?: array();
     }
@@ -510,7 +515,8 @@ class Cashback_API_Client {
         global $wpdb;
 
         $network = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$this->networks_table} WHERE id = %d",
+            'SELECT * FROM %i WHERE id = %d',
+            $this->networks_table,
             $network_id
         ), ARRAY_A);
 
@@ -795,14 +801,15 @@ class Cashback_API_Client {
         $network_name = $network['name'] ?? '';
 
         $local_transactions = $wpdb->get_results($wpdb->prepare(
-            "SELECT t.id, t.click_id, t.uniq_id, t.order_number, t.offer_name,
+            'SELECT t.id, t.click_id, t.uniq_id, t.order_number, t.offer_name,
                     t.comission, t.cashback, t.order_status, t.partner,
                     t.sum_order, t.created_at, t.updated_at, t.original_cpa_subid
-             FROM {$this->transactions_table} t
+             FROM %i t
              WHERE t.user_id = %d
                AND (LOWER(t.partner) = LOWER(%s) OR LOWER(t.partner) = LOWER(%s))
                AND t.created_at >= %s
-             ORDER BY t.created_at",
+             ORDER BY t.created_at',
+            $this->transactions_table,
             $user_id,
             $network_slug,
             $network_name,
@@ -1114,7 +1121,9 @@ class Cashback_API_Client {
             foreach (array_chunk($matched_ids, 500) as $chunk) {
                 $placeholders = implode(',', array_fill(0, count($chunk), '%d'));
                 $wpdb->query($wpdb->prepare(
-                    "UPDATE {$this->transactions_table} SET api_verified = 1 WHERE id IN ({$placeholders}) AND api_verified = 0",
+                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %d literals.
+                    "UPDATE %i SET api_verified = 1 WHERE id IN ({$placeholders}) AND api_verified = 0",
+                    $this->transactions_table,
                     ...$chunk
                 ));
             }
@@ -1223,13 +1232,14 @@ class Cashback_API_Client {
         $network_name = $network['name'] ?? '';
 
         $local_transactions = $wpdb->get_results($wpdb->prepare(
-            "SELECT t.id, t.click_id, t.uniq_id, t.order_number, t.offer_name,
+            'SELECT t.id, t.click_id, t.uniq_id, t.order_number, t.offer_name,
                     t.comission, t.cashback, t.order_status, t.partner,
                     t.sum_order, t.created_at, t.updated_at, t.user_id
-             FROM {$this->unregistered_table} t
+             FROM %i t
              WHERE (LOWER(t.partner) = LOWER(%s) OR LOWER(t.partner) = LOWER(%s))
                AND t.created_at >= %s
-             ORDER BY t.created_at",
+             ORDER BY t.created_at',
+            $this->unregistered_table,
             $network_slug,
             $network_name,
             $local_start
@@ -1525,7 +1535,9 @@ class Cashback_API_Client {
             foreach (array_chunk($matched_ids, 500) as $chunk) {
                 $placeholders = implode(',', array_fill(0, count($chunk), '%d'));
                 $wpdb->query($wpdb->prepare(
-                    "UPDATE {$this->unregistered_table} SET api_verified = 1 WHERE id IN ({$placeholders}) AND api_verified = 0",
+                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %d literals.
+                    "UPDATE %i SET api_verified = 1 WHERE id IN ({$placeholders}) AND api_verified = 0",
+                    $this->unregistered_table,
                     ...$chunk
                 ));
             }
@@ -1718,14 +1730,9 @@ class Cashback_API_Client {
             $local_map_by_click = array();
             if (!empty($api_click_ids)) {
                 $placeholders = implode(',', array_fill(0, count($api_click_ids), '%s'));
-                $query_args   = array_merge($api_click_ids, array( $slug, $network_name ));
-                $rows         = $wpdb->get_results($wpdb->prepare(
-                    "SELECT id, click_id, uniq_id, order_status, comission, sum_order, api_verified
-                     FROM {$this->transactions_table}
-                     WHERE click_id IN ({$placeholders})
-                       AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))",
-                    ...$query_args
-                ), ARRAY_A);
+                $query_args   = array_merge(array( $this->transactions_table ), $api_click_ids, array( $slug, $network_name ));
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %s literals.
+                $rows = $wpdb->get_results($wpdb->prepare("SELECT id, click_id, uniq_id, order_status, comission, sum_order, api_verified FROM %i WHERE click_id IN ({$placeholders}) AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))", ...$query_args), ARRAY_A);
 
                 foreach ($rows as $row) {
                     $local_map_by_click[ $row['click_id'] ] = $row;
@@ -1736,14 +1743,9 @@ class Cashback_API_Client {
             $local_map_by_uniq = array();
             if (!empty($api_action_ids)) {
                 $placeholders = implode(',', array_fill(0, count($api_action_ids), '%s'));
-                $query_args   = array_merge($api_action_ids, array( $slug, $network_name ));
-                $rows         = $wpdb->get_results($wpdb->prepare(
-                    "SELECT id, click_id, uniq_id, order_status, comission, sum_order, api_verified
-                     FROM {$this->transactions_table}
-                     WHERE uniq_id IN ({$placeholders})
-                       AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))",
-                    ...$query_args
-                ), ARRAY_A);
+                $query_args   = array_merge(array( $this->transactions_table ), $api_action_ids, array( $slug, $network_name ));
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %s literals.
+                $rows = $wpdb->get_results($wpdb->prepare("SELECT id, click_id, uniq_id, order_status, comission, sum_order, api_verified FROM %i WHERE uniq_id IN ({$placeholders}) AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))", ...$query_args), ARRAY_A);
 
                 foreach ($rows as $row) {
                     if (!isset($local_map_by_uniq[ $row['uniq_id'] ])) {
@@ -1757,14 +1759,9 @@ class Cashback_API_Client {
             $unreg_map_by_click = array();
             if (!empty($api_click_ids)) {
                 $placeholders = implode(',', array_fill(0, count($api_click_ids), '%s'));
-                $query_args   = array_merge($api_click_ids, array( $slug, $network_name ));
-                $rows         = $wpdb->get_results($wpdb->prepare(
-                    "SELECT id, click_id, uniq_id, order_status, comission, sum_order, user_id, api_verified
-                     FROM {$this->unregistered_table}
-                     WHERE click_id IN ({$placeholders})
-                       AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))",
-                    ...$query_args
-                ), ARRAY_A);
+                $query_args   = array_merge(array( $this->unregistered_table ), $api_click_ids, array( $slug, $network_name ));
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %s literals.
+                $rows = $wpdb->get_results($wpdb->prepare("SELECT id, click_id, uniq_id, order_status, comission, sum_order, user_id, api_verified FROM %i WHERE click_id IN ({$placeholders}) AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))", ...$query_args), ARRAY_A);
 
                 foreach ($rows as $row) {
                     $unreg_map_by_click[ $row['click_id'] ] = $row;
@@ -1775,14 +1772,9 @@ class Cashback_API_Client {
             $unreg_map_by_uniq = array();
             if (!empty($api_action_ids)) {
                 $placeholders = implode(',', array_fill(0, count($api_action_ids), '%s'));
-                $query_args   = array_merge($api_action_ids, array( $slug, $network_name ));
-                $rows         = $wpdb->get_results($wpdb->prepare(
-                    "SELECT id, click_id, uniq_id, order_status, comission, sum_order, user_id, api_verified
-                     FROM {$this->unregistered_table}
-                     WHERE uniq_id IN ({$placeholders})
-                       AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))",
-                    ...$query_args
-                ), ARRAY_A);
+                $query_args   = array_merge(array( $this->unregistered_table ), $api_action_ids, array( $slug, $network_name ));
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %s literals.
+                $rows = $wpdb->get_results($wpdb->prepare("SELECT id, click_id, uniq_id, order_status, comission, sum_order, user_id, api_verified FROM %i WHERE uniq_id IN ({$placeholders}) AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))", ...$query_args), ARRAY_A);
 
                 foreach ($rows as $row) {
                     if (!isset($unreg_map_by_uniq[ $row['uniq_id'] ])) {
@@ -1829,7 +1821,9 @@ class Cashback_API_Client {
                 $potential_user_ids = array_unique($potential_user_ids);
                 $placeholders       = implode(',', array_fill(0, count($potential_user_ids), '%d'));
                 $rows               = $wpdb->get_col($wpdb->prepare(
-                    "SELECT ID FROM {$wpdb->users} WHERE ID IN ({$placeholders})",
+                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %d literals.
+                    "SELECT ID FROM %i WHERE ID IN ({$placeholders})",
+                    $wpdb->users,
                     ...$potential_user_ids
                 ));
                 $existing_user_ids  = array_flip(array_map('intval', $rows));
@@ -1901,11 +1895,12 @@ class Cashback_API_Client {
                 $action_id_guard = (string) ( $action[ $fm_uniq_id ] ?? '' );
                 if ($action_id_guard !== '') {
                     $transferred = $wpdb->get_row($wpdb->prepare(
-                        "SELECT id, click_id, uniq_id, order_status, comission, sum_order, api_verified
-                         FROM {$this->transactions_table}
+                        'SELECT id, click_id, uniq_id, order_status, comission, sum_order, api_verified
+                         FROM %i
                          WHERE uniq_id = %s
                            AND (partner = LOWER(%s) OR partner = LOWER(%s))
-                         LIMIT 1",
+                         LIMIT 1',
+                        $this->transactions_table,
                         $action_id_guard,
                         $slug,
                         $network_name
@@ -2193,8 +2188,9 @@ class Cashback_API_Client {
         $click_id_early = (string) ( $action[ $click_field ] ?? '' );
         if ($is_unregistered && $click_id_early !== '') {
             $prior = $wpdb->get_row($wpdb->prepare(
-                "SELECT user_id FROM {$this->transactions_table}
-                 WHERE click_id = %s LIMIT 1",
+                'SELECT user_id FROM %i
+                 WHERE click_id = %s LIMIT 1',
+                $this->transactions_table,
                 $click_id_early
             ), ARRAY_A);
 
@@ -2439,12 +2435,13 @@ class Cashback_API_Client {
 
         $stale_registered = $wpdb->get_results($wpdb->prepare(
             "SELECT id, click_id, order_number, order_status, comission, created_at, updated_at
-             FROM {$this->transactions_table}
+             FROM %i
              WHERE order_status IN ('waiting', 'hold', 'completed')
                AND click_id IS NOT NULL AND click_id != ''
                AND updated_at < DATE_SUB(NOW(), INTERVAL %d DAY)
                AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))
              ORDER BY created_at ASC",
+            $this->transactions_table,
             $stale_interval,
             $slug,
             $network_name
@@ -2452,12 +2449,13 @@ class Cashback_API_Client {
 
         $stale_unregistered = $wpdb->get_results($wpdb->prepare(
             "SELECT id, click_id, order_number, order_status, comission, created_at, updated_at
-             FROM {$this->unregistered_table}
+             FROM %i
              WHERE order_status IN ('waiting', 'hold', 'completed')
                AND click_id IS NOT NULL AND click_id != ''
                AND updated_at < DATE_SUB(NOW(), INTERVAL %d DAY)
                AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))
              ORDER BY created_at ASC",
+            $this->unregistered_table,
             $stale_interval,
             $slug,
             $network_name
@@ -2594,13 +2592,8 @@ class Cashback_API_Client {
             $ids = array_column($to_decline_registered, 'id');
             foreach (array_chunk($ids, 500) as $chunk) {
                 $placeholders = implode(',', array_fill(0, count($chunk), '%d'));
-                $wpdb->query($wpdb->prepare(
-                    "UPDATE {$this->transactions_table}
-                     SET order_status = 'declined'
-                     WHERE id IN ({$placeholders})
-                       AND order_status IN ('waiting', 'hold', 'completed')",
-                    ...$chunk
-                ));
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %d literals.
+                $wpdb->query($wpdb->prepare("UPDATE %i SET order_status = 'declined' WHERE id IN ({$placeholders}) AND order_status IN ('waiting', 'hold', 'completed')", $this->transactions_table, ...$chunk));
             }
 
             foreach ($to_decline_registered as $tx) {
@@ -2622,13 +2615,8 @@ class Cashback_API_Client {
             $ids = array_column($to_decline_unregistered, 'id');
             foreach (array_chunk($ids, 500) as $chunk) {
                 $placeholders = implode(',', array_fill(0, count($chunk), '%d'));
-                $wpdb->query($wpdb->prepare(
-                    "UPDATE {$this->unregistered_table}
-                     SET order_status = 'declined'
-                     WHERE id IN ({$placeholders})
-                       AND order_status IN ('waiting', 'hold', 'completed')",
-                    ...$chunk
-                ));
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %d literals.
+                $wpdb->query($wpdb->prepare("UPDATE %i SET order_status = 'declined' WHERE id IN ({$placeholders}) AND order_status IN ('waiting', 'hold', 'completed')", $this->unregistered_table, ...$chunk));
             }
 
             foreach ($to_decline_unregistered as $tx) {
@@ -2696,7 +2684,8 @@ class Cashback_API_Client {
         global $wpdb;
 
         return $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$this->checkpoints_table} WHERE user_id = %d AND network_slug = %s",
+            'SELECT * FROM %i WHERE user_id = %d AND network_slug = %s',
+            $this->checkpoints_table,
             $user_id,
             $network_slug
         ), ARRAY_A);
@@ -2764,6 +2753,8 @@ class Cashback_API_Client {
         // Одним JOIN находим кандидатов: unregistered строки, чей click_id уже есть
         // в cashback_transactions с реальным user_id.
         // Оба конца JOIN используют indexed click_id.
+        $user_profile_table = $wpdb->prefix . 'cashback_user_profile';
+
         $candidates = $wpdb->get_results($wpdb->prepare(
             "SELECT
                 u.id            AS unreg_id,
@@ -2789,10 +2780,10 @@ class Cashback_API_Client {
                 u.spam_click,
                 u.created_at,
                 t.user_id       AS real_user_id
-             FROM {$this->unregistered_table} u
-             INNER JOIN {$this->transactions_table} t
+             FROM %i u
+             INNER JOIN %i t
                  ON t.click_id = u.click_id
-             LEFT JOIN {$wpdb->prefix}cashback_user_profile cup
+             LEFT JOIN %i cup
                  ON cup.user_id = t.user_id
              WHERE u.click_id IS NOT NULL
                AND u.click_id != ''
@@ -2802,6 +2793,9 @@ class Cashback_API_Client {
              GROUP BY u.id
              ORDER BY u.id ASC
              LIMIT %d",
+            $this->unregistered_table,
+            $this->transactions_table,
+            $user_profile_table,
             $limit
         ), ARRAY_A);
 
@@ -2818,8 +2812,9 @@ class Cashback_API_Client {
             try {
                 // Блокируем исходную строку перед переносом
                 $tx = $wpdb->get_row($wpdb->prepare(
-                    "SELECT * FROM {$this->unregistered_table}
-                     WHERE id = %d FOR UPDATE",
+                    'SELECT * FROM %i
+                     WHERE id = %d FOR UPDATE',
+                    $this->unregistered_table,
                     (int) $candidate['unreg_id']
                 ), ARRAY_A);
 
@@ -2832,8 +2827,9 @@ class Cashback_API_Client {
                 // Проверка дубликата по UNIQUE KEY (uniq_id, partner) — O(1)
                 if (!empty($tx['uniq_id']) && !empty($tx['partner'])) {
                     $dup = (int) $wpdb->get_var($wpdb->prepare(
-                        "SELECT COUNT(*) FROM {$this->transactions_table}
-                         WHERE uniq_id = %s AND partner = %s",
+                        'SELECT COUNT(*) FROM %i
+                         WHERE uniq_id = %s AND partner = %s',
+                        $this->transactions_table,
                         $tx['uniq_id'],
                         $tx['partner']
                     ));
