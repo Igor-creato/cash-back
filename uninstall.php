@@ -277,16 +277,13 @@ function cashback_plugin_uninstall(): void {
         // Контактная форма: rate limit
         'cb_contact_rate_',
     );
-    $where_parts        = array();
-    $values             = array();
     foreach ($transient_prefixes as $p) {
-        $where_parts[] = 'option_name LIKE %s';
-        $where_parts[] = 'option_name LIKE %s';
-        $values[]      = $wpdb->esc_like('_transient_' . $p) . '%';
-        $values[]      = $wpdb->esc_like('_transient_timeout_' . $p) . '%';
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+            $wpdb->esc_like('_transient_' . $p) . '%',
+            $wpdb->esc_like('_transient_timeout_' . $p) . '%'
+        ));
     }
-    // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- $where_parts is static 'option_name LIKE %s' clauses; values bound via $wpdb->prepare(); sniff can't see %s inside concatenated $where_parts.
-    $wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE " . implode( ' OR ', $where_parts ), ...$values ) );
 
     // Delete campaign status options (cashback_campaign_status_*)
     $wpdb->query($wpdb->prepare(
