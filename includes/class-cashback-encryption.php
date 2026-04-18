@@ -358,6 +358,7 @@ class Cashback_Encryption {
      * чтобы предотвратить спуфинг через X-Forwarded-For: 10.0.0.1.
      */
     public static function get_client_ip(): string {
+        // phpcs:ignore WordPressVIPMinimum.Variables.ServerVariables.UserControlledHeaders -- REMOTE_ADDR is set by the web server from the TCP connection, not a client-controlled HTTP header; proxy headers trusted only via CASHBACK_TRUSTED_PROXIES allowlist.
         $remote_addr = isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '0.0.0.0';
 
         // Доверять прокси-заголовкам только если REMOTE_ADDR — доверенный прокси

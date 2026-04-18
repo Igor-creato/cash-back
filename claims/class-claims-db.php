@@ -89,7 +89,7 @@ class Cashback_Claims_DB {
         }
 
         if (!empty($failed)) {
-            throw new Exception('Failed to create claims tables: ' . implode('; ', $failed));
+            throw new Exception(esc_html('Failed to create claims tables: ' . implode('; ', $failed)));
         }
 
         self::add_constraints();

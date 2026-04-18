@@ -527,7 +527,7 @@ class Mariadb_Plugin {
 
         if (!empty($failed_tables)) {
             throw new Exception(
-                'Failed to create tables: ' . implode('; ', $failed_tables)
+                'Failed to create tables: ' . esc_html( implode('; ', $failed_tables) )
             );
         }
 
