@@ -154,6 +154,8 @@ class CashbackPlugin {
         add_action('plugins_loaded', array( $this, 'init' ));
         add_action('init', array( $this, 'load_textdomain' ));
         add_action('before_woocommerce_init', array( $this, 'declare_woocommerce_compatibility' ));
+        // Единая пагинация — CSS для админки (используется на всех cashback-* страницах).
+        add_action('admin_enqueue_scripts', array( $this, 'enqueue_pagination_admin_assets' ));
         // WooCommerce транзакционные письма используют собственный фильтр woocommerce_email_from_name
         add_filter('woocommerce_email_from_name', function ( string $name ): string {
             $custom = (string) get_option('cashback_email_sender_name', '');
@@ -176,6 +178,28 @@ class CashbackPlugin {
             'cashback-plugin',
             false,
             dirname(plugin_basename(__FILE__)) . '/languages/'
+        );
+    }
+
+    /**
+     * Подключение CSS единой пагинации на cashback-страницах админки.
+     *
+     * Срабатывает на admin_enqueue_scripts и загружает pagination-admin.css только
+     * на страницах плагина (hook 'toplevel_page_cashback-overview' и sub-hook'ах
+     * '*_page_cashback-*'), чтобы не нагружать остальные экраны админки.
+     *
+     * @param string $hook Hook-идентификатор текущей админ-страницы.
+     * @return void
+     */
+    public function enqueue_pagination_admin_assets( string $hook ): void {
+        if (strpos($hook, 'cashback-') === false) {
+            return;
+        }
+        wp_enqueue_style(
+            'cashback-pagination-admin',
+            plugins_url('assets/css/pagination-admin.css', __FILE__),
+            array(),
+            '1.0.0'
         );
     }
 
@@ -415,6 +439,9 @@ class CashbackPlugin {
         // Глобальный lock для атомарной синхронизации + начисления
         $this->require_file('includes/class-cashback-lock.php');
 
+        // Единая пагинация (используется и в админке, и во фронтенде)
+        $this->require_file('includes/class-cashback-pagination.php');
+
         // API клиент и cron (синхронизация работает через WP Cron)
         $this->require_file('includes/class-cashback-api-client.php');
         $this->require_file('includes/class-cashback-api-cron.php');
@@ -451,7 +478,6 @@ class CashbackPlugin {
 
         // Admin-only файлы (is_admin() = true для admin pages, admin-ajax.php, REST через admin)
         if (is_admin()) {
-            $this->require_file('admin/class-cashback-admin-pagination.php');
             $this->require_file('admin/payout-methods.php');
             $this->require_file('admin/users-management.php');
             $this->require_file('admin/payouts.php');

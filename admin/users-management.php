@@ -311,7 +311,7 @@ class Cashback_Users_Management_Admin {
                 )),
             );
 
-            Cashback_Admin_Pagination::render($pagination_args);
+            Cashback_Pagination::render($pagination_args);
             ?>
 
         </div>

@@ -87,9 +87,17 @@ class Cashback_Affiliate_Frontend {
         );
 
         wp_enqueue_script(
+            'cashback-pagination',
+            plugins_url('../assets/js/cashback-pagination.js', __FILE__),
+            array(),
+            '1.0.0',
+            true
+        );
+
+        wp_enqueue_script(
             'cashback-affiliate-frontend-js',
             plugins_url('../assets/js/affiliate-frontend.js', __FILE__),
-            array( 'jquery' ),
+            array( 'jquery', 'cashback-pagination' ),
             '1.0.0',
             true
         );
@@ -333,16 +341,11 @@ class Cashback_Affiliate_Frontend {
 
         echo '</tbody></table>';
 
-        // Пагинация
-        if ($total_pages > 1) {
-            echo '<div class="cashback-affiliate-pagination" data-total="' . esc_attr($total_pages) . '">';
-            for ($i = 1; $i <= $total_pages; $i++) {
-                $active = $i === $page ? ' active' : '';
-                echo '<button type="button" class="cashback-affiliate-page-btn' . esc_attr($active) . '" data-page="' . esc_attr($i) . '">'
-                    . esc_html($i) . '</button>';
-            }
-            echo '</div>';
-        }
+        Cashback_Pagination::render(array(
+            'mode'         => 'ajax',
+            'current_page' => $page,
+            'total_pages'  => $total_pages,
+        ));
     }
 
     /**
@@ -444,16 +447,11 @@ class Cashback_Affiliate_Frontend {
 
         echo '</tbody></table>';
 
-        // Пагинация
-        if ($total_pages > 1) {
-            echo '<div class="cashback-affiliate-pagination cashback-affiliate-referrals-pagination" data-total="' . esc_attr($total_pages) . '">';
-            for ($i = 1; $i <= $total_pages; $i++) {
-                $active = $i === $page ? ' active' : '';
-                echo '<button type="button" class="cashback-affiliate-page-btn' . esc_attr($active) . '" data-page="' . esc_attr($i) . '">'
-                    . esc_html($i) . '</button>';
-            }
-            echo '</div>';
-        }
+        Cashback_Pagination::render(array(
+            'mode'         => 'ajax',
+            'current_page' => $page,
+            'total_pages'  => $total_pages,
+        ));
     }
 
     /**

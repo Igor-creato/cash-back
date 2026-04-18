@@ -512,7 +512,7 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
                 )),
             );
 
-            Cashback_Admin_Pagination::render($pagination_args);
+            Cashback_Pagination::render($pagination_args);
             ?>
         </div>
 <?php

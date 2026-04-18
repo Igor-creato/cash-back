@@ -270,7 +270,7 @@ class Cashback_Affiliate_Admin {
         echo '</tbody></table>';
 
         // Pagination
-        Cashback_Admin_Pagination::render(array(
+        Cashback_Pagination::render(array(
             'total_items'  => $total,
             'per_page'     => self::PER_PAGE,
             'current_page' => $current_page,
@@ -526,7 +526,7 @@ class Cashback_Affiliate_Admin {
 
         echo '</tbody></table>';
 
-        Cashback_Admin_Pagination::render(array(
+        Cashback_Pagination::render(array(
             'total_items'  => $total,
             'per_page'     => $per_page,
             'current_page' => $current_page,

@@ -107,10 +107,18 @@ class Cashback_Claims_Admin {
         );
 
         wp_enqueue_script(
+            'cashback-pagination',
+            $plugin_dir_url . 'assets/js/cashback-pagination.js',
+            array(),
+            '1.0.0',
+            true
+        );
+
+        wp_enqueue_script(
             'cashback-admin-claims-js',
             $plugin_dir_url . 'assets/js/admin-claims.js',
-            array( 'jquery' ),
-            '1.0.0',
+            array( 'jquery', 'cashback-pagination' ),
+            '1.1.0',
             true
         );
 
@@ -308,7 +316,7 @@ class Cashback_Claims_Admin {
                 </table>
 
                 <?php
-                Cashback_Admin_Pagination::render(array(
+                Cashback_Pagination::render(array(
                     'total_items'  => isset($result['total']) ? (int) $result['total'] : 0,
                     'current_page' => $page,
                     'total_pages'  => (int) $result['pages'],

@@ -292,7 +292,7 @@ class Cashback_Rate_History_Admin {
             </table>
 
             <?php
-            Cashback_Admin_Pagination::render(array(
+            Cashback_Pagination::render(array(
                 'total_items'  => $total_items,
                 'current_page' => $paged,
                 'total_pages'  => $total_pages,

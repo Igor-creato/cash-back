@@ -232,7 +232,13 @@ class Cashback_Claims_Frontend {
         </div>
         <div id="clicks-pagination">
             <?php if ($result['pages'] > 1) : ?>
-                <?php $this->render_pagination(1, $result['pages']); ?>
+                <?php
+                Cashback_Pagination::render(array(
+                    'mode'         => 'ajax',
+                    'current_page' => 1,
+                    'total_pages'  => (int) ceil((float) $result['pages']),
+                ));
+                ?>
             <?php endif; ?>
         </div>
         <?php
@@ -291,7 +297,13 @@ class Cashback_Claims_Frontend {
         </div>
         <div id="claims-pagination">
             <?php if (!empty($result['claims'])) : ?>
-                <?php $this->render_pagination(1, $result['pages']); ?>
+                <?php
+                Cashback_Pagination::render(array(
+                    'mode'         => 'ajax',
+                    'current_page' => 1,
+                    'total_pages'  => (int) ceil((float) $result['pages']),
+                ));
+                ?>
             <?php endif; ?>
         </div>
         <?php
@@ -601,10 +613,18 @@ class Cashback_Claims_Frontend {
         );
 
         wp_enqueue_script(
+            'cashback-pagination',
+            $plugin_dir_url . 'assets/js/cashback-pagination.js',
+            array(),
+            '1.0.0',
+            true
+        );
+
+        wp_enqueue_script(
             'cashback-claims-js',
             $plugin_dir_url . 'assets/js/admin-claims.js',
-            array( 'jquery' ),
-            '1.4.0',
+            array( 'jquery', 'cashback-pagination' ),
+            '1.5.0',
             true
         );
 
@@ -625,61 +645,6 @@ class Cashback_Claims_Frontend {
         ));
     }
 
-    /**
-     * Pagination matching support module style.
-     */
-    private function render_pagination( int $current, $total ): void {
-        $total = (int) ceil((float) $total);
-        if ($total <= 1) {
-            return;
-        }
-
-        $range = 2; // соседние страницы вокруг текущей
-        $edge  = 2;  // крайние страницы с каждой стороны
-
-        // Собираем номера страниц для отображения
-        $pages      = array();
-        $head_limit = min($edge, $total);
-        $middle_end = min($total, $current + $range);
-        for ($i = 1; $i <= $head_limit; $i++) {
-            $pages[] = $i;
-        }
-        for ($i = max(1, $current - $range); $i <= $middle_end; $i++) {
-            $pages[] = $i;
-        }
-        for ($i = max(1, $total - $edge + 1); $i <= $total; $i++) {
-            $pages[] = $i;
-        }
-
-        $pages = array_unique($pages);
-        sort($pages);
-
-        echo '<nav class="woocommerce-pagination">';
-        echo '<ul class="page-numbers">';
-
-        // Кнопка «Назад»
-        if ($current > 1) {
-            echo '<li><a href="#" class="page-numbers prev" data-page="' . esc_attr( $current - 1 ) . '">&lsaquo;</a></li>';
-        }
-
-        $prev = 0;
-        foreach ($pages as $page) {
-            if ($prev && $page - $prev > 1) {
-                echo '<li><span class="page-numbers dots">&hellip;</span></li>';
-            }
-            $class = ( $page == $current ) ? 'current' : '';
-            echo '<li><a href="#" class="page-numbers ' . esc_attr($class) . '" data-page="' . esc_attr( $page ) . '">' . esc_html( $page ) . '</a></li>';
-            $prev = $page;
-        }
-
-        // Кнопка «Вперёд»
-        if ($current < $total) {
-            echo '<li><a href="#" class="page-numbers next" data-page="' . esc_attr( $current + 1 ) . '">&rsaquo;</a></li>';
-        }
-
-        echo '</ul>';
-        echo '</nav>';
-    }
 
     private function get_status_label( string $status ): string {
         $labels = array(

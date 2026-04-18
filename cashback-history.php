@@ -159,7 +159,11 @@ class CashbackHistory {
 
         echo '<div id="pagination-container">';
         if ($total_pages > 1) {
-            $this->render_pagination($page, $total_pages);
+            Cashback_Pagination::render(array(
+                'mode'         => 'ajax',
+                'current_page' => $page,
+                'total_pages'  => $total_pages,
+            ));
         }
         echo '</div>';
 
@@ -222,66 +226,6 @@ class CashbackHistory {
         echo '</table>';
     }
 
-    /**
-     * Render pagination links.
-     *
-     * @param int $current_page Current page number.
-     * @param int $total_pages  Total number of pages.
-     * @return void
-     */
-    private function render_pagination( $current_page, $total_pages ) {
-        if ($total_pages <= 1) {
-            return;
-        }
-
-        $range = 2; // соседние страницы вокруг текущей
-        $edge  = 2;  // крайние страницы с каждой стороны
-
-        // Собираем номера страниц для отображения
-        $pages       = array();
-        $edge_limit  = min($edge, $total_pages);
-        $range_start = max(1, $current_page - $range);
-        $range_end   = min($total_pages, $current_page + $range);
-        $tail_start  = max(1, $total_pages - $edge + 1);
-        for ($i = 1; $i <= $edge_limit; $i++) {
-            $pages[] = $i;
-        }
-        for ($i = $range_start; $i <= $range_end; $i++) {
-            $pages[] = $i;
-        }
-        for ($i = $tail_start; $i <= $total_pages; $i++) {
-            $pages[] = $i;
-        }
-
-        $pages = array_unique($pages);
-        sort($pages);
-
-        echo '<nav class="woocommerce-pagination">';
-        echo '<ul class="page-numbers">';
-
-        // Кнопка «Назад»
-        if ($current_page > 1) {
-            echo '<li><a href="#" class="page-numbers prev" data-page="' . esc_attr((string) ( $current_page - 1 )) . '">&lsaquo;</a></li>';
-        }
-
-        $prev = 0;
-        foreach ($pages as $page) {
-            if ($prev && $page - $prev > 1) {
-                echo '<li><span class="page-numbers dots">&hellip;</span></li>';
-            }
-            $class = ( $page == $current_page ) ? 'current' : '';
-            echo '<li><a href="#" class="page-numbers ' . esc_attr($class) . '" data-page="' . esc_attr((string) $page) . '">' . esc_html((string) $page) . '</a></li>';
-            $prev = $page;
-        }
-
-        // Кнопка «Вперёд»
-        if ($current_page < $total_pages) {
-            echo '<li><a href="#" class="page-numbers next" data-page="' . esc_attr((string) ( $current_page + 1 )) . '">&rsaquo;</a></li>';
-        }
-
-        echo '</ul>';
-        echo '</nav>';
-    }
 
     /**
      * Get transactions for a user with pagination.
@@ -450,10 +394,18 @@ class CashbackHistory {
             }
 
             wp_enqueue_script(
+                'cashback-pagination',
+                plugin_dir_url(__FILE__) . 'assets/js/cashback-pagination.js',
+                array(),
+                '1.0.0',
+                true
+            );
+
+            wp_enqueue_script(
                 'cashback-history-ajax',
                 plugin_dir_url(__FILE__) . 'assets/js/cashback-history.js',
-                array( 'jquery' ),
-                '1.1.0',
+                array( 'jquery', 'cashback-pagination' ),
+                '1.2.0',
                 true
             );
 
