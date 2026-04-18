@@ -69,8 +69,10 @@ class Cashback_Payouts_Admin {
         );
 
         // Также проверяем через $_GET параметр
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only admin page detection, no state change.
         $is_payouts_page = in_array($hook, $allowed_hooks, true) ||
             ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-payouts' );
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
 
         if (!$is_payouts_page) {
             return;
@@ -84,8 +86,10 @@ class Cashback_Payouts_Admin {
         );
 
         // Определяем, открыта ли детальная страница
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only admin detail-view detection; nonce enforced on update AJAX actions.
         $is_detail_view = isset($_GET['action']) && sanitize_text_field(wp_unslash($_GET['action'])) === 'view'
             && !empty($_GET['payout_id']);
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
 
         if ($is_detail_view) {
             wp_enqueue_script(
@@ -100,6 +104,7 @@ class Cashback_Payouts_Admin {
                 'updateNonce'  => wp_create_nonce('update_payout_request_nonce'),
                 'decryptNonce' => wp_create_nonce('decrypt_payout_details_nonce'),
                 'verifyNonce'  => wp_create_nonce('verify_payout_balance_nonce'),
+                // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only detail-view ID passed to JS; nonce enforced on update AJAX actions.
                 'payoutId'     => absint($_GET['payout_id']),
                 'ajaxurl'      => admin_url('admin-ajax.php'),
                 'listUrl'      => admin_url('admin.php?page=cashback-payouts'),
@@ -151,7 +156,9 @@ class Cashback_Payouts_Admin {
         }
 
         // Роутинг: если action=view — показываем детальную страницу
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin routing; nonce enforced on update AJAX actions.
         $action         = sanitize_text_field(wp_unslash($_GET['action'] ?? ''));
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin routing; nonce enforced on update AJAX actions.
         $view_payout_id = absint($_GET['payout_id'] ?? 0);
         if ($action === 'view' && $view_payout_id > 0) {
             $this->render_payout_detail_page($view_payout_id);
@@ -162,6 +169,7 @@ class Cashback_Payouts_Admin {
 
         // Получаем параметры для пагинации и фильтрации
         $max_allowed_pages = 1000;
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination (absint + capped).
         $current_page      = max(1, absint($_GET['paged'] ?? 1));
         if ($current_page > $max_allowed_pages) {
             $current_page = $max_allowed_pages;
@@ -170,9 +178,11 @@ class Cashback_Payouts_Admin {
         $offset   = ( $current_page - 1 ) * $per_page;
 
         // Получаем фильтры с валидацией
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filters, validated via allowlist/regex below.
         $filter_status    = sanitize_text_field(wp_unslash($_GET['status'] ?? ''));
         $filter_date_from = sanitize_text_field(wp_unslash($_GET['date_from'] ?? ''));
         $filter_date_to   = sanitize_text_field(wp_unslash($_GET['date_to'] ?? ''));
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
 
         // Валидация дат (формат + реальная дата)
         if (!empty($filter_date_from) && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $filter_date_from)) {
@@ -195,6 +205,7 @@ class Cashback_Payouts_Admin {
         }
 
         // Фильтр по номеру заявки
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, validated via regex below.
         $filter_reference = sanitize_text_field(wp_unslash($_GET['reference'] ?? ''));
         if (!empty($filter_reference) && !preg_match('/^WD-[23456789A-HJ-NP-Z]{0,8}$/i', $filter_reference)) {
             $filter_reference = '';
@@ -273,8 +284,10 @@ class Cashback_Payouts_Admin {
         // Выводим сообщения об ошибках или успехе
         $message      = '';
         $message_type = '';
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only admin notice after redirect (allowlist-validated).
         if (isset($_GET['message'])) {
             $message_code = sanitize_text_field(wp_unslash($_GET['message']));
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
             if ($message_code === 'updated') {
                 $message      = __('Запрос на выплату успешно обновлен.', 'cashback-plugin');
                 $message_type = 'success';

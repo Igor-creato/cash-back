@@ -39,6 +39,7 @@ class Cashback_Rate_History_Admin {
     }
 
     public function enqueue_admin_scripts( string $hook ): void {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin page detection, no state change.
         $is_rate_history = ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-rate-history' );
 
         if (!$is_rate_history) {
@@ -74,12 +75,14 @@ class Cashback_Rate_History_Admin {
 
         global $wpdb;
 
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filters, validated via allowlist/regex/absint below.
         $filter_rate_type = isset($_GET['rate_type']) ? sanitize_text_field(wp_unslash($_GET['rate_type'])) : '';
         $filter_date_from = isset($_GET['date_from']) ? sanitize_text_field(wp_unslash($_GET['date_from'])) : '';
         $filter_date_to   = isset($_GET['date_to']) ? sanitize_text_field(wp_unslash($_GET['date_to'])) : '';
         $filter_rate      = isset($_GET['filter_rate']) ? sanitize_text_field(wp_unslash($_GET['filter_rate'])) : '';
         $filter_user      = isset($_GET['filter_user']) ? sanitize_text_field(wp_unslash($_GET['filter_user'])) : '';
         $paged            = isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1;
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
         $per_page         = 20;
 
         if (!empty($filter_date_from) && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $filter_date_from)) {

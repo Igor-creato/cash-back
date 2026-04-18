@@ -50,8 +50,10 @@ class Cashback_Affiliate_Admin {
             'admin_page_cashback-affiliate',
         );
 
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only admin page detection, no state change.
         $is_page = in_array($hook, $allowed_hooks, true)
             || ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-affiliate' );
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
 
         if (!$is_page) {
             return;
@@ -117,6 +119,7 @@ class Cashback_Affiliate_Admin {
         }
 
         // Tabs
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin tab routing, allowlist-validated below.
         $current_tab = isset($_GET['tab']) ? sanitize_text_field(wp_unslash($_GET['tab'])) : 'settings';
         $tabs        = array(
             'settings' => __('Настройки', 'cashback-plugin'),
@@ -200,8 +203,10 @@ class Cashback_Affiliate_Admin {
      * ═══════════════════════════════════════ */
 
     private function render_accruals_tab(): void {
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filters, validated in query_accruals() via allowlist/esc_like.
         $filter_status = isset($_GET['status']) ? sanitize_text_field(wp_unslash($_GET['status'])) : '';
         $filter_search = isset($_GET['s']) ? sanitize_text_field(wp_unslash($_GET['s'])) : '';
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
 
         $query_result = $this->query_accruals($filter_status, $filter_search);
         $accruals     = $query_result['rows'];
@@ -318,6 +323,7 @@ class Cashback_Affiliate_Admin {
             ));
         }
 
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination (absint + capped by total_pages).
         $current_page = max(1, absint($_GET['paged'] ?? 1));
         $total_pages  = max(1, (int) ceil($total / $per_page));
         $current_page = min($current_page, $total_pages);
@@ -417,10 +423,12 @@ class Cashback_Affiliate_Admin {
         global $wpdb;
         $prefix = $wpdb->prefix;
 
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only admin listing: pagination (absint) + filters validated via allowlist/esc_like below.
         $current_page  = max(1, absint($_GET['paged'] ?? 1));
         $per_page      = self::PER_PAGE;
         $filter_status = isset($_GET['aff_status']) ? sanitize_text_field(wp_unslash($_GET['aff_status'])) : '';
         $filter_search = isset($_GET['s']) ? sanitize_text_field(wp_unslash($_GET['s'])) : '';
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
 
         $where_clauses = array();
         $where_args    = array();
@@ -639,7 +647,9 @@ class Cashback_Affiliate_Admin {
             $profiles_table, $user_id
         ));
 
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Nonce verified in handle_update_partner() caller.
         $rate = isset($_POST['rate']) && $_POST['rate'] !== ''
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Nonce verified in handle_update_partner() caller.
             ? max(0, min(100, (float) $_POST['rate']))
             : null;
 
