@@ -263,6 +263,7 @@ class Cashback_Affiliate_Frontend {
              ORDER BY a.created_at DESC
              LIMIT %d OFFSET %d",
             $accruals_table,
+            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
             $wpdb->users,
             $user_id,
             $per_page,
@@ -404,6 +405,7 @@ class Cashback_Affiliate_Frontend {
              ORDER BY ap.referred_at DESC
              LIMIT %d OFFSET %d",
             $profiles_table,
+            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
             $wpdb->users,
             $accruals_table,
             $user_id,

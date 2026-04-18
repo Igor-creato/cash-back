@@ -114,6 +114,7 @@ class Cashback_Support_DB {
              AND TABLE_SCHEMA = DATABASE()"
         );
         if (!$fk_exists) {
+            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin FK to core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
             $users_table = $wpdb->users;
             $wpdb->query($wpdb->prepare(
                 "ALTER TABLE %i
@@ -130,6 +131,7 @@ class Cashback_Support_DB {
              AND TABLE_SCHEMA = DATABASE()"
         );
         if (!$fk_exists) {
+            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin FK referencing support tickets table; $users_table unused here but kept for symmetry; passed via %i identifier placeholder, not user input.
             $users_table = $wpdb->users;
             $wpdb->query($wpdb->prepare(
                 "ALTER TABLE %i

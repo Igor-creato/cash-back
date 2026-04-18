@@ -309,6 +309,7 @@ class Cashback_Affiliate_Admin {
         }
 
         $where_sql  = !empty($where_clauses) ? 'WHERE ' . implode(' AND ', $where_clauses) : '';
+        // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
         $table_args = array( $accruals_table, $wpdb->users, $wpdb->users );
 
         if (!empty($where_args)) {
@@ -319,6 +320,7 @@ class Cashback_Affiliate_Admin {
                 'SELECT COUNT(*) FROM %i a
                  LEFT JOIN %i u1 ON u1.ID = a.referrer_id
                  LEFT JOIN %i u2 ON u2.ID = a.referred_user_id',
+                // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
                 $accruals_table, $wpdb->users, $wpdb->users
             ));
         }
@@ -450,13 +452,14 @@ class Cashback_Affiliate_Admin {
         $accruals_table  = $prefix . 'cashback_affiliate_accruals';
 
         if (!empty($where_args)) {
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql from allowlist (affiliate_status IN array / LIKE %s); values bound via prepare(); sniff can't count array_merge args.
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- $where_sql from allowlist (affiliate_status IN array / LIKE %s); values bound via prepare(); sniff can't count array_merge args. $wpdb->users passed as %i identifier placeholder, not user input.
             $total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i ap INNER JOIN %i u ON u.ID = ap.user_id {$where_sql}", array_merge( array( $profiles_table, $wpdb->users ), $where_args ) ) );
         } else {
             $total = (int) $wpdb->get_var($wpdb->prepare(
                 'SELECT COUNT(*)
                  FROM %i ap
                  INNER JOIN %i u ON u.ID = ap.user_id',
+                // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
                 $profiles_table, $wpdb->users
             ));
         }
@@ -465,7 +468,7 @@ class Cashback_Affiliate_Admin {
         $current_page = min($current_page, $total_pages);
         $offset       = ( $current_page - 1 ) * $per_page;
 
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql from allowlist (affiliate_status IN array / LIKE %s); values bound via prepare(); sniff can't count array_merge args.
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- $where_sql from allowlist (affiliate_status IN array / LIKE %s); values bound via prepare(); sniff can't count array_merge args. $wpdb->users passed as %i identifier placeholder, not user input.
         $partners = $wpdb->get_results( $wpdb->prepare( "SELECT ap.*, u.display_name, u.user_email, (SELECT COUNT(*) FROM %i r WHERE r.referred_by_user_id = ap.user_id) AS referral_count, (SELECT COALESCE(SUM(commission_amount), 0) FROM %i WHERE referrer_id = ap.user_id) AS total_earned FROM %i ap INNER JOIN %i u ON u.ID = ap.user_id {$where_sql} ORDER BY ap.created_at DESC LIMIT %d OFFSET %d", array_merge( array( $profiles_table, $accruals_table, $profiles_table, $wpdb->users ), $where_args, array( $per_page, $offset ) ) ), ARRAY_A );
 
         $global_rate = Cashback_Affiliate_DB::get_global_rate();
@@ -750,6 +753,7 @@ class Cashback_Affiliate_Admin {
              FROM %i ap
              INNER JOIN %i u ON u.ID = ap.user_id
              WHERE ap.user_id = %d LIMIT 1',
+            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
             $profiles_table, $wpdb->users, $user_id
         ), ARRAY_A);
 

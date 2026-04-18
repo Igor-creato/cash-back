@@ -557,6 +557,7 @@ class Cashback_Fraud_Detector {
              WHERE u.user_registered > DATE_SUB(NOW(), INTERVAL %d DAY)
                AND r.created_at > DATE_SUB(NOW(), INTERVAL 1 DAY)",
             $req_table,
+            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
             $wpdb->users,
             $cooling_days
         ));
@@ -795,7 +796,7 @@ class Cashback_Fraud_Detector {
         $table        = $wpdb->prefix . 'cashback_fraud_alerts';
         $placeholders = implode(',', array_fill(0, count($alert_ids), '%d'));
 
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders — строка из array_fill(count($alert_ids), '%d'); таблицы через %i, значения через prepare(); sniff не видит %d внутри $placeholders.
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- $placeholders — строка из array_fill(count($alert_ids), '%d'); таблицы через %i, значения через prepare(); sniff не видит %d внутри $placeholders. $wpdb->users — JOIN with core wp_users table via %i identifier placeholder.
         $alerts = $wpdb->get_results($wpdb->prepare( "SELECT a.*, u.user_login, u.user_email FROM %i a LEFT JOIN %i u ON a.user_id = u.ID WHERE a.id IN ({$placeholders})", $table, $wpdb->users, ...$alert_ids ));
 
         if (empty($alerts)) {

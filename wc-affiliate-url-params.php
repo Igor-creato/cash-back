@@ -795,7 +795,9 @@ class WC_Affiliate_URL_Params {
 
             // Метаданные запроса
             $ip_address = Cashback_Encryption::get_client_ip();
+            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__HTTP_USER_AGENT__ -- Request-scoped UA for bot detection/logging; not cacheable across requests.
             $user_agent = isset($_SERVER['HTTP_USER_AGENT'])
+                // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__HTTP_USER_AGENT__ -- Request-scoped UA for bot detection/logging; not cacheable across requests.
                 ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT']))
                 : null;
             // Всегда записываем permalink одиночного товара как referer,
