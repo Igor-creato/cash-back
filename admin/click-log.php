@@ -72,8 +72,8 @@ class Cashback_Click_Log_Admin {
             'admin_page_cashback-click-log',
         );
 
-        $is_target_page = in_array($hook, $allowed_hooks, true) ||
-            ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-click-log' );
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin page-detect, literal compare.
+        $is_target_page = in_array($hook, $allowed_hooks, true) || ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-click-log' );
 
         if (!$is_target_page) {
             return;
@@ -119,13 +119,18 @@ class Cashback_Click_Log_Admin {
         global $wpdb;
 
         // Параметры пагинации
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination, intval-cast.
         $current_page = max(1, intval($_GET['paged'] ?? 1));
         $offset       = ( $current_page - 1 ) * $this->per_page;
 
         // Фильтры
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, sanitized + used as LIKE arg via esc_like.
         $filter_email     = isset($_GET['email']) ? sanitize_text_field(wp_unslash($_GET['email'])) : '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing date filter, preg_match+checkdate validated.
         $filter_date_from = isset($_GET['date_from']) ? sanitize_text_field(wp_unslash($_GET['date_from'])) : '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing date filter, preg_match+checkdate validated.
         $filter_date_to   = isset($_GET['date_to']) ? sanitize_text_field(wp_unslash($_GET['date_to'])) : '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, compared to literal '1'.
         $filter_spam_only = isset($_GET['spam_only']) && sanitize_text_field(wp_unslash($_GET['spam_only'])) === '1';
 
         // Валидация дат (формат + реальная дата)

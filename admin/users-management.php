@@ -45,8 +45,8 @@ class Cashback_Users_Management_Admin {
             'admin_page_cashback-users',
         );
 
-        $is_users_page = in_array($hook, $allowed_hooks, true) ||
-            ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-users' );
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin page-detect, literal compare.
+        $is_users_page = in_array($hook, $allowed_hooks, true) || ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-users' );
 
         if (!$is_users_page) {
             return;
@@ -101,6 +101,7 @@ class Cashback_Users_Management_Admin {
 
         // Получаем параметры для пагинации и фильтрации
         $max_allowed_pages = 1000;
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination, absint + capped.
         $current_page      = isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1;
         if ($current_page > $max_allowed_pages) {
             $current_page = $max_allowed_pages;
@@ -109,6 +110,7 @@ class Cashback_Users_Management_Admin {
         $offset   = ( $current_page - 1 ) * $per_page;
 
         // Получаем фильтр статуса с валидацией по допустимому списку
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, allowlist-validated below.
         $filter_status           = isset($_GET['status']) ? sanitize_text_field(wp_unslash($_GET['status'])) : '';
         $allowed_filter_statuses = array( 'active', 'noactive', 'banned', 'deleted' );
         if (!empty($filter_status) && !in_array($filter_status, $allowed_filter_statuses, true)) {
@@ -116,6 +118,7 @@ class Cashback_Users_Management_Admin {
         }
 
         // Получаем поисковый запрос
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing search, sanitized + wpdb->esc_like in WHERE.
         $search = isset($_GET['search']) ? sanitize_text_field(wp_unslash($_GET['search'])) : '';
 
         // Построение WHERE условий
@@ -165,7 +168,9 @@ class Cashback_Users_Management_Admin {
 
         // Выводим сообщения об ошибках или успехе
         $message = '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin notice, allowlist-compared below.
         if (isset($_GET['message'])) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin notice, allowlist-compared below.
             $message_type = sanitize_text_field(wp_unslash($_GET['message']));
             if ($message_type === 'updated') {
                 $message = '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Профиль пользователя успешно обновлен.', 'cashback-plugin') . '</p></div>';

@@ -51,6 +51,7 @@ class Cashback_Support_Admin {
      * Подключение DOMPurify и safe-html на странице поддержки
      */
     public function enqueue_admin_scripts( string $hook ): void {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin page-detect, no state change.
         $page = isset($_GET['page']) ? sanitize_text_field(wp_unslash($_GET['page'])) : '';
         if ($page !== 'cashback-support') {
             return;
@@ -114,7 +115,9 @@ class Cashback_Support_Admin {
         }
 
         // Определяем текущее действие
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin UI routing, allowlist-compared below.
         $action    = sanitize_text_field(wp_unslash($_GET['action'] ?? ''));
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin UI routing, absint-cast.
         $ticket_id = absint($_GET['ticket_id'] ?? 0);
 
         if ($action === 'view' && $ticket_id > 0) {
@@ -234,11 +237,15 @@ class Cashback_Support_Admin {
         $nonce = wp_create_nonce('support_toggle_module_nonce');
 
         // Фильтры
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, allowlist-validated below.
         $filter_status   = sanitize_text_field(wp_unslash($_GET['filter_status'] ?? ''));
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, allowlist-validated below.
         $filter_priority = sanitize_text_field(wp_unslash($_GET['filter_priority'] ?? ''));
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, compared to literal '1'.
         $filter_unread   = sanitize_text_field(wp_unslash($_GET['filter_unread'] ?? ''));
 
         // Пагинация
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination, absint-cast.
         $current_page = max(1, absint($_GET['paged'] ?? 1));
         $per_page     = 10;
         $offset       = ( $current_page - 1 ) * $per_page;

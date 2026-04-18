@@ -41,8 +41,8 @@ class Cashback_Bank_Management_Admin {
             'admin_page_cashback-banks',
         );
 
-        $is_banks_page = in_array($hook, $allowed_hooks, true) ||
-            ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-banks' );
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin page-detect, literal compare.
+        $is_banks_page = in_array($hook, $allowed_hooks, true) || ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-banks' );
 
         if (!$is_banks_page) {
             return;
@@ -88,16 +88,19 @@ class Cashback_Bank_Management_Admin {
         global $wpdb;
 
         // Поисковый запрос
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing search, sanitized + mb_substr capped.
         $search_query = isset($_GET['bank_search']) ? sanitize_text_field(wp_unslash($_GET['bank_search'])) : '';
         $search_query = mb_substr($search_query, 0, 100);
         $is_search    = !empty($search_query);
 
         // Фильтр по статусу is_active
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, allowlist-compared below.
         $filter_status = isset($_GET['filter_status']) ? sanitize_text_field(wp_unslash($_GET['filter_status'])) : '';
         $is_filtered   = ( $filter_status !== '' && $filter_status !== 'all' );
 
         // Пагинация: настройки
         $per_page     = 10;
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination, intval-cast.
         $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
         $offset       = ( $current_page - 1 ) * $per_page;
 
@@ -161,7 +164,9 @@ class Cashback_Bank_Management_Admin {
 
         // Выводим сообщения об ошибках или успехе
         $message = '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin notice, allowlist-compared below.
         if (isset($_GET['message'])) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin notice, allowlist-compared below.
             $msg_type = sanitize_text_field(wp_unslash($_GET['message']));
             if ($msg_type === 'added') {
                 $message = '<div class="notice notice-success is-dismissible"><p>Банк успешно добавлен.</p></div>';
