@@ -329,7 +329,9 @@ class Cashback_Claims_Admin {
                         'date_to'    => $date_to,
                         'orderby'    => $orderby,
                         'order'      => $order,
-                    ), static function ($v) { return $v !== '' && $v !== null; }),
+                    ), static function ( $v ) {
+						return $v !== '' && $v !== null;
+					} ),
                 ));
                 ?>
             <?php endif; ?>
