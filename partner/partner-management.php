@@ -370,7 +370,7 @@ class Cashback_Partner_Management_Admin {
                 </div>
 
                 <?php
-                $partner_add_args = array('tab' => 'partners');
+                $partner_add_args = array( 'tab' => 'partners' );
                 if ($is_search) {
                     $partner_add_args['partner_search'] = $search_query;
                 }

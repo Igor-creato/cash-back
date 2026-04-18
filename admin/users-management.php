@@ -959,7 +959,6 @@ class Cashback_Users_Management_Admin {
             return false;
         }
     }
-
 }
 
 // Инициализируем класс
