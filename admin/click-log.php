@@ -125,11 +125,11 @@ class Cashback_Click_Log_Admin {
 
         // Фильтры
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, sanitized + used as LIKE arg via esc_like.
-        $filter_email     = isset($_GET['email']) ? sanitize_text_field(wp_unslash($_GET['email'])) : '';
+        $filter_email = isset($_GET['email']) ? sanitize_text_field(wp_unslash($_GET['email'])) : '';
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing date filter, preg_match+checkdate validated.
         $filter_date_from = isset($_GET['date_from']) ? sanitize_text_field(wp_unslash($_GET['date_from'])) : '';
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing date filter, preg_match+checkdate validated.
-        $filter_date_to   = isset($_GET['date_to']) ? sanitize_text_field(wp_unslash($_GET['date_to'])) : '';
+        $filter_date_to = isset($_GET['date_to']) ? sanitize_text_field(wp_unslash($_GET['date_to'])) : '';
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, compared to literal '1'.
         $filter_spam_only = isset($_GET['spam_only']) && sanitize_text_field(wp_unslash($_GET['spam_only'])) === '1';
 

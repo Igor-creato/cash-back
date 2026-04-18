@@ -157,7 +157,7 @@ class Cashback_Affiliate_Service {
         }
 
         // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- HMAC-signed JSON payload, byte-exact verification required before sanitation would corrupt signature; per-field validation follows json_decode().
-        $payload   = wp_unslash($_COOKIE[ self::COOKIE_NAME ]);
+        $payload = wp_unslash($_COOKIE[ self::COOKIE_NAME ]);
         // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- HMAC signature value, hash_equals-compared as-is; sanitation would alter bytes.
         $signature = wp_unslash($_COOKIE[ self::COOKIE_SIG_NAME ]);
 
@@ -896,11 +896,11 @@ class Cashback_Affiliate_Service {
      */
     public static function freeze_affiliate_balance( int $user_id, int $admin_id ): bool {
         global $wpdb;
-        $prefix          = $wpdb->prefix;
-        $profiles_table  = $prefix . 'cashback_affiliate_profiles';
-        $ledger_table    = $prefix . 'cashback_balance_ledger';
-        $balance_table   = $prefix . 'cashback_user_balance';
-        $accruals_table  = $prefix . 'cashback_affiliate_accruals';
+        $prefix         = $wpdb->prefix;
+        $profiles_table = $prefix . 'cashback_affiliate_profiles';
+        $ledger_table   = $prefix . 'cashback_balance_ledger';
+        $balance_table  = $prefix . 'cashback_user_balance';
+        $accruals_table = $prefix . 'cashback_affiliate_accruals';
 
         try {
             $wpdb->query('START TRANSACTION');

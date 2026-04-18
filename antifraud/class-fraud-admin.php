@@ -187,7 +187,7 @@ class Cashback_Fraud_Admin {
         $filter_type     = isset($_GET['alert_type']) ? sanitize_text_field(wp_unslash($_GET['alert_type'])) : '';
         $current_page    = min(isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1, self::MAX_ALLOWED_PAGES);
         // phpcs:enable WordPress.Security.NonceVerification.Recommended
-        $offset          = ( $current_page - 1 ) * self::PER_PAGE;
+        $offset = ( $current_page - 1 ) * self::PER_PAGE;
 
         $where  = array( '1=1' );
         $params = array();
@@ -473,7 +473,7 @@ class Cashback_Fraud_Admin {
         // Период: 1ч, 6ч, 24ч, 7д
         $allowed_hours = array( 1, 6, 24, 168 );
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin filter, allowlist-validated below.
-        $hours         = isset($_GET['hours']) ? absint($_GET['hours']) : 24;
+        $hours = isset($_GET['hours']) ? absint($_GET['hours']) : 24;
         if (!in_array($hours, $allowed_hours, true)) {
             $hours = 24;
         }

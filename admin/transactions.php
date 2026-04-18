@@ -91,11 +91,11 @@ class Cashback_Transactions_Admin {
 
         // Filters
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, allowlist-validated below.
-        $filter_status  = isset($_GET['status']) ? sanitize_text_field(wp_unslash($_GET['status'])) : '';
+        $filter_status = isset($_GET['status']) ? sanitize_text_field(wp_unslash($_GET['status'])) : '';
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, validated against DB allowlist below.
         $filter_partner = isset($_GET['partner']) ? sanitize_text_field(wp_unslash($_GET['partner'])) : '';
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing search, sanitized.
-        $search_query   = isset($_GET['search']) ? sanitize_text_field(wp_unslash($_GET['search'])) : '';
+        $search_query = isset($_GET['search']) ? sanitize_text_field(wp_unslash($_GET['search'])) : '';
 
         $allowed_statuses = array( 'waiting', 'completed', 'declined', 'hold', 'balance' );
         if (!empty($filter_status) && !in_array($filter_status, $allowed_statuses, true)) {
@@ -116,8 +116,8 @@ class Cashback_Transactions_Admin {
         // Pagination (с ограничением верхней границы для защиты от DoS)
         $max_allowed_pages = 5000;
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination, absint + capped.
-        $current_page      = max(1, min(absint($_GET['paged'] ?? 1), $max_allowed_pages));
-        $offset            = ( $current_page - 1 ) * $this->per_page;
+        $current_page = max(1, min(absint($_GET['paged'] ?? 1), $max_allowed_pages));
+        $offset       = ( $current_page - 1 ) * $this->per_page;
 
         // Build WHERE
         $where_conditions = array();

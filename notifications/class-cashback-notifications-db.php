@@ -115,9 +115,9 @@ class Cashback_Notifications_DB {
         $table = $wpdb->prefix . 'cashback_notification_preferences';
 
         $wpdb->query( $wpdb->prepare(
-            "INSERT INTO %i (user_id, notification_type, enabled)
+            'INSERT INTO %i (user_id, notification_type, enabled)
              VALUES (%d, %s, %d)
-             ON DUPLICATE KEY UPDATE enabled = VALUES(enabled)",
+             ON DUPLICATE KEY UPDATE enabled = VALUES(enabled)',
             $table,
             $user_id,
             $notification_type,

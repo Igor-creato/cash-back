@@ -467,7 +467,7 @@ class HistoryPayout {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_payout_methods';
-        $methods = $wpdb->get_results(
+        $methods    = $wpdb->get_results(
             $wpdb->prepare( 'SELECT slug, name FROM %i WHERE is_active = %d', $table_name, 1 ),
             ARRAY_A
         );
@@ -500,7 +500,7 @@ class HistoryPayout {
         global $wpdb;
 
         $table_name = $wpdb->prefix . 'cashback_banks';
-        $rows = $wpdb->get_results(
+        $rows       = $wpdb->get_results(
             $wpdb->prepare( 'SELECT bank_code, name FROM %i', $table_name ),
             ARRAY_A
         );

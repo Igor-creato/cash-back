@@ -445,9 +445,9 @@ class Cashback_Affiliate_Admin {
             $where_args[]    = $like;
         }
 
-        $where_sql       = !empty($where_clauses) ? 'WHERE ' . implode(' AND ', $where_clauses) : '';
-        $profiles_table  = $prefix . 'cashback_affiliate_profiles';
-        $accruals_table  = $prefix . 'cashback_affiliate_accruals';
+        $where_sql      = !empty($where_clauses) ? 'WHERE ' . implode(' AND ', $where_clauses) : '';
+        $profiles_table = $prefix . 'cashback_affiliate_profiles';
+        $accruals_table = $prefix . 'cashback_affiliate_accruals';
 
         if (!empty($where_args)) {
             // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql from allowlist (affiliate_status IN array / LIKE %s); values bound via prepare(); sniff can't count array_merge args.

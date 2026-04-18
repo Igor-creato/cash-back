@@ -102,7 +102,7 @@ class Cashback_Users_Management_Admin {
         // Получаем параметры для пагинации и фильтрации
         $max_allowed_pages = 1000;
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination, absint + capped.
-        $current_page      = isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1;
+        $current_page = isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1;
         if ($current_page > $max_allowed_pages) {
             $current_page = $max_allowed_pages;
         }

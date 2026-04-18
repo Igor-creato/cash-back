@@ -25,7 +25,7 @@ class Cashback_Trigger_Fallbacks {
 
             if (!empty($data['user_id'])) {
                 $profile_table = $wpdb->prefix . 'cashback_user_profile';
-                $user_rate = $wpdb->get_var($wpdb->prepare(
+                $user_rate     = $wpdb->get_var($wpdb->prepare(
                     'SELECT cashback_rate FROM %i WHERE user_id = %d LIMIT 1',
                     $profile_table,
                     (int) $data['user_id']

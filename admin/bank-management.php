@@ -99,7 +99,7 @@ class Cashback_Bank_Management_Admin {
         $is_filtered   = ( $filter_status !== '' && $filter_status !== 'all' );
 
         // Пагинация: настройки
-        $per_page     = 10;
+        $per_page = 10;
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination, intval-cast.
         $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
         $offset       = ( $current_page - 1 ) * $per_page;

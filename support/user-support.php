@@ -204,7 +204,7 @@ class Cashback_User_Support {
 
         // Предзаполнение привязки из query-параметров
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only UI prefill, ownership validated below, no state change.
-        $prefill_type   = isset($_GET['related_type']) && is_string($_GET['related_type']) ? sanitize_key(wp_unslash($_GET['related_type'])) : '';
+        $prefill_type = isset($_GET['related_type']) && is_string($_GET['related_type']) ? sanitize_key(wp_unslash($_GET['related_type'])) : '';
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only UI prefill, ownership validated below, no state change.
         $prefill_id     = isset($_GET['related_id']) ? absint(wp_unslash($_GET['related_id'])) : 0;
         $prefill_entity = null;
