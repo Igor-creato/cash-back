@@ -83,8 +83,10 @@ class Cashback_Fraud_Admin {
             'admin_page_cashback-antifraud',
         );
 
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only admin page detection, no state change.
         $is_page = in_array($hook, $allowed_hooks, true) ||
             ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-antifraud' );
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
 
         if (!$is_page) {
             return;
@@ -124,6 +126,7 @@ class Cashback_Fraud_Admin {
             wp_die(__('У вас недостаточно прав для просмотра этой страницы.', 'cashback-plugin'));
         }
 
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin tab routing, allowlist-validated below.
         $active_tab   = isset($_GET['tab']) ? sanitize_text_field(wp_unslash($_GET['tab'])) : 'alerts';
         $allowed_tabs = array( 'alerts', 'users', 'settings', 'spam' );
         if (!in_array($active_tab, $allowed_tabs, true)) {
@@ -178,10 +181,12 @@ class Cashback_Fraud_Admin {
         $table = $wpdb->prefix . 'cashback_fraud_alerts';
 
         // Filters
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filters, allowlist-validated below; pagination via absint + cap.
         $filter_status   = isset($_GET['status']) ? sanitize_text_field(wp_unslash($_GET['status'])) : '';
         $filter_severity = isset($_GET['severity']) ? sanitize_text_field(wp_unslash($_GET['severity'])) : '';
         $filter_type     = isset($_GET['alert_type']) ? sanitize_text_field(wp_unslash($_GET['alert_type'])) : '';
         $current_page    = min(isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1, self::MAX_ALLOWED_PAGES);
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
         $offset          = ( $current_page - 1 ) * self::PER_PAGE;
 
         $where  = array( '1=1' );
@@ -354,6 +359,7 @@ class Cashback_Fraud_Admin {
         $alerts_table  = $wpdb->prefix . 'cashback_fraud_alerts';
         $profile_table = $wpdb->prefix . 'cashback_user_profile';
 
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination (absint + cap).
         $current_page = min(isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1, self::MAX_ALLOWED_PAGES);
         $offset       = ( $current_page - 1 ) * self::PER_PAGE;
 
@@ -465,6 +471,7 @@ class Cashback_Fraud_Admin {
     private function render_spam_tab(): void {
         // Период: 1ч, 6ч, 24ч, 7д
         $allowed_hours = array( 1, 6, 24, 168 );
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin filter, allowlist-validated below.
         $hours         = isset($_GET['hours']) ? absint($_GET['hours']) : 24;
         if (!in_array($hours, $allowed_hours, true)) {
             $hours = 24;

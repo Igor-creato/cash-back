@@ -89,6 +89,7 @@ class Cashback_Claims_Admin {
     }
 
     public function enqueue_scripts( string $hook ): void {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin page detection, no state change.
         $is_target = ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-claims-admin' );
 
         if (!$is_target) {
@@ -128,6 +129,7 @@ class Cashback_Claims_Admin {
 
         global $wpdb;
 
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filters; validated in get_claims_admin() via allowlist/sanitization.
         $status_filter     = isset($_GET['status']) ? sanitize_text_field(wp_unslash($_GET['status'])) : '';
         $suspicious_filter = isset($_GET['suspicious']) ? sanitize_text_field(wp_unslash($_GET['suspicious'])) : '';
         $search            = isset($_GET['search']) ? sanitize_text_field(wp_unslash($_GET['search'])) : '';
@@ -136,6 +138,7 @@ class Cashback_Claims_Admin {
         $orderby           = isset($_GET['orderby']) ? sanitize_text_field(wp_unslash($_GET['orderby'])) : 'created_at';
         $order             = isset($_GET['order']) ? sanitize_text_field(wp_unslash($_GET['order'])) : 'DESC';
         $page              = max(1, absint($_GET['paged'] ?? 1));
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
 
         $result = Cashback_Claims_Manager::get_claims_admin(array(
             'status'     => $status_filter,
