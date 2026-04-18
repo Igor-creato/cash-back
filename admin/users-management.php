@@ -551,6 +551,7 @@ class Cashback_Users_Management_Admin {
                 $wpdb->query($wpdb->prepare('DO RELEASE_LOCK(%s)', $withdrawal_lock_name));
             }
 
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Cashback Users] Error updating profile for user ' . $user_id . ': ' . $e->getMessage());
             wp_send_json_error(array( 'message' => 'Ошибка при обновлении профиля пользователя.' ));
             return;
@@ -877,6 +878,7 @@ class Cashback_Users_Management_Admin {
             if (!$in_transaction) {
                 $wpdb->query('ROLLBACK');
             }
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Ban error for user ' . $user_id . ': ' . $e->getMessage());
             return false;
         }
@@ -953,6 +955,7 @@ class Cashback_Users_Management_Admin {
             if (!$in_transaction) {
                 $wpdb->query('ROLLBACK');
             }
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Unban error for user ' . $user_id . ': ' . $e->getMessage());
             return false;
         }

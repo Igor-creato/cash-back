@@ -44,6 +44,7 @@ class Cashback_Fraud_Detector {
 
         update_option('cashback_fraud_last_run', current_time('mysql'));
 
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
         error_log(sprintf(
             'Cashback Fraud Detector: completed, %d new alert(s) created',
             count($new_alert_ids)
@@ -720,6 +721,7 @@ class Cashback_Fraud_Detector {
 
         if ($wpdb->last_error) {
             $wpdb->query('ROLLBACK');
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback Fraud Detector: Failed to create alert — ' . $wpdb->last_error);
             return null;
         }

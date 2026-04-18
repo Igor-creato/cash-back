@@ -90,11 +90,13 @@ class Cashback_Notifications {
         $sum_order = isset($data['sum_order']) ? number_format((float) $data['sum_order'], 2, ',', ' ') : '—';
 
         $subject = sprintf(
+            /* translators: %s: название магазина (offer). */
             __('Новая покупка в магазине %s', 'cashback-plugin'),
             $offer
         );
 
         $message = sprintf(
+            /* translators: %1$s: имя пользователя, %2$s: магазин, %3$s: сумма заказа, %4$s: URL личного кабинета. */
             __('Здравствуйте, %1$s!
 
 Ваша покупка зафиксирована.
@@ -148,12 +150,14 @@ class Cashback_Notifications {
         $new_label = $status_labels[ $new_status ] ?? $new_status;
 
         $subject = sprintf(
+            /* translators: %1$d: ID транзакции, %2$s: название нового статуса. */
             __('Статус транзакции #%1$d изменён на «%2$s»', 'cashback-plugin'),
             $transaction_id,
             $new_label
         );
 
         $message = sprintf(
+            /* translators: %1$s: имя пользователя, %2$d: ID транзакции, %3$s: старый статус, %4$s: новый статус, %5$s: URL личного кабинета. */
             __('Здравствуйте, %1$s!
 
 Статус вашей транзакции #%2$d изменён.
@@ -203,6 +207,7 @@ class Cashback_Notifications {
         $new_sum = (float) ( $changes['new_sum_order'] ?? 0 );
         if (abs($old_sum - $new_sum) >= 0.01) {
             $change_lines[] = sprintf(
+                /* translators: %1$s: старая сумма заказа, %2$s: новая сумма заказа. */
                 __('Сумма заказа: %1$s → %2$s ₽', 'cashback-plugin'),
                 number_format($old_sum, 2, ',', ' '),
                 number_format($new_sum, 2, ',', ' ')
@@ -213,6 +218,7 @@ class Cashback_Notifications {
         $new_cashback = (float) ( $changes['new_cashback'] ?? 0 );
         if (abs($old_cashback - $new_cashback) >= 0.01) {
             $change_lines[] = sprintf(
+                /* translators: %1$s: старая сумма кэшбэка, %2$s: новая сумма кэшбэка. */
                 __('Кэшбэк: %1$s → %2$s ₽', 'cashback-plugin'),
                 number_format($old_cashback, 2, ',', ' '),
                 number_format($new_cashback, 2, ',', ' ')
@@ -224,11 +230,13 @@ class Cashback_Notifications {
         }
 
         $subject = sprintf(
+            /* translators: %d: ID транзакции. */
             __('Данные транзакции #%d обновлены', 'cashback-plugin'),
             $transaction_id
         );
 
         $message = sprintf(
+            /* translators: %1$s: имя пользователя, %2$d: ID транзакции, %3$s: название партнёра, %4$s: список изменений, %5$s: URL личного кабинета. */
             __('Здравствуйте, %1$s!
 
 Данные вашей транзакции #%2$d обновлены партнёром %3$s.
@@ -291,6 +299,7 @@ class Cashback_Notifications {
             $total_formatted = number_format($info['total'], 2, ',', ' ');
 
             $subject = sprintf(
+                /* translators: %s: сумма кэшбэка. */
                 __('Кэшбэк %s ₽ зачислен на ваш баланс', 'cashback-plugin'),
                 $total_formatted
             );
@@ -299,12 +308,14 @@ class Cashback_Notifications {
                 $count_text = __('1 транзакция подтверждена', 'cashback-plugin');
             } else {
                 $count_text = sprintf(
+                    /* translators: %d: количество подтверждённых транзакций. */
                     __('%d транзакций подтверждено', 'cashback-plugin'),
                     $info['count']
                 );
             }
 
             $message = sprintf(
+                /* translators: %1$s: имя пользователя, %2$s: сумма кэшбэка, %3$s: текст о количестве транзакций, %4$s: URL вывода. */
                 __('Здравствуйте, %1$s!
 
 На ваш баланс начислен кэшбэк.
@@ -347,6 +358,7 @@ class Cashback_Notifications {
         $subject = __('Добро пожаловать в программу кэшбэка!', 'cashback-plugin');
 
         $message = sprintf(
+            /* translators: %1$s: имя пользователя, %2$s: URL личного кабинета. */
             __('Здравствуйте, %1$s!
 
 Вы успешно зарегистрированы в программе кэшбэка.
@@ -399,12 +411,14 @@ class Cashback_Notifications {
         }
 
         $email_subject = sprintf(
+            /* translators: %1$s: номер тикета, %2$s: тема тикета. */
             __('Ответ на тикет %1$s: %2$s', 'cashback-plugin'),
             $ticket_number,
             $subject
         );
 
         $message = sprintf(
+            /* translators: %1$s: имя пользователя, %2$s: номер тикета, %3$s: тема тикета, %4$s: текст ответа, %5$s: URL переписки. */
             __('Здравствуйте, %1$s!
 
 Вы получили ответ на тикет %2$s «%3$s».
@@ -449,12 +463,14 @@ class Cashback_Notifications {
 
         if ($event_type === 'new_ticket') {
             $email_subject = sprintf(
+                /* translators: %1$s: номер тикета, %2$s: тема тикета. */
                 __('Новый тикет %1$s: %2$s', 'cashback-plugin'),
                 $ticket_number,
                 $subject
             );
         } else {
             $email_subject = sprintf(
+                /* translators: %1$s: номер тикета, %2$s: тема тикета. */
                 __('Новый ответ в тикете %1$s: %2$s', 'cashback-plugin'),
                 $ticket_number,
                 $subject
@@ -462,6 +478,7 @@ class Cashback_Notifications {
         }
 
         $message = sprintf(
+            /* translators: %1$s: логин пользователя, %2$s: email пользователя, %3$s: тема тикета, %4$s: URL в админке. */
             __('Пользователь: %1$s (%2$s)
 Тема: %3$s
 
@@ -493,11 +510,13 @@ class Cashback_Notifications {
         }
 
         $subject = sprintf(
+            /* translators: %d: ID заявки. */
             __('Заявка на кэшбэк #%d создана', 'cashback-plugin'),
             $claim_id
         );
 
         $message = sprintf(
+            /* translators: %1$s: имя пользователя, %2$s: магазин, %3$s: номер заказа, %4$d: ID заявки, %5$s: URL личного кабинета. */
             __('Здравствуйте, %1$s!
 
 Ваша заявка на неначисленный кэшбэк принята.
@@ -530,11 +549,13 @@ ID заявки: %4$d
         $user = get_user_by('id', $user_id);
 
         $subject = sprintf(
+            /* translators: %d: ID заявки. */
             __('Новая заявка на кэшбэк #%d', 'cashback-plugin'),
             $claim_id
         );
 
         $message = sprintf(
+            /* translators: %1$s: имя пользователя, %2$s: магазин, %3$s: номер заказа, %4$d: ID заявки. */
             __('Пользователь %1$s подал заявку на неначисленный кэшбэк.
 
 Магазин: %2$s
@@ -588,12 +609,14 @@ ID заявки: %4$d
         $label = $status_labels[ $new_status ] ?? $new_status;
 
         $subject = sprintf(
+            /* translators: %1$d: ID заявки, %2$s: название нового статуса. */
             __('Статус заявки #%1$d изменён на «%2$s»', 'cashback-plugin'),
             $claim_id,
             $label
         );
 
         $message = sprintf(
+            /* translators: %1$s: имя пользователя, %2$d: ID заявки, %3$s: новый статус, %4$s: комментарий, %5$s: URL заявки. */
             __('Здравствуйте, %1$s!
 
 Статус вашей заявки #%2$d изменён на «%3$s».
@@ -643,6 +666,7 @@ ID заявки: %4$d
         $subject = __('Новый реферал в вашей партнёрской программе', 'cashback-plugin');
 
         $message = sprintf(
+            /* translators: %1$s: имя реферера, %2$s: имя нового реферала, %3$s: URL страницы партнёрской программы. */
             __('Здравствуйте, %1$s!
 
 По вашей партнёрской ссылке зарегистрировался новый пользователь: %2$s.
@@ -682,6 +706,7 @@ ID заявки: %4$d
             $total_formatted = number_format((float) $info['total'], 2, ',', ' ');
 
             $subject = sprintf(
+                /* translators: %s: сумма партнёрского вознаграждения. */
                 __('Партнёрское вознаграждение %s ₽ начислено', 'cashback-plugin'),
                 $total_formatted
             );
@@ -690,12 +715,14 @@ ID заявки: %4$d
                 $count_text = __('1 покупка реферала', 'cashback-plugin');
             } else {
                 $count_text = sprintf(
+                    /* translators: %d: количество покупок рефералов. */
                     __('%d покупок рефералов', 'cashback-plugin'),
                     $info['count']
                 );
             }
 
             $message = sprintf(
+                /* translators: %1$s: имя реферера, %2$s: сумма вознаграждения, %3$s: текст о количестве покупок, %4$s: URL вывода. */
                 __('Здравствуйте, %1$s!
 
 Вам начислено партнёрское вознаграждение.

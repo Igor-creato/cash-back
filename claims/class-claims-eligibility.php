@@ -290,6 +290,7 @@ class Cashback_Claims_Eligibility {
             if ($hours_since < self::MIN_HOURS_AFTER_CLICK) {
                 $remaining = (int) ceil(self::MIN_HOURS_AFTER_CLICK - $hours_since);
                 $reasons[] = sprintf(
+                    /* translators: %d: hours remaining */
                     _n('Подождите ещё %d час.', 'Подождите ещё %d часа.', $remaining, 'cashback-plugin'),
                     $remaining
                 );

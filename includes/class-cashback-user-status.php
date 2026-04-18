@@ -65,6 +65,7 @@ class Cashback_User_Status {
     public static function get_banned_message( ?array $ban_info = null ): string {
         if ($ban_info && !empty($ban_info['ban_reason'])) {
             return sprintf(
+                /* translators: %s: причина блокировки аккаунта */
                 __('Ваш аккаунт заблокирован. Причина: %s. Для разблокировки обратитесь к администратору.', 'cashback-plugin'),
                 esc_html($ban_info['ban_reason'])
             );

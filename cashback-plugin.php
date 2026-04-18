@@ -218,7 +218,9 @@ class CashbackPlugin {
                 Mariadb_Plugin::activate();
             } catch (Exception $e) {
                 // Логируем детальную ошибку
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Cashback Plugin Activation Error: ' . $e->getMessage());
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Stack trace: ' . $e->getTraceAsString());
                 // Показываем пользователю
                 wp_die(
@@ -487,6 +489,7 @@ class CashbackPlugin {
                 $instance->migrate_add_transaction_reference_id();
                 $instance->recreate_triggers();
             } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback] Auto-migration failed: ' . $e->getMessage());
             }
         } else {
@@ -500,6 +503,7 @@ class CashbackPlugin {
                     $instance->migrate_add_transaction_reference_id();
                     $instance->recreate_triggers();
                 } catch (\Throwable $e) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log('[Cashback] Auto-migration backfill failed: ' . $e->getMessage());
                 }
             }
@@ -516,6 +520,7 @@ class CashbackPlugin {
         if (file_exists($filepath)) {
             require_once $filepath;
         } else {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log(sprintf('[Cashback Plugin] Required file not found: %s', $filepath));
         }
     }
@@ -677,6 +682,7 @@ class CashbackPlugin {
         $key_dir  = dirname($key_file);
 
         if (!is_writable($key_dir)) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback Plugin: Directory not writable for encryption key: ' . $key_dir);
             return false;
         }
@@ -686,6 +692,7 @@ class CashbackPlugin {
 
         // Defence-in-depth: проверяем длину ключа
         if (strlen($key) !== 64) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback Plugin: Generated encryption key has unexpected length: ' . strlen($key));
             return false;
         }
@@ -703,6 +710,7 @@ class CashbackPlugin {
         $result = file_put_contents($key_file, $content, LOCK_EX);
 
         if ($result === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback Plugin: Failed to write encryption key file: ' . $key_file);
             return false;
         }
@@ -710,6 +718,7 @@ class CashbackPlugin {
         // Определяем константу для текущего запроса
         define('CB_ENCRYPTION_KEY', $key);
 
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
         error_log('Cashback Plugin: Encryption key generated and saved to ' . $key_file);
         return true;
     }

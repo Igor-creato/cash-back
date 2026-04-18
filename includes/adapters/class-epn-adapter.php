@@ -42,6 +42,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
 
         if (empty($client_id) || empty($client_secret)) {
             $this->last_token_error = 'EPN credentials incomplete (client_id или client_secret пустые)';
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback API Client: ' . $this->last_token_error);
             return null;
         }
@@ -86,6 +87,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
 
         if (is_wp_error($ssid_response)) {
             $this->last_token_error = 'EPN SSID ошибка сети: ' . $ssid_response->get_error_message();
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback API Client: ' . $this->last_token_error);
             return null;
         }
@@ -98,6 +100,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
         if ($ssid_code === 429) {
             $this->last_token_error = 'EPN SSID: требуется капча (лимит 1 запрос/сутки с одного IP). '
                 . 'Добавьте IP сервера в whitelist через поддержку EPN, или подождите 24 часа.';
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback API Client: EPN SSID captcha required. Code: 429');
             return null;
         }
@@ -105,6 +108,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
         if ($ssid_code !== 200 || empty($ssid_token)) {
             $epn_error              = $ssid_body['errors'][0]['error_description'] ?? '';
             $this->last_token_error = 'EPN SSID failed (HTTP ' . $ssid_code . '). ' . $epn_error;
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback API Client: EPN SSID failed. Code: ' . $ssid_code . ', Body: ' . wp_json_encode($ssid_body));
             return null;
         }
@@ -125,6 +129,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
 
         if (is_wp_error($response)) {
             $this->last_token_error = 'EPN token ошибка сети: ' . $response->get_error_message();
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback API Client: ' . $this->last_token_error);
             return null;
         }
@@ -147,6 +152,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
                 }
             }
             $this->last_token_error = 'EPN token failed (HTTP ' . $code . '). ' . $epn_error;
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback API Client: EPN token failed. Code: ' . $code . ', Body: ' . wp_json_encode($safe_body));
             return null;
         }
@@ -338,6 +344,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
             delete_transient($cache_key);
             unset($this->token_cache[ $cache_key ]);
 
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback EPN: 401 on actions endpoint, invalidating token and retrying');
 
             $params['_retry_after_401'] = true;
@@ -351,6 +358,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
             delete_transient($cache_key);
             unset($this->token_cache[ $cache_key ]);
 
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback EPN: 403 on actions endpoint, invalidating token and retrying');
 
             $params['_retry_after_403'] = true;
@@ -378,6 +386,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
                 }
             }
 
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback EPN fetch_actions error: HTTP ' . $code . ', Raw body: ' . mb_substr($raw_body, 0, 500));
 
             return $this->fetch_error($error_msg);

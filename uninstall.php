@@ -45,6 +45,7 @@ function cashback_plugin_uninstall(): void {
     // Validate table prefix for security
     $prefix = $wpdb->prefix;
     if (!preg_match('/^[a-zA-Z0-9_]+$/', $prefix)) {
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
         error_log('Cashback Plugin Uninstall: Invalid table prefix detected');
         return;
     }
@@ -299,6 +300,7 @@ function cashback_plugin_uninstall(): void {
     wp_cache_flush();
 
     // Log uninstall completion
+    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
     error_log('Cashback Plugin: Successfully uninstalled and cleaned up all data');
 }
 

@@ -218,9 +218,11 @@ class WC_Affiliate_URL_Params {
             echo '<div class="affiliate-network-warning" style="padding: 8px 12px; margin: 5px 12px; background: #fce4ec; border-left: 4px solid #d63638; color: #c62828;">';
             echo '<strong>' . esc_html__('Магазин автоматически деактивирован', 'wc-affiliate-url-params') . '</strong><br>';
             if ($deactivated_at) {
+                /* translators: %s: date/time when the shop was auto-deactivated. */
                 echo esc_html(sprintf(__('Дата: %s', 'wc-affiliate-url-params'), $deactivated_at)) . '<br>';
             }
             if ($deactivation_reason) {
+                /* translators: %s: reason text why the shop was auto-deactivated. */
                 echo esc_html(sprintf(__('Причина: %s', 'wc-affiliate-url-params'), $deactivation_reason));
             }
             echo '</div>';
@@ -753,6 +755,7 @@ class WC_Affiliate_URL_Params {
 
             // Блокировка кликов для автоматически деактивированных магазинов
             if (get_post_meta($product_id, '_cashback_auto_deactivated', true) === '1') {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log(sprintf(
                     '[wc-affiliate-url-params] Click blocked for auto-deactivated product #%d',
                     $product_id
@@ -774,6 +777,7 @@ class WC_Affiliate_URL_Params {
 
             // Валидация: 32 hex символа
             if (!ctype_xdigit($click_id) || strlen($click_id) !== 32) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[wc-affiliate-url-params] click_id validation failed: ' . $click_id);
                 // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
                 wp_redirect($fallback_url, 302);
@@ -905,6 +909,7 @@ class WC_Affiliate_URL_Params {
             exit;
         } catch (\Throwable $e) {
             // Лучше потерять лог клика, чем потерять пользователя
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[wc-affiliate-url-params] Redirect error: ' . get_class($e) . ' in ' . basename($e->getFile()) . ':' . $e->getLine());
 
             try {

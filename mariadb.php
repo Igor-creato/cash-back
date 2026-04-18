@@ -84,6 +84,7 @@ class Mariadb_Plugin {
             if (function_exists('wc_get_logger')) {
                 wc_get_logger()->error('Mariadb Plugin Activation Error: ' . $e->getMessage());
             }
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Mariadb Plugin Activation Error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
             wp_die('Ошибка активации плагина Mariadb: ' . esc_html($e->getMessage()));
         }
@@ -104,6 +105,7 @@ class Mariadb_Plugin {
         if ($engine && strtolower($engine) !== 'innodb') {
             // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from $wpdb->users, not user input.
             $wpdb->query("ALTER TABLE `{$wpdb->users}` ENGINE=InnoDB");
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log("Mariadb Plugin: Converted {$wpdb->users} from {$engine} to InnoDB");
         }
     }
@@ -512,6 +514,7 @@ class Mariadb_Plugin {
 
             if ($result === false) {
                 $failed_tables[] = $table_name . ': ' . $wpdb->last_error;
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log("[Cashback] Failed to create table {$full_table_name}: " . $wpdb->last_error);
             } else {
                 // Проверяем что таблица действительно существует
@@ -520,6 +523,7 @@ class Mariadb_Plugin {
                 );
                 if (!$exists) {
                     $failed_tables[] = $table_name . ': table not created (no error reported)';
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log("[Cashback] Table {$full_table_name} was not created despite no error being reported");
                 }
             }
@@ -542,6 +546,7 @@ class Mariadb_Plugin {
         // Фаза 2: Добавление FOREIGN KEY и CHECK ограничений (не фатально)
         $this->add_table_constraints();
 
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
         error_log('[Cashback] All tables created successfully');
     }
 
@@ -631,6 +636,7 @@ class Mariadb_Plugin {
             $wpdb->query($sql);
             // Ошибки типа "Duplicate key name" (constraint already exists) — ожидаемы
             if ($wpdb->last_error && strpos($wpdb->last_error, 'Duplicate') === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback] Constraint warning (non-fatal): ' . $wpdb->last_error);
             }
         }
@@ -650,6 +656,7 @@ class Mariadb_Plugin {
         // Проверяем, есть ли уже записи
         $count = $wpdb->get_var($wpdb->prepare('SELECT COUNT(*) FROM %i', $table));
         if ($count > 0) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Mariadb Plugin: Payout methods already exist, skipping initialization');
             return;
         }
@@ -667,10 +674,12 @@ class Mariadb_Plugin {
         foreach ($defaults as $method) {
             $wpdb->insert($table, $method, array( '%s', '%s', '%d', '%d' ));
             if ($wpdb->last_error) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Mariadb Plugin Error: Failed to insert payout method: ' . $wpdb->last_error);
             }
         }
 
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
         error_log('Mariadb Plugin: Initialized ' . count($defaults) . ' default payout methods');
     }
 
@@ -686,6 +695,7 @@ class Mariadb_Plugin {
         // Проверяем, есть ли уже записи
         $count = $wpdb->get_var($wpdb->prepare('SELECT COUNT(*) FROM %i', $table));
         if ($count > 0) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Mariadb Plugin: Banks already exist, skipping initialization');
             return;
         }
@@ -704,10 +714,12 @@ class Mariadb_Plugin {
         foreach ($defaults as $bank) {
             $wpdb->insert($table, $bank, array( '%s', '%s', '%s', '%d', '%d' ));
             if ($wpdb->last_error) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Mariadb Plugin Error: Failed to insert bank: ' . $wpdb->last_error);
             }
         }
 
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
         error_log('Mariadb Plugin: Initialized ' . count($defaults) . ' default banks');
     }
 
@@ -819,6 +831,7 @@ class Mariadb_Plugin {
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- static DDL, $wpdb->prefix and $charset_collate come from WP core.
         $result = $wpdb->query($sql);
         if ($result === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Cashback] Failed to create audit_log table: ' . $wpdb->last_error);
         }
     }
@@ -861,6 +874,7 @@ class Mariadb_Plugin {
             $trigger_full = $safe_prefix . $trigger_base;
             $result       = $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS %i', $trigger_full));
             if ($result === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Mariadb Plugin Warning: Failed to drop trigger. Error: ' . $wpdb->last_error);
             }
         }
@@ -1124,15 +1138,18 @@ class Mariadb_Plugin {
             $result = $wpdb->query($trigger);
             if ($result === false) {
                 $failed_triggers[] = $wpdb->last_error;
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Mariadb Plugin Error: Failed to create trigger. Error: ' . $wpdb->last_error);
             }
         }
 
         if (!empty($failed_triggers)) {
             update_option('cashback_triggers_active', false);
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Mariadb Plugin Warning: Failed to create triggers (PHP fallbacks will be used): ' . implode('; ', $failed_triggers));
         } else {
             update_option('cashback_triggers_active', true);
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Mariadb Plugin: All triggers created successfully');
         }
     }
@@ -1214,6 +1231,7 @@ class Mariadb_Plugin {
             if ($result === false) {
                 $error = $wpdb->last_error;
                 // События могут не поддерживаться на хостинге, логируем но не критично
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Mariadb Plugin Warning: Failed to create event. This may be normal if your hosting does not support MySQL events. Error: ' . $error);
                 $failed_events[] = $error;
             }
@@ -1222,9 +1240,11 @@ class Mariadb_Plugin {
         // События опциональны, не прерываем активацию
         if (!empty($failed_events)) {
             update_option('cashback_events_active', false);
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Mariadb Plugin: Some events failed to create (non-critical): ' . implode('; ', $failed_events));
         } else {
             update_option('cashback_events_active', true);
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Mariadb Plugin: All events created successfully');
         }
     }
@@ -1255,6 +1275,7 @@ class Mariadb_Plugin {
             foreach ($user_ids as $user_id) {
                 $result = $this->add_user_to_cashback_tables((int) $user_id);
                 if (!$result) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log("[Cashback] Failed to initialize user {$user_id}: " . $wpdb->last_error);
                     ++$total_errors;
                 } else {
@@ -1266,12 +1287,14 @@ class Mariadb_Plugin {
         } while (count($user_ids) === $batch_size);
 
         if ($total_initialized === 0 && $total_errors === 0) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Mariadb Plugin: No existing users to initialize');
         } else {
             $message = 'Mariadb Plugin: Successfully initialized ' . $total_initialized . ' existing users';
             if ($total_errors > 0) {
                 $message .= ', ' . $total_errors . ' errors';
             }
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log($message);
         }
     }
@@ -1305,6 +1328,7 @@ class Mariadb_Plugin {
             $created = ( $result > 0 );
 
             if ($created) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Mariadb Plugin: Created new profile for user ID: ' . $user_id);
             }
 
@@ -1320,6 +1344,7 @@ class Mariadb_Plugin {
             return true;
         } catch (Exception $e) {
             $wpdb->query('ROLLBACK');
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Mariadb Plugin Error: Transaction failed for user ' . $user_id . '. Error: ' . $e->getMessage());
             return false;
         }
@@ -1347,11 +1372,13 @@ class Mariadb_Plugin {
         ));
 
         if ($result === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Mariadb Plugin Error: Failed to insert balance for user ' . $user_id . ': ' . $wpdb->last_error);
             return false;
         }
 
         if ($result > 0 && $is_new_user) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Mariadb Plugin: Created new balance for user ID: ' . $user_id);
         }
 
@@ -1387,6 +1414,7 @@ class Mariadb_Plugin {
         $is_new_user = !$profile_exists && !$balance_exists;
 
         if ($is_new_user) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Mariadb Plugin: Initializing new user ID: ' . $user_id);
         }
 
@@ -1394,11 +1422,14 @@ class Mariadb_Plugin {
         $result = $this->add_user_to_profile($user_id);
 
         if ($result && $is_new_user) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Mariadb Plugin: Successfully created cashback profile and balance for user ID: ' . $user_id);
             do_action('cashback_notification_user_registered', $user_id);
         } elseif ($result && !$is_new_user) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Mariadb Plugin: User ID ' . $user_id . ' already initialized (skipped)');
         } else {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Mariadb Plugin Error: Failed to initialize user ID: ' . $user_id);
         }
 
@@ -1459,6 +1490,7 @@ class Mariadb_Plugin {
 
         // Проверяем что глобальный lock удержан (вызов разрешён только из sync)
         if (class_exists('Cashback_Lock') && !Cashback_Lock::is_lock_held_by_current_process()) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Cashback] process_ready_transactions called without global lock — DENIED');
             return array(
 				'processed'       => 0,
@@ -1593,6 +1625,7 @@ class Mariadb_Plugin {
                             }
                         }
                     } catch (\Throwable $aff_e) {
+                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                         error_log('[Cashback] Affiliate commission error (non-fatal): ' . $aff_e->getMessage());
                         $errors[] = '[Affiliate] ' . $aff_e->getMessage();
                     }
@@ -1621,6 +1654,7 @@ class Mariadb_Plugin {
         } catch (\Throwable $e) {
             $wpdb->query('ROLLBACK');
             $errors[] = $e->getMessage();
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Cashback] process_ready_transactions error: ' . $e->getMessage());
         }
 
@@ -1951,6 +1985,7 @@ class Mariadb_Plugin {
             return $new_token;
         }
 
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
         error_log('[Cashback] Failed to generate unique partner_token for user #' . $user_id . ' after ' . $max_retries . ' attempts');
         return null;
     }
@@ -2064,6 +2099,7 @@ class Mariadb_Plugin {
         ));
 
         if ($wpdb->last_error) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Cashback] Failed to migrate rate_history ENUM: ' . $wpdb->last_error);
         }
     }
@@ -2115,6 +2151,7 @@ class Mariadb_Plugin {
                     $table
                 ));
                 if ($wpdb->last_error) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log("[Cashback Migration] ALTER TABLE {$table}: " . $wpdb->last_error);
                     continue;
                 }
@@ -2158,6 +2195,7 @@ class Mariadb_Plugin {
                     $wpdb->query($wpdb->prepare("UPDATE %i SET reference_id = CASE id {$case_sql} END WHERE id IN ({$ids_list})", $table));
 
                     if ($wpdb->last_error) {
+                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                         error_log("[Cashback Migration] Backfill error on {$table}: " . $wpdb->last_error);
                         break;
                     }
@@ -2178,6 +2216,7 @@ class Mariadb_Plugin {
             if (! $index_exists) {
                 $wpdb->query($wpdb->prepare('ALTER TABLE %i ADD UNIQUE KEY %i (`reference_id`)', $table, $uk_name));
                 if ($wpdb->last_error) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log("[Cashback Migration] UNIQUE KEY on {$table}: " . $wpdb->last_error);
                 }
             }

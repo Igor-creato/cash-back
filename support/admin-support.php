@@ -484,7 +484,11 @@ class Cashback_Support_Admin {
             if ($pagination_links) {
                 echo '<div class="tablenav bottom">';
                 echo '<div class="tablenav-pages">';
-                echo '<span class="displaying-num">' . esc_html( sprintf( _n( '%s запись', '%s записей', $total_items, 'cashback-plugin' ), number_format_i18n( $total_items ) ) ) . '</span>';
+                echo '<span class="displaying-num">' . esc_html( sprintf(
+                    /* translators: %s: форматированное количество записей. */
+                    _n( '%s запись', '%s записей', $total_items, 'cashback-plugin' ),
+                    number_format_i18n( $total_items )
+                ) ) . '</span>';
                 echo '<span class="pagination-links">' . wp_kses_post($pagination_links) . '</span>';
                 echo '</div><br class="clear"></div>';
             }
@@ -1012,6 +1016,7 @@ class Cashback_Support_Admin {
         foreach ($files_to_process as $single_file) {
             $result = Cashback_Support_DB::handle_file_upload($single_file, $ticket_id, $message_id, get_current_user_id());
             if (is_string($result)) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback Support] Admin file upload error: ' . $result);
                 $upload_errors[] = $result;
             }

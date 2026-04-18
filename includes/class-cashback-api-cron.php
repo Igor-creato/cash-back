@@ -75,6 +75,7 @@ class Cashback_API_Cron {
     public static function run_sync(): void {
         $start = microtime(true);
 
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
         error_log('Cashback API Cron: Starting background sync');
 
         // ═══ ЗАХВАТ ГЛОБАЛЬНОГО LOCK ═══
@@ -83,6 +84,7 @@ class Cashback_API_Cron {
         // 2) Нет админских проверок во время sync
         // 3) Начисление атомарно с sync
         if (!Cashback_Lock::acquire(self::LOCK_WAIT_TIMEOUT)) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback API Cron: Could not acquire global lock — another sync or operation is running');
             return;
         }
@@ -95,6 +97,7 @@ class Cashback_API_Cron {
 
             foreach ($results as $network => $result) {
                 if ($result['success']) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log(sprintf(
                         'Cashback API Cron [%s]: total=%d, updated=%d, inserted=%d, skipped=%d, not_found=%d, insert_errors=%d, declined_stale=%d (%.2fs)',
                         $network,
@@ -108,6 +111,7 @@ class Cashback_API_Cron {
                         $elapsed_sync
                     ));
                 } else {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log(sprintf(
                         'Cashback API Cron [%s]: FAILED — %s',
                         $network,
@@ -121,6 +125,7 @@ class Cashback_API_Cron {
             try {
                 $transfer_result = $client->auto_transfer_unregistered(50);
                 if ($transfer_result['transferred'] > 0 || $transfer_result['errors'] > 0) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log(sprintf(
                         'Cashback API Cron: auto_transfer: transferred=%d, skipped_duplicate=%d, errors=%d, checked=%d',
                         $transfer_result['transferred'],
@@ -130,6 +135,7 @@ class Cashback_API_Cron {
                     ));
                 }
             } catch (Exception $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Cashback API Cron: auto_transfer exception — ' . $e->getMessage());
             }
 
@@ -140,8 +146,10 @@ class Cashback_API_Cron {
             try {
                 $accrual_result = Mariadb_Plugin::process_ready_transactions();
                 if (!empty($accrual_result['errors'])) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log('Cashback API Cron: accrual errors — ' . implode('; ', $accrual_result['errors']));
                 } elseif ($accrual_result['processed'] > 0) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log(sprintf(
                         'Cashback API Cron: accrual processed=%d, ledger_inserted=%d',
                         $accrual_result['processed'],
@@ -149,6 +157,7 @@ class Cashback_API_Cron {
                     ));
                 }
             } catch (Exception $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Cashback API Cron: process_ready_transactions exception — ' . $e->getMessage());
             }
 
@@ -160,6 +169,7 @@ class Cashback_API_Cron {
                 try {
                     $aff_pending = Cashback_Affiliate_Service::sync_pending_accruals();
                     if ($aff_pending['created'] > 0 || $aff_pending['updated'] > 0) {
+                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                         error_log(sprintf(
                             'Cashback API Cron: affiliate pending sync: created=%d, updated=%d',
                             $aff_pending['created'],
@@ -167,6 +177,7 @@ class Cashback_API_Cron {
                         ));
                     }
                 } catch (Exception $e) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log('Cashback API Cron: affiliate pending sync exception — ' . $e->getMessage());
                 }
             }
@@ -179,6 +190,7 @@ class Cashback_API_Cron {
                 foreach ($campaign_results as $network => $cresult) {
                     if ($cresult['success'] ?? false) {
                         if (( $cresult['deactivated'] ?? 0 ) > 0 || ( $cresult['reactivated'] ?? 0 ) > 0) {
+                            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                             error_log(sprintf(
                                 'Cashback API Cron [%s] campaigns: total=%d, deactivated=%d, reactivated=%d, skipped=%d',
                                 $network,
@@ -189,6 +201,7 @@ class Cashback_API_Cron {
                             ));
                         }
                     } else {
+                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                         error_log(sprintf(
                             'Cashback API Cron [%s] campaign check FAILED: %s',
                             $network,
@@ -197,6 +210,7 @@ class Cashback_API_Cron {
                     }
                 }
             } catch (Exception $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Cashback API Cron: campaign check exception — ' . $e->getMessage());
             }
 
@@ -212,6 +226,7 @@ class Cashback_API_Cron {
                 'campaign_check'   => $campaign_results,
             ));
         } catch (Exception $e) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback API Cron: Exception — ' . $e->getMessage());
         } finally {
             // ═══ ОСВОБОЖДЕНИЕ LOCK ═══

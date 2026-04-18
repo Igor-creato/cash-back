@@ -38,6 +38,7 @@ class Cashback_Health_Check {
             self::send_report($issues);
         }
 
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
         error_log('Cashback Health Check: completed, ' . count($issues) . ' issue(s) found');
     }
 
@@ -297,6 +298,7 @@ class Cashback_Health_Check {
 
         // Дублируем в лог
         foreach ($issues as $issue) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log(sprintf('Cashback Health Check [%s] %s: %s', $issue['severity'], $issue['type'], $issue['message']));
         }
     }

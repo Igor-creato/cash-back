@@ -1164,6 +1164,7 @@ HTML;
         ));
 
         if (false === $result) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Cashback REST API] Failed to log click: ' . $wpdb->last_error);
             return false;
         }
