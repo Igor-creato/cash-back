@@ -443,29 +443,3 @@
     }
 }
 
-/* Validation table pagination */
-.validation-pagination {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 10px;
-    padding: 8px 0;
-}
-
-.validation-pagination .pagination-info {
-    color: #666;
-    font-size: 13px;
-}
-
-.validation-pagination .pagination-buttons {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.validation-pagination .pagination-current {
-    font-size: 13px;
-    min-width: 120px;
-    text-align: center;
-}
-

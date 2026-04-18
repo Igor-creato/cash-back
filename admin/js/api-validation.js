@@ -18,11 +18,25 @@
     const i18n = config.i18n || {};
 
     // =========================================================================
-    // Пагинация таблиц расхождений
+    // Пагинация таблиц расхождений (использует общий хелпер CashbackPagination)
     // =========================================================================
 
     const ITEMS_PER_PAGE = 20;
     const paginationStore = {};
+
+    function buildPaginationHtml(currentPage, totalPages, totalItems, perPage) {
+        const start = (currentPage - 1) * perPage + 1;
+        const end = Math.min(currentPage * perPage, totalItems);
+        const nav = window.CashbackPagination
+            ? window.CashbackPagination.build(currentPage, totalPages, { containerClass: 'cashback-admin-pagination' })
+            : '';
+
+        let html = '<div class="cashback-pagination-wrap tablenav bottom">';
+        html += '<span class="displaying-num">Показано ' + start + '–' + end + ' из ' + totalItems + '</span>';
+        html += nav;
+        html += '</div>';
+        return html;
+    }
 
     function setupPaginatedTable(tabId, items, theadHtml, renderRowFn, showNetCol, emptyMsg) {
         const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
@@ -35,9 +49,7 @@
         let html = '<div class="validation-paginated-table" data-tab-id="' + tabId + '" data-page="1">';
         html += '<table class="widefat striped"><thead>' + theadHtml + '</thead>';
         html += '<tbody>' + renderPageRows(tabId, 1) + '</tbody></table>';
-        if (totalPages > 1) {
-            html += renderPaginationNav(tabId, 1, items.length);
-        }
+        html += buildPaginationHtml(1, totalPages, items.length, ITEMS_PER_PAGE);
         html += '</div>';
         return html;
     }
@@ -53,34 +65,24 @@
         return html;
     }
 
-    function renderPaginationNav(tabId, page, totalItems) {
-        const totalPages = paginationStore[tabId].totalPages;
-        const start = (page - 1) * ITEMS_PER_PAGE + 1;
-        const end = Math.min(page * ITEMS_PER_PAGE, totalItems);
+    $(document).on('click', '.validation-paginated-table .page-numbers[data-page]', function (e) {
+        e.preventDefault();
+        const $link = $(this);
+        if ($link.hasClass('current')) return;
 
-        return '<div class="validation-pagination">'
-            + '<span class="pagination-info">Показано ' + start + '–' + end + ' из ' + totalItems + '</span>'
-            + '<span class="pagination-buttons">'
-            + '<button type="button" class="button button-small pagination-prev"' + (page <= 1 ? ' disabled' : '') + '>&larr; Пред</button>'
-            + '<span class="pagination-current">Страница ' + page + ' из ' + totalPages + '</span>'
-            + '<button type="button" class="button button-small pagination-next"' + (page >= totalPages ? ' disabled' : '') + '>След &rarr;</button>'
-            + '</span></div>';
-    }
-
-    $(document).on('click', '.validation-pagination .pagination-prev, .validation-pagination .pagination-next', function () {
-        const $btn = $(this);
-        const $wrap = $btn.closest('.validation-paginated-table');
+        const $wrap = $link.closest('.validation-paginated-table');
         const tabId = $wrap.data('tab-id');
         const store = paginationStore[tabId];
         if (!store) return;
 
-        const current = parseInt($wrap.data('page'), 10);
-        const newPage = $btn.hasClass('pagination-prev') ? current - 1 : current + 1;
-        if (newPage < 1 || newPage > store.totalPages) return;
+        const newPage = parseInt($link.data('page'), 10);
+        if (!newPage || newPage < 1 || newPage > store.totalPages) return;
 
         $wrap.data('page', newPage);
         $wrap.find('tbody').html(renderPageRows(tabId, newPage));
-        $wrap.find('.validation-pagination').replaceWith(renderPaginationNav(tabId, newPage, store.items.length));
+        $wrap.find('.cashback-pagination-wrap').replaceWith(
+            buildPaginationHtml(newPage, store.totalPages, store.items.length, ITEMS_PER_PAGE)
+        );
     });
 
     // =========================================================================
@@ -613,7 +615,7 @@
         // Очистить предыдущую пагинацию (при повторной загрузке)
         let $wrap = $table.closest('.validation-paginated-table');
         if ($wrap.length) {
-            $wrap.find('.validation-pagination').remove();
+            $wrap.find('.cashback-pagination-wrap').remove();
             $wrap.data('page', 1);
         }
 
@@ -625,13 +627,11 @@
             paginationStore['sync-log'] = { items: log, renderRowFn: renderSyncLogRow, showNetCol: false, totalPages };
             $tbody.html(renderPageRows('sync-log', 1));
 
-            if (totalPages > 1) {
-                if (!$wrap.length) {
-                    $table.wrap('<div class="validation-paginated-table" data-tab-id="sync-log" data-page="1"></div>');
-                    $wrap = $table.parent();
-                }
-                $wrap.append(renderPaginationNav('sync-log', 1, log.length));
+            if (!$wrap.length) {
+                $table.wrap('<div class="validation-paginated-table" data-tab-id="sync-log" data-page="1"></div>');
+                $wrap = $table.parent();
             }
+            $wrap.append(buildPaginationHtml(1, totalPages, log.length, ITEMS_PER_PAGE));
         }
 
         $table.show();
@@ -1054,9 +1054,7 @@
         let html = '<div class="campaigns-paginated-table" data-tab-id="' + tabId + '" data-page="1">';
         html += '<table class="widefat striped"><thead>' + theadHtml + '</thead>';
         html += '<tbody>' + renderCampaignPageRows(tabId, 1) + '</tbody></table>';
-        if (totalPages > 1) {
-            html += renderCampaignPaginationNav(tabId, 1, items.length);
-        }
+        html += buildPaginationHtml(1, totalPages, items.length, CAMPAIGNS_PER_PAGE);
         html += '</div>';
         return html;
     }
@@ -1072,35 +1070,24 @@
         return html;
     }
 
-    function renderCampaignPaginationNav(tabId, page, totalItems) {
-        const totalPages = campaignPagination[tabId].totalPages;
-        const start = (page - 1) * CAMPAIGNS_PER_PAGE + 1;
-        const end = Math.min(page * CAMPAIGNS_PER_PAGE, totalItems);
+    $(document).on('click', '.campaigns-paginated-table .page-numbers[data-page]', function (e) {
+        e.preventDefault();
+        const $link = $(this);
+        if ($link.hasClass('current')) return;
 
-        return '<div class="validation-pagination">'
-            + '<span class="pagination-info">Показано ' + start + '\u2013' + end + ' из ' + totalItems + '</span>'
-            + '<span class="pagination-buttons">'
-            + '<button type="button" class="button button-small campaign-pg-prev"' + (page <= 1 ? ' disabled' : '') + '>&larr; Пред</button>'
-            + '<span class="pagination-current">Страница ' + page + ' из ' + totalPages + '</span>'
-            + '<button type="button" class="button button-small campaign-pg-next"' + (page >= totalPages ? ' disabled' : '') + '>След &rarr;</button>'
-            + '</span></div>';
-    }
-
-    // Обработчик пагинации кампаний (делегирование)
-    $(document).on('click', '.campaign-pg-prev, .campaign-pg-next', function () {
-        const $btn = $(this);
-        const $wrap = $btn.closest('.campaigns-paginated-table');
+        const $wrap = $link.closest('.campaigns-paginated-table');
         const tabId = $wrap.data('tab-id');
         const store = campaignPagination[tabId];
         if (!store) return;
 
-        const current = parseInt($wrap.data('page'), 10);
-        const newPage = $btn.hasClass('campaign-pg-prev') ? current - 1 : current + 1;
-        if (newPage < 1 || newPage > store.totalPages) return;
+        const newPage = parseInt($link.data('page'), 10);
+        if (!newPage || newPage < 1 || newPage > store.totalPages) return;
 
         $wrap.data('page', newPage);
         $wrap.find('tbody').html(renderCampaignPageRows(tabId, newPage));
-        $wrap.find('.validation-pagination').replaceWith(renderCampaignPaginationNav(tabId, newPage, store.items.length));
+        $wrap.find('.cashback-pagination-wrap').replaceWith(
+            buildPaginationHtml(newPage, store.totalPages, store.items.length, CAMPAIGNS_PER_PAGE)
+        );
     });
 
     function renderNetworkStats(networkSlug, stats) {

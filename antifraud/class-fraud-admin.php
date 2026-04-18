@@ -636,7 +636,15 @@ class Cashback_Fraud_Admin {
         // --- Recent spam clicks ---
         echo '<h3>' . esc_html__('Последние спам-клики', 'cashback-plugin') . '</h3>';
 
-        $recent = $this->get_recent_spam_clicks(50);
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing; pagination via absint + cap.
+        $recent_page  = min(isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1, self::MAX_ALLOWED_PAGES);
+        $recent_total = $this->count_recent_spam_clicks();
+        $recent_pages = (int) ceil($recent_total / self::PER_PAGE);
+        if ($recent_pages > 0 && $recent_page > $recent_pages) {
+            $recent_page = $recent_pages;
+        }
+        $recent_offset = ( $recent_page - 1 ) * self::PER_PAGE;
+        $recent        = $recent_total > 0 ? $this->get_recent_spam_clicks(self::PER_PAGE, $recent_offset) : array();
 
         if (empty($recent)) {
             echo '<p style="color:#646970;">' . esc_html__('Спам-кликов пока не было.', 'cashback-plugin') . '</p>';
@@ -672,6 +680,18 @@ class Cashback_Fraud_Admin {
             }
 
             echo '</tbody></table>';
+
+            Cashback_Pagination::render(array(
+                'total_items'  => $recent_total,
+                'per_page'     => self::PER_PAGE,
+                'current_page' => $recent_page,
+                'total_pages'  => $recent_pages,
+                'page_slug'    => 'cashback-antifraud',
+                'add_args'     => array(
+                    'tab'   => 'spam',
+                    'hours' => $hours,
+                ),
+            ));
         }
     }
 
@@ -680,11 +700,12 @@ class Cashback_Fraud_Admin {
      *
      * @since 4.3.0
      *
-     * @param int $limit Количество записей.
+     * @param int $limit  Количество записей.
+     * @param int $offset Смещение для пагинации.
      *
      * @return array|object[] Массив объектов.
      */
-    private function get_recent_spam_clicks( int $limit = 50 ): array {
+    private function get_recent_spam_clicks( int $limit = 50, int $offset = 0 ): array {
         global $wpdb;
 
         $table = $wpdb->prefix . 'cashback_click_log';
@@ -704,10 +725,38 @@ class Cashback_Fraud_Admin {
              FROM %i
              WHERE spam_click = 1
              ORDER BY created_at DESC
-             LIMIT %d',
+             LIMIT %d OFFSET %d',
             $table,
-            $limit
+            $limit,
+            $offset
         )) ?: array();
+    }
+
+    /**
+     * Общее число спам-кликов в cashback_click_log (для пагинации).
+     *
+     * @since 5.1.0
+     *
+     * @return int
+     */
+    private function count_recent_spam_clicks(): int {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cashback_click_log';
+
+        $table_exists = $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $table
+        ));
+
+        if (!$table_exists) {
+            return 0;
+        }
+
+        return (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM %i WHERE spam_click = 1',
+            $table
+        ));
     }
 
     // ===========================

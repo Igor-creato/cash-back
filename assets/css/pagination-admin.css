@@ -36,11 +36,14 @@
     background: #fff;
     border-color: #2271b1;
 }
-.cashback-admin-pagination span.page-numbers.current {
+.cashback-admin-pagination span.page-numbers.current,
+.cashback-admin-pagination a.page-numbers.current,
+.cashback-admin-pagination a.page-numbers.current:hover {
     background: #2271b1;
     border-color: #2271b1;
     color: #fff;
     font-weight: 600;
+    cursor: default;
 }
 .cashback-admin-pagination span.page-numbers.dots {
     background: transparent;

@@ -112,9 +112,17 @@ class Cashback_Admin_API_Validation {
         }
 
         wp_enqueue_script(
+            'cashback-pagination',
+            plugin_dir_url(__DIR__) . 'assets/js/cashback-pagination.js',
+            array(),
+            '1.0.0',
+            true
+        );
+
+        wp_enqueue_script(
             'cashback-api-validation',
             plugin_dir_url(__DIR__) . 'admin/js/api-validation.js',
-            array( 'jquery' ),
+            array( 'jquery', 'cashback-pagination' ),
             '5.1.0',
             true
         );
