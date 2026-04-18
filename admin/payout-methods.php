@@ -43,7 +43,7 @@ class Cashback_Payout_Methods_Admin {
         );
 
         $is_methods_page = in_array($hook, $allowed_hooks, true) ||
-            ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-payout-methods' );
+            ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-payout-methods' ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin page slug detection for asset enqueue, no state change.
 
         if (!$is_methods_page) {
             return;
@@ -116,7 +116,7 @@ class Cashback_Payout_Methods_Admin {
         global $wpdb;
 
         // Фильтр по статусу is_active
-        $filter_status = isset($_GET['filter_status']) ? sanitize_text_field(wp_unslash($_GET['filter_status'])) : '';
+        $filter_status = isset($_GET['filter_status']) ? sanitize_text_field(wp_unslash($_GET['filter_status'])) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, no state change.
         $is_filtered   = ( $filter_status !== '' && $filter_status !== 'all' );
 
         // Формируем WHERE-условие для фильтра
@@ -145,8 +145,8 @@ class Cashback_Payout_Methods_Admin {
 
         // Выводим сообщения об ошибках или успехе
         $message = '';
-        if (isset($_GET['message'])) {
-            $msg_type = sanitize_text_field(wp_unslash($_GET['message']));
+        if (isset($_GET['message'])) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin notice message type (allowlist below), no state change.
+            $msg_type = sanitize_text_field(wp_unslash($_GET['message'])); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin notice message type (allowlist below), no state change.
             if ($msg_type === 'added') {
                 $message = '<div class="notice notice-success is-dismissible"><p>Способ выплаты успешно добавлен.</p></div>';
             } elseif ($msg_type === 'updated') {

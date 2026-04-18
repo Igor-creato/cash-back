@@ -73,7 +73,7 @@ class HistoryPayout {
         $total_pages = $total > 0 ? ceil($total / $per_page) : 1;
         $total_pages = min($total_pages, self::MAX_ALLOWED_PAGES);
 
-        $page   = isset($_GET['page']) ? intval($_GET['page']) : 1;
+        $page   = isset($_GET['page']) ? intval($_GET['page']) : 1; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only pagination, no state change
         $page   = max(1, min($page, $total_pages));
         $offset = ( $page - 1 ) * $per_page;
 

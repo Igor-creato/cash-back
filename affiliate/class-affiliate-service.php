@@ -53,11 +53,11 @@ class Cashback_Affiliate_Service {
      * Устанавливает HMAC-подписанную cookie, логирует клик.
      */
     public function handle_referral_visit(): void {
-        if (!isset($_GET['ref'])) {
+        if (!isset($_GET['ref'])) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public referral entry point, external URL, nonce not applicable.
             return;
         }
 
-        $ref_raw = sanitize_text_field(wp_unslash($_GET['ref']));
+        $ref_raw = sanitize_text_field(wp_unslash($_GET['ref'])); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public referral entry point, external URL, nonce not applicable.
 
         // Разрешение: partner_token (32 hex) → user_id, с fallback на legacy числовой ID
         if (preg_match('/^[0-9a-f]{32}$/', $ref_raw)) {
