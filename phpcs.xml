@@ -49,6 +49,28 @@
         <severity>0</severity>
     </rule>
 
+    <!-- Legitimate direct queries against custom plugin tables (cashback_*, affiliate_*, claims_*, support_*). Core WP has no API for these. -->
+    <rule ref="WordPress.DB.DirectDatabaseQuery.DirectQuery">
+        <severity>0</severity>
+    </rule>
+    <!-- Plugin handles transactional state (balances, payouts, idempotency, FOR UPDATE locks). Caching reads would break consistency — caching is intentionally avoided. -->
+    <rule ref="WordPress.DB.DirectDatabaseQuery.NoCaching">
+        <severity>0</severity>
+    </rule>
+    <!-- Schema migrations (dbDelta / ALTER) in mariadb.php and *-db.php files — by design. -->
+    <rule ref="WordPress.DB.DirectDatabaseQuery.SchemaChange">
+        <severity>0</severity>
+    </rule>
+
+    <!-- Codebase convention: natural conditions, not Yoda. -->
+    <rule ref="WordPress.PHP.YodaConditions.NotYoda">
+        <severity>0</severity>
+    </rule>
+    <!-- Short ternary ($x ?: $y) is used intentionally throughout the codebase. -->
+    <rule ref="Universal.Operators.DisallowShortTernary.Found">
+        <severity>0</severity>
+    </rule>
+
     <!-- Force critical security sniffs to be errors, not warnings. -->
     <rule ref="WordPress.DB.PreparedSQL">
         <type>error</type>
