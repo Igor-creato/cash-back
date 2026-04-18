@@ -291,40 +291,21 @@ class Cashback_Rate_History_Admin {
                 </tbody>
             </table>
 
-            <?php if ($total_pages > 1) : ?>
-                <div class="cashback-pagination">
-                    <?php
-                    $base_url = remove_query_arg(array( 'paged' ));
-                    $base_url = add_query_arg(array(
-                        'rate_type'   => $filter_rate_type,
-                        'date_from'   => $filter_date_from,
-                        'date_to'     => $filter_date_to,
-                        'filter_rate' => $filter_rate,
-                        'filter_user' => $filter_user,
-                    ), $base_url);
-
-                    echo wp_kses_post( paginate_links(array(
-                        'base'      => $base_url . '%_%',
-                        'format'    => '&paged=%#%',
-                        'current'   => $paged,
-                        'total'     => $total_pages,
-                        'prev_text' => __('&laquo;'),
-                        'next_text' => __('&raquo;'),
-                    )) ); // wp_kses_post: paginate_links returns safe pagination HTML.
-                    ?>
-                    <span class="cashback-pagination-info">
-                        <?php
-                        printf(
-                            /* translators: %1$d: текущая страница, %2$d: всего страниц, %3$d: всего записей. */
-                            esc_html__('Страница %1$d из %2$d (%3$d записей)', 'cashback-plugin'),
-                            (int) $paged,
-                            (int) $total_pages,
-                            (int) $total_items
-                        );
-                        ?>
-                    </span>
-                </div>
-            <?php endif; ?>
+            <?php
+            Cashback_Admin_Pagination::render(array(
+                'total_items'  => $total_items,
+                'current_page' => $paged,
+                'total_pages'  => $total_pages,
+                'page_slug'    => 'cashback-rate-history',
+                'add_args'     => array_filter(array(
+                    'rate_type'   => $filter_rate_type,
+                    'date_from'   => $filter_date_from,
+                    'date_to'     => $filter_date_to,
+                    'filter_rate' => $filter_rate,
+                    'filter_user' => $filter_user,
+                )),
+            ));
+            ?>
         </div>
         <?php
     }

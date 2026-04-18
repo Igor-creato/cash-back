@@ -308,29 +308,21 @@ class Cashback_Claims_Admin {
                 </table>
 
                 <?php
-                $base_url   = admin_url('admin.php');
-                $query_args = array(
-                    'page'       => 'cashback-claims-admin',
-                    'status'     => $status_filter,
-                    'suspicious' => $suspicious_filter,
-                    'search'     => $search,
-                    'date_from'  => $date_from,
-                    'date_to'    => $date_to,
-                    'orderby'    => $orderby,
-                    'order'      => $order,
-                    'paged'      => '%#%',
-                );
-                // Remove empty values but keep '0' (strict filter)
-                $query_args      = array_filter($query_args, static function ( $v ) {
-                    return $v !== '' && $v !== null;
-                });
-                $pagination_args = array(
-                    'base'    => add_query_arg($query_args, $base_url),
-                    'format'  => '',
-                    'total'   => $result['pages'],
-                    'current' => $page,
-                );
-                echo wp_kses_post(paginate_links($pagination_args)); // paginate_links() возвращает безопасный HTML с экранированными URL.
+                Cashback_Admin_Pagination::render(array(
+                    'total_items'  => isset($result['total']) ? (int) $result['total'] : 0,
+                    'current_page' => $page,
+                    'total_pages'  => (int) $result['pages'],
+                    'page_slug'    => 'cashback-claims-admin',
+                    'add_args'     => array_filter(array(
+                        'status'     => $status_filter,
+                        'suspicious' => $suspicious_filter,
+                        'search'     => $search,
+                        'date_from'  => $date_from,
+                        'date_to'    => $date_to,
+                        'orderby'    => $orderby,
+                        'order'      => $order,
+                    ), static function ($v) { return $v !== '' && $v !== null; }),
+                ));
                 ?>
             <?php endif; ?>
 

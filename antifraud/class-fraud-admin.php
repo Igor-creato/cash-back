@@ -15,8 +15,6 @@ if (!defined('ABSPATH')) {
  */
 class Cashback_Fraud_Admin {
 
-    use AdminPaginationTrait;
-
     private const PER_PAGE          = 20;
     private const MAX_ALLOWED_PAGES = 1000;
 
@@ -333,7 +331,7 @@ class Cashback_Fraud_Admin {
             'tab'        => 'alerts',
         ));
 
-        $this->render_pagination(array(
+        Cashback_Admin_Pagination::render(array(
             'total_items'  => $total_items,
             'per_page'     => self::PER_PAGE,
             'current_page' => $current_page,
@@ -448,7 +446,7 @@ class Cashback_Fraud_Admin {
 
         echo '</tbody></table>';
 
-        $this->render_pagination(array(
+        Cashback_Admin_Pagination::render(array(
             'total_items'  => $total_items,
             'per_page'     => self::PER_PAGE,
             'current_page' => $current_page,

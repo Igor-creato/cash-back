@@ -451,7 +451,7 @@ class CashbackPlugin {
 
         // Admin-only файлы (is_admin() = true для admin pages, admin-ajax.php, REST через admin)
         if (is_admin()) {
-            $this->require_file('admin/traits/AdminPaginationTrait.php');
+            $this->require_file('admin/class-cashback-admin-pagination.php');
             $this->require_file('admin/payout-methods.php');
             $this->require_file('admin/users-management.php');
             $this->require_file('admin/payouts.php');

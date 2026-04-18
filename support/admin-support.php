@@ -464,36 +464,17 @@ class Cashback_Support_Admin {
         </table>
 
         <?php
-        // Пагинация
-        if ($total_pages > 1) {
-            $base_url         = remove_query_arg('paged', add_query_arg('page', 'cashback-support', admin_url('admin.php')));
-            $pagination_links = paginate_links(array(
-                'base'      => add_query_arg('paged', '%#%', $base_url),
-                'format'    => '',
-                'total'     => $total_pages,
-                'current'   => $current_page,
-                'add_args'  => array_filter(array(
-                    'filter_status'   => $filter_status,
-                    'filter_priority' => $filter_priority,
-                    'filter_unread'   => $filter_unread,
-                )),
-                'type'      => 'plain',
-                'prev_text' => '&lsaquo; Предыдущая',
-                'next_text' => 'Следующая &rsaquo;',
-            ));
-
-            if ($pagination_links) {
-                echo '<div class="tablenav bottom">';
-                echo '<div class="tablenav-pages">';
-                echo '<span class="displaying-num">' . esc_html( sprintf(
-                    /* translators: %s: форматированное количество записей. */
-                    _n( '%s запись', '%s записей', $total_items, 'cashback-plugin' ),
-                    number_format_i18n( $total_items )
-                ) ) . '</span>';
-                echo '<span class="pagination-links">' . wp_kses_post($pagination_links) . '</span>';
-                echo '</div><br class="clear"></div>';
-            }
-        }
+        Cashback_Admin_Pagination::render(array(
+            'total_items'  => $total_items,
+            'current_page' => $current_page,
+            'total_pages'  => $total_pages,
+            'page_slug'    => 'cashback-support',
+            'add_args'     => array_filter(array(
+                'filter_status'   => $filter_status,
+                'filter_priority' => $filter_priority,
+                'filter_unread'   => $filter_unread,
+            )),
+        ));
         ?>
 
         <script>

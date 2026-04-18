@@ -293,47 +293,22 @@ class Cashback_Bank_Management_Admin {
                 </table>
             </div>
 
-            <?php if ($total_banks > $per_page) : ?>
-                <!-- Пагинация -->
-                <div class="tablenav bottom">
-                    <div class="tablenav-pages">
-                        <span class="displaying-num">
-                            <?php
-                            printf(
-                                '%s из %s',
-                                esc_html(number_format_i18n(count($banks))),
-                                esc_html(number_format_i18n($total_banks))
-                            );
-                            ?>
-                        </span>
-                        <?php
-                        $pagination_base_args = array(
-							'page'  => 'cashback-banks',
-							'paged' => '%#%',
-						);
-                        if ($is_search) {
-                            $pagination_base_args['bank_search'] = $search_query;
-                        }
-                        if ($is_filtered) {
-                            $pagination_base_args['filter_status'] = $filter_status;
-                        }
-                        $pagination_links = paginate_links(array(
-                            'base'      => add_query_arg($pagination_base_args, admin_url('admin.php')),
-                            'format'    => '',
-                            'prev_text' => '&laquo;',
-                            'next_text' => '&raquo;',
-                            'total'     => $total_pages,
-                            'current'   => $current_page,
-                            'type'      => 'plain',
-                        ));
-
-                        if ($pagination_links) {
-                            echo wp_kses_post($pagination_links);
-                        }
-                        ?>
-                    </div>
-                </div>
-            <?php endif; ?>
+            <?php
+            $bank_add_args = array();
+            if ($is_search) {
+                $bank_add_args['bank_search'] = $search_query;
+            }
+            if ($is_filtered) {
+                $bank_add_args['filter_status'] = $filter_status;
+            }
+            Cashback_Admin_Pagination::render(array(
+                'total_items'  => $total_banks,
+                'current_page' => $current_page,
+                'total_pages'  => $total_pages,
+                'page_slug'    => 'cashback-banks',
+                'add_args'     => $bank_add_args,
+            ));
+            ?>
 
         </div>
 <?php

@@ -8,8 +8,6 @@ if (!defined('ABSPATH')) {
 
 class Cashback_Transactions_Admin {
 
-    use AdminPaginationTrait;
-
     private string $registered_table;
     private string $unregistered_table;
     private int $per_page = 20;
@@ -314,7 +312,7 @@ class Cashback_Transactions_Admin {
             </table>
 
             <?php
-            $this->render_pagination(array(
+            Cashback_Admin_Pagination::render(array(
                 'total_items'  => $total_items,
                 'per_page'     => $this->per_page,
                 'current_page' => $current_page,

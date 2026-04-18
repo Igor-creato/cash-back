@@ -84,23 +84,6 @@
     font-weight: 600;
 }
 
-.cashback-pagination {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-    margin-top: 15px;
-    padding: 10px 0;
-}
-
-.cashback-pagination-info {
-    color: #646970;
-    font-size: 13px;
-}
-
-.cashback-pagination .pagination-links {
-    margin: 0;
-}
-
 @media screen and (max-width: 782px) {
     .cashback-rate-history-wrap .cashback-filters-row {
         flex-direction: column;
