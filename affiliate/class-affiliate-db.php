@@ -236,6 +236,7 @@ class Cashback_Affiliate_DB {
             $table
         ));
 
+        // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- External INFORMATION_SCHEMA column name.
         if ($col && strpos($col->COLUMN_TYPE, "'pending'") !== false) {
             return; // уже мигрировано
         }

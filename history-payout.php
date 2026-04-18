@@ -205,14 +205,18 @@ class HistoryPayout {
         $edge  = 2;  // крайние страницы с каждой стороны
 
         // Собираем номера страниц для отображения
-        $pages = array();
-        for ($i = 1; $i <= min($edge, $total_pages); $i++) {
+        $pages       = array();
+        $edge_limit  = min($edge, $total_pages);
+        $range_start = max(1, $current_page - $range);
+        $range_end   = min($total_pages, $current_page + $range);
+        $tail_start  = max(1, $total_pages - $edge + 1);
+        for ($i = 1; $i <= $edge_limit; $i++) {
             $pages[] = $i;
         }
-        for ($i = max(1, $current_page - $range); $i <= min($total_pages, $current_page + $range); $i++) {
+        for ($i = $range_start; $i <= $range_end; $i++) {
             $pages[] = $i;
         }
-        for ($i = max(1, $total_pages - $edge + 1); $i <= $total_pages; $i++) {
+        for ($i = $tail_start; $i <= $total_pages; $i++) {
             $pages[] = $i;
         }
 

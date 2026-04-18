@@ -363,11 +363,13 @@ class Cashback_User_Support {
         $range = 2;
         $edge  = 2;
 
-        $pages = array();
-        for ($i = 1; $i <= min($edge, $total_pages); $i++) {
+        $pages      = array();
+        $head_limit = min($edge, $total_pages);
+        $middle_end = min($total_pages, $current_page + $range);
+        for ($i = 1; $i <= $head_limit; $i++) {
             $pages[] = $i;
         }
-        for ($i = max(1, $current_page - $range); $i <= min($total_pages, $current_page + $range); $i++) {
+        for ($i = max(1, $current_page - $range); $i <= $middle_end; $i++) {
             $pages[] = $i;
         }
         for ($i = max(1, $total_pages - $edge + 1); $i <= $total_pages; $i++) {

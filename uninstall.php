@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// phpcs:ignore PSR12.Files.FileHeader.IncorrectOrder -- WordPress uninstall bootstrap guard must precede other statements.
 /**
  * Uninstall script for Cashback Plugin
  *
@@ -143,11 +144,14 @@ function cashback_plugin_uninstall(): void {
         );
         foreach ($iterator as $file) {
             if ($file->isDir()) {
+                // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence during uninstall cleanup; missing/locked entries are non-fatal.
                 @rmdir($file->getRealPath());
             } else {
+                // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence during uninstall cleanup; missing/locked entries are non-fatal.
                 @unlink($file->getRealPath());
             }
         }
+        // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence during uninstall cleanup; missing/locked entries are non-fatal.
         @rmdir($support_dir);
     }
 

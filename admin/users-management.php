@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// phpcs:ignore PSR12.Files.FileHeader.IncorrectOrder -- WordPress bootstrap guard must precede other statements.
 /**
  * Файл для управления пользователями кэшбэка в админке WordPress
  */
@@ -280,7 +281,7 @@ class Cashback_Users_Management_Admin {
                                         <?php echo esc_html($user['ban_reason'] ?? ''); ?>
                                     </td>
                                     <td class="edit-field" data-field="banned_at">
-                                        <?php echo esc_html($user['banned_at'] ? date('Y-m-d H:i:s', strtotime($user['banned_at'])) : ''); ?>
+                                        <?php echo esc_html($user['banned_at'] ? wp_date('Y-m-d H:i:s', strtotime($user['banned_at'])) : ''); ?>
                                     </td>
                                     <td>
                                         <button class="button button-secondary edit-btn">Редактировать</button>
@@ -474,11 +475,11 @@ class Cashback_Users_Management_Admin {
             if (isset($status)) {
                 if ($old_status !== 'banned' && $status === 'banned') {
                     Cashback_Trigger_Fallbacks::set_banned_at($update_data);
-                    $update_formats[] = '%s'; // banned_at
+                    $update_formats[] = '%s';
                 } elseif ($old_status === 'banned' && $status !== 'banned') {
                     Cashback_Trigger_Fallbacks::clear_ban_fields($update_data);
-                    $update_formats[] = '%s'; // banned_at (null)
-                    $update_formats[] = '%s'; // ban_reason (null)
+                    $update_formats[] = '%s';
+                    $update_formats[] = '%s';
                 }
             }
 

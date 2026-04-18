@@ -277,6 +277,7 @@ class Cashback_REST_API {
      * Кешируется в transient на 6 часов.
      * Домены берутся из post_meta `_store_domain` (заполняется в админке товара).
      */
+    // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- WP REST API callback signature requires WP_REST_Request parameter.
     public function get_stores( \WP_REST_Request $request ): \WP_REST_Response {
         $cached = get_transient(self::STORES_CACHE_KEY);
         if (false !== $cached) {
@@ -369,6 +370,7 @@ class Cashback_REST_API {
     /**
      * GET /me — Баланс и профиль текущего пользователя.
      */
+    // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- WP REST API callback signature requires WP_REST_Request parameter.
     public function get_me( \WP_REST_Request $request ): \WP_REST_Response {
         global $wpdb;
 

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// phpcs:ignore PSR12.Files.FileHeader.IncorrectOrder -- WordPress bootstrap guard must precede other statements.
 /**
  * Класс для просмотра лога кликов по партнерским ссылкам в админ-панели.
  */

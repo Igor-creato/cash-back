@@ -92,6 +92,7 @@ ID заявки: %4$s
     /**
      * Notify user when claim status changes.
      */
+    // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter -- Required by cashback_claim_status_changed action signature.
     public function notify_user_status_changed( int $claim_id, string $old_status, string $new_status, string $note, string $actor_type, ?int $actor_id ): void {
         global $wpdb;
 

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// phpcs:ignore PSR12.Files.FileHeader.IncorrectOrder -- WordPress plugin header docblock must precede bootstrap guard.
 /**
  * Plugin Name: Cashback Plugin
  * Description: Объединенный плагин для системы кэшбэка и аффилиат-партнерства
@@ -21,7 +22,7 @@ declare(strict_types=1);
  */
 
 // Запрет прямого доступа
-defined('ABSPATH') or die('No script kiddies please!');
+defined('ABSPATH') || die('No script kiddies please!');
 
 // Минимальные требования к версиям
 define('CASHBACK_MIN_PHP_VERSION', '8.3');
@@ -139,6 +140,7 @@ register_activation_hook(__FILE__, 'cashback_check_requirements');
 /**
  * Основной класс плагина Cashback
  */
+// phpcs:ignore Universal.Files.SeparateFunctionsFromOO.Mixed -- Main plugin bootstrap file mixes class definitions with helper functions by design.
 class CashbackPlugin {
 
     private const ACTIVATION_ERROR_TITLE = 'Ошибка активации плагина';

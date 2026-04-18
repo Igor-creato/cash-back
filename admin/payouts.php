@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// phpcs:ignore PSR12.Files.FileHeader.IncorrectOrder -- WordPress bootstrap guard must precede other statements.
 /**
  * Класс для управления выплатами кэшбэка в админ-панели.
  */
@@ -468,8 +469,8 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
                                             <td class="edit-field" data-field="status" title="<?php echo esc_attr($this->get_admin_status_description($payout['status'])); ?>">
                                                 <?php echo esc_html($this->get_admin_status_label($payout['status'])); ?>
                                             </td>
-                                            <td><?php echo esc_html(date('Y-m-d H:i', strtotime($payout['created_at']))); ?></td>
-                                            <td><?php echo esc_html(!empty($payout['updated_at']) ? date('Y-m-d H:i', strtotime($payout['updated_at'])) : ''); ?></td>
+                                            <td><?php echo esc_html(wp_date('Y-m-d H:i', strtotime($payout['created_at']))); ?></td>
+                                            <td><?php echo esc_html(!empty($payout['updated_at']) ? wp_date('Y-m-d H:i', strtotime($payout['updated_at'])) : ''); ?></td>
                                             <td>
                                                 <?php
                                                 $is_final_status = in_array($payout['status'], array( 'paid', 'failed', 'declined' ), true);
@@ -724,12 +725,12 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
                                     </tr>
                                     <tr>
                                         <th><?php echo esc_html__('Дата заявки', 'cashback-plugin'); ?></th>
-                                        <td><?php echo esc_html(date('d.m.Y H:i', strtotime($payout['created_at']))); ?></td>
+                                        <td><?php echo esc_html(wp_date('d.m.Y H:i', strtotime($payout['created_at']))); ?></td>
                                     </tr>
                                     <?php if (!empty($payout['updated_at'])) : ?>
                                     <tr>
                                         <th><?php echo esc_html__('Дата обновления', 'cashback-plugin'); ?></th>
-                                        <td><?php echo esc_html(date('d.m.Y H:i', strtotime($payout['updated_at']))); ?></td>
+                                        <td><?php echo esc_html(wp_date('d.m.Y H:i', strtotime($payout['updated_at']))); ?></td>
                                     </tr>
                                     <?php endif; ?>
                                 </table>
@@ -901,8 +902,9 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
                     'declined'    => array(),
                 );
 
+                // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedIf -- Intentional no-op branch.
                 if ($old_status === $status) {
-                    // Статус не изменился — пропускаем проверку перехода
+                    // No-op intentional: статус не изменился — пропускаем проверку перехода.
                 } elseif (!isset($allowed_transitions[ $old_status ]) || !in_array($status, $allowed_transitions[ $old_status ], true)) {
                     throw new Exception(sprintf(
                         /* translators: %1$s: текущий статус, %2$s: запрошенный новый статус. */
@@ -1555,6 +1557,7 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
         }
 
         // Проверяем роль: Администратор или Менеджер магазина
+        // phpcs:ignore WordPress.WP.Capabilities.Unknown -- Plugin-specific capability 'manage_woocommerce' registered by WooCommerce.
         if (!current_user_can('manage_options') && !current_user_can('manage_woocommerce')) {
             wp_send_json_error(array( 'message' => __('Недостаточно прав для выполнения этого действия.', 'cashback-plugin') ));
             return;

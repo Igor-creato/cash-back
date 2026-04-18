@@ -343,15 +343,21 @@ class Cashback_Support_DB {
         if ($files) {
             foreach ($files as $file) {
                 if (is_file($file)) {
+                    // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence; best-effort cleanup during uninstall.
                     @unlink($file);
                 }
             }
         }
         // Удаляем защитные файлы директории
+        // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence; best-effort cleanup during uninstall.
         @unlink($dir . '/.htaccess');
+        // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence; best-effort cleanup during uninstall.
         @unlink($dir . '/web.config');
+        // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence; best-effort cleanup during uninstall.
         @unlink($dir . '/index.php');
+        // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence; best-effort cleanup during uninstall.
         @unlink($dir . '/index.html');
+        // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence; best-effort cleanup during uninstall.
         @rmdir($dir);
     }
 
@@ -539,6 +545,7 @@ class Cashback_Support_DB {
             finfo_close($finfo);
         }
         if (!$detected_mime) {
+            // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence; best-effort cleanup of partial upload.
             @unlink($dest_path);
             return 'Не удалось определить тип файла. Убедитесь, что расширение fileinfo включено.';
         }
@@ -554,6 +561,7 @@ class Cashback_Support_DB {
         ));
 
         if (!$attachment_id) {
+            // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence; best-effort cleanup of orphaned upload.
             @unlink($dest_path);
             return 'Не удалось записать данные о файле.';
         }

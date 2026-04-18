@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+// phpcs:ignore PSR12.Files.FileHeader.IncorrectOrder -- Plugin file header comment ordering preserved for legacy consistency.
 /**
  * Файл для управления партнерскими сетями в админке WordPress
  */
@@ -679,8 +680,9 @@ class Cashback_Partner_Management_Admin {
         // Добавляем новые параметры
         $wpdb->query('START TRANSACTION');
 
-        $insert_error = false;
-        for ($i = 0; $i < count($param_names); $i++) {
+        $insert_error      = false;
+        $param_names_count = count($param_names);
+        for ($i = 0; $i < $param_names_count; $i++) {
             $pn = $param_names[ $i ];
             if (empty($pn)) {
                 continue;

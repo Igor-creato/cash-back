@@ -638,11 +638,13 @@ class Cashback_Claims_Frontend {
         $edge  = 2;  // крайние страницы с каждой стороны
 
         // Собираем номера страниц для отображения
-        $pages = array();
-        for ($i = 1; $i <= min($edge, $total); $i++) {
+        $pages      = array();
+        $head_limit = min($edge, $total);
+        $middle_end = min($total, $current + $range);
+        for ($i = 1; $i <= $head_limit; $i++) {
             $pages[] = $i;
         }
-        for ($i = max(1, $current - $range); $i <= min($total, $current + $range); $i++) {
+        for ($i = max(1, $current - $range); $i <= $middle_end; $i++) {
             $pages[] = $i;
         }
         for ($i = max(1, $total - $edge + 1); $i <= $total; $i++) {

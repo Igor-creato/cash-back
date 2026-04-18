@@ -137,7 +137,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
         $code = wp_remote_retrieve_response_code($response);
         $body = json_decode(wp_remote_retrieve_body($response), true);
 
-        // EPN ответ: {"data":{"type":"token","id":"","attributes":{"access_token":"...","token_type":"jwt","refresh_token":"...","expires_in":...}}}
+        // EPN возвращает JSON вида data.attributes.access_token (JWT) + refresh_token + expires_in.
         $token = $body['data']['attributes']['access_token'] ?? '';
 
         if ($code !== 200 || empty($token)) {
