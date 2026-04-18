@@ -110,7 +110,8 @@ class CashbackWithdrawal {
 
         $table_name = $wpdb->prefix . 'cashback_user_balance';
         $row        = $wpdb->get_row($wpdb->prepare(
-            "SELECT available_balance, pending_balance, paid_balance FROM {$table_name} WHERE user_id = %d",
+            'SELECT available_balance, pending_balance, paid_balance FROM %i WHERE user_id = %d',
+            $table_name,
             $user_id
         ));
 
@@ -132,7 +133,8 @@ class CashbackWithdrawal {
 
         $table_name = $wpdb->prefix . 'cashback_user_balance';
         $balance    = $wpdb->get_var($wpdb->prepare(
-            "SELECT available_balance FROM {$table_name} WHERE user_id = %d",
+            'SELECT available_balance FROM %i WHERE user_id = %d',
+            $table_name,
             $user_id
         ));
 
@@ -153,7 +155,8 @@ class CashbackWithdrawal {
         $wpdb->suppress_errors(true);
         $methods = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT id, name, slug, bank_required FROM {$table_name} WHERE is_active = %d ORDER BY sort_order ASC, name ASC",
+                'SELECT id, name, slug, bank_required FROM %i WHERE is_active = %d ORDER BY sort_order ASC, name ASC',
+                $table_name,
                 1
             ),
             ARRAY_A
@@ -163,7 +166,8 @@ class CashbackWithdrawal {
         if ($methods === null) {
             $methods = $wpdb->get_results(
                 $wpdb->prepare(
-                    "SELECT id, name, slug FROM {$table_name} WHERE is_active = %d ORDER BY sort_order ASC, name ASC",
+                    'SELECT id, name, slug FROM %i WHERE is_active = %d ORDER BY sort_order ASC, name ASC',
+                    $table_name,
                     1
                 ),
                 ARRAY_A
@@ -184,7 +188,8 @@ class CashbackWithdrawal {
         $table_name = $wpdb->prefix . 'cashback_banks';
         $banks      = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT id, name FROM {$table_name} WHERE is_active = %d ORDER BY sort_order ASC, name ASC LIMIT 10",
+                'SELECT id, name FROM %i WHERE is_active = %d ORDER BY sort_order ASC, name ASC LIMIT 10',
+                $table_name,
                 1
             ),
             ARRAY_A
@@ -204,7 +209,8 @@ class CashbackWithdrawal {
 
         $table_name = $wpdb->prefix . 'cashback_user_profile';
         $result     = $wpdb->get_row($wpdb->prepare(
-            "SELECT payout_method_id, payout_account, encrypted_details, bank_id FROM {$table_name} WHERE user_id = %d",
+            'SELECT payout_method_id, payout_account, encrypted_details, bank_id FROM %i WHERE user_id = %d',
+            $table_name,
             $user_id
         ), ARRAY_A);
 
@@ -235,7 +241,8 @@ class CashbackWithdrawal {
         $table_name       = $wpdb->prefix . 'cashback_user_profile';
         $payout_method_id = $wpdb->get_var(
             $wpdb->prepare(
-                "SELECT payout_method_id FROM {$table_name} WHERE user_id = %d",
+                'SELECT payout_method_id FROM %i WHERE user_id = %d',
+                $table_name,
                 $user_id
             )
         );
@@ -255,7 +262,8 @@ class CashbackWithdrawal {
         $table_name  = $wpdb->prefix . 'cashback_payout_methods';
         $method_name = $wpdb->get_var(
             $wpdb->prepare(
-                "SELECT name FROM {$table_name} WHERE id = %d",
+                'SELECT name FROM %i WHERE id = %d',
+                $table_name,
                 $method_id
             )
         );
@@ -275,7 +283,8 @@ class CashbackWithdrawal {
         $table_name = $wpdb->prefix . 'cashback_banks';
         $bank_name  = $wpdb->get_var(
             $wpdb->prepare(
-                "SELECT name FROM {$table_name} WHERE id = %d",
+                'SELECT name FROM %i WHERE id = %d',
+                $table_name,
                 $bank_id
             )
         );
@@ -295,7 +304,8 @@ class CashbackWithdrawal {
         $table_name = $wpdb->prefix . 'cashback_user_profile';
         $bank_id    = $wpdb->get_var(
             $wpdb->prepare(
-                "SELECT bank_id FROM {$table_name} WHERE user_id = %d",
+                'SELECT bank_id FROM %i WHERE user_id = %d',
+                $table_name,
                 $user_id
             )
         );
@@ -314,7 +324,8 @@ class CashbackWithdrawal {
 
         $table_name        = $wpdb->prefix . 'cashback_user_profile';
         $min_payout_amount = $wpdb->get_var($wpdb->prepare(
-            "SELECT min_payout_amount FROM {$table_name} WHERE user_id = %d",
+            'SELECT min_payout_amount FROM %i WHERE user_id = %d',
+            $table_name,
             $user_id
         ));
 
@@ -334,10 +345,12 @@ class CashbackWithdrawal {
         $table_methods = $wpdb->prefix . 'cashback_payout_methods';
 
         $payout_method = $wpdb->get_var($wpdb->prepare(
-            "SELECT pm.slug
-             FROM {$table_profile} up
-             LEFT JOIN {$table_methods} pm ON up.payout_method_id = pm.id
-             WHERE up.user_id = %d",
+            'SELECT pm.slug
+             FROM %i up
+             LEFT JOIN %i pm ON up.payout_method_id = pm.id
+             WHERE up.user_id = %d',
+            $table_profile,
+            $table_methods,
             $user_id
         ));
 
@@ -357,10 +370,12 @@ class CashbackWithdrawal {
         $table_banks   = $wpdb->prefix . 'cashback_banks';
 
         $bank_info = $wpdb->get_row($wpdb->prepare(
-            "SELECT b.id, b.bank_code, b.name
-             FROM {$table_profile} up
-             LEFT JOIN {$table_banks} b ON up.bank_id = b.id AND b.is_active = 1
-             WHERE up.user_id = %d",
+            'SELECT b.id, b.bank_code, b.name
+             FROM %i up
+             LEFT JOIN %i b ON up.bank_id = b.id AND b.is_active = 1
+             WHERE up.user_id = %d',
+            $table_profile,
+            $table_banks,
             $user_id
         ), ARRAY_A);
 
@@ -378,7 +393,8 @@ class CashbackWithdrawal {
 
         $table_name = $wpdb->prefix . 'cashback_user_profile';
         $row        = $wpdb->get_row($wpdb->prepare(
-            "SELECT payout_account, encrypted_details FROM {$table_name} WHERE user_id = %d",
+            'SELECT payout_account, encrypted_details FROM %i WHERE user_id = %d',
+            $table_name,
             $user_id
         ), ARRAY_A);
 
@@ -409,7 +425,8 @@ class CashbackWithdrawal {
 
         $table_name     = $wpdb->prefix . 'cashback_user_profile';
         $masked_details = $wpdb->get_var($wpdb->prepare(
-            "SELECT masked_details FROM {$table_name} WHERE user_id = %d",
+            'SELECT masked_details FROM %i WHERE user_id = %d',
+            $table_name,
             $user_id
         ));
 
@@ -430,7 +447,8 @@ class CashbackWithdrawal {
 
         $table_name = $wpdb->prefix . 'cashback_user_profile';
         $row        = $wpdb->get_row($wpdb->prepare(
-            "SELECT encrypted_details, masked_details FROM {$table_name} WHERE user_id = %d",
+            'SELECT encrypted_details, masked_details FROM %i WHERE user_id = %d',
+            $table_name,
             $user_id
         ), ARRAY_A);
 
@@ -453,7 +471,8 @@ class CashbackWithdrawal {
         $table_name  = $wpdb->prefix . 'cashback_payout_methods';
         $method_name = $wpdb->get_var(
             $wpdb->prepare(
-                "SELECT name FROM {$table_name} WHERE slug = %s",
+                'SELECT name FROM %i WHERE slug = %s',
+                $table_name,
                 $method
             )
         );
@@ -861,7 +880,8 @@ class CashbackWithdrawal {
         // Это дешёвый SELECT по UNIQUE INDEX, избегаем открытия транзакции при retry.
         $table_requests = $wpdb->prefix . 'cashback_payout_requests';
         $existing       = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, reference_id, total_amount, status FROM {$table_requests} WHERE idempotency_key = %s",
+            'SELECT id, reference_id, total_amount, status FROM %i WHERE idempotency_key = %s',
+            $table_requests,
             $idempotency_key
         ));
 
@@ -886,9 +906,10 @@ class CashbackWithdrawal {
             // Это сериализует все withdrawal-запросы одного пользователя.
             // Другие запросы того же user_id будут ждать завершения транзакции.
             $user_balance = $wpdb->get_row($wpdb->prepare(
-                "SELECT available_balance, pending_balance
-                FROM {$table_balance}
-                WHERE user_id = %d FOR UPDATE",
+                'SELECT available_balance, pending_balance
+                FROM %i
+                WHERE user_id = %d FOR UPDATE',
+                $table_balance,
                 $user_id
             ));
 
@@ -905,7 +926,8 @@ class CashbackWithdrawal {
             // Читаем статус профиля здесь — под защитой транзакции.
             $profile_table = $wpdb->prefix . 'cashback_user_profile';
             $user_status   = $wpdb->get_var($wpdb->prepare(
-                "SELECT status FROM {$profile_table} WHERE user_id = %d FOR UPDATE",
+                'SELECT status FROM %i WHERE user_id = %d FOR UPDATE',
+                $profile_table,
                 $user_id
             ));
             if ($user_status === 'banned') {
@@ -919,8 +941,9 @@ class CashbackWithdrawal {
             // FOR UPDATE на balance row уже сериализует запросы этого пользователя,
             // поэтому COUNT здесь видит консистентное состояние.
             $recent_requests_count = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM {$table_requests}
-                 WHERE user_id = %d AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)",
+                'SELECT COUNT(*) FROM %i
+                 WHERE user_id = %d AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)',
+                $table_requests,
                 $user_id
             ));
 
@@ -1026,12 +1049,13 @@ class CashbackWithdrawal {
             // FOR UPDATE уже гарантирует эксклюзивный доступ — version не нужен.
             // CHECK `available_balance >= amount` — defense in depth на уровне SQL.
             $balance_result = $wpdb->query($wpdb->prepare(
-                "UPDATE {$table_balance}
+                'UPDATE %i
                 SET available_balance = available_balance - CAST(%s AS DECIMAL(18,2)),
                     pending_balance = pending_balance + CAST(%s AS DECIMAL(18,2)),
                     version = version + 1
                 WHERE user_id = %d
-                  AND available_balance >= CAST(%s AS DECIMAL(18,2))",
+                  AND available_balance >= CAST(%s AS DECIMAL(18,2))',
+                $table_balance,
                 $withdrawal_amount,
                 $withdrawal_amount,
                 $user_id,
@@ -1048,10 +1072,11 @@ class CashbackWithdrawal {
             // но защищает при ручном replay)
             $ledger_amount = '-' . $withdrawal_str;
             $ledger_result = $wpdb->query($wpdb->prepare(
-                "INSERT INTO `{$ledger_table}`
+                'INSERT INTO %i
                      (user_id, type, amount, payout_request_id, idempotency_key)
-                 VALUES (%d, 'payout_hold', %s, %d, %s)
-                 ON DUPLICATE KEY UPDATE id = id",
+                 VALUES (%d, \'payout_hold\', %s, %d, %s)
+                 ON DUPLICATE KEY UPDATE id = id',
+                $ledger_table,
                 $user_id,
                 $ledger_amount,
                 $payout_id,
@@ -1130,7 +1155,8 @@ class CashbackWithdrawal {
             } elseif ($error_message === 'Duplicate payout request detected') {
                 // Параллельный запрос с тем же ключом — найдём созданную заявку
                 $dup = $wpdb->get_row($wpdb->prepare(
-                    "SELECT reference_id, total_amount FROM {$table_requests} WHERE idempotency_key = %s",
+                    'SELECT reference_id, total_amount FROM %i WHERE idempotency_key = %s',
+                    $table_requests,
                     $idempotency_key
                 ));
                 if ($dup) {
@@ -1336,7 +1362,8 @@ class CashbackWithdrawal {
         $table_name = $wpdb->prefix . 'cashback_payout_methods';
         $method     = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id FROM {$table_name} WHERE id = %d AND is_active = %d",
+                'SELECT id FROM %i WHERE id = %d AND is_active = %d',
+                $table_name,
                 $method_id,
                 1
             ),
@@ -1358,7 +1385,8 @@ class CashbackWithdrawal {
         $table_name = $wpdb->prefix . 'cashback_banks';
         $bank       = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT id FROM {$table_name} WHERE id = %d AND is_active = %d",
+                'SELECT id FROM %i WHERE id = %d AND is_active = %d',
+                $table_name,
                 $bank_id,
                 1
             ),
@@ -1380,7 +1408,8 @@ class CashbackWithdrawal {
         $table_name = $wpdb->prefix . 'cashback_payout_methods';
         $slug       = $wpdb->get_var(
             $wpdb->prepare(
-                "SELECT slug FROM {$table_name} WHERE id = %d AND is_active = %d",
+                'SELECT slug FROM %i WHERE id = %d AND is_active = %d',
+                $table_name,
                 $method_id,
                 1
             )
@@ -1506,7 +1535,8 @@ class CashbackWithdrawal {
         $table_name = $wpdb->prefix . 'cashback_payout_methods';
         $is_active  = $wpdb->get_var(
             $wpdb->prepare(
-                "SELECT is_active FROM {$table_name} WHERE id = %d",
+                'SELECT is_active FROM %i WHERE id = %d',
+                $table_name,
                 $method_id
             )
         );
@@ -1526,7 +1556,8 @@ class CashbackWithdrawal {
         $table_name = $wpdb->prefix . 'cashback_banks';
         $is_active  = $wpdb->get_var(
             $wpdb->prepare(
-                "SELECT is_active FROM {$table_name} WHERE id = %d",
+                'SELECT is_active FROM %i WHERE id = %d',
+                $table_name,
                 $bank_id
             )
         );
@@ -1549,7 +1580,8 @@ class CashbackWithdrawal {
         $wpdb->suppress_errors(true);
         $bank_required = $wpdb->get_var(
             $wpdb->prepare(
-                "SELECT bank_required FROM {$table_name} WHERE id = %d",
+                'SELECT bank_required FROM %i WHERE id = %d',
+                $table_name,
                 $method_id
             )
         );
@@ -1590,7 +1622,8 @@ class CashbackWithdrawal {
             // Проверяем, существует ли запись профиля для пользователя (с блокировкой строки)
             $existing_record = $wpdb->get_var(
                 $wpdb->prepare(
-                    "SELECT user_id FROM {$table_name} WHERE user_id = %d FOR UPDATE",
+                    'SELECT user_id FROM %i WHERE user_id = %d FOR UPDATE',
+                    $table_name,
                     $user_id
                 )
             );
@@ -1649,7 +1682,8 @@ class CashbackWithdrawal {
             // wpdb не поддерживает NULL через format-массив, поэтому используем отдельный запрос
             if ($bank_id <= 0) {
                 $wpdb->query($wpdb->prepare(
-                    "UPDATE {$table_name} SET bank_id = NULL WHERE user_id = %d",
+                    'UPDATE %i SET bank_id = NULL WHERE user_id = %d',
+                    $table_name,
                     $user_id
                 ));
             }
@@ -1699,7 +1733,8 @@ class CashbackWithdrawal {
             $table_name = $wpdb->prefix . 'cashback_banks';
             $banks      = $wpdb->get_results(
                 $wpdb->prepare(
-                    "SELECT id, name FROM {$table_name} WHERE is_active = %d ORDER BY sort_order ASC, name ASC LIMIT 10",
+                    'SELECT id, name FROM %i WHERE is_active = %d ORDER BY sort_order ASC, name ASC LIMIT 10',
+                    $table_name,
                     1
                 ),
                 ARRAY_A
@@ -1717,7 +1752,8 @@ class CashbackWithdrawal {
 
         $banks = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT id, name FROM {$table_name} WHERE is_active = %d AND name LIKE %s ORDER BY sort_order ASC, name ASC LIMIT 20",
+                'SELECT id, name FROM %i WHERE is_active = %d AND name LIKE %s ORDER BY sort_order ASC, name ASC LIMIT 20',
+                $table_name,
                 1,
                 $like_term
             ),
