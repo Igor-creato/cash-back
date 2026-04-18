@@ -331,7 +331,7 @@ class Cashback_Fraud_Admin {
             'tab'        => 'alerts',
         ));
 
-        Cashback_Admin_Pagination::render(array(
+        Cashback_Pagination::render(array(
             'total_items'  => $total_items,
             'per_page'     => self::PER_PAGE,
             'current_page' => $current_page,
@@ -446,7 +446,7 @@ class Cashback_Fraud_Admin {
 
         echo '</tbody></table>';
 
-        Cashback_Admin_Pagination::render(array(
+        Cashback_Pagination::render(array(
             'total_items'  => $total_items,
             'per_page'     => self::PER_PAGE,
             'current_page' => $current_page,

@@ -32,7 +32,8 @@
     });
 
     /* ── Accruals pagination ── */
-    $(document).on('click', '#affiliate-accruals-container .cashback-affiliate-page-btn', function () {
+    $(document).on('click', '#affiliate-accruals-container .page-numbers[data-page]', function (e) {
+        e.preventDefault();
         var page = $(this).data('page');
         var $container = $('#affiliate-accruals-container');
 
@@ -53,7 +54,8 @@
     });
 
     /* ── Referrals pagination ── */
-    $(document).on('click', '#affiliate-referrals-container .cashback-affiliate-page-btn', function () {
+    $(document).on('click', '#affiliate-referrals-container .page-numbers[data-page]', function (e) {
+        e.preventDefault();
         var page = $(this).data('page');
         var $container = $('#affiliate-referrals-container');
 

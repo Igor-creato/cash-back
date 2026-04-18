@@ -143,34 +143,6 @@
     color: #721c24;
 }
 
-/* Pagination */
-.cashback-affiliate-pagination {
-    display: flex;
-    gap: 4px;
-    margin-top: 16px;
-    justify-content: center;
-}
-
-.cashback-affiliate-page-btn {
-    min-width: 36px;
-    height: 36px;
-    border: 1px solid #ddd;
-    background: #fff;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-}
-
-.cashback-affiliate-page-btn:hover {
-    background: #f0f0f0;
-}
-
-.cashback-affiliate-page-btn.active {
-    background: #2271b1;
-    color: #fff;
-    border-color: #2271b1;
-}
-
 /* Responsive */
 @media (max-width: 600px) {
     .cashback-affiliate-stats-grid {

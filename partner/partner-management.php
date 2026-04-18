@@ -377,7 +377,7 @@ class Cashback_Partner_Management_Admin {
                 if ($is_filtered) {
                     $partner_add_args['filter_status'] = $filter_status;
                 }
-                Cashback_Admin_Pagination::render(array(
+                Cashback_Pagination::render(array(
                     'total_items'  => $total_partners,
                     'current_page' => $current_page,
                     'total_pages'  => $total_pages,

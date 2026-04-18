@@ -464,7 +464,7 @@ class Cashback_Support_Admin {
         </table>
 
         <?php
-        Cashback_Admin_Pagination::render(array(
+        Cashback_Pagination::render(array(
             'total_items'  => $total_items,
             'current_page' => $current_page,
             'total_pages'  => $total_pages,
