@@ -1120,12 +1120,8 @@ class Cashback_API_Client {
             // Батчами по 500 чтобы не превысить лимит SQL
             foreach (array_chunk($matched_ids, 500) as $chunk) {
                 $placeholders = implode(',', array_fill(0, count($chunk), '%d'));
-                $wpdb->query($wpdb->prepare(
-                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %d literals.
-                    "UPDATE %i SET api_verified = 1 WHERE id IN ({$placeholders}) AND api_verified = 0",
-                    $this->transactions_table,
-                    ...$chunk
-                ));
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %d literals; sniff can't see %d inside $placeholders.
+                $wpdb->query( $wpdb->prepare( "UPDATE %i SET api_verified = 1 WHERE id IN ({$placeholders}) AND api_verified = 0", $this->transactions_table, ...$chunk ) );
             }
         }
 
@@ -1534,12 +1530,8 @@ class Cashback_API_Client {
         if (!empty($matched_ids)) {
             foreach (array_chunk($matched_ids, 500) as $chunk) {
                 $placeholders = implode(',', array_fill(0, count($chunk), '%d'));
-                $wpdb->query($wpdb->prepare(
-                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %d literals.
-                    "UPDATE %i SET api_verified = 1 WHERE id IN ({$placeholders}) AND api_verified = 0",
-                    $this->unregistered_table,
-                    ...$chunk
-                ));
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %d literals; sniff can't see %d inside $placeholders.
+                $wpdb->query( $wpdb->prepare( "UPDATE %i SET api_verified = 1 WHERE id IN ({$placeholders}) AND api_verified = 0", $this->unregistered_table, ...$chunk ) );
             }
         }
 
@@ -1731,7 +1723,7 @@ class Cashback_API_Client {
             if (!empty($api_click_ids)) {
                 $placeholders = implode(',', array_fill(0, count($api_click_ids), '%s'));
                 $query_args   = array_merge(array( $this->transactions_table ), $api_click_ids, array( $slug, $network_name ));
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %s literals.
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %s literals; sniff can't see %s inside $placeholders.
                 $rows = $wpdb->get_results($wpdb->prepare("SELECT id, click_id, uniq_id, order_status, comission, sum_order, api_verified FROM %i WHERE click_id IN ({$placeholders}) AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))", ...$query_args), ARRAY_A);
 
                 foreach ($rows as $row) {
@@ -1744,7 +1736,7 @@ class Cashback_API_Client {
             if (!empty($api_action_ids)) {
                 $placeholders = implode(',', array_fill(0, count($api_action_ids), '%s'));
                 $query_args   = array_merge(array( $this->transactions_table ), $api_action_ids, array( $slug, $network_name ));
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %s literals.
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %s literals; sniff can't see %s inside $placeholders.
                 $rows = $wpdb->get_results($wpdb->prepare("SELECT id, click_id, uniq_id, order_status, comission, sum_order, api_verified FROM %i WHERE uniq_id IN ({$placeholders}) AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))", ...$query_args), ARRAY_A);
 
                 foreach ($rows as $row) {
@@ -1760,7 +1752,7 @@ class Cashback_API_Client {
             if (!empty($api_click_ids)) {
                 $placeholders = implode(',', array_fill(0, count($api_click_ids), '%s'));
                 $query_args   = array_merge(array( $this->unregistered_table ), $api_click_ids, array( $slug, $network_name ));
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %s literals.
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %s literals; sniff can't see %s inside $placeholders.
                 $rows = $wpdb->get_results($wpdb->prepare("SELECT id, click_id, uniq_id, order_status, comission, sum_order, user_id, api_verified FROM %i WHERE click_id IN ({$placeholders}) AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))", ...$query_args), ARRAY_A);
 
                 foreach ($rows as $row) {
@@ -1773,7 +1765,7 @@ class Cashback_API_Client {
             if (!empty($api_action_ids)) {
                 $placeholders = implode(',', array_fill(0, count($api_action_ids), '%s'));
                 $query_args   = array_merge(array( $this->unregistered_table ), $api_action_ids, array( $slug, $network_name ));
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %s literals.
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %s literals; sniff can't see %s inside $placeholders.
                 $rows = $wpdb->get_results($wpdb->prepare("SELECT id, click_id, uniq_id, order_status, comission, sum_order, user_id, api_verified FROM %i WHERE uniq_id IN ({$placeholders}) AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))", ...$query_args), ARRAY_A);
 
                 foreach ($rows as $row) {
@@ -1820,12 +1812,8 @@ class Cashback_API_Client {
             if (!empty($potential_user_ids)) {
                 $potential_user_ids = array_unique($potential_user_ids);
                 $placeholders       = implode(',', array_fill(0, count($potential_user_ids), '%d'));
-                $rows               = $wpdb->get_col($wpdb->prepare(
-                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %d literals.
-                    "SELECT ID FROM %i WHERE ID IN ({$placeholders})",
-                    $wpdb->users,
-                    ...$potential_user_ids
-                ));
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %d literals; sniff can't see %d inside $placeholders.
+                $rows               = $wpdb->get_col( $wpdb->prepare( "SELECT ID FROM %i WHERE ID IN ({$placeholders})", $wpdb->users, ...$potential_user_ids ) );
                 $existing_user_ids  = array_flip(array_map('intval', $rows));
             }
 
@@ -2592,7 +2580,7 @@ class Cashback_API_Client {
             $ids = array_column($to_decline_registered, 'id');
             foreach (array_chunk($ids, 500) as $chunk) {
                 $placeholders = implode(',', array_fill(0, count($chunk), '%d'));
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %d literals.
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %d literals; sniff can't see %d inside $placeholders.
                 $wpdb->query($wpdb->prepare("UPDATE %i SET order_status = 'declined' WHERE id IN ({$placeholders}) AND order_status IN ('waiting', 'hold', 'completed')", $this->transactions_table, ...$chunk));
             }
 
@@ -2615,7 +2603,7 @@ class Cashback_API_Client {
             $ids = array_column($to_decline_unregistered, 'id');
             foreach (array_chunk($ids, 500) as $chunk) {
                 $placeholders = implode(',', array_fill(0, count($chunk), '%d'));
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %d literals.
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %d literals; sniff can't see %d inside $placeholders.
                 $wpdb->query($wpdb->prepare("UPDATE %i SET order_status = 'declined' WHERE id IN ({$placeholders}) AND order_status IN ('waiting', 'hold', 'completed')", $this->unregistered_table, ...$chunk));
             }
 

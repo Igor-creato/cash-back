@@ -252,7 +252,7 @@ class Cashback_Payouts_Admin {
 
         // Получаем выплаты
         if (!empty($where_params)) {
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- %i for table; {$where_clause} built from allowlist (status, DATE(created_at) ranges, reference_id LIKE) with %s placeholders.
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- %i for table; {$where_clause} built from allowlist (status, DATE(created_at) ranges, reference_id LIKE) with %s placeholders; sniff can't count spread args.
             $payouts = $wpdb->get_results( $wpdb->prepare( "SELECT id, reference_id, user_id, total_amount, payout_method, payout_account, masked_details, encrypted_details, provider, provider_payout_id, attempts, fail_reason, status, created_at, updated_at FROM %i {$where_clause} ORDER BY created_at DESC LIMIT %d OFFSET %d", array_merge( array( $this->table_name ), $where_params, array( $per_page, $offset ) ) ), 'ARRAY_A' );
         } else {
             $payouts = $wpdb->get_results(

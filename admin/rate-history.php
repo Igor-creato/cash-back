@@ -136,7 +136,7 @@ class Cashback_Rate_History_Admin {
 
         $offset     = ( $paged - 1 ) * $per_page;
         $all_params = array_merge( array( $this->rate_history_table ), $where_values, array( $per_page, $offset ) );
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- $where_sql from allowlist conditions with %s/%d/%f.
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql from allowlist conditions with %s/%d/%f; sniff can't count spread args.
         $records = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM %i {$where_sql} ORDER BY created_at DESC LIMIT %d OFFSET %d", $all_params ) );
 
         $total_pages = ceil($total_items / $per_page);

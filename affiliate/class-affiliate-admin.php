@@ -307,15 +307,8 @@ class Cashback_Affiliate_Admin {
         $table_args = array( $accruals_table, $wpdb->users, $wpdb->users );
 
         if (!empty($where_args)) {
-            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_sql from allowlist (status IN array / LIKE %s); values bound via prepare().
-            $total = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM %i a
-                 LEFT JOIN %i u1 ON u1.ID = a.referrer_id
-                 LEFT JOIN %i u2 ON u2.ID = a.referred_user_id
-                 {$where_sql}",
-                array_merge( $table_args, $where_args )
-            ));
-            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql from allowlist (status IN array / LIKE %s); values bound via prepare(); sniff can't count array_merge args.
+            $total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i a LEFT JOIN %i u1 ON u1.ID = a.referrer_id LEFT JOIN %i u2 ON u2.ID = a.referred_user_id {$where_sql}", array_merge( $table_args, $where_args ) ) );
         } else {
             $total = (int) $wpdb->get_var($wpdb->prepare(
                 'SELECT COUNT(*) FROM %i a
@@ -330,18 +323,8 @@ class Cashback_Affiliate_Admin {
         $current_page = min($current_page, $total_pages);
         $offset       = ( $current_page - 1 ) * $per_page;
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_sql from allowlist (status IN array / LIKE %s); values bound via prepare().
-        $rows = $wpdb->get_results($wpdb->prepare(
-            "SELECT a.*, u1.display_name AS referrer_name, u2.display_name AS referred_name
-             FROM %i a
-             LEFT JOIN %i u1 ON u1.ID = a.referrer_id
-             LEFT JOIN %i u2 ON u2.ID = a.referred_user_id
-             {$where_sql}
-             ORDER BY a.created_at DESC
-             LIMIT %d OFFSET %d",
-            array_merge( $table_args, $where_args, array( $per_page, $offset ) )
-        ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql from allowlist (status IN array / LIKE %s); values bound via prepare(); sniff can't count array_merge args.
+        $rows = $wpdb->get_results( $wpdb->prepare( "SELECT a.*, u1.display_name AS referrer_name, u2.display_name AS referred_name FROM %i a LEFT JOIN %i u1 ON u1.ID = a.referrer_id LEFT JOIN %i u2 ON u2.ID = a.referred_user_id {$where_sql} ORDER BY a.created_at DESC LIMIT %d OFFSET %d", array_merge( $table_args, $where_args, array( $per_page, $offset ) ) ), ARRAY_A );
 
         return compact('rows', 'total', 'current_page', 'total_pages');
     }
@@ -459,15 +442,8 @@ class Cashback_Affiliate_Admin {
         $accruals_table  = $prefix . 'cashback_affiliate_accruals';
 
         if (!empty($where_args)) {
-            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_sql from allowlist (affiliate_status IN array / LIKE %s); values bound via prepare().
-            $total = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*)
-                 FROM %i ap
-                 INNER JOIN %i u ON u.ID = ap.user_id
-                 {$where_sql}",
-                array_merge( array( $profiles_table, $wpdb->users ), $where_args )
-            ));
-            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql from allowlist (affiliate_status IN array / LIKE %s); values bound via prepare(); sniff can't count array_merge args.
+            $total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i ap INNER JOIN %i u ON u.ID = ap.user_id {$where_sql}", array_merge( array( $profiles_table, $wpdb->users ), $where_args ) ) );
         } else {
             $total = (int) $wpdb->get_var($wpdb->prepare(
                 'SELECT COUNT(*)
@@ -481,26 +457,8 @@ class Cashback_Affiliate_Admin {
         $current_page = min($current_page, $total_pages);
         $offset       = ( $current_page - 1 ) * $per_page;
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_sql from allowlist (affiliate_status IN array / LIKE %s); values bound via prepare().
-        $partners = $wpdb->get_results($wpdb->prepare(
-            "SELECT ap.*, u.display_name, u.user_email,
-                    (SELECT COUNT(*) FROM %i r
-                     WHERE r.referred_by_user_id = ap.user_id) AS referral_count,
-                    (SELECT COALESCE(SUM(commission_amount), 0)
-                     FROM %i
-                     WHERE referrer_id = ap.user_id) AS total_earned
-             FROM %i ap
-             INNER JOIN %i u ON u.ID = ap.user_id
-             {$where_sql}
-             ORDER BY ap.created_at DESC
-             LIMIT %d OFFSET %d",
-            array_merge(
-                array( $profiles_table, $accruals_table, $profiles_table, $wpdb->users ),
-                $where_args,
-                array( $per_page, $offset )
-            )
-        ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql from allowlist (affiliate_status IN array / LIKE %s); values bound via prepare(); sniff can't count array_merge args.
+        $partners = $wpdb->get_results( $wpdb->prepare( "SELECT ap.*, u.display_name, u.user_email, (SELECT COUNT(*) FROM %i r WHERE r.referred_by_user_id = ap.user_id) AS referral_count, (SELECT COALESCE(SUM(commission_amount), 0) FROM %i WHERE referrer_id = ap.user_id) AS total_earned FROM %i ap INNER JOIN %i u ON u.ID = ap.user_id {$where_sql} ORDER BY ap.created_at DESC LIMIT %d OFFSET %d", array_merge( array( $profiles_table, $accruals_table, $profiles_table, $wpdb->users ), $where_args, array( $per_page, $offset ) ) ), ARRAY_A );
 
         $global_rate = Cashback_Affiliate_DB::get_global_rate();
 

@@ -239,7 +239,7 @@ class Cashback_Claims_DB {
         );
 
         foreach ($tables as $table) {
-            $wpdb->query($wpdb->prepare('DROP TABLE IF EXISTS `%i`', $table));
+            $wpdb->query($wpdb->prepare('DROP TABLE IF EXISTS %i', $table));
         }
     }
 }

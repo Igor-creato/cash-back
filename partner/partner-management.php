@@ -142,7 +142,7 @@ class Cashback_Partner_Management_Admin {
             // Получаем партнеров с учётом фильтров и пагинации
             $query_values = array_merge(array( $this->table_name ), $where_values, array( $per_page, $offset ));
             $partners     = $wpdb->get_results(
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_clause из allowlist (`is_active = %d`, LIKE %s), значения через prepare().
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_clause из allowlist (`is_active = %d`, LIKE %s), значения через prepare(); sniff не считает spread-args.
                 $wpdb->prepare( "SELECT * FROM %i{$where_clause} ORDER BY sort_order ASC, name ASC LIMIT %d OFFSET %d", ...$query_values ),
                 ARRAY_A
             );

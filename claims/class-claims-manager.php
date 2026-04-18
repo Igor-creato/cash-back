@@ -341,38 +341,16 @@ class Cashback_Claims_Manager {
         $claims_table = $wpdb->prefix . 'cashback_claims';
         $events_table = $wpdb->prefix . 'cashback_claim_events';
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where from allowlist fragments with %s/%d placeholders.
-        $claims = $wpdb->get_results($wpdb->prepare(
-            "SELECT c.claim_id, c.product_name, c.order_id, c.order_value, c.order_date,
-                    c.status, c.probability_score, c.is_suspicious, c.created_at,
-                    (SELECT COUNT(*) FROM %i e
-                     WHERE e.claim_id = c.claim_id AND e.is_read = 0
-                       AND e.actor_type IN ('admin', 'system')
-                       AND e.note IS NOT NULL AND e.note != ''
-                       AND NOT (e.actor_type = 'system' AND e.note LIKE '%Антифрод:%')) AS unread_count
-             FROM %i c
-             WHERE {$where}
-             ORDER BY (unread_count > 0) DESC, c.created_at DESC
-             LIMIT %d OFFSET %d",
-            ...array_merge( array( $events_table, $claims_table ), $params, array( $per_page, $offset ) )
-        ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where from allowlist fragments with %s/%d placeholders; sniff can't count spread args.
+        $claims = $wpdb->get_results( $wpdb->prepare( "SELECT c.claim_id, c.product_name, c.order_id, c.order_value, c.order_date, c.status, c.probability_score, c.is_suspicious, c.created_at, (SELECT COUNT(*) FROM %i e WHERE e.claim_id = c.claim_id AND e.is_read = 0 AND e.actor_type IN ('admin', 'system') AND e.note IS NOT NULL AND e.note != '' AND NOT (e.actor_type = 'system' AND e.note LIKE %s)) AS unread_count FROM %i c WHERE {$where} ORDER BY (unread_count > 0) DESC, c.created_at DESC LIMIT %d OFFSET %d", ...array_merge( array( $events_table, '%Антифрод:%', $claims_table ), $params, array( $per_page, $offset ) ) ), ARRAY_A );
 
         // Fetch events for each claim (admin/system notes visible to user)
         $claim_ids       = array_column($claims, 'claim_id');
         $events_by_claim = array();
         if (!empty($claim_ids)) {
             $placeholders = implode(',', array_fill(0, count($claim_ids), '%d'));
-            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is array_fill of %d.
-            $events = $wpdb->get_results($wpdb->prepare(
-                "SELECT event_id, claim_id, status, note, actor_type, is_read, created_at
-                 FROM %i
-                 WHERE claim_id IN ({$placeholders}) AND note IS NOT NULL AND note != ''
-                   AND NOT (actor_type = 'system' AND note LIKE %s)
-                 ORDER BY created_at ASC",
-                ...array_merge( array( $events_table ), $claim_ids, array( '%Антифрод:%' ) )
-            ), ARRAY_A);
-            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %d; sniff can't see %d inside $placeholders or count spread args.
+            $events = $wpdb->get_results( $wpdb->prepare( "SELECT event_id, claim_id, status, note, actor_type, is_read, created_at FROM %i WHERE claim_id IN ({$placeholders}) AND note IS NOT NULL AND note != '' AND NOT (actor_type = 'system' AND note LIKE %s) ORDER BY created_at ASC", ...array_merge( array( $events_table ), $claim_ids, array( '%Антифрод:%' ) ) ), ARRAY_A );
 
             foreach ($events as $event) {
                 $events_by_claim[ $event['claim_id'] ][] = $event;
@@ -460,26 +438,12 @@ class Cashback_Claims_Manager {
         $events_table = $wpdb->prefix . 'cashback_claim_events';
 
         $list_params = array_merge( array( $events_table, $claims_table, $wpdb->users ), $params, array( $per_page, $offset ) );
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_sql from allowlist fragments with %s/%d; $orderby/$order from hard allowlist (in_array + ASC/DESC).
-        $claims = $wpdb->get_results($wpdb->prepare(
-            "SELECT c.*, u.display_name as user_display_name, u.user_email as user_email,
-                    (SELECT COUNT(*) FROM %i e
-                     WHERE e.claim_id = c.claim_id AND e.actor_type = 'user' AND e.is_read_admin = 0) AS unread_count
-             FROM %i c
-             LEFT JOIN %i u ON u.ID = c.user_id
-             {$where_sql}
-             ORDER BY (unread_count > 0) DESC, c.{$orderby} {$order}
-             LIMIT %d OFFSET %d",
-            ...$list_params
-        ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql from allowlist fragments with %s/%d; $orderby/$order from hard allowlist (in_array + ASC/DESC); sniff can't count spread args.
+        $claims = $wpdb->get_results( $wpdb->prepare( "SELECT c.*, u.display_name as user_display_name, u.user_email as user_email, (SELECT COUNT(*) FROM %i e WHERE e.claim_id = c.claim_id AND e.actor_type = 'user' AND e.is_read_admin = 0) AS unread_count FROM %i c LEFT JOIN %i u ON u.ID = c.user_id {$where_sql} ORDER BY (unread_count > 0) DESC, c.{$orderby} {$order} LIMIT %d OFFSET %d", ...$list_params ), ARRAY_A );
 
         if (!empty($params)) {
-            $total = (int) $wpdb->get_var($wpdb->prepare(
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_sql from allowlist fragments.
-                "SELECT COUNT(*) FROM %i c LEFT JOIN %i u ON u.ID = c.user_id {$where_sql}",
-                ...array_merge( array( $claims_table, $wpdb->users ), $params )
-            ));
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql from allowlist fragments; sniff can't count spread args.
+            $total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i c LEFT JOIN %i u ON u.ID = c.user_id {$where_sql}", ...array_merge( array( $claims_table, $wpdb->users ), $params ) ) );
         } else {
             $total = (int) $wpdb->get_var( $wpdb->prepare(
                 'SELECT COUNT(*) FROM %i',

@@ -177,11 +177,8 @@ class Cashback_Click_Log_Admin {
 
         // Подсчет записей.
         if (!empty($where_params)) {
-            $total_items = (int) $wpdb->get_var( $wpdb->prepare(
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_clause from allowlist conditions with %s/%d only.
-                "SELECT COUNT(*) FROM %i cl LEFT JOIN %i u ON cl.user_id = u.ID {$where_clause}",
-                array_merge( array( $this->table_name, $users_table ), $where_params )
-            ) );
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_clause from allowlist conditions with %s/%d only; sniff can't count spread args.
+            $total_items = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i cl LEFT JOIN %i u ON cl.user_id = u.ID {$where_clause}", array_merge( array( $this->table_name, $users_table ), $where_params ) ) );
         } else {
             $total_items = (int) $wpdb->get_var( $wpdb->prepare(
                 'SELECT COUNT(*) FROM %i cl LEFT JOIN %i u ON cl.user_id = u.ID WHERE %d = %d',
