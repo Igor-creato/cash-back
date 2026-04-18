@@ -134,7 +134,7 @@ class Cashback_Affiliate_Admin {
 				'tab'  => $slug,
 			), admin_url('admin.php'));
             $active = $slug === $current_tab ? ' nav-tab-active' : '';
-            echo '<a href="' . esc_url($url) . '" class="nav-tab' . $active . '">' . esc_html($label) . '</a>';
+            echo '<a href="' . esc_url($url) . '" class="nav-tab' . esc_attr($active) . '">' . esc_html($label) . '</a>';
         }
         echo '</nav>';
 
@@ -357,7 +357,7 @@ class Cashback_Affiliate_Admin {
             echo '<td>' . esc_html(number_format((float) $row['cashback_amount'], 2, '.', ' ')) . ' ₽</td>';
             echo '<td>' . esc_html($row['commission_rate']) . '%</td>';
             echo '<td><strong>' . esc_html(number_format((float) $row['commission_amount'], 2, '.', ' ')) . ' ₽</strong></td>';
-            echo '<td>' . ( $status_labels[ $row['status'] ] ?? esc_html($row['status']) ) . '</td>';
+            echo '<td>' . wp_kses_post($status_labels[ $row['status'] ] ?? esc_html($row['status'])) . '</td>'; // $status_labels — статически заданный HTML, fallback экранирован.
             echo '<td>' . esc_html(wp_date('d.m.Y H:i', strtotime($row['created_at']))) . '</td>';
             echo '<td>';
             if ($is_editable) {

@@ -180,9 +180,9 @@ class WC_Affiliate_URL_Params {
 
             printf(
                 '<option value="%d"%s>%s</option>',
-                $network_id,
-                selected($selected_network_id, $network_id, false),
-                $label
+                (int) $network_id,
+                selected($selected_network_id, $network_id, false), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- selected() returns safe HTML attribute.
+                $label // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $label is pre-escaped via esc_html()/esc_html__() above.
             );
         }
 
@@ -264,7 +264,9 @@ class WC_Affiliate_URL_Params {
             $key   = isset($pp['key']) ? esc_attr($pp['key']) : '';
             $value = isset($pp['value']) ? esc_attr($pp['value']) : '';
             echo '<div class="product-param-row" style="display: flex; gap: 10px; margin-bottom: 6px; align-items: center;">';
+            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $key and esc_attr__() output are pre-escaped.
             echo '<input type="text" name="affiliate_product_param_key[]" value="' . $key . '" class="regular-text" placeholder="param_key" pattern="[a-zA-Z0-9_\-]+" title="' . esc_attr__('Только латиница, цифры, _ и -', 'wc-affiliate-url-params') . '" style="flex:1;" />';
+            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $value is pre-escaped via esc_attr().
             echo '<input type="text" name="affiliate_product_param_value[]" value="' . $value . '" class="regular-text" placeholder="user / uuid / значение" style="flex:1;" />';
             echo '<button type="button" class="button button-small remove-product-param-btn" style="color:#a00; min-width:36px;" title="' . esc_attr__('Удалить', 'wc-affiliate-url-params') . '">&times;</button>';
             echo '</div>';

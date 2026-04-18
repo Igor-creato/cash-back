@@ -168,20 +168,20 @@ class Cashback_Admin_API_Validation {
             <h1>API Валидация кэшбэка</h1>
 
             <nav class="nav-tab-wrapper">
-                <a href="?page=<?php echo self::PAGE_SLUG; ?>&tab=settings"
-                    class="nav-tab <?php echo $active_tab === 'settings' ? 'nav-tab-active' : ''; ?>">
+                <a href="?page=<?php echo esc_attr( self::PAGE_SLUG ); ?>&tab=settings"
+                    class="nav-tab <?php echo esc_attr( $active_tab === 'settings' ? 'nav-tab-active' : '' ); ?>">
                     Настройки API
                 </a>
-                <a href="?page=<?php echo self::PAGE_SLUG; ?>&tab=validation"
-                    class="nav-tab <?php echo $active_tab === 'validation' ? 'nav-tab-active' : ''; ?>">
+                <a href="?page=<?php echo esc_attr( self::PAGE_SLUG ); ?>&tab=validation"
+                    class="nav-tab <?php echo esc_attr( $active_tab === 'validation' ? 'nav-tab-active' : '' ); ?>">
                     Проверка пользователя
                 </a>
-                <a href="?page=<?php echo self::PAGE_SLUG; ?>&tab=sync"
-                    class="nav-tab <?php echo $active_tab === 'sync' ? 'nav-tab-active' : ''; ?>">
+                <a href="?page=<?php echo esc_attr( self::PAGE_SLUG ); ?>&tab=sync"
+                    class="nav-tab <?php echo esc_attr( $active_tab === 'sync' ? 'nav-tab-active' : '' ); ?>">
                     Синхронизация
                 </a>
-                <a href="?page=<?php echo self::PAGE_SLUG; ?>&tab=campaigns"
-                    class="nav-tab <?php echo $active_tab === 'campaigns' ? 'nav-tab-active' : ''; ?>">
+                <a href="?page=<?php echo esc_attr( self::PAGE_SLUG ); ?>&tab=campaigns"
+                    class="nav-tab <?php echo esc_attr( $active_tab === 'campaigns' ? 'nav-tab-active' : '' ); ?>">
                     Статус кампаний
                 </a>
             </nav>
@@ -1724,7 +1724,7 @@ echo 'style="display:none"';}
 
                 $.post(ajaxurl, {
                     action: 'cashback_check_campaigns_now',
-                    nonce: '<?php echo wp_create_nonce('cashback_api_validation'); ?>',
+                    nonce: '<?php echo esc_attr( wp_create_nonce('cashback_api_validation') ); ?>',
                     network: network
                 }, function(response) {
                     $btn.prop('disabled', false);
@@ -1760,7 +1760,7 @@ echo 'style="display:none"';}
 
                 $.post(ajaxurl, {
                     action: 'cashback_reactivate_product',
-                    nonce: '<?php echo wp_create_nonce('cashback_api_validation'); ?>',
+                    nonce: '<?php echo esc_attr( wp_create_nonce('cashback_api_validation') ); ?>',
                     product_id: productId
                 }, function(response) {
                     if (response.success) {

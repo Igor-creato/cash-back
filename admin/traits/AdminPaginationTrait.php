@@ -53,7 +53,7 @@ trait AdminPaginationTrait {
         if ($pagination_links) {
             echo '<div class="tablenav bottom">';
             echo '<div class="tablenav-pages">';
-            echo '<span class="displaying-num">' . sprintf(_n('%s запись', '%s записей', $total_items, 'cashback-plugin'), number_format_i18n($total_items)) . '</span>';
+            echo '<span class="displaying-num">' . esc_html(sprintf(_n('%s запись', '%s записей', $total_items, 'cashback-plugin'), number_format_i18n($total_items))) . '</span>';
             echo '<span class="pagination-links">';
             echo wp_kses_post($pagination_links);
             echo '</span>';

@@ -116,7 +116,7 @@ class Cashback_Contact_Form {
                 <div class="cb-contact-field">
                     <label for="cb-contact-name"><?php esc_html_e('Ваше имя', 'cashback-plugin'); ?> <span class="required">*</span></label>
                     <input type="text" id="cb-contact-name" name="contact_name" required
-                            maxlength="<?php echo self::MAX_NAME; ?>"
+                            maxlength="<?php echo esc_attr( (string) self::MAX_NAME ); ?>"
                             autocomplete="name"
                             placeholder="<?php esc_attr_e('Введите ваше имя', 'cashback-plugin'); ?>">
                 </div>
@@ -124,7 +124,7 @@ class Cashback_Contact_Form {
                 <div class="cb-contact-field">
                     <label for="cb-contact-email"><?php esc_html_e('Ваш e-mail', 'cashback-plugin'); ?> <span class="required">*</span></label>
                     <input type="email" id="cb-contact-email" name="contact_email" required
-                            maxlength="<?php echo self::MAX_EMAIL; ?>"
+                            maxlength="<?php echo esc_attr( (string) self::MAX_EMAIL ); ?>"
                             autocomplete="email"
                             placeholder="<?php esc_attr_e('example@mail.ru', 'cashback-plugin'); ?>">
                 </div>
@@ -132,14 +132,14 @@ class Cashback_Contact_Form {
                 <div class="cb-contact-field">
                     <label for="cb-contact-subject"><?php esc_html_e('Тема', 'cashback-plugin'); ?> <span class="required">*</span></label>
                     <input type="text" id="cb-contact-subject" name="contact_subject" required
-                            maxlength="<?php echo self::MAX_SUBJECT; ?>"
+                            maxlength="<?php echo esc_attr( (string) self::MAX_SUBJECT ); ?>"
                             placeholder="<?php esc_attr_e('Тема сообщения', 'cashback-plugin'); ?>">
                 </div>
 
                 <div class="cb-contact-field">
                     <label for="cb-contact-message"><?php esc_html_e('Ваше сообщение', 'cashback-plugin'); ?> <span class="required">*</span></label>
                     <textarea id="cb-contact-message" name="contact_message" required
-                                maxlength="<?php echo self::MAX_MESSAGE; ?>" rows="6"
+                                maxlength="<?php echo esc_attr( (string) self::MAX_MESSAGE ); ?>" rows="6"
                                 placeholder="<?php esc_attr_e('Введите ваше сообщение...', 'cashback-plugin'); ?>"></textarea>
                 </div>
 

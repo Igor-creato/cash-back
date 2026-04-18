@@ -448,7 +448,8 @@ class Cashback_User_Support {
             <?php endif; ?>
             <?php
             if (class_exists('Cashback_Captcha')) {
-echo Cashback_Captcha::render_container('cb-captcha-support'); }
+echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render_container() возвращает заранее сформированный безопасный HTML капчи.
+}
 ?>
             <button type="submit" class="support-btn support-btn-primary" id="support-submit-btn">Отправить</button>
         </form>

@@ -123,7 +123,7 @@ class Cashback_Fraud_Admin {
      */
     public function render_page(): void {
         if (!current_user_can('manage_options')) {
-            wp_die(__('У вас недостаточно прав для просмотра этой страницы.', 'cashback-plugin'));
+            wp_die(esc_html__('У вас недостаточно прав для просмотра этой страницы.', 'cashback-plugin'));
         }
 
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin tab routing, allowlist-validated below.
@@ -527,7 +527,9 @@ class Cashback_Fraud_Admin {
         echo '<div style="color:#646970; margin-top:4px;">' . esc_html__('Всего кликов', 'cashback-plugin') . '</div>';
         echo '</div>';
 
+        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Inline color literal selected by ternary, no user input.
         echo '<div style="background:#fff; border:1px solid #c3c4c7; border-left:4px solid ' . ( $spam > 0 ? '#d63638' : '#00a32a' ) . '; padding:15px 20px; min-width:180px;">';
+        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Inline color literal selected by ternary, no user input.
         echo '<div style="font-size:28px; font-weight:600; line-height:1.2; color:' . ( $spam > 0 ? '#d63638' : '#1d2327' ) . ';">' . esc_html(number_format($spam)) . '</div>';
         echo '<div style="color:#646970; margin-top:4px;">' . esc_html__('Спам-кликов', 'cashback-plugin') . '</div>';
         echo '</div>';
@@ -665,6 +667,7 @@ class Cashback_Fraud_Admin {
                 echo '<td><code>' . esc_html($click->ip_address) . '</code></td>';
                 echo '<td>' . esc_html(mb_strimwidth($click_title, 0, 40, '...')) . '</td>';
                 echo '<td><small title="' . esc_attr($click->user_agent ?? '') . '">' . esc_html($ua_short) . '</small></td>';
+                // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Branches are esc_html() output or static '<em>guest</em>' literal.
                 echo '<td>' . ( $click->user_id > 0 ? esc_html($click->user_id) : '<em>guest</em>' ) . '</td>';
                 echo '</tr>';
             }
@@ -841,6 +844,7 @@ class Cashback_Fraud_Admin {
         $checked = !empty($settings[ $key ]) ? 'checked' : '';
         echo '<tr>';
         echo '<th scope="row">' . esc_html($label) . '</th>';
+        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $checked is a literal 'checked' or '' string.
         echo '<td><label><input type="checkbox" name="' . esc_attr($key) . '" value="1" ' . $checked . '> ' . esc_html__('Да', 'cashback-plugin') . '</label></td>';
         echo '</tr>';
     }
@@ -852,6 +856,7 @@ class Cashback_Fraud_Admin {
         $checked = !empty($settings[ $key ]) ? 'checked' : '';
         echo '<tr>';
         echo '<th scope="row">' . esc_html($label) . '</th>';
+        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $checked is a literal 'checked' or '' string.
         echo '<td><label><input type="checkbox" name="' . esc_attr($key) . '" value="1" ' . $checked . '> ' . esc_html__('Да', 'cashback-plugin') . '</label></td>';
         echo '</tr>';
     }
@@ -879,6 +884,7 @@ class Cashback_Fraud_Admin {
         echo '<tr>';
         echo '<th scope="row">' . esc_html($label) . '</th>';
         echo '<td>';
+        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $safe_attrs is rebuilt above from allowlisted keys via esc_attr().
         echo '<input type="number" name="' . esc_attr($key) . '" value="' . esc_attr($value) . '" class="small-text"' . $safe_attrs . '>';
         echo ' <span class="description">' . sprintf(esc_html__('По умолчанию: %s', 'cashback-plugin'), esc_html((string) $default)) . '</span>';
         echo '</td>';

@@ -168,7 +168,7 @@ class HistoryPayout {
         foreach ($payouts as $payout) {
             echo '<tr>';
             echo '<td data-title="' . esc_attr__('Номер заявки', 'cashback-plugin') . '">' . esc_html(!empty($payout->reference_id) ? $payout->reference_id : '---') . '</td>';
-            echo '<td data-title="' . esc_attr__('Дата', 'cashback-plugin') . '">' . $this->format_date($payout->created_at) . '</td>';
+            echo '<td data-title="' . esc_attr__('Дата', 'cashback-plugin') . '">' . $this->format_date($payout->created_at) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- format_date() возвращает уже экранированное значение.
             echo '<td data-title="' . esc_attr__('Сумма', 'cashback-plugin') . '">' . esc_html($payout->total_amount ?? '0.00') . '</td>';
             echo '<td data-title="' . esc_attr__('Способ вывода', 'cashback-plugin') . '">' . esc_html($this->get_payout_method_label($payout->payout_method) ?: __('Не указан', 'cashback-plugin')) . '</td>';
             echo '<td data-title="' . esc_attr__('Счет', 'cashback-plugin') . '">' . esc_html($this->get_display_account($payout) ?: __('Не указан', 'cashback-plugin')) . '</td>';

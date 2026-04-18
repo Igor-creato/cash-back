@@ -110,7 +110,7 @@ class Cashback_Payout_Methods_Admin {
     public function render_payout_methods_page(): void {
         // Проверяем права доступа
         if (!current_user_can('manage_options')) {
-            wp_die(__('У вас недостаточно прав для просмотра этой страницы.', 'cashback-plugin'));
+            wp_die(esc_html__('У вас недостаточно прав для просмотра этой страницы.', 'cashback-plugin'));
         }
 
         global $wpdb;

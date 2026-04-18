@@ -760,13 +760,13 @@ class Cashback_REST_API {
 
         // Рендерим страницу с шапкой и подвалом активной темы
         get_header();
-        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-        echo $this->render_activation_content(
+        $activation_html = $this->render_activation_content(
             $js_affiliate_url,
             $js_store_name,
             $js_cb_label,
             $js_cb_value
         );
+        echo $activation_html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- HTML собирается из wp_json_encode значений в render_activation_content().
         get_footer();
         exit;
     }
