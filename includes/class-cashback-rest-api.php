@@ -97,7 +97,7 @@ class Cashback_REST_API {
      * Для неаутентифицированных — редирект на главную.
      */
     public function block_author_enumeration(): void {
-        if (isset($_GET['author']) && !is_user_logged_in()) {
+        if (isset($_GET['author']) && !is_user_logged_in()) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public hardening check against author enumeration, no state change.
             wp_safe_redirect(home_url(), 301);
             exit;
         }
@@ -686,11 +686,11 @@ class Cashback_REST_API {
      * сохраняется в click_log — клик логируется ранее (в REST API), без referer.
      */
     public function handle_activation_page(): void {
-        if (!isset($_GET['cashback_go']) || '1' !== $_GET['cashback_go']) {
+        if (!isset($_GET['cashback_go']) || '1' !== $_GET['cashback_go']) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public activation-page entry point, external URL, nonce not applicable.
             return;
         }
 
-        $click_id = isset($_GET['click_id']) ? sanitize_text_field(wp_unslash($_GET['click_id'])) : '';
+        $click_id = isset($_GET['click_id']) ? sanitize_text_field(wp_unslash($_GET['click_id'])) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public activation-page entry point, external URL, nonce not applicable.
 
         if (empty($click_id) || strlen($click_id) !== 32 || !ctype_xdigit($click_id)) {
             wp_safe_redirect(home_url(), 302);
@@ -960,8 +960,8 @@ HTML;
             return true;
         }
 
-        if (isset($_GET['rest_route'])) {
-            $route = sanitize_text_field(wp_unslash($_GET['rest_route']));
+        if (isset($_GET['rest_route'])) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Infrastructure REST routing detection, read-only, nonce handled per-route via permission_callback.
+            $route = sanitize_text_field(wp_unslash($_GET['rest_route'])); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Infrastructure REST routing detection, read-only, nonce handled per-route via permission_callback.
             if (0 === strpos($route, '/' . self::NAMESPACE)) {
                 return true;
             }

@@ -203,8 +203,8 @@ class Cashback_User_Support {
         }
 
         // Предзаполнение привязки из query-параметров
-        $prefill_type   = sanitize_key(wp_unslash($_GET['related_type'] ?? ''));
-        $prefill_id     = absint($_GET['related_id'] ?? 0);
+        $prefill_type   = sanitize_key(wp_unslash($_GET['related_type'] ?? '')); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only UI prefill, ownership validated below, no state change.
+        $prefill_id     = absint($_GET['related_id'] ?? 0); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only UI prefill, ownership validated below, no state change.
         $prefill_entity = null;
         if ($prefill_type !== '' && $prefill_id > 0
             && in_array($prefill_type, Cashback_Support_DB::get_allowed_related_types(), true)

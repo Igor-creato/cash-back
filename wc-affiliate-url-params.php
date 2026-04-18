@@ -724,16 +724,16 @@ class WC_Affiliate_URL_Params {
     public function handle_click_redirect(): void {
         // Шаг 2: финальный redirect с activation page → affiliate URL.
         // Браузерное расширение уже зафиксировало активацию по cookie на шаге 1.
-        if (isset($_GET['cashback_go']) && isset($_GET['click_id'])) {
+        if (isset($_GET['cashback_go']) && isset($_GET['click_id'])) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public click-redirect entry point, external URL, nonce not applicable.
             $this->handle_activation_page();
             return;
         }
 
-        if (!isset($_GET['cashback_click'])) {
+        if (!isset($_GET['cashback_click'])) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public click-redirect entry point, external URL, nonce not applicable.
             return;
         }
 
-        $product_id = absint($_GET['cashback_click']);
+        $product_id = absint($_GET['cashback_click']); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public click-redirect entry point, external URL, nonce not applicable.
         if ($product_id <= 0) {
             return;
         }
@@ -933,7 +933,7 @@ class WC_Affiliate_URL_Params {
      * @return void
      */
     private function handle_activation_page(): void {
-        $click_id = sanitize_text_field(wp_unslash($_GET['click_id'] ?? ''));
+        $click_id = sanitize_text_field(wp_unslash($_GET['click_id'] ?? '')); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public click-redirect entry point, external URL, nonce not applicable.
 
         // Валидация: ровно 32 hex-символа (bin2hex(random_bytes(16)))
         if (!ctype_xdigit($click_id) || strlen($click_id) !== 32) {

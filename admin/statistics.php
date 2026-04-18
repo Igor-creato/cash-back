@@ -42,7 +42,7 @@ class Cashback_Statistics_Admin {
         );
 
         $is_overview_page = in_array($hook, $allowed_hooks, true) ||
-            ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-overview' );
+            ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-overview' ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin page slug detection for asset enqueue, no state change.
 
         if (!$is_overview_page) {
             return;
@@ -73,8 +73,8 @@ class Cashback_Statistics_Admin {
         }
 
         // Фильтры по дате
-        $filter_date_from = sanitize_text_field(wp_unslash($_GET['date_from'] ?? ''));
-        $filter_date_to   = sanitize_text_field(wp_unslash($_GET['date_to'] ?? ''));
+        $filter_date_from = sanitize_text_field(wp_unslash($_GET['date_from'] ?? '')); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing date filter (format-validated below), no state change.
+        $filter_date_to   = sanitize_text_field(wp_unslash($_GET['date_to'] ?? '')); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing date filter (format-validated below), no state change.
 
         if (!empty($filter_date_from) && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $filter_date_from)) {
             $filter_date_from = '';
@@ -113,7 +113,7 @@ class Cashback_Statistics_Admin {
         $total_cashback   = (float) $tx_stats['total_cashback'];
         $service_profit   = $total_commission - $total_cashback;
 
-        $active_tab = isset($_GET['tab']) && $_GET['tab'] === 'shortcodes' ? 'shortcodes' : 'stats';
+        $active_tab = isset($_GET['tab']) && $_GET['tab'] === 'shortcodes' ? 'shortcodes' : 'stats'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin tab selection (allowlist comparison), no state change.
         $base_url   = admin_url('admin.php?page=cashback-overview');
         ?>
         <div class="wrap">

@@ -98,7 +98,9 @@ class Cashback_Admin_API_Validation {
             $allowed_hooks[] = 'admin_page_' . $slug;
         }
 
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin page slug detection for asset enqueue, no state change.
         $current_page = isset($_GET['page'])
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin page slug detection for asset enqueue, no state change.
             ? sanitize_text_field(wp_unslash($_GET['page']))
             : '';
 
@@ -157,7 +159,7 @@ class Cashback_Admin_API_Validation {
             wp_die('Доступ запрещён');
         }
 
-        $active_tab = sanitize_text_field(wp_unslash($_GET['tab'] ?? 'settings'));
+        $active_tab = sanitize_text_field(wp_unslash($_GET['tab'] ?? 'settings')); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only tab selection (allowlist-validated below), no state change.
         if (!in_array($active_tab, array( 'settings', 'validation', 'sync', 'campaigns' ), true)) {
             $active_tab = 'settings';
         }
