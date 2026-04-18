@@ -190,7 +190,6 @@ class Cashback_Health_Check {
                  FROM %i u
                  LEFT JOIN %i p ON u.ID = p.user_id
                  WHERE p.user_id IS NULL',
-                // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
                 $wpdb->users,
                 $table_profile
             )
@@ -204,7 +203,6 @@ class Cashback_Health_Check {
                      LEFT JOIN %i p ON u.ID = p.user_id
                      WHERE p.user_id IS NULL
                      LIMIT 20',
-                    // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
                     $wpdb->users,
                     $table_profile
                 )
@@ -228,7 +226,6 @@ class Cashback_Health_Check {
                  FROM %i u
                  LEFT JOIN %i b ON u.ID = b.user_id
                  WHERE b.user_id IS NULL',
-                // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
                 $wpdb->users,
                 $table_balance
             )
@@ -242,7 +239,6 @@ class Cashback_Health_Check {
                      LEFT JOIN %i b ON u.ID = b.user_id
                      WHERE b.user_id IS NULL
                      LIMIT 20',
-                    // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
                     $wpdb->users,
                     $table_balance
                 )

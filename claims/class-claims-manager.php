@@ -68,7 +68,6 @@ class Cashback_Claims_Manager {
 
         // phpcs:ignore WordPressVIPMinimum.Variables.ServerVariables.UserControlledHeaders -- REMOTE_ADDR is set by the web server from the TCP connection, not a client-controlled HTTP header; proxy headers trusted only via CASHBACK_TRUSTED_PROXIES allowlist.
         $ip = class_exists('Cashback_Encryption') ? Cashback_Encryption::get_client_ip() : ( isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '0.0.0.0' );
-        // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__HTTP_USER_AGENT__ -- Request-scoped UA for bot detection/logging; not cacheable across requests.
         $ua = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '';
 
         $insert_data = array(
@@ -268,7 +267,6 @@ class Cashback_Claims_Manager {
                 LEFT JOIN %i u ON u.ID = c.user_id
                 WHERE c.claim_id = %d';
 
-        // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
         $params = array( $claims_table, $wpdb->users, $claim_id );
 
         if ($user_id) {
@@ -290,7 +288,6 @@ class Cashback_Claims_Manager {
              WHERE e.claim_id = %d
              ORDER BY e.created_at ASC',
             $events_table,
-            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
             $wpdb->users,
             $claim_id
         ), ARRAY_A);
@@ -441,13 +438,12 @@ class Cashback_Claims_Manager {
         $claims_table = $wpdb->prefix . 'cashback_claims';
         $events_table = $wpdb->prefix . 'cashback_claim_events';
 
-        // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- Custom plugin JOIN with core wp_users table; passed as %i identifier placeholder via $wpdb->prepare(), not user input.
         $list_params = array_merge( array( $events_table, $claims_table, $wpdb->users ), $params, array( $per_page, $offset ) );
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql from allowlist fragments with %s/%d; $orderby/$order from hard allowlist (in_array + ASC/DESC); sniff can't count spread args.
         $claims = $wpdb->get_results( $wpdb->prepare( "SELECT c.*, u.display_name as user_display_name, u.user_email as user_email, (SELECT COUNT(*) FROM %i e WHERE e.claim_id = c.claim_id AND e.actor_type = 'user' AND e.is_read_admin = 0) AS unread_count FROM %i c LEFT JOIN %i u ON u.ID = c.user_id {$where_sql} ORDER BY (unread_count > 0) DESC, c.{$orderby} {$order} LIMIT %d OFFSET %d", ...$list_params ), ARRAY_A );
 
         if (!empty($params)) {
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPressVIPMinimum.Variables.RestrictedVariables.user_meta__wpdb__users -- $where_sql from allowlist fragments; sniff can't count spread args. $wpdb->users passed as %i identifier placeholder via $wpdb->prepare(), not user input.
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql from allowlist fragments; sniff can't count spread args.
             $total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i c LEFT JOIN %i u ON u.ID = c.user_id {$where_sql}", ...array_merge( array( $claims_table, $wpdb->users ), $params ) ) );
         } else {
             $total = (int) $wpdb->get_var( $wpdb->prepare(

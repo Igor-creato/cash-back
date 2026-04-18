@@ -761,7 +761,6 @@ class Cashback_Partner_Management_Admin {
                 'post_status'    => 'publish',
                 'posts_per_page' => -1,
                 'fields'         => 'ids',
-                // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Admin-only rare batch toggle (network activate/deactivate); not on hot path.
                 'meta_query'     => array(
                     array(
                         'key'     => '_affiliate_network_id',
@@ -789,7 +788,6 @@ class Cashback_Partner_Management_Admin {
             'post_status'    => array( 'draft', 'pending', 'private' ),
             'posts_per_page' => -1,
             'fields'         => 'ids',
-            // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Admin-only rare batch toggle (network activate/deactivate); not on hot path.
             'meta_query'     => array(
                 'relation' => 'AND',
                 array(

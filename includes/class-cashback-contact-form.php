@@ -332,7 +332,6 @@ class Cashback_Contact_Form {
      */
     private function is_bot_user_agent(): bool {
         $ua = isset($_SERVER['HTTP_USER_AGENT'])
-            // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__HTTP_USER_AGENT__ -- Request-scoped UA for bot detection/logging; not cacheable across requests.
             ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT']))
             : '';
 
