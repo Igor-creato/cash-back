@@ -1050,12 +1050,12 @@ class Cashback_Fraud_Admin {
             return;
         }
 
-        $settings = isset($_POST['settings']) ? (array) $_POST['settings'] : array();
+        $settings = isset($_POST['settings']) ? (array) map_deep(wp_unslash($_POST['settings']), 'sanitize_text_field') : array();
 
         // Sanitize each value
         $sanitized = array();
         foreach ($settings as $key => $value) {
-            $sanitized[ sanitize_text_field($key) ] = sanitize_text_field(wp_unslash((string) $value));
+            $sanitized[ sanitize_text_field($key) ] = sanitize_text_field((string) $value);
         }
 
         Cashback_Fraud_Settings::save_settings($sanitized);
@@ -1088,11 +1088,11 @@ class Cashback_Fraud_Admin {
             return;
         }
 
-        $settings = isset($_POST['settings']) ? (array) $_POST['settings'] : array();
+        $settings = isset($_POST['settings']) ? (array) map_deep(wp_unslash($_POST['settings']), 'sanitize_text_field') : array();
 
         $sanitized = array();
         foreach ($settings as $key => $value) {
-            $sanitized[ sanitize_text_field($key) ] = sanitize_text_field(wp_unslash((string) $value));
+            $sanitized[ sanitize_text_field($key) ] = sanitize_text_field((string) $value);
         }
 
         Cashback_Fraud_Settings::save_bot_settings($sanitized);

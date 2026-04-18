@@ -701,8 +701,8 @@ echo 'style="display:none"';}
         }
         set_transient($rate_key, $rate_count + 1, MINUTE_IN_SECONDS);
 
-        $user_id = (int) ( $_POST['user_id'] ?? -1 );
-        $network = sanitize_text_field($_POST['network'] ?? 'admitad');
+        $user_id = intval( wp_unslash( $_POST['user_id'] ?? -1 ) );
+        $network = isset($_POST['network']) ? sanitize_text_field(wp_unslash($_POST['network'])) : 'admitad';
         $full    = !empty($_POST['full_check']);
 
         if ($user_id < 0) {
@@ -863,28 +863,29 @@ echo 'style="display:none"';}
 
         global $wpdb;
 
-        $network_id = (int) ( $_POST['network_id'] ?? 0 );
+        $network_id = absint( wp_unslash( $_POST['network_id'] ?? 0 ) );
         if ($network_id < 1) {
             wp_send_json_error(array( 'message' => 'Неверный ID сети' ));
         }
 
         // Обновляем обычные поля
-        $auth_type = sanitize_text_field($_POST['api_auth_type'] ?? 'oauth2');
+        $auth_type = isset($_POST['api_auth_type']) ? sanitize_text_field(wp_unslash($_POST['api_auth_type'])) : 'oauth2';
         if (!in_array($auth_type, array( 'oauth2', 'api_key' ), true)) {
             $auth_type = 'oauth2';
         }
 
         $fields = array(
-            'api_base_url'         => sanitize_text_field($_POST['api_base_url'] ?? ''),
+            'api_base_url'         => isset($_POST['api_base_url']) ? sanitize_text_field(wp_unslash($_POST['api_base_url'])) : '',
             'api_auth_type'        => $auth_type,
-            'api_token_endpoint'   => sanitize_text_field($_POST['api_token_endpoint'] ?? ''),
-            'api_actions_endpoint' => sanitize_text_field($_POST['api_actions_endpoint'] ?? ''),
-            'api_user_field'       => sanitize_text_field($_POST['api_user_field'] ?? ''),
-            'api_click_field'      => sanitize_text_field($_POST['api_click_field'] ?? ''),
-            'api_website_id'       => sanitize_text_field($_POST['api_website_id'] ?? ''),
+            'api_token_endpoint'   => isset($_POST['api_token_endpoint']) ? sanitize_text_field(wp_unslash($_POST['api_token_endpoint'])) : '',
+            'api_actions_endpoint' => isset($_POST['api_actions_endpoint']) ? sanitize_text_field(wp_unslash($_POST['api_actions_endpoint'])) : '',
+            'api_user_field'       => isset($_POST['api_user_field']) ? sanitize_text_field(wp_unslash($_POST['api_user_field'])) : '',
+            'api_click_field'      => isset($_POST['api_click_field']) ? sanitize_text_field(wp_unslash($_POST['api_click_field'])) : '',
+            'api_website_id'       => isset($_POST['api_website_id']) ? sanitize_text_field(wp_unslash($_POST['api_website_id'])) : '',
         );
 
         // Валидация маппинга статусов (должен быть валидный JSON)
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- JSON payload, validated via json_decode + json_last_error check below; sanitize_text_field would corrupt JSON content.
         $status_map_raw = wp_unslash($_POST['api_status_map'] ?? '');
         if (!empty($status_map_raw)) {
             $decoded = json_decode($status_map_raw, true);
@@ -895,6 +896,7 @@ echo 'style="display:none"';}
         }
 
         // Валидация маппинга полей (должен быть валидный JSON)
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- JSON payload, validated via json_decode + json_last_error check below; sanitize_text_field would corrupt JSON content.
         $field_map_raw = wp_unslash($_POST['api_field_map'] ?? '');
         if (!empty($field_map_raw)) {
             $decoded_fm = json_decode($field_map_raw, true);
@@ -920,14 +922,14 @@ echo 'style="display:none"';}
         $credentials_changed = false;
 
         if ($auth_type === 'api_key') {
-            $api_key = sanitize_text_field($_POST['api_key'] ?? '');
+            $api_key = isset($_POST['api_key']) ? sanitize_text_field(wp_unslash($_POST['api_key'])) : '';
             if (!empty($api_key) && !str_starts_with($api_key, '•')) {
                 $existing['api_key'] = $api_key;
                 $credentials_changed = true;
             }
         } else {
-            $client_id     = sanitize_text_field($_POST['client_id'] ?? '');
-            $client_secret = sanitize_text_field($_POST['client_secret'] ?? '');
+            $client_id     = isset($_POST['client_id']) ? sanitize_text_field(wp_unslash($_POST['client_id'])) : '';
+            $client_secret = isset($_POST['client_secret']) ? sanitize_text_field(wp_unslash($_POST['client_secret'])) : '';
 
             if (!empty($client_id) && !str_starts_with($client_id, '•')) {
                 $existing['client_id'] = $client_id;
@@ -938,7 +940,7 @@ echo 'style="display:none"';}
                 $credentials_changed       = true;
             }
             if (!empty($_POST['scope'])) {
-                $existing['scope']   = sanitize_text_field($_POST['scope']);
+                $existing['scope']   = sanitize_text_field(wp_unslash($_POST['scope']));
                 $credentials_changed = true;
             }
         }
@@ -981,7 +983,7 @@ echo 'style="display:none"';}
             wp_send_json_error(array( 'message' => 'Недостаточно прав' ));
         }
 
-        $network_id = (int) ( $_POST['network_id'] ?? 0 );
+        $network_id = absint( wp_unslash( $_POST['network_id'] ?? 0 ) );
         if ($network_id < 1) {
             wp_send_json_error(array( 'message' => 'Неверный ID сети' ));
         }
@@ -1037,7 +1039,7 @@ echo 'style="display:none"';}
 
         global $wpdb;
 
-        $days = (int) ( $_POST['days'] ?? 7 );
+        $days = absint( wp_unslash( $_POST['days'] ?? 7 ) );
         $days = max(1, min($days, 90));
 
         $sync_log_table = $wpdb->prefix . 'cashback_sync_log';
@@ -1069,7 +1071,7 @@ echo 'style="display:none"';}
             wp_send_json_error(array( 'message' => 'Недостаточно прав' ));
         }
 
-        $user_id = (int) ( $_POST['user_id'] ?? 0 );
+        $user_id = absint( wp_unslash( $_POST['user_id'] ?? 0 ) );
 
         if ($user_id < 1) {
             wp_send_json_error(array( 'message' => 'Неверный user_id' ));
@@ -1104,10 +1106,10 @@ echo 'style="display:none"';}
         global $wpdb;
 
         $transaction_id  = absint($_POST['transaction_id'] ?? 0);
-        $order_status    = sanitize_text_field($_POST['order_status'] ?? '');
+        $order_status    = isset($_POST['order_status']) ? sanitize_text_field(wp_unslash($_POST['order_status'])) : '';
         $comission       = floatval($_POST['comission'] ?? 0);
         $sum_order       = floatval($_POST['sum_order'] ?? 0);
-        $is_unregistered = (int) ( $_POST['user_id'] ?? -1 ) === 0;
+        $is_unregistered = intval( wp_unslash( $_POST['user_id'] ?? -1 ) ) === 0;
 
         if ($transaction_id < 1) {
             wp_send_json_error(array( 'message' => 'Неверный ID транзакции' ));
@@ -1187,22 +1189,22 @@ echo 'style="display:none"';}
 
         global $wpdb;
 
-        $user_id     = sanitize_text_field($_POST['user_id'] ?? '');
-        $network     = sanitize_text_field($_POST['network'] ?? '');
-        $action_id   = sanitize_text_field($_POST['action_id'] ?? '');
-        $click_id    = sanitize_text_field($_POST['click_id'] ?? '');
-        $order_id    = sanitize_text_field($_POST['order_id'] ?? '');
-        $status      = sanitize_text_field($_POST['status'] ?? '');
+        $user_id     = isset($_POST['user_id']) ? sanitize_text_field(wp_unslash($_POST['user_id'])) : '';
+        $network     = isset($_POST['network']) ? sanitize_text_field(wp_unslash($_POST['network'])) : '';
+        $action_id   = isset($_POST['action_id']) ? sanitize_text_field(wp_unslash($_POST['action_id'])) : '';
+        $click_id    = isset($_POST['click_id']) ? sanitize_text_field(wp_unslash($_POST['click_id'])) : '';
+        $order_id    = isset($_POST['order_id']) ? sanitize_text_field(wp_unslash($_POST['order_id'])) : '';
+        $status      = isset($_POST['status']) ? sanitize_text_field(wp_unslash($_POST['status'])) : '';
         $payment     = floatval($_POST['payment'] ?? 0);
         $cart        = floatval($_POST['cart'] ?? 0);
-        $date        = sanitize_text_field($_POST['date'] ?? '');
-        $campaign    = sanitize_text_field($_POST['campaign'] ?? '');
-        $campaign_id = sanitize_text_field($_POST['campaign_id'] ?? '');
-        $currency    = sanitize_text_field($_POST['currency'] ?? 'RUB');
-        $click_time  = sanitize_text_field($_POST['click_time'] ?? '');
-        $action_type = sanitize_text_field($_POST['action_type'] ?? '');
-        $website_id  = sanitize_text_field($_POST['website_id'] ?? '');
-        $funds_ready = (int) ( $_POST['funds_ready'] ?? 0 );
+        $date        = isset($_POST['date']) ? sanitize_text_field(wp_unslash($_POST['date'])) : '';
+        $campaign    = isset($_POST['campaign']) ? sanitize_text_field(wp_unslash($_POST['campaign'])) : '';
+        $campaign_id = isset($_POST['campaign_id']) ? sanitize_text_field(wp_unslash($_POST['campaign_id'])) : '';
+        $currency    = isset($_POST['currency']) ? sanitize_text_field(wp_unslash($_POST['currency'])) : 'RUB';
+        $click_time  = isset($_POST['click_time']) ? sanitize_text_field(wp_unslash($_POST['click_time'])) : '';
+        $action_type = isset($_POST['action_type']) ? sanitize_text_field(wp_unslash($_POST['action_type'])) : '';
+        $website_id  = isset($_POST['website_id']) ? sanitize_text_field(wp_unslash($_POST['website_id'])) : '';
+        $funds_ready = absint( wp_unslash( $_POST['funds_ready'] ?? 0 ) );
 
         if (( $user_id === '' ) || empty($network) || empty($action_id)) {
             wp_send_json_error(array( 'message' => 'Обязательные поля: user_id, network, action_id' ));
@@ -1221,9 +1223,9 @@ echo 'style="display:none"';}
         if (defined('WP_DEBUG') && WP_DEBUG) {
             error_log(sprintf(
                 '[Cashback API Add TX] POST: date=%s, click_time=%s, website_id=%s | Parsed: action_date=%s, click_time=%s',
-                $_POST['date'] ?? '(empty)',
-                $_POST['click_time'] ?? '(empty)',
-                $_POST['website_id'] ?? '(empty)',
+                isset($_POST['date']) ? sanitize_text_field(wp_unslash($_POST['date'])) : '(empty)',
+                isset($_POST['click_time']) ? sanitize_text_field(wp_unslash($_POST['click_time'])) : '(empty)',
+                isset($_POST['website_id']) ? sanitize_text_field(wp_unslash($_POST['website_id'])) : '(empty)',
                 $action_date_mysql ?? 'NULL',
                 $click_time_mysql ?? 'NULL'
             ));
@@ -1346,11 +1348,11 @@ echo 'style="display:none"';}
         global $wpdb;
 
         $local_id        = absint($_POST['local_id'] ?? 0);
-        $network         = sanitize_text_field($_POST['network'] ?? '');
-        $api_status      = sanitize_text_field($_POST['api_status'] ?? '');
+        $network         = isset($_POST['network']) ? sanitize_text_field(wp_unslash($_POST['network'])) : '';
+        $api_status      = isset($_POST['api_status']) ? sanitize_text_field(wp_unslash($_POST['api_status'])) : '';
         $api_payment     = floatval($_POST['api_payment'] ?? 0);
         $api_cart        = floatval($_POST['api_cart'] ?? 0);
-        $is_unregistered = (int) ( $_POST['user_id'] ?? -1 ) === 0;
+        $is_unregistered = intval( wp_unslash( $_POST['user_id'] ?? -1 ) ) === 0;
 
         if ($local_id < 1 || empty($network)) {
             wp_send_json_error(array( 'message' => 'Неверные параметры' ));
@@ -1461,7 +1463,7 @@ echo 'style="display:none"';}
                 'entity_type' => 'user',
                 'entity_id'   => $entity_id,
                 'ip_address'  => $this->get_client_ip(),
-                'user_agent'  => sanitize_text_field($_SERVER['HTTP_USER_AGENT'] ?? ''),
+                'user_agent'  => isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '',
                 'details'     => wp_json_encode($details),
             )
         );
@@ -1532,7 +1534,7 @@ echo 'style="display:none"';}
         $headers = array( 'HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR' );
         foreach ($headers as $header) {
             if (!empty($_SERVER[ $header ])) {
-                $ip = explode(',', $_SERVER[ $header ])[0];
+                $ip = explode(',', sanitize_text_field(wp_unslash($_SERVER[ $header ])))[0];
                 $ip = trim($ip);
                 if (filter_var($ip, FILTER_VALIDATE_IP)) {
                     return $ip;
@@ -1816,7 +1818,7 @@ echo 'style="display:none"';}
             wp_send_json_error('Доступ запрещён');
         }
 
-        $product_id = (int) ( $_POST['product_id'] ?? 0 );
+        $product_id = absint( wp_unslash( $_POST['product_id'] ?? 0 ) );
         if ($product_id <= 0) {
             wp_send_json_error('Неверный ID товара');
         }

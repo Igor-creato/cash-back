@@ -204,7 +204,7 @@ class Cashback_User_Support {
 
         // Предзаполнение привязки из query-параметров
         $prefill_type   = sanitize_key(wp_unslash($_GET['related_type'] ?? '')); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only UI prefill, ownership validated below, no state change.
-        $prefill_id     = absint($_GET['related_id'] ?? 0); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only UI prefill, ownership validated below, no state change.
+        $prefill_id     = absint(wp_unslash($_GET['related_id'] ?? 0)); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only UI prefill, ownership validated below, no state change.
         $prefill_entity = null;
         if ($prefill_type !== '' && $prefill_id > 0
             && in_array($prefill_type, Cashback_Support_DB::get_allowed_related_types(), true)
@@ -525,12 +525,12 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
 
         $subject  = sanitize_text_field(wp_unslash($_POST['subject'] ?? ''));
         $priority = sanitize_text_field(wp_unslash($_POST['priority'] ?? 'not_urgent'));
-        $message  = sanitize_textarea_field($_POST['message'] ?? '');
+        $message  = sanitize_textarea_field(wp_unslash($_POST['message'] ?? ''));
 
         // Привязка тикета к сущности (покупка/начисление или партнёрская комиссия).
         // Значения приходят из скрытых полей формы или query-параметров.
         $related_type_raw = sanitize_key(wp_unslash($_POST['related_type'] ?? ''));
-        $related_id       = absint($_POST['related_id'] ?? 0);
+        $related_id       = absint(wp_unslash($_POST['related_id'] ?? 0));
         $related_type     = null;
         $related_entity   = null;
 
@@ -653,11 +653,11 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
                 }
 
                 $single_file = array(
-                    'name'     => $_FILES['support_files']['name'][ $i ],
-                    'type'     => $_FILES['support_files']['type'][ $i ],
-                    'tmp_name' => $_FILES['support_files']['tmp_name'][ $i ],
-                    'error'    => $_FILES['support_files']['error'][ $i ],
-                    'size'     => $_FILES['support_files']['size'][ $i ],
+                    'name'     => sanitize_text_field(wp_unslash($_FILES['support_files']['name'][ $i ])),
+                    'type'     => sanitize_text_field(wp_unslash($_FILES['support_files']['type'][ $i ])),
+                    'tmp_name' => sanitize_text_field(wp_unslash($_FILES['support_files']['tmp_name'][ $i ])),
+                    'error'    => (int) $_FILES['support_files']['error'][ $i ],
+                    'size'     => (int) $_FILES['support_files']['size'][ $i ],
                 );
 
                 $result = Cashback_Support_DB::handle_file_upload($single_file, $ticket_id, $message_id, $user_id);
@@ -733,8 +733,8 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
             return;
         }
 
-        $ticket_id = absint($_POST['ticket_id'] ?? 0);
-        $message   = sanitize_textarea_field($_POST['message'] ?? '');
+        $ticket_id = absint(wp_unslash($_POST['ticket_id'] ?? 0));
+        $message   = sanitize_textarea_field(wp_unslash($_POST['message'] ?? ''));
 
         if (!$ticket_id || empty($message)) {
             wp_send_json_error(array( 'message' => 'Ошибка при отправке, попробуйте еще раз' ));
@@ -815,11 +815,11 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
                     }
 
                     $single_file = array(
-                        'name'     => $_FILES['support_files']['name'][ $i ],
-                        'type'     => $_FILES['support_files']['type'][ $i ],
-                        'tmp_name' => $_FILES['support_files']['tmp_name'][ $i ],
-                        'error'    => $_FILES['support_files']['error'][ $i ],
-                        'size'     => $_FILES['support_files']['size'][ $i ],
+                        'name'     => sanitize_text_field(wp_unslash($_FILES['support_files']['name'][ $i ])),
+                        'type'     => sanitize_text_field(wp_unslash($_FILES['support_files']['type'][ $i ])),
+                        'tmp_name' => sanitize_text_field(wp_unslash($_FILES['support_files']['tmp_name'][ $i ])),
+                        'error'    => (int) $_FILES['support_files']['error'][ $i ],
+                        'size'     => (int) $_FILES['support_files']['size'][ $i ],
                     );
 
                     $result = Cashback_Support_DB::handle_file_upload($single_file, (int) $ticket_id, $message_id, $user_id);
@@ -905,7 +905,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
             return;
         }
 
-        $ticket_id = absint($_POST['ticket_id'] ?? 0);
+        $ticket_id = absint(wp_unslash($_POST['ticket_id'] ?? 0));
 
         if (!$ticket_id) {
             wp_send_json_error(array( 'message' => 'Ошибка при выполнении, попробуйте еще раз' ));
@@ -971,7 +971,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
 
         global $wpdb;
 
-        $ticket_id = absint($_POST['ticket_id'] ?? 0);
+        $ticket_id = absint(wp_unslash($_POST['ticket_id'] ?? 0));
 
         if (!$ticket_id) {
             wp_send_json_error(array( 'message' => 'Ошибка загрузки' ));
@@ -1125,7 +1125,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
         $total_pages = $total > 0 ? (int) ceil($total / $per_page) : 1;
         $total_pages = min($total_pages, self::MAX_ALLOWED_PAGES);
 
-        $page   = intval($_POST['page']);
+        $page   = intval(wp_unslash($_POST['page']));
         $page   = max(1, min($page, $total_pages));
         $offset = ( $page - 1 ) * $per_page;
 
@@ -1235,7 +1235,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
             wp_die('Требуется авторизация.', 'Ошибка', array( 'response' => 403 ));
         }
 
-        $attachment_id = absint($_POST['id'] ?? 0);
+        $attachment_id = absint(wp_unslash($_POST['id'] ?? 0));
         if (!$attachment_id) {
             wp_die('Не указан файл.', 'Ошибка', array( 'response' => 400 ));
         }

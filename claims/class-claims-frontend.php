@@ -459,8 +459,8 @@ class Cashback_Claims_Frontend {
             'user_id'     => get_current_user_id(),
             'click_id'    => sanitize_text_field(wp_unslash($_POST['click_id'] ?? '')),
             'order_date'  => sanitize_text_field(wp_unslash($_POST['order_date'] ?? '')),
-            'order_value' => (float) ( $_POST['order_value'] ?? 0 ),
-            'merchant_id' => (int) ( $_POST['merchant_id'] ?? 0 ),
+            'order_value' => floatval(wp_unslash($_POST['order_value'] ?? 0)),
+            'merchant_id' => absint(wp_unslash($_POST['merchant_id'] ?? 0)),
             'comment'     => sanitize_textarea_field(wp_unslash($_POST['comment'] ?? '')),
         );
 
@@ -479,7 +479,7 @@ class Cashback_Claims_Frontend {
         $data = array(
             'click_id'    => sanitize_text_field(wp_unslash($_POST['click_id'] ?? '')),
             'order_id'    => sanitize_text_field(wp_unslash($_POST['order_id'] ?? '')),
-            'order_value' => (float) ( $_POST['order_value'] ?? 0 ),
+            'order_value' => floatval(wp_unslash($_POST['order_value'] ?? 0)),
             'order_date'  => sanitize_text_field(wp_unslash($_POST['order_date'] ?? '')),
             'comment'     => sanitize_textarea_field(wp_unslash($_POST['comment'] ?? '')),
         );
