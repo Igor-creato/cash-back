@@ -124,7 +124,7 @@ class Cashback_Claims_Admin {
 
     public function render_page(): void {
         if (!current_user_can('manage_options')) {
-            wp_die(__('У вас недостаточно прав.', 'cashback-plugin'));
+            wp_die(esc_html__('У вас недостаточно прав.', 'cashback-plugin'));
         }
 
         global $wpdb;
@@ -329,7 +329,7 @@ class Cashback_Claims_Admin {
                     'total'   => $result['pages'],
                     'current' => $page,
                 );
-                echo paginate_links($pagination_args);
+                echo wp_kses_post(paginate_links($pagination_args)); // paginate_links() возвращает безопасный HTML с экранированными URL.
                 ?>
             <?php endif; ?>
 

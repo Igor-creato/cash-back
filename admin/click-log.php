@@ -113,7 +113,7 @@ class Cashback_Click_Log_Admin {
      */
     public function render_page(): void {
         if (!current_user_can('manage_options')) {
-            wp_die(__('У вас нет доступа к этой странице.', 'cashback-plugin'));
+            wp_die(esc_html__('У вас нет доступа к этой странице.', 'cashback-plugin'));
         }
 
         global $wpdb;

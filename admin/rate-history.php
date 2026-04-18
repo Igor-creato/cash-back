@@ -302,22 +302,22 @@ class Cashback_Rate_History_Admin {
                         'filter_user' => $filter_user,
                     ), $base_url);
 
-                    echo paginate_links(array(
+                    echo wp_kses_post( paginate_links(array(
                         'base'      => $base_url . '%_%',
                         'format'    => '&paged=%#%',
                         'current'   => $paged,
                         'total'     => $total_pages,
                         'prev_text' => __('&laquo;'),
                         'next_text' => __('&raquo;'),
-                    ));
+                    )) ); // wp_kses_post: paginate_links returns safe pagination HTML.
                     ?>
                     <span class="cashback-pagination-info">
                         <?php
                         printf(
                             esc_html__('Страница %1$d из %2$d (%3$d записей)', 'cashback-plugin'),
-                            $paged,
-                            $total_pages,
-                            $total_items
+                            (int) $paged,
+                            (int) $total_pages,
+                            (int) $total_items
                         );
                         ?>
                     </span>

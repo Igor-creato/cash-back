@@ -195,7 +195,7 @@ class CashbackHistory {
         foreach ($transactions as $transaction) {
             echo '<tr>';
             echo '<td data-title="' . esc_attr__('ID', 'cashback-plugin') . '"><code>' . esc_html($transaction->reference_id ?? '') . '</code></td>';
-            echo '<td data-title="' . esc_attr__('Дата', 'cashback-plugin') . '">' . $this->format_date($transaction->action_date ?? $transaction->created_at) . '</td>';
+            echo '<td data-title="' . esc_attr__('Дата', 'cashback-plugin') . '">' . $this->format_date($transaction->action_date ?? $transaction->created_at) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- format_date() возвращает уже экранированное значение.
             echo '<td data-title="' . esc_attr__('Магазин', 'cashback-plugin') . '">' . esc_html($transaction->offer_name ?? __('Н/Д', 'cashback-plugin')) . '</td>';
             echo '<td data-title="' . esc_attr__('Номер заказа', 'cashback-plugin') . '">' . esc_html($transaction->order_number ?? __('Н/Д', 'cashback-plugin')) . '</td>';
             echo '<td data-title="' . esc_attr__('Кэшбэк', 'cashback-plugin') . '">' . esc_html($transaction->cashback ?? '0.00') . '</td>';

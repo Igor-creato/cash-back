@@ -311,7 +311,7 @@ class Cashback_Affiliate_Frontend {
             echo '<td data-title="' . esc_attr__('Кешбэк', 'cashback-plugin') . '">' . esc_html(number_format_i18n((float) $row['cashback_amount'], 2)) . ' ₽</td>';
             echo '<td data-title="' . esc_attr__('Ставка', 'cashback-plugin') . '">' . esc_html($row['commission_rate']) . '%</td>';
             echo '<td data-title="' . esc_attr__('Комиссия', 'cashback-plugin') . '"><strong>' . esc_html(number_format_i18n((float) $row['commission_amount'], 2)) . ' ₽</strong></td>';
-            echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '"><span class="cashback-affiliate-status ' . $status_class . '">'
+            echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '"><span class="cashback-affiliate-status ' . esc_attr($status_class) . '">'
                 . esc_html($status_label) . '</span></td>';
             if ($support_enabled) {
                 $support_url = add_query_arg(
@@ -338,7 +338,7 @@ class Cashback_Affiliate_Frontend {
             echo '<div class="cashback-affiliate-pagination" data-total="' . esc_attr($total_pages) . '">';
             for ($i = 1; $i <= $total_pages; $i++) {
                 $active = $i === $page ? ' active' : '';
-                echo '<button type="button" class="cashback-affiliate-page-btn' . $active . '" data-page="' . esc_attr($i) . '">'
+                echo '<button type="button" class="cashback-affiliate-page-btn' . esc_attr($active) . '" data-page="' . esc_attr($i) . '">'
                     . esc_html($i) . '</button>';
             }
             echo '</div>';
@@ -449,7 +449,7 @@ class Cashback_Affiliate_Frontend {
             echo '<div class="cashback-affiliate-pagination cashback-affiliate-referrals-pagination" data-total="' . esc_attr($total_pages) . '">';
             for ($i = 1; $i <= $total_pages; $i++) {
                 $active = $i === $page ? ' active' : '';
-                echo '<button type="button" class="cashback-affiliate-page-btn' . $active . '" data-page="' . esc_attr($i) . '">'
+                echo '<button type="button" class="cashback-affiliate-page-btn' . esc_attr($active) . '" data-page="' . esc_attr($i) . '">'
                     . esc_html($i) . '</button>';
             }
             echo '</div>';

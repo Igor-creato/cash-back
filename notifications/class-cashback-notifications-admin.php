@@ -64,7 +64,7 @@ class Cashback_Notifications_Admin {
      */
     public function render_page(): void {
         if (!current_user_can('manage_options')) {
-            wp_die(__('Недостаточно прав.', 'cashback-plugin'));
+            wp_die(esc_html__('Недостаточно прав.', 'cashback-plugin'));
         }
 
         $all_types = Cashback_Notifications_DB::get_all_notification_types();

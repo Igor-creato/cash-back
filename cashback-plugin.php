@@ -196,10 +196,10 @@ class CashbackPlugin {
         // Проверка обязательного расширения BCMath (используется для точных вычислений с балансами)
         if (!extension_loaded('bcmath')) {
             wp_die(
-                '<h1>' . self::ACTIVATION_ERROR_TITLE . '</h1>' .
+                wp_kses_post( '<h1>' . self::ACTIVATION_ERROR_TITLE . '</h1>' .
                     '<p><strong>Cashback Plugin:</strong> Требуется PHP-расширение <code>bcmath</code>. ' .
-                    'Установите его и повторите активацию.</p>',
-                self::ACTIVATION_ERROR_TITLE,
+                    'Установите его и повторите активацию.</p>' ),
+                esc_html( self::ACTIVATION_ERROR_TITLE ),
                 array( 'back_link' => true )
             );
         }
@@ -222,18 +222,18 @@ class CashbackPlugin {
                 error_log('Stack trace: ' . $e->getTraceAsString());
                 // Показываем пользователю
                 wp_die(
-                    '<h1>' . self::ACTIVATION_ERROR_TITLE . '</h1>' .
+                    wp_kses_post( '<h1>' . self::ACTIVATION_ERROR_TITLE . '</h1>' .
                         '<p><strong>Cashback Plugin:</strong> ' . esc_html($e->getMessage()) . '</p>' .
-                        '<p>Проверьте логи ошибок для получения дополнительной информации.</p>',
-                    self::ACTIVATION_ERROR_TITLE,
+                        '<p>Проверьте логи ошибок для получения дополнительной информации.</p>' ),
+                    esc_html( self::ACTIVATION_ERROR_TITLE ),
                     array( 'back_link' => true )
                 );
             }
         } else {
             wp_die(
-                '<h1>' . self::ACTIVATION_ERROR_TITLE . '</h1>' .
-                    '<p><strong>Cashback Plugin:</strong> Класс Mariadb_Plugin не найден.</p>',
-                self::ACTIVATION_ERROR_TITLE,
+                wp_kses_post( '<h1>' . self::ACTIVATION_ERROR_TITLE . '</h1>' .
+                    '<p><strong>Cashback Plugin:</strong> Класс Mariadb_Plugin не найден.</p>' ),
+                esc_html( self::ACTIVATION_ERROR_TITLE ),
                 array( 'back_link' => true )
             );
         }

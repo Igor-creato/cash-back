@@ -172,7 +172,9 @@ class Cashback_Claims_Frontend {
 
                     <?php
                     if (class_exists('Cashback_Captcha')) {
-echo Cashback_Captcha::render_container('cb-captcha-claims'); }
+                        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Captcha renderer returns sanitized HTML markup.
+                        echo Cashback_Captcha::render_container('cb-captcha-claims');
+                    }
 ?>
 
                     <p class="form-row">
@@ -655,7 +657,7 @@ echo Cashback_Captcha::render_container('cb-captcha-claims'); }
 
         // Кнопка «Назад»
         if ($current > 1) {
-            echo '<li><a href="#" class="page-numbers prev" data-page="' . ( $current - 1 ) . '">&lsaquo;</a></li>';
+            echo '<li><a href="#" class="page-numbers prev" data-page="' . esc_attr( $current - 1 ) . '">&lsaquo;</a></li>';
         }
 
         $prev = 0;
@@ -664,13 +666,13 @@ echo Cashback_Captcha::render_container('cb-captcha-claims'); }
                 echo '<li><span class="page-numbers dots">&hellip;</span></li>';
             }
             $class = ( $page == $current ) ? 'current' : '';
-            echo '<li><a href="#" class="page-numbers ' . esc_attr($class) . '" data-page="' . $page . '">' . $page . '</a></li>';
+            echo '<li><a href="#" class="page-numbers ' . esc_attr($class) . '" data-page="' . esc_attr( $page ) . '">' . esc_html( $page ) . '</a></li>';
             $prev = $page;
         }
 
         // Кнопка «Вперёд»
         if ($current < $total) {
-            echo '<li><a href="#" class="page-numbers next" data-page="' . ( $current + 1 ) . '">&rsaquo;</a></li>';
+            echo '<li><a href="#" class="page-numbers next" data-page="' . esc_attr( $current + 1 ) . '">&rsaquo;</a></li>';
         }
 
         echo '</ul>';

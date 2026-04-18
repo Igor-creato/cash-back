@@ -403,7 +403,7 @@ class Cashback_Support_Admin {
             <tbody>
                 <?php if (!empty($tickets)) : ?>
                     <?php foreach ($tickets as $ticket) : ?>
-                        <tr<?php echo $ticket->unread_count > 0 ? ' style="font-weight: bold;"' : ''; ?>>
+                        <tr<?php echo $ticket->unread_count > 0 ? ' style="font-weight: bold;"' : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static HTML literal selected by ternary. ?>>
                             <td><?php echo esc_html(Cashback_Support_DB::format_ticket_number((int) $ticket->id)); ?></td>
                             <td>
                                 <?php echo esc_html($ticket->subject); ?>
@@ -484,7 +484,7 @@ class Cashback_Support_Admin {
             if ($pagination_links) {
                 echo '<div class="tablenav bottom">';
                 echo '<div class="tablenav-pages">';
-                echo '<span class="displaying-num">' . sprintf(_n('%s запись', '%s записей', $total_items, 'cashback-plugin'), number_format_i18n($total_items)) . '</span>';
+                echo '<span class="displaying-num">' . esc_html( sprintf( _n( '%s запись', '%s записей', $total_items, 'cashback-plugin' ), number_format_i18n( $total_items ) ) ) . '</span>';
                 echo '<span class="pagination-links">' . wp_kses_post($pagination_links) . '</span>';
                 echo '</div><br class="clear"></div>';
             }
@@ -681,7 +681,7 @@ class Cashback_Support_Admin {
             <?php foreach ($messages as $msg) : ?>
                 <?php
                 $msg_attachments = $attachments_map[ (int) $msg->id ] ?? array();
-                echo $this->render_message_html($msg, $msg_attachments);
+                echo $this->render_message_html($msg, $msg_attachments); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render_message_html() builds escaped HTML internally.
                 ?>
             <?php endforeach; ?>
         </div>
