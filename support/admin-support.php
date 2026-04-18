@@ -116,9 +116,9 @@ class Cashback_Support_Admin {
 
         // Определяем текущее действие
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin UI routing, allowlist-compared below.
-        $action    = sanitize_text_field(wp_unslash($_GET['action'] ?? ''));
+        $action    = isset($_GET['action']) && is_string($_GET['action']) ? sanitize_text_field(wp_unslash($_GET['action'])) : '';
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin UI routing, absint-cast.
-        $ticket_id = absint(wp_unslash($_GET['ticket_id'] ?? 0));
+        $ticket_id = isset($_GET['ticket_id']) ? absint(wp_unslash($_GET['ticket_id'])) : 0;
 
         if ($action === 'view' && $ticket_id > 0) {
             $this->render_ticket_view($ticket_id);
@@ -238,15 +238,15 @@ class Cashback_Support_Admin {
 
         // Фильтры
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, allowlist-validated below.
-        $filter_status   = sanitize_text_field(wp_unslash($_GET['filter_status'] ?? ''));
+        $filter_status   = isset($_GET['filter_status']) && is_string($_GET['filter_status']) ? sanitize_text_field(wp_unslash($_GET['filter_status'])) : '';
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, allowlist-validated below.
-        $filter_priority = sanitize_text_field(wp_unslash($_GET['filter_priority'] ?? ''));
+        $filter_priority = isset($_GET['filter_priority']) && is_string($_GET['filter_priority']) ? sanitize_text_field(wp_unslash($_GET['filter_priority'])) : '';
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, compared to literal '1'.
-        $filter_unread   = sanitize_text_field(wp_unslash($_GET['filter_unread'] ?? ''));
+        $filter_unread   = isset($_GET['filter_unread']) && is_string($_GET['filter_unread']) ? sanitize_text_field(wp_unslash($_GET['filter_unread'])) : '';
 
         // Пагинация
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination, absint-cast.
-        $current_page = max(1, absint(wp_unslash($_GET['paged'] ?? 1)));
+        $current_page = max(1, isset($_GET['paged']) ? absint(wp_unslash($_GET['paged'])) : 1);
         $per_page     = 10;
         $offset       = ( $current_page - 1 ) * $per_page;
 
@@ -877,7 +877,7 @@ class Cashback_Support_Admin {
             return;
         }
 
-        $enabled = absint( wp_unslash( $_POST['enabled'] ?? 0 ) ) === 1;
+        $enabled = ( isset( $_POST['enabled'] ) ? absint( wp_unslash( $_POST['enabled'] ) ) : 0 ) === 1;
         Cashback_Support_DB::set_module_enabled($enabled);
 
         if ($enabled) {
@@ -908,8 +908,8 @@ class Cashback_Support_Admin {
 
         global $wpdb;
 
-        $ticket_id = absint(wp_unslash($_POST['ticket_id'] ?? 0));
-        $message   = sanitize_textarea_field(wp_unslash($_POST['message'] ?? ''));
+        $ticket_id = isset($_POST['ticket_id']) ? absint(wp_unslash($_POST['ticket_id'])) : 0;
+        $message   = isset($_POST['message']) && is_string($_POST['message']) ? sanitize_textarea_field(wp_unslash($_POST['message'])) : '';
 
         if (!$ticket_id || empty($message)) {
             wp_send_json_error(array( 'message' => 'Заполните все поля.' ));
@@ -924,7 +924,7 @@ class Cashback_Support_Admin {
         // Ранняя проверка числа файлов — ДО любых изменений в БД
         $upload_errors    = array();
         $files_to_process = array();
-        if (Cashback_Support_DB::is_attachments_enabled() && !empty($_FILES['support_files']['name'][0])) {
+        if (Cashback_Support_DB::is_attachments_enabled() && isset($_FILES['support_files']['name']) && is_array($_FILES['support_files']['name']) && !empty($_FILES['support_files']['name'][0])) {
             $files_count = count($_FILES['support_files']['name']);
             $max_files   = Cashback_Support_DB::get_max_files_per_message();
 
@@ -934,13 +934,13 @@ class Cashback_Support_Admin {
             }
 
             for ($i = 0; $i < $files_count; $i++) {
-                if ($_FILES['support_files']['error'][ $i ] !== UPLOAD_ERR_NO_FILE) {
+                if (isset($_FILES['support_files']['error'][ $i ]) && (int) $_FILES['support_files']['error'][ $i ] !== UPLOAD_ERR_NO_FILE) {
                     $files_to_process[] = array(
-                        'name'     => sanitize_text_field(wp_unslash($_FILES['support_files']['name'][ $i ])),
-                        'type'     => sanitize_text_field(wp_unslash($_FILES['support_files']['type'][ $i ])),
-                        'tmp_name' => sanitize_text_field(wp_unslash($_FILES['support_files']['tmp_name'][ $i ])),
-                        'error'    => (int) $_FILES['support_files']['error'][ $i ],
-                        'size'     => (int) $_FILES['support_files']['size'][ $i ],
+                        'name'     => isset($_FILES['support_files']['name'][ $i ]) && is_string($_FILES['support_files']['name'][ $i ]) ? sanitize_text_field(wp_unslash($_FILES['support_files']['name'][ $i ])) : '',
+                        'type'     => isset($_FILES['support_files']['type'][ $i ]) && is_string($_FILES['support_files']['type'][ $i ]) ? sanitize_text_field(wp_unslash($_FILES['support_files']['type'][ $i ])) : '',
+                        'tmp_name' => isset($_FILES['support_files']['tmp_name'][ $i ]) && is_string($_FILES['support_files']['tmp_name'][ $i ]) ? sanitize_text_field(wp_unslash($_FILES['support_files']['tmp_name'][ $i ])) : '',
+                        'error'    => isset($_FILES['support_files']['error'][ $i ]) ? (int) $_FILES['support_files']['error'][ $i ] : UPLOAD_ERR_NO_FILE,
+                        'size'     => isset($_FILES['support_files']['size'][ $i ]) ? (int) $_FILES['support_files']['size'][ $i ] : 0,
                     );
                 }
             }
@@ -1060,8 +1060,8 @@ class Cashback_Support_Admin {
 
         global $wpdb;
 
-        $ticket_id  = absint(wp_unslash($_POST['ticket_id'] ?? 0));
-        $new_status = sanitize_text_field(wp_unslash($_POST['status'] ?? ''));
+        $ticket_id  = isset($_POST['ticket_id']) ? absint(wp_unslash($_POST['ticket_id'])) : 0;
+        $new_status = isset($_POST['status']) && is_string($_POST['status']) ? sanitize_text_field(wp_unslash($_POST['status'])) : '';
 
         if (!$ticket_id || !in_array($new_status, array( 'open', 'answered', 'closed' ), true)) {
             wp_send_json_error(array( 'message' => 'Некорректные данные.' ));
@@ -1185,10 +1185,10 @@ class Cashback_Support_Admin {
         }
 
         Cashback_Support_DB::save_attachment_settings(array(
-            'enabled'               => absint(wp_unslash($_POST['enabled'] ?? 0)),
-            'max_file_size'         => absint(wp_unslash($_POST['max_file_size'] ?? 5120)),
-            'max_files_per_message' => absint(wp_unslash($_POST['max_files_per_message'] ?? 3)),
-            'allowed_extensions'    => sanitize_text_field(wp_unslash($_POST['allowed_extensions'] ?? '')),
+            'enabled'               => isset($_POST['enabled']) ? absint(wp_unslash($_POST['enabled'])) : 0,
+            'max_file_size'         => isset($_POST['max_file_size']) ? absint(wp_unslash($_POST['max_file_size'])) : 5120,
+            'max_files_per_message' => isset($_POST['max_files_per_message']) ? absint(wp_unslash($_POST['max_files_per_message'])) : 3,
+            'allowed_extensions'    => isset($_POST['allowed_extensions']) && is_string($_POST['allowed_extensions']) ? sanitize_text_field(wp_unslash($_POST['allowed_extensions'])) : '',
         ));
 
         wp_send_json_success();
@@ -1206,7 +1206,7 @@ class Cashback_Support_Admin {
             wp_die('Недостаточно прав.', 'Ошибка', array( 'response' => 403 ));
         }
 
-        $attachment_id = absint(wp_unslash($_POST['id'] ?? 0));
+        $attachment_id = isset($_POST['id']) ? absint(wp_unslash($_POST['id'])) : 0;
         if (!$attachment_id) {
             wp_die('Не указан файл.', 'Ошибка', array( 'response' => 400 ));
         }
