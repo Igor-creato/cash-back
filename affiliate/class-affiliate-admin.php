@@ -12,8 +12,6 @@ if (!defined('ABSPATH')) {
 
 class Cashback_Affiliate_Admin {
 
-    use AdminPaginationTrait;
-
     const PER_PAGE          = 20;
     const LABEL_PAGE_TITLE  = 'Партнёрская программа';
     const MSG_NO_PERMISSION = 'Недостаточно прав.';
@@ -272,7 +270,7 @@ class Cashback_Affiliate_Admin {
         echo '</tbody></table>';
 
         // Pagination
-        $this->render_pagination(array(
+        Cashback_Admin_Pagination::render(array(
             'total_items'  => $total,
             'per_page'     => self::PER_PAGE,
             'current_page' => $current_page,
@@ -528,7 +526,7 @@ class Cashback_Affiliate_Admin {
 
         echo '</tbody></table>';
 
-        $this->render_pagination(array(
+        Cashback_Admin_Pagination::render(array(
             'total_items'  => $total,
             'per_page'     => $per_page,
             'current_page' => $current_page,

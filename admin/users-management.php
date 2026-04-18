@@ -14,8 +14,6 @@ if (!defined('ABSPATH')) {
 
 class Cashback_Users_Management_Admin {
 
-    use AdminPaginationTrait;
-
     private string $table_name;
     private string $profile_table_name;
 
@@ -313,7 +311,7 @@ class Cashback_Users_Management_Admin {
                 )),
             );
 
-            $this->render_pagination($pagination_args);
+            Cashback_Admin_Pagination::render($pagination_args);
             ?>
 
         </div>
@@ -962,7 +960,6 @@ class Cashback_Users_Management_Admin {
         }
     }
 
-    // render_pagination() предоставляется через AdminPaginationTrait
 }
 
 // Инициализируем класс

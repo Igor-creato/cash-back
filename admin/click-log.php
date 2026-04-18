@@ -17,8 +17,6 @@ if (!defined('ABSPATH')) {
  */
 class Cashback_Click_Log_Admin {
 
-    use AdminPaginationTrait;
-
     /**
      * Имя таблицы лога кликов
      *
@@ -323,7 +321,7 @@ class Cashback_Click_Log_Admin {
             </div>
 
             <?php
-            $this->render_pagination(array(
+            Cashback_Admin_Pagination::render(array(
                 'total_items'  => $total_items,
                 'per_page'     => $this->per_page,
                 'current_page' => $current_page,

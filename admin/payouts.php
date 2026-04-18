@@ -17,8 +17,6 @@ if (!defined('ABSPATH')) {
  */
 class Cashback_Payouts_Admin {
 
-    use AdminPaginationTrait;
-
     /**
      * Имя таблицы запросов на выплату
      *
@@ -514,7 +512,7 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
                 )),
             );
 
-            $this->render_pagination($pagination_args);
+            Cashback_Admin_Pagination::render($pagination_args);
             ?>
         </div>
 <?php
@@ -1700,7 +1698,6 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
         return $descriptions[ $status ] ?? $status;
     }
 
-    // render_pagination() предоставляется через AdminPaginationTrait
 
     /**
      * Логирование ошибок
