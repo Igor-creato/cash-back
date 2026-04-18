@@ -1525,7 +1525,7 @@ class Mariadb_Plugin {
                 }
 
                 $values_sql = implode(', ', $ledger_values);
-                // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $values_sql is static placeholder list built from a fixed literal '(%d, %s, %s, %d, %s)' repeated per candidate, args passed via prepare().
+                // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $values_sql is static placeholder list built from a fixed literal '(%d, %s, %s, %d, %s)' repeated per candidate, args passed via prepare(); sniff cannot count placeholders inside $values_sql/spread.
                 $ledger_result = $wpdb->query($wpdb->prepare(
                     "INSERT INTO %i
                          (user_id, type, amount, transaction_id, idempotency_key)
@@ -1534,7 +1534,7 @@ class Mariadb_Plugin {
                     $ledger_table,
                     ...$ledger_args
                 ));
-                // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+                // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
 
                 if ($ledger_result === false) {
                     throw new \RuntimeException('Step 2 (ledger INSERT) failed: ' . $wpdb->last_error);
@@ -1543,7 +1543,7 @@ class Mariadb_Plugin {
 
                 // ШАГ 3: Маркируем транзакции как обработанные
                 $id_placeholders = implode(',', array_fill(0, count($candidate_ids), '%d'));
-                // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $id_placeholders is '%d,%d,...' from array_fill(), ids passed as %d args via prepare().
+                // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $id_placeholders is '%d,%d,...' from array_fill(), ids passed as %d args via prepare(); sniff cannot count placeholders inside $id_placeholders/spread.
                 $step3 = $wpdb->query($wpdb->prepare(
                     "UPDATE %i
                      SET processed_at = NOW(), processed_batch_id = %s
@@ -1552,7 +1552,7 @@ class Mariadb_Plugin {
                     $batch_id,
                     ...$candidate_ids
                 ));
-                // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+                // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
 
                 if ($step3 === false) {
                     throw new \RuntimeException('Step 3 (mark processed) failed: ' . $wpdb->last_error);
@@ -2008,13 +2008,13 @@ class Mariadb_Plugin {
         $table        = $wpdb->prefix . 'cashback_user_profile';
         $placeholders = implode(',', array_fill(0, count($valid_tokens), '%s'));
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is '%s,%s,...' from array_fill(), tokens passed as %s args via prepare().
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is '%s,%s,...' from array_fill(), tokens passed as %s args via prepare(); sniff cannot count placeholders inside $placeholders/spread.
         $rows = $wpdb->get_results($wpdb->prepare(
             "SELECT partner_token, user_id FROM %i WHERE partner_token IN ({$placeholders})",
             $table,
             ...$valid_tokens
         ), ARRAY_A);
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
 
         $map = array();
         foreach ($rows as $row) {
