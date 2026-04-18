@@ -1060,6 +1060,7 @@ class WC_Affiliate_URL_Params {
 
         // Полностью standalone HTML — никаких wp_head()/wp_footer().
         // Тема и WooCommerce не могут ничего внедрить.
+        // phpcs:disable WordPress.Security.EscapeOutput.HeredocOutputNotEscaped -- all interpolated variables are pre-escaped above: $lang_attr (get_language_attributes), $activation_data/$charset (esc_attr), $favicon_html/$logo_html (built from esc_url+esc_attr), $text_* and $site_name/$store_name_esc (esc_html/esc_html__), $safe_redirect_url (esc_url), $safe_js_url (wp_json_encode for JS context).
         echo <<<HTML
 <!DOCTYPE html>
 <html {$lang_attr} data-cb-activation="{$activation_data}">
@@ -1254,6 +1255,7 @@ body{
 </body>
 </html>
 HTML;
+        // phpcs:enable WordPress.Security.EscapeOutput.HeredocOutputNotEscaped
         exit;
     }
 

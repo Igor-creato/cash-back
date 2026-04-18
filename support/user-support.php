@@ -203,8 +203,10 @@ class Cashback_User_Support {
         }
 
         // Предзаполнение привязки из query-параметров
-        $prefill_type   = sanitize_key(wp_unslash($_GET['related_type'] ?? '')); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only UI prefill, ownership validated below, no state change.
-        $prefill_id     = absint(wp_unslash($_GET['related_id'] ?? 0)); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only UI prefill, ownership validated below, no state change.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only UI prefill, ownership validated below, no state change.
+        $prefill_type   = isset($_GET['related_type']) && is_string($_GET['related_type']) ? sanitize_key(wp_unslash($_GET['related_type'])) : '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only UI prefill, ownership validated below, no state change.
+        $prefill_id     = isset($_GET['related_id']) ? absint(wp_unslash($_GET['related_id'])) : 0;
         $prefill_entity = null;
         if ($prefill_type !== '' && $prefill_id > 0
             && in_array($prefill_type, Cashback_Support_DB::get_allowed_related_types(), true)
@@ -523,14 +525,14 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
             return;
         }
 
-        $subject  = sanitize_text_field(wp_unslash($_POST['subject'] ?? ''));
-        $priority = sanitize_text_field(wp_unslash($_POST['priority'] ?? 'not_urgent'));
-        $message  = sanitize_textarea_field(wp_unslash($_POST['message'] ?? ''));
+        $subject  = isset($_POST['subject']) && is_string($_POST['subject']) ? sanitize_text_field(wp_unslash($_POST['subject'])) : '';
+        $priority = isset($_POST['priority']) && is_string($_POST['priority']) ? sanitize_text_field(wp_unslash($_POST['priority'])) : 'not_urgent';
+        $message  = isset($_POST['message']) && is_string($_POST['message']) ? sanitize_textarea_field(wp_unslash($_POST['message'])) : '';
 
         // Привязка тикета к сущности (покупка/начисление или партнёрская комиссия).
         // Значения приходят из скрытых полей формы или query-параметров.
-        $related_type_raw = sanitize_key(wp_unslash($_POST['related_type'] ?? ''));
-        $related_id       = absint(wp_unslash($_POST['related_id'] ?? 0));
+        $related_type_raw = isset($_POST['related_type']) && is_string($_POST['related_type']) ? sanitize_key(wp_unslash($_POST['related_type'])) : '';
+        $related_id       = isset($_POST['related_id']) ? absint(wp_unslash($_POST['related_id'])) : 0;
         $related_type     = null;
         $related_entity   = null;
 
@@ -636,7 +638,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
         $message_id = (int) $wpdb->insert_id;
 
         // Обработка вложений
-        if (Cashback_Support_DB::is_attachments_enabled() && !empty($_FILES['support_files']['name'][0])) {
+        if (Cashback_Support_DB::is_attachments_enabled() && isset($_FILES['support_files']['name']) && is_array($_FILES['support_files']['name']) && !empty($_FILES['support_files']['name'][0])) {
             $files_count = count($_FILES['support_files']['name']);
             $max_files   = Cashback_Support_DB::get_max_files_per_message();
 
@@ -648,16 +650,16 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
             }
 
             for ($i = 0; $i < $files_count; $i++) {
-                if ($_FILES['support_files']['error'][ $i ] === UPLOAD_ERR_NO_FILE) {
+                if (isset($_FILES['support_files']['error'][ $i ]) && (int) $_FILES['support_files']['error'][ $i ] === UPLOAD_ERR_NO_FILE) {
                     continue;
                 }
 
                 $single_file = array(
-                    'name'     => sanitize_text_field(wp_unslash($_FILES['support_files']['name'][ $i ])),
-                    'type'     => sanitize_text_field(wp_unslash($_FILES['support_files']['type'][ $i ])),
-                    'tmp_name' => sanitize_text_field(wp_unslash($_FILES['support_files']['tmp_name'][ $i ])),
-                    'error'    => (int) $_FILES['support_files']['error'][ $i ],
-                    'size'     => (int) $_FILES['support_files']['size'][ $i ],
+                    'name'     => isset($_FILES['support_files']['name'][ $i ]) && is_string($_FILES['support_files']['name'][ $i ]) ? sanitize_text_field(wp_unslash($_FILES['support_files']['name'][ $i ])) : '',
+                    'type'     => isset($_FILES['support_files']['type'][ $i ]) && is_string($_FILES['support_files']['type'][ $i ]) ? sanitize_text_field(wp_unslash($_FILES['support_files']['type'][ $i ])) : '',
+                    'tmp_name' => isset($_FILES['support_files']['tmp_name'][ $i ]) && is_string($_FILES['support_files']['tmp_name'][ $i ]) ? sanitize_text_field(wp_unslash($_FILES['support_files']['tmp_name'][ $i ])) : '',
+                    'error'    => isset($_FILES['support_files']['error'][ $i ]) ? (int) $_FILES['support_files']['error'][ $i ] : UPLOAD_ERR_NO_FILE,
+                    'size'     => isset($_FILES['support_files']['size'][ $i ]) ? (int) $_FILES['support_files']['size'][ $i ] : 0,
                 );
 
                 $result = Cashback_Support_DB::handle_file_upload($single_file, $ticket_id, $message_id, $user_id);
@@ -733,8 +735,8 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
             return;
         }
 
-        $ticket_id = absint(wp_unslash($_POST['ticket_id'] ?? 0));
-        $message   = sanitize_textarea_field(wp_unslash($_POST['message'] ?? ''));
+        $ticket_id = isset($_POST['ticket_id']) ? absint(wp_unslash($_POST['ticket_id'])) : 0;
+        $message   = isset($_POST['message']) && is_string($_POST['message']) ? sanitize_textarea_field(wp_unslash($_POST['message'])) : '';
 
         if (!$ticket_id || empty($message)) {
             wp_send_json_error(array( 'message' => 'Ошибка при отправке, попробуйте еще раз' ));
@@ -801,7 +803,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
             $message_id = (int) $wpdb->insert_id;
 
             // Обработка вложений
-            if (Cashback_Support_DB::is_attachments_enabled() && !empty($_FILES['support_files']['name'][0])) {
+            if (Cashback_Support_DB::is_attachments_enabled() && isset($_FILES['support_files']['name']) && is_array($_FILES['support_files']['name']) && !empty($_FILES['support_files']['name'][0])) {
                 $files_count = count($_FILES['support_files']['name']);
                 $max_files   = Cashback_Support_DB::get_max_files_per_message();
 
@@ -810,16 +812,16 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
                 }
 
                 for ($i = 0; $i < $files_count; $i++) {
-                    if ($_FILES['support_files']['error'][ $i ] === UPLOAD_ERR_NO_FILE) {
+                    if (isset($_FILES['support_files']['error'][ $i ]) && (int) $_FILES['support_files']['error'][ $i ] === UPLOAD_ERR_NO_FILE) {
                         continue;
                     }
 
                     $single_file = array(
-                        'name'     => sanitize_text_field(wp_unslash($_FILES['support_files']['name'][ $i ])),
-                        'type'     => sanitize_text_field(wp_unslash($_FILES['support_files']['type'][ $i ])),
-                        'tmp_name' => sanitize_text_field(wp_unslash($_FILES['support_files']['tmp_name'][ $i ])),
-                        'error'    => (int) $_FILES['support_files']['error'][ $i ],
-                        'size'     => (int) $_FILES['support_files']['size'][ $i ],
+                        'name'     => isset($_FILES['support_files']['name'][ $i ]) && is_string($_FILES['support_files']['name'][ $i ]) ? sanitize_text_field(wp_unslash($_FILES['support_files']['name'][ $i ])) : '',
+                        'type'     => isset($_FILES['support_files']['type'][ $i ]) && is_string($_FILES['support_files']['type'][ $i ]) ? sanitize_text_field(wp_unslash($_FILES['support_files']['type'][ $i ])) : '',
+                        'tmp_name' => isset($_FILES['support_files']['tmp_name'][ $i ]) && is_string($_FILES['support_files']['tmp_name'][ $i ]) ? sanitize_text_field(wp_unslash($_FILES['support_files']['tmp_name'][ $i ])) : '',
+                        'error'    => isset($_FILES['support_files']['error'][ $i ]) ? (int) $_FILES['support_files']['error'][ $i ] : UPLOAD_ERR_NO_FILE,
+                        'size'     => isset($_FILES['support_files']['size'][ $i ]) ? (int) $_FILES['support_files']['size'][ $i ] : 0,
                     );
 
                     $result = Cashback_Support_DB::handle_file_upload($single_file, (int) $ticket_id, $message_id, $user_id);
@@ -905,7 +907,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
             return;
         }
 
-        $ticket_id = absint(wp_unslash($_POST['ticket_id'] ?? 0));
+        $ticket_id = isset($_POST['ticket_id']) ? absint(wp_unslash($_POST['ticket_id'])) : 0;
 
         if (!$ticket_id) {
             wp_send_json_error(array( 'message' => 'Ошибка при выполнении, попробуйте еще раз' ));
@@ -971,7 +973,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
 
         global $wpdb;
 
-        $ticket_id = absint(wp_unslash($_POST['ticket_id'] ?? 0));
+        $ticket_id = isset($_POST['ticket_id']) ? absint(wp_unslash($_POST['ticket_id'])) : 0;
 
         if (!$ticket_id) {
             wp_send_json_error(array( 'message' => 'Ошибка загрузки' ));
@@ -1235,7 +1237,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
             wp_die('Требуется авторизация.', 'Ошибка', array( 'response' => 403 ));
         }
 
-        $attachment_id = absint(wp_unslash($_POST['id'] ?? 0));
+        $attachment_id = isset($_POST['id']) ? absint(wp_unslash($_POST['id'])) : 0;
         if (!$attachment_id) {
             wp_die('Не указан файл.', 'Ошибка', array( 'response' => 400 ));
         }

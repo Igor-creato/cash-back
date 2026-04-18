@@ -181,7 +181,7 @@ class Cashback_Partner_Management_Admin {
         // Выводим сообщения об ошибках или успехе
         $message = '';
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin notice, allowlist-compared below.
-        if (isset($_GET['message'])) {
+        if (isset($_GET['message']) && is_string($_GET['message'])) {
             // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin notice, allowlist-compared below.
             $msg_type = sanitize_text_field(wp_unslash($_GET['message']));
             if ($msg_type === 'added') {
@@ -422,7 +422,8 @@ class Cashback_Partner_Management_Admin {
      */
     public function handle_update_partner(): void {
         // Проверяем nonce
-        if (!wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'update_partner_nonce')) {
+        $nonce = isset($_POST['nonce']) && is_string($_POST['nonce']) ? sanitize_text_field(wp_unslash($_POST['nonce'])) : '';
+        if (!wp_verify_nonce($nonce, 'update_partner_nonce')) {
             wp_send_json_error(array( 'message' => 'Неверный токен безопасности.' ));
             return;
         }
@@ -435,12 +436,12 @@ class Cashback_Partner_Management_Admin {
 
         global $wpdb;
 
-        $id         = intval($_POST['id']);
-        $name       = sanitize_text_field(wp_unslash($_POST['name']));
-        $slug       = sanitize_title(wp_unslash($_POST['slug']));
-        $notes      = isset($_POST['notes']) ? sanitize_textarea_field(wp_unslash($_POST['notes'])) : '';
-        $sort_order = intval($_POST['sort_order']);
-        $is_active  = intval($_POST['is_active']);
+        $id         = isset($_POST['id']) ? intval($_POST['id']) : 0;
+        $name       = isset($_POST['name']) && is_string($_POST['name']) ? sanitize_text_field(wp_unslash($_POST['name'])) : '';
+        $slug       = isset($_POST['slug']) && is_string($_POST['slug']) ? sanitize_title(wp_unslash($_POST['slug'])) : '';
+        $notes      = isset($_POST['notes']) && is_string($_POST['notes']) ? sanitize_textarea_field(wp_unslash($_POST['notes'])) : '';
+        $sort_order = isset($_POST['sort_order']) ? intval($_POST['sort_order']) : 0;
+        $is_active  = isset($_POST['is_active']) ? intval($_POST['is_active']) : 0;
 
         // Валидация данных
         if (empty($name) || empty($slug)) {
@@ -496,7 +497,8 @@ class Cashback_Partner_Management_Admin {
      */
     public function handle_add_partner(): void {
         // Проверяем nonce
-        if (!wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'add_partner_nonce')) {
+        $nonce = isset($_POST['nonce']) && is_string($_POST['nonce']) ? sanitize_text_field(wp_unslash($_POST['nonce'])) : '';
+        if (!wp_verify_nonce($nonce, 'add_partner_nonce')) {
             wp_send_json_error(array( 'message' => 'Неверный токен безопасности.' ));
             return;
         }
@@ -509,11 +511,11 @@ class Cashback_Partner_Management_Admin {
 
         global $wpdb;
 
-        $name       = sanitize_text_field(wp_unslash($_POST['name']));
-        $slug       = sanitize_title(wp_unslash($_POST['slug']));
-        $notes      = isset($_POST['notes']) ? sanitize_textarea_field(wp_unslash($_POST['notes'])) : '';
-        $sort_order = intval($_POST['sort_order']);
-        $is_active  = intval($_POST['is_active']);
+        $name       = isset($_POST['name']) && is_string($_POST['name']) ? sanitize_text_field(wp_unslash($_POST['name'])) : '';
+        $slug       = isset($_POST['slug']) && is_string($_POST['slug']) ? sanitize_title(wp_unslash($_POST['slug'])) : '';
+        $notes      = isset($_POST['notes']) && is_string($_POST['notes']) ? sanitize_textarea_field(wp_unslash($_POST['notes'])) : '';
+        $sort_order = isset($_POST['sort_order']) ? intval($_POST['sort_order']) : 0;
+        $is_active  = isset($_POST['is_active']) ? intval($_POST['is_active']) : 0;
 
         // Валидация данных
         if (empty($name) || empty($slug)) {
@@ -561,7 +563,8 @@ class Cashback_Partner_Management_Admin {
      * Получение параметров партнерской сети
      */
     public function handle_get_network_params(): void {
-        if (!wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'get_network_params_nonce')) {
+        $nonce = isset($_POST['nonce']) && is_string($_POST['nonce']) ? sanitize_text_field(wp_unslash($_POST['nonce'])) : '';
+        if (!wp_verify_nonce($nonce, 'get_network_params_nonce')) {
             wp_send_json_error(array( 'message' => 'Неверный токен безопасности.' ));
             return;
         }
@@ -573,7 +576,7 @@ class Cashback_Partner_Management_Admin {
 
         global $wpdb;
 
-        $network_id = intval($_POST['network_id']);
+        $network_id = isset($_POST['network_id']) ? intval($_POST['network_id']) : 0;
 
         $params = $wpdb->get_results(
             $wpdb->prepare(
@@ -591,7 +594,8 @@ class Cashback_Partner_Management_Admin {
      * Сохранение параметров партнерской сети
      */
     public function handle_save_network_params(): void {
-        if (!wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'save_network_params_nonce')) {
+        $nonce = isset($_POST['nonce']) && is_string($_POST['nonce']) ? sanitize_text_field(wp_unslash($_POST['nonce'])) : '';
+        if (!wp_verify_nonce($nonce, 'save_network_params_nonce')) {
             wp_send_json_error(array( 'message' => 'Неверный токен безопасности.' ));
             return;
         }
@@ -603,7 +607,7 @@ class Cashback_Partner_Management_Admin {
 
         global $wpdb;
 
-        $network_id = intval($_POST['network_id']);
+        $network_id = isset($_POST['network_id']) ? intval($_POST['network_id']) : 0;
 
         if ($network_id <= 0) {
             wp_send_json_error(array( 'message' => 'Выберите партнерскую сеть.' ));
@@ -713,7 +717,8 @@ class Cashback_Partner_Management_Admin {
      * Удаление одного параметра партнерской сети
      */
     public function handle_delete_network_param(): void {
-        if (!wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'delete_network_param_nonce')) {
+        $nonce = isset($_POST['nonce']) && is_string($_POST['nonce']) ? sanitize_text_field(wp_unslash($_POST['nonce'])) : '';
+        if (!wp_verify_nonce($nonce, 'delete_network_param_nonce')) {
             wp_send_json_error(array( 'message' => 'Неверный токен безопасности.' ));
             return;
         }
@@ -725,7 +730,7 @@ class Cashback_Partner_Management_Admin {
 
         global $wpdb;
 
-        $param_id = intval($_POST['param_id']);
+        $param_id = isset($_POST['param_id']) ? intval($_POST['param_id']) : 0;
 
         $result = $wpdb->delete($this->params_table, array( 'id' => $param_id ), array( '%d' ));
 
@@ -814,7 +819,8 @@ class Cashback_Partner_Management_Admin {
      * Обновление одного параметра партнерской сети
      */
     public function handle_update_network_param(): void {
-        if (!wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'update_network_param_nonce')) {
+        $nonce = isset($_POST['nonce']) && is_string($_POST['nonce']) ? sanitize_text_field(wp_unslash($_POST['nonce'])) : '';
+        if (!wp_verify_nonce($nonce, 'update_network_param_nonce')) {
             wp_send_json_error(array( 'message' => 'Неверный токен безопасности.' ));
             return;
         }
@@ -826,9 +832,9 @@ class Cashback_Partner_Management_Admin {
 
         global $wpdb;
 
-        $param_id   = intval($_POST['param_id']);
-        $param_name = sanitize_text_field(wp_unslash($_POST['param_name']));
-        $param_type = isset($_POST['param_type']) ? sanitize_text_field(wp_unslash($_POST['param_type'])) : '';
+        $param_id   = isset($_POST['param_id']) ? intval($_POST['param_id']) : 0;
+        $param_name = isset($_POST['param_name']) && is_string($_POST['param_name']) ? sanitize_text_field(wp_unslash($_POST['param_name'])) : '';
+        $param_type = isset($_POST['param_type']) && is_string($_POST['param_type']) ? sanitize_text_field(wp_unslash($_POST['param_type'])) : '';
 
         if (empty($param_name)) {
             wp_send_json_error(array( 'message' => 'Название параметра обязательно.' ));
