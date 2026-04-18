@@ -44,8 +44,8 @@ class Cashback_Transactions_Admin {
             'admin_page_cashback-transactions',
         );
 
-        $is_target_page = in_array($hook, $allowed_hooks, true) ||
-            ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-transactions' );
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin page-detect, literal compare.
+        $is_target_page = in_array($hook, $allowed_hooks, true) || ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-transactions' );
 
         if (!$is_target_page) {
             return;
@@ -81,6 +81,7 @@ class Cashback_Transactions_Admin {
         global $wpdb;
 
         // Tab
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin UI tab selector, allowlist-validated below.
         $current_tab = isset($_GET['tab']) ? sanitize_text_field(wp_unslash($_GET['tab'])) : 'registered';
         if (!in_array($current_tab, array( 'registered', 'unregistered' ), true)) {
             $current_tab = 'registered';
@@ -89,8 +90,11 @@ class Cashback_Transactions_Admin {
         $table_name = ( $current_tab === 'registered' ) ? $this->registered_table : $this->unregistered_table;
 
         // Filters
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, allowlist-validated below.
         $filter_status  = isset($_GET['status']) ? sanitize_text_field(wp_unslash($_GET['status'])) : '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, validated against DB allowlist below.
         $filter_partner = isset($_GET['partner']) ? sanitize_text_field(wp_unslash($_GET['partner'])) : '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing search, sanitized.
         $search_query   = isset($_GET['search']) ? sanitize_text_field(wp_unslash($_GET['search'])) : '';
 
         $allowed_statuses = array( 'waiting', 'completed', 'declined', 'hold', 'balance' );
@@ -111,6 +115,7 @@ class Cashback_Transactions_Admin {
 
         // Pagination (с ограничением верхней границы для защиты от DoS)
         $max_allowed_pages = 5000;
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination, absint + capped.
         $current_page      = max(1, min(absint($_GET['paged'] ?? 1), $max_allowed_pages));
         $offset            = ( $current_page - 1 ) * $this->per_page;
 

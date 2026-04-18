@@ -53,9 +53,8 @@ class Cashback_Bot_Protection {
             return;
         }
 
-        $action = isset($_REQUEST['action'])
-            ? sanitize_text_field(wp_unslash($_REQUEST['action']))
-            : '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Routing-only read in AJAX guard; nonce verified by individual action handlers.
+        $action = isset($_REQUEST['action']) ? sanitize_text_field(wp_unslash($_REQUEST['action'])) : '';
 
         // Только действия нашего плагина
         if (!Cashback_Rate_Limiter::is_plugin_action($action)) {

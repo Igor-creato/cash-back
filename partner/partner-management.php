@@ -47,8 +47,8 @@ class Cashback_Partner_Management_Admin {
             'admin_page_cashback-partners',
         );
 
-        $is_partners_page = in_array($hook, $allowed_hooks, true) ||
-            ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-partners' );
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin page-detect, literal compare.
+        $is_partners_page = in_array($hook, $allowed_hooks, true) || ( isset($_GET['page']) && sanitize_text_field(wp_unslash($_GET['page'])) === 'cashback-partners' );
 
         if (!$is_partners_page) {
             return;
@@ -98,15 +98,18 @@ class Cashback_Partner_Management_Admin {
         global $wpdb;
 
         // Поисковый запрос
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing search, sanitized + used via wpdb->esc_like.
         $search_query = isset($_GET['partner_search']) ? sanitize_text_field(wp_unslash($_GET['partner_search'])) : '';
         $is_search    = !empty($search_query);
 
         // Фильтр по статусу is_active
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, allowlist-compared below.
         $filter_status = isset($_GET['filter_status']) ? sanitize_text_field(wp_unslash($_GET['filter_status'])) : '';
         $is_filtered   = ( $filter_status !== '' && $filter_status !== 'all' );
 
         // Пагинация: настройки
         $per_page     = 10;
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination, intval-cast.
         $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
         $offset       = ( $current_page - 1 ) * $per_page;
 
@@ -177,7 +180,9 @@ class Cashback_Partner_Management_Admin {
 
         // Выводим сообщения об ошибках или успехе
         $message = '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin notice, allowlist-compared below.
         if (isset($_GET['message'])) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin notice, allowlist-compared below.
             $msg_type = sanitize_text_field(wp_unslash($_GET['message']));
             if ($msg_type === 'added') {
                 $message = '<div class="notice notice-success is-dismissible"><p>Партнер успешно добавлен.</p></div>';
@@ -187,6 +192,7 @@ class Cashback_Partner_Management_Admin {
         }
 
         // Определяем активную вкладку
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin UI tab selector, allowlist-validated below.
         $active_tab = isset($_GET['tab']) ? sanitize_text_field(wp_unslash($_GET['tab'])) : 'partners';
         if (!in_array($active_tab, array( 'partners', 'params' ), true)) {
             $active_tab = 'partners';
