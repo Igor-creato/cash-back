@@ -296,7 +296,7 @@ class CashbackHistory {
 
         $this->apply_filters($where, $params, $filters);
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where from allowlist conditions with %s/%d placeholders.
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where from allowlist conditions with %s/%d placeholders; array_merge hides actual argument count from sniff.
         $results = $wpdb->get_results( $wpdb->prepare(
             "SELECT id, reference_id, action_date, created_at, offer_name, order_number, cashback, order_status
              FROM %i
@@ -305,7 +305,7 @@ class CashbackHistory {
              LIMIT %d OFFSET %d",
             array_merge( array( $table_name ), $params, array( $limit, $offset ) )
         ) );
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
         return $results;
     }
 

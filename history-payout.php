@@ -255,7 +255,7 @@ class HistoryPayout {
 
         $this->apply_payout_filters($where, $params, $filters);
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where from allowlisted conditions with %s/%d placeholders.
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where from allowlisted conditions with %s/%d placeholders; array_merge hides actual argument count from sniff.
         return $wpdb->get_results($wpdb->prepare(
             "SELECT id, reference_id, created_at, total_amount, payout_method, payout_account, masked_details, provider, status
              FROM %i
@@ -264,7 +264,7 @@ class HistoryPayout {
              LIMIT %d OFFSET %d",
             array_merge( array( $table_name ), $params, array( $limit, $offset ) )
         ));
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
     }
 
     private function get_total_payouts( $user_id, array $filters = array() ) {
