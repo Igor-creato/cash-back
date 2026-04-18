@@ -86,7 +86,7 @@ class Cashback_Affiliate_Service {
         $click_id = cashback_generate_uuid7(false);
         $ip       = class_exists('Cashback_Encryption')
             ? Cashback_Encryption::get_client_ip()
-            : ( $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0' );
+            : ( isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '0.0.0.0' );
 
         // Логирование клика
         $this->log_click($click_id, $referrer_id, $ip);
@@ -155,7 +155,9 @@ class Cashback_Affiliate_Service {
             return null;
         }
 
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- HMAC-signed JSON payload, byte-exact verification required before sanitation would corrupt signature; per-field validation follows json_decode().
         $payload   = wp_unslash($_COOKIE[ self::COOKIE_NAME ]);
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- HMAC signature value, hash_equals-compared as-is; sanitation would alter bytes.
         $signature = wp_unslash($_COOKIE[ self::COOKIE_SIG_NAME ]);
 
         // Верификация HMAC
@@ -305,7 +307,7 @@ class Cashback_Affiliate_Service {
             ? esc_url_raw(wp_unslash($_SERVER['HTTP_REFERER']))
             : null;
         $landing_url = isset($_SERVER['REQUEST_URI'])
-            ? esc_url_raw(home_url(wp_unslash($_SERVER['REQUEST_URI'])))
+            ? esc_url_raw( home_url( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) ) )
             : null;
 
         $wpdb->insert(
@@ -337,7 +339,7 @@ class Cashback_Affiliate_Service {
 
         $ip = class_exists('Cashback_Encryption')
             ? Cashback_Encryption::get_client_ip()
-            : ( $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0' );
+            : ( isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '0.0.0.0' );
 
         // Приоритет: cookie → серверный transient (fallback по IP)
         $cookie = self::read_referral_cookie();

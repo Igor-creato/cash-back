@@ -66,8 +66,8 @@ class Cashback_Claims_Manager {
             'comment'     => $data['comment'] ?? '',
         ));
 
-        $ip = class_exists('Cashback_Encryption') ? Cashback_Encryption::get_client_ip() : ( $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0' );
-        $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        $ip = class_exists('Cashback_Encryption') ? Cashback_Encryption::get_client_ip() : ( isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '0.0.0.0' );
+        $ua = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '';
 
         $insert_data = array(
             'user_id'           => $user_id,

@@ -231,7 +231,7 @@ class Cashback_REST_API {
      * обходить nonce-проверку WordPress.
      */
     private function is_extension_origin(): bool {
-        $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+        $origin = isset($_SERVER['HTTP_ORIGIN']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_ORIGIN'])) : '';
 
         // Расширения Chrome и Firefox
         if (
@@ -245,7 +245,7 @@ class Cashback_REST_API {
         // Проверяем кастомный заголовок, который обычные сайты не могут подделать
         // в cross-origin запросе (CORS preflight заблокирует нестандартный заголовок).
         if (empty($origin)) {
-            $extension_header = $_SERVER['HTTP_X_CASHBACK_EXTENSION'] ?? '';
+            $extension_header = isset($_SERVER['HTTP_X_CASHBACK_EXTENSION']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_X_CASHBACK_EXTENSION'])) : '';
             if ('1' === $extension_header) {
                 return true;
             }
@@ -953,7 +953,7 @@ HTML;
      * Проверка, что текущий запрос направлен к REST-маршрутам cashback/v1.
      */
     private function is_cashback_rest_request(): bool {
-        $request_uri = $_SERVER['REQUEST_URI'] ?? '';
+        $request_uri = isset($_SERVER['REQUEST_URI']) ? esc_url_raw(wp_unslash($_SERVER['REQUEST_URI'])) : '';
         $rest_prefix = rest_get_url_prefix();
 
         if (false !== strpos($request_uri, '/' . $rest_prefix . '/' . self::NAMESPACE)) {
