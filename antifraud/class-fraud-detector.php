@@ -67,12 +67,14 @@ class Cashback_Fraud_Detector {
              FROM %i
              WHERE created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
                AND ip_address NOT IN ('127.0.0.1', '::1', '0.0.0.0')
-               AND ip_address NOT LIKE '10.%'
-               AND ip_address NOT LIKE '192.168.%'
+               AND ip_address NOT LIKE %s
+               AND ip_address NOT LIKE %s
                AND ip_address NOT BETWEEN '172.16.0.0' AND '172.31.255.255'
              GROUP BY ip_address
              HAVING user_count > %d",
             $fp_table,
+            '10.%',
+            '192.168.%',
             $threshold
         ));
 
@@ -793,7 +795,7 @@ class Cashback_Fraud_Detector {
         $table        = $wpdb->prefix . 'cashback_fraud_alerts';
         $placeholders = implode(',', array_fill(0, count($alert_ids), '%d'));
 
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders — строка из array_fill(count($alert_ids), '%d'); таблицы через %i, значения через prepare().
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders — строка из array_fill(count($alert_ids), '%d'); таблицы через %i, значения через prepare(); sniff не видит %d внутри $placeholders.
         $alerts = $wpdb->get_results($wpdb->prepare( "SELECT a.*, u.user_login, u.user_email FROM %i a LEFT JOIN %i u ON a.user_id = u.ID WHERE a.id IN ({$placeholders})", $table, $wpdb->users, ...$alert_ids ));
 
         if (empty($alerts)) {

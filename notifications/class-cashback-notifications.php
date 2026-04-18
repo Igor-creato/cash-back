@@ -814,12 +814,8 @@ ID заявки: %4$d
         // Помечаем обработанными
         if (!empty($processed_ids)) {
             $placeholders = implode(',', array_fill(0, count($processed_ids), '%d'));
-            $wpdb->query($wpdb->prepare(
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders is a '%d'-list of fixed length, IDs bound via $wpdb->prepare().
-                "UPDATE %i SET processed = 1 WHERE id IN ({$placeholders})",
-                $queue_table,
-                ...$processed_ids
-            ));
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is a '%d'-list of fixed length, IDs bound via $wpdb->prepare(); sniff can't see %d inside $placeholders.
+            $wpdb->query( $wpdb->prepare( "UPDATE %i SET processed = 1 WHERE id IN ({$placeholders})", $queue_table, ...$processed_ids ) );
         }
 
         // Очистка старых записей (старше 7 дней)

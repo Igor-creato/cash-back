@@ -124,12 +124,12 @@ function cashback_plugin_uninstall(): void {
 
     // Drop triggers
     foreach ($triggers as $trigger) {
-        $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS `%i`', $trigger));
+        $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS %i', $trigger));
     }
 
     // Drop events
     foreach ($events as $event) {
-        $wpdb->query($wpdb->prepare('DROP EVENT IF EXISTS `%i`', $event));
+        $wpdb->query($wpdb->prepare('DROP EVENT IF EXISTS %i', $event));
     }
 
     // Удаление файлов вложений поддержки
@@ -152,7 +152,7 @@ function cashback_plugin_uninstall(): void {
 
     // Drop tables (in reverse order to respect foreign keys)
     foreach (array_reverse($tables) as $table) {
-        $wpdb->query($wpdb->prepare('DROP TABLE IF EXISTS `%i`', $table));
+        $wpdb->query($wpdb->prepare('DROP TABLE IF EXISTS %i', $table));
     }
 
     // Delete plugin options
@@ -280,7 +280,7 @@ function cashback_plugin_uninstall(): void {
         $values[]      = $wpdb->esc_like('_transient_' . $p) . '%';
         $values[]      = $wpdb->esc_like('_transient_timeout_' . $p) . '%';
     }
-    // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $where_parts is static 'option_name LIKE %s' clauses; values bound via $wpdb->prepare().
+    // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- $where_parts is static 'option_name LIKE %s' clauses; values bound via $wpdb->prepare(); sniff can't see %s inside concatenated $where_parts.
     $wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE " . implode( ' OR ', $where_parts ), ...$values ) );
 
     // Delete campaign status options (cashback_campaign_status_*)

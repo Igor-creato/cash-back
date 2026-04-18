@@ -148,7 +148,7 @@ class Cashback_Users_Management_Admin {
             array( $this->table_name, $this->profile_table_name ),
             $where_params
         );
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_sql из allowlist условий с %s/%d; таблицы через %i.
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql из allowlist условий с %s/%d; таблицы через %i; sniff не считает spread-args.
         $total_users = $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i u LEFT JOIN %i cup ON u.ID = cup.user_id {$where_sql}", ...$count_params ) );
 
         // Получаем пользователей с профилями.
@@ -157,7 +157,7 @@ class Cashback_Users_Management_Admin {
             $where_params,
             array( $per_page, $offset )
         );
-        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_sql из allowlist условий с %s/%d; таблицы через %i.
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql из allowlist условий с %s/%d; таблицы через %i; sniff не считает spread-args.
         $users = $wpdb->get_results( $wpdb->prepare( "SELECT u.ID, u.display_name, u.user_email, cup.cashback_rate, cup.min_payout_amount, cup.status, cup.ban_reason, cup.banned_at FROM %i u LEFT JOIN %i cup ON u.ID = cup.user_id {$where_sql} ORDER BY u.ID ASC LIMIT %d OFFSET %d", ...$select_params ), 'ARRAY_A' );
 
         // Определяем все доступные статусы для фильтра

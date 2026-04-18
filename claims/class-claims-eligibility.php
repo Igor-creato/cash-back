@@ -140,36 +140,11 @@ class Cashback_Claims_Eligibility {
                    AND c.status IN ('draft', 'submitted', 'sent_to_network', 'approved')
                )";
 
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $eligible_where is a static SQL fragment with %d/%s/%i placeholders, values bound via $wpdb->prepare().
-        $clicks = $wpdb->get_results( $wpdb->prepare(
-            "SELECT cl.click_id, cl.product_id, cl.created_at, cl.cpa_network, cl.offer_id,
-                    cl.ip_address, cl.user_agent
-             FROM %i cl
-             WHERE {$eligible_where}
-             ORDER BY cl.created_at DESC
-             LIMIT %d OFFSET %d",
-            $click_log_table,
-            $user_id,
-            $cutoff_min,
-            $cutoff_max,
-            $tx_table,
-            $claims_table,
-            $per_page,
-            $offset
-        ), ARRAY_A );
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $eligible_where is a static SQL fragment with %d/%s/%i placeholders, values bound via $wpdb->prepare(); sniff can't see placeholders inside $eligible_where.
+        $clicks = $wpdb->get_results( $wpdb->prepare( "SELECT cl.click_id, cl.product_id, cl.created_at, cl.cpa_network, cl.offer_id, cl.ip_address, cl.user_agent FROM %i cl WHERE {$eligible_where} ORDER BY cl.created_at DESC LIMIT %d OFFSET %d", $click_log_table, $user_id, $cutoff_min, $cutoff_max, $tx_table, $claims_table, $per_page, $offset ), ARRAY_A );
 
-        $total = (int) $wpdb->get_var( $wpdb->prepare(
-            "SELECT COUNT(*)
-             FROM %i cl
-             WHERE {$eligible_where}",
-            $click_log_table,
-            $user_id,
-            $cutoff_min,
-            $cutoff_max,
-            $tx_table,
-            $claims_table
-        ) );
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $eligible_where is a static SQL fragment with %d/%s/%i placeholders, values bound via $wpdb->prepare(); sniff can't see placeholders inside $eligible_where.
+        $total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i cl WHERE {$eligible_where}", $click_log_table, $user_id, $cutoff_min, $cutoff_max, $tx_table, $claims_table ) );
 
         $pages = (int) ceil($total / $per_page);
 

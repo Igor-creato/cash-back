@@ -143,14 +143,8 @@ class Cashback_Transactions_Admin {
 
         // Count
         if (!empty($where_params)) {
-            $total_items = (int) $wpdb->get_var(
-                $wpdb->prepare(
-                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where_clause из allowlist условий (order_status/partner/LIKE) с %s; значения биндятся ниже.
-                    "SELECT COUNT(*) FROM %i{$where_clause}",
-                    $table_name,
-                    ...$where_params
-                )
-            );
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_clause из allowlist (order_status/partner/LIKE) с %s; sniff не считает spread-args.
+            $total_items = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i{$where_clause}", $table_name, ...$where_params ) );
         } else {
             $total_items = (int) $wpdb->get_var(
                 $wpdb->prepare(

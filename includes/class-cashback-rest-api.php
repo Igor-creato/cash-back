@@ -646,12 +646,8 @@ class Cashback_REST_API {
         $placeholders = implode(',', array_fill(0, count($product_ids), '%d'));
         $query_args   = array_merge(array( $click_log_table, $user_id ), array_map('intval', $product_ids), array( $threshold ));
 
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
-        $click = $wpdb->get_row($wpdb->prepare(
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $placeholders — array_fill '%d'; таблица через %i.
-            "SELECT click_id, created_at FROM %i WHERE user_id = %d AND product_id IN ({$placeholders}) AND created_at >= %s ORDER BY created_at DESC LIMIT 1",
-            ...$query_args
-        ), ARRAY_A);
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- Custom plugin table; $placeholders — array_fill '%d'; таблица через %i; sniff не видит %d внутри $placeholders.
+        $click = $wpdb->get_row( $wpdb->prepare( "SELECT click_id, created_at FROM %i WHERE user_id = %d AND product_id IN ({$placeholders}) AND created_at >= %s ORDER BY created_at DESC LIMIT 1", ...$query_args ), ARRAY_A );
 
         if ($click) {
             $activated_at = $click['created_at'];
