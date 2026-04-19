@@ -259,7 +259,15 @@ class Cashback_Social_Admin {
             </tr>
             <tr>
                 <th scope="row">
-                    <label for="<?php echo esc_attr($opt_name); ?>_client_secret">Client Secret</label>
+                    <label for="<?php echo esc_attr($opt_name); ?>_client_secret">
+                        <?php
+                        if ('vkid' === $pid) {
+                            esc_html_e('Client Secret (необязательно)', 'cashback-plugin');
+                        } else {
+                            echo esc_html__('Client Secret', 'cashback-plugin');
+                        }
+                        ?>
+                    </label>
                 </th>
                 <td>
                     <input type="password"
@@ -277,6 +285,10 @@ class Cashback_Social_Admin {
                             esc_html_e('Секрет будет зашифрован AES-256-GCM перед сохранением.', 'cashback-plugin');
                         }
                         ?>
+                        <?php if ('vkid' === $pid) : ?>
+                            <br>
+                            <?php esc_html_e('VK ID использует PKCE; client_secret не обязателен, если приложение сконфигурировано как public client.', 'cashback-plugin'); ?>
+                        <?php endif; ?>
                     </p>
                 </td>
             </tr>
