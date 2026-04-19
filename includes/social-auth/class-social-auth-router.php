@@ -355,8 +355,8 @@ class Cashback_Social_Auth_Router {
         }
 
         Cashback_Social_Auth_Audit::log('callback_step', array(
-            'provider' => $provider_id,
-            'step'     => 'after_exchange_ok',
+            'provider'  => $provider_id,
+            'step'      => 'after_exchange_ok',
             'has_email' => !empty($profile['email']),
         ));
 
