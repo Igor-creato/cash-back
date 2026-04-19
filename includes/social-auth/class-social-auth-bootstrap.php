@@ -48,6 +48,7 @@ class Cashback_Social_Auth_Bootstrap {
             $base . 'providers/class-social-provider-yandex.php',
             $base . 'providers/class-social-provider-vkid.php',
             $base . 'class-social-auth-providers.php',
+            $base . 'class-social-auth-emails.php',
             $base . 'class-social-auth-account-manager.php',
             $base . 'class-social-auth-renderer.php',
             $base . 'class-social-auth-my-account.php',

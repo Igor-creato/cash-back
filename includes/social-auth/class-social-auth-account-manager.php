@@ -524,6 +524,10 @@ class Cashback_Social_Auth_Account_Manager {
             'link_id'  => $link_id,
             'context'  => 'account_link',
         ));
+
+        // Security-уведомление о новой привязке (не спамим: только при создании).
+        $this->send_account_linked_notice($current_user_id, $provider_id, $ip, $user_agent);
+
         Cashback_Social_Auth_Session::clear($provider_id);
 
         return array(
@@ -752,6 +756,9 @@ class Cashback_Social_Auth_Account_Manager {
             'user_id' => $user_id,
         ));
 
+        // Security-уведомление: новая связка через email-подтверждение.
+        $this->send_account_linked_notice($user_id, $provider_id, $ip, $user_agent);
+
         return array(
             'action'       => 'login',
             'redirect_url' => $redirect_after,
@@ -873,61 +880,55 @@ class Cashback_Social_Auth_Account_Manager {
 
     /**
      * Отправить письмо «подтвердите привязку» (ветка B).
+     *
+     * Делегирует Cashback_Social_Auth_Emails (брендированная шапка + кнопка в
+     * цвет активной темы + футер с поддержкой).
      */
     private function send_confirm_link_email( WP_User $user, string $provider_id, string $token ): void {
-        $confirm_url = add_query_arg('token', $token, rest_url('cashback/v1/social/confirm'));
-        $subject     = __('Подтвердите привязку соцсети', 'cashback-plugin');
-
-        $label = $this->provider_label($provider_id);
-
-        $body = sprintf(
-            /* translators: 1: provider label, 2: user email, 3: confirm link URL */
-            __('Здравствуйте!<br><br>Вы запросили вход через %1$s для аккаунта <strong>%2$s</strong>.<br><br>Подтвердите привязку, перейдя по ссылке:<br><a href="%3$s">%3$s</a><br><br>Ссылка действительна 15 минут. Если вы не запрашивали вход — просто проигнорируйте это письмо.', 'cashback-plugin'),
-            esc_html($label),
-            esc_html($user->user_email),
-            esc_url($confirm_url)
-        );
-
-        if (class_exists('Cashback_Email_Sender')) {
-            Cashback_Email_Sender::get_instance()->send(
-                $user->user_email,
-                $subject,
-                $body,
-                self::NOTIFY_CONFIRM_LINK,
-                (int) $user->ID
-            );
+        if (!class_exists('Cashback_Social_Auth_Emails')) {
+            return;
         }
+        $confirm_url = add_query_arg('token', $token, rest_url('cashback/v1/social/confirm'));
+        Cashback_Social_Auth_Emails::instance()->send_confirm_link(
+            $user,
+            $this->provider_label($provider_id),
+            $confirm_url,
+            15
+        );
     }
 
     /**
-     * Отправить письмо «подтвердите регистрацию» (ветка D).
+     * Отправить письмо «подтвердите регистрацию» (ветка D, double opt-in).
      */
     private function send_verify_email_email( int $user_id, string $provider_id, string $token ): void {
-        $user = get_userdata($user_id);
-        if (!$user) {
+        if (!class_exists('Cashback_Social_Auth_Emails')) {
             return;
         }
-
         $confirm_url = add_query_arg('token', $token, rest_url('cashback/v1/social/confirm'));
-        $subject     = __('Подтвердите ваш email', 'cashback-plugin');
-        $label       = $this->provider_label($provider_id);
-
-        $body = sprintf(
-            /* translators: 1: provider label, 2: confirm link URL */
-            __('Спасибо за регистрацию через %1$s!<br><br>Подтвердите email, перейдя по ссылке:<br><a href="%2$s">%2$s</a><br><br>Ссылка действительна 15 минут. Если вы не регистрировались — просто проигнорируйте письмо.', 'cashback-plugin'),
-            esc_html($label),
-            esc_url($confirm_url)
+        Cashback_Social_Auth_Emails::instance()->send_verify_email(
+            $user_id,
+            $this->provider_label($provider_id),
+            $confirm_url,
+            15
         );
+    }
 
-        if (class_exists('Cashback_Email_Sender')) {
-            Cashback_Email_Sender::get_instance()->send(
-                $user->user_email,
-                $subject,
-                $body,
-                self::NOTIFY_VERIFY_EMAIL,
-                (int) $user_id
-            );
+    /**
+     * Отправить security-уведомление об успешной привязке соцсети (account_linked).
+     *
+     * Вызывается только при создании новой связки (не при повторном логине),
+     * чтобы не спамить юзера.
+     */
+    private function send_account_linked_notice( int $user_id, string $provider_id, string $ip, string $user_agent ): void {
+        if (!class_exists('Cashback_Social_Auth_Emails')) {
+            return;
         }
+        Cashback_Social_Auth_Emails::instance()->send_account_linked(
+            $user_id,
+            $this->provider_label($provider_id),
+            $ip,
+            $user_agent
+        );
     }
 
     /**
