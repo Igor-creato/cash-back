@@ -133,6 +133,111 @@
             }
             html += '</tbody></table>';
 
+            // ===========================
+            // Network info (тип сети, ASN, organization)
+            // ===========================
+            if (alert.network && alert.network.type) {
+                html += '<h3>Сеть</h3>';
+                html += '<div class="cashback-fraud-network">';
+                html += renderNetworkBadge(alert.network.type, alert.network.label);
+
+                // IP — вторичный идентификатор (показываем рядом с бейджом).
+                var ipFromDetails = (alert.details && alert.details.ip_address) ? alert.details.ip_address : '';
+                if (ipFromDetails) {
+                    html += ' <code class="cashback-fraud-secondary-id">' + escHtml(ipFromDetails) + '</code>';
+                }
+                if (alert.network.asn) {
+                    html += ' AS' + escHtml(alert.network.asn);
+                }
+                if (alert.network.org) {
+                    html += ' ' + escHtml(alert.network.org);
+                }
+                if (alert.network.multiplier !== null && alert.network.multiplier !== undefined) {
+                    html += ' <small>(вес ×' + escHtml(parseFloat(alert.network.multiplier).toFixed(2)) + ')</small>';
+                }
+                html += '</div>';
+
+                if (alert.network.type === 'mobile' || alert.network.type === 'cgnat') {
+                    html += '<div class="cashback-fraud-warning">';
+                    html += escHtml('Mobile/CGNAT carrier — общий IP, ненадёжный признак уникальности. Опирайтесь на device_id или другие сигналы.');
+                    html += '</div>';
+                }
+            }
+
+            // ===========================
+            // Devices: главный ID — device_id + visitor_id, IP вторичный
+            // ===========================
+            if (alert.devices && alert.devices.length > 0) {
+                html += '<h3>Устройства пользователя (последние ' + alert.devices.length + ')</h3>';
+                html += '<table class="cashback-fraud-devices">';
+                html += '<thead><tr>';
+                html += '<th>Device ID</th>';
+                html += '<th>Visitor ID</th>';
+                html += '<th>IP</th>';
+                html += '<th>Last seen</th>';
+                html += '</tr></thead><tbody>';
+                for (var di = 0; di < alert.devices.length; di++) {
+                    var d = alert.devices[di] || {};
+                    var devId = String(d.device_id || '');
+                    var visId = String(d.visitor_id || '');
+                    html += '<tr>';
+                    html += '<td><code class="cashback-fraud-primary-id" title="' + escHtml(devId) + '">' + escHtml(devId.slice(0, 8)) + (devId.length > 8 ? '…' : '') + '</code></td>';
+                    html += '<td><code class="cashback-fraud-primary-id" title="' + escHtml(visId) + '">' + escHtml(visId.slice(0, 12)) + (visId.length > 12 ? '…' : '') + '</code></td>';
+                    html += '<td class="cashback-fraud-secondary-id">' + escHtml(d.ip_address || '') + '</td>';
+                    html += '<td>' + escHtml(d.last_seen || '') + '</td>';
+                    html += '</tr>';
+                }
+                html += '</tbody></table>';
+            }
+
+            // ===========================
+            // Cluster: связанные аккаунты
+            // ===========================
+            if (alert.cluster && alert.cluster.length > 0) {
+                html += '<h3>Связанные аккаунты (' + alert.cluster.length + ')</h3>';
+                for (var ci = 0; ci < alert.cluster.length; ci++) {
+                    var c = alert.cluster[ci] || {};
+                    html += '<div class="cashback-fraud-cluster">';
+                    html += '<strong>Кластер #' + escHtml(c.id || '?') + '</strong>';
+                    if (c.cluster_uid) {
+                        html += ' <code>' + escHtml(c.cluster_uid) + '</code>';
+                    }
+                    html += ' — score: ' + escHtml(String(c.score != null ? c.score : '—'));
+                    if (c.primary_reason) {
+                        html += ', primary: ' + escHtml(c.primary_reason);
+                    }
+                    if (c.status) {
+                        html += ' [' + escHtml(c.status) + ']';
+                    }
+
+                    var users = Array.isArray(c.user_ids) ? c.user_ids : [];
+                    var uCount = c.user_count != null ? c.user_count : users.length;
+                    html += '<div class="cashback-fraud-cluster__users">';
+                    html += escHtml('Пользователи (' + uCount + '): ' + users.join(', '));
+                    html += '</div>';
+
+                    if (Array.isArray(c.link_reasons) && c.link_reasons.length > 0) {
+                        html += '<div class="cashback-fraud-cluster__reasons">';
+                        for (var ri = 0; ri < c.link_reasons.length; ri++) {
+                            var r = c.link_reasons[ri] || {};
+                            var reasonKey = String(r.reason || 'unknown');
+                            html += '<span class="cashback-fraud-link-reason cashback-fraud-link-reason--' + escHtml(reasonKey) + '">';
+                            html += escHtml(reasonKey);
+                            if (r.strength) {
+                                html += ' (' + escHtml(r.strength) + ')';
+                            }
+                            html += '</span> ';
+                        }
+                        html += '</div>';
+                    }
+
+                    if (c.detected_at) {
+                        html += '<div class="cashback-fraud-cluster__meta">Обнаружен: ' + escHtml(c.detected_at) + '</div>';
+                    }
+                    html += '</div>';
+                }
+            }
+
             // Balance
             if (balance) {
                 html += '<h3>Баланс пользователя</h3>';
@@ -359,6 +464,17 @@
 
     function rowHtml(label, safeHtml) {
         return '<tr><th style="width:180px;">' + escHtml(label) + '</th><td>' + safeHtml + '</td></tr>';
+    }
+
+    /**
+     * Цветной бейдж типа сети для UI detail-modal.
+     * Тип ограничивается allowlist'ом классов из CSS.
+     */
+    function renderNetworkBadge(type, label) {
+        var allowed = ['mobile', 'residential', 'hosting', 'vpn', 'tor', 'cgnat', 'private', 'device', 'unknown'];
+        var safeType = (allowed.indexOf(type) !== -1) ? type : 'unknown';
+        var text = label ? label : (type || 'unknown');
+        return '<span class="cashback-fraud-network-badge cashback-fraud-network-badge--' + safeType + '">' + escHtml(text) + '</span>';
     }
 
 })(jQuery);

@@ -1,0 +1,102 @@
+/**
+ * Cashback Antifraud Admin — стили UI антифрод-модуля.
+ *
+ * Network badges, кластеры, предупреждения, таблица устройств.
+ *
+ * @since 1.3.0
+ */
+
+/* Network badges */
+.cashback-fraud-network-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #fff;
+    line-height: 1.4;
+    vertical-align: middle;
+}
+.cashback-fraud-network-badge--mobile      { background: #2271b1; }
+.cashback-fraud-network-badge--residential { background: #50575e; }
+.cashback-fraud-network-badge--hosting     { background: #d63638; }
+.cashback-fraud-network-badge--vpn         { background: #dba617; }
+.cashback-fraud-network-badge--tor         { background: #8c1d40; }
+.cashback-fraud-network-badge--cgnat       { background: #2271b1; }
+.cashback-fraud-network-badge--private     { background: #999; }
+.cashback-fraud-network-badge--unknown     { background: #ccc; color: #333; }
+.cashback-fraud-network-badge--device      { background: #674ea7; }
+
+/* Network info block in modal */
+.cashback-fraud-network {
+    margin: 6px 0 10px;
+    font-size: 13px;
+}
+.cashback-fraud-network code {
+    background: #f6f7f7;
+    padding: 1px 4px;
+    border-radius: 2px;
+    font-size: 11px;
+}
+
+/* Warning bar (mobile / CGNAT) */
+.cashback-fraud-warning {
+    background: #fcf9e8;
+    border-left: 4px solid #dba617;
+    padding: 8px 12px;
+    margin: 8px 0 14px;
+    font-size: 13px;
+}
+
+/* Cluster card */
+.cashback-fraud-cluster {
+    background: #f6f7f7;
+    border: 1px solid #c3c4c7;
+    padding: 10px 12px;
+    margin: 8px 0;
+    border-radius: 3px;
+}
+.cashback-fraud-cluster__users   { margin-top: 6px; font-size: 12px; color: #50575e; }
+.cashback-fraud-cluster__reasons { margin-top: 6px; }
+.cashback-fraud-cluster__meta    { margin-top: 4px; font-size: 11px; color: #646970; }
+
+/* Link reason chips */
+.cashback-fraud-link-reason {
+    display: inline-block;
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    padding: 2px 6px;
+    margin: 2px;
+    border-radius: 2px;
+    font-size: 11px;
+}
+.cashback-fraud-link-reason--device_id        { border-color: #2271b1; color: #2271b1; }
+.cashback-fraud-link-reason--payment_hash     { border-color: #d63638; color: #d63638; }
+.cashback-fraud-link-reason--phone            { border-color: #008a20; color: #008a20; }
+.cashback-fraud-link-reason--email_normalized { border-color: #dba617; color: #b08800; }
+
+/* Devices table */
+.cashback-fraud-devices {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 12px;
+}
+.cashback-fraud-devices th,
+.cashback-fraud-devices td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #f0f0f1;
+    text-align: left;
+    font-size: 12px;
+}
+.cashback-fraud-devices code {
+    background: #f6f7f7;
+    padding: 1px 4px;
+    border-radius: 2px;
+    font-size: 11px;
+}
+
+/* Primary identifier emphasis in modal (device_id / visitor_id main, IP secondary) */
+.cashback-fraud-primary-id  { font-weight: 600; }
+.cashback-fraud-secondary-id { color: #646970; font-size: 12px; }

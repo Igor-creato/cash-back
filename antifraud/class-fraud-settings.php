@@ -31,6 +31,28 @@ class Cashback_Fraud_Settings {
         'cashback_fraud_fingerprint_retention_days'    => 180,
         'cashback_fraud_auto_flag_threshold'           => 70.0,
         'cashback_fraud_email_notification_enabled'    => true,
+        // Composite device-based сигналы (Этап 3 антифрод-рефакторинга)
+        'cashback_fraud_max_users_per_device'          => 2,
+        'cashback_fraud_max_ips_per_device_24h'        => 5,
+        // CGNAT-aware: skip create_alert для check_shared_ip когда IP — mobile/cgnat/private.
+        // Mobile carrier (МТС/Билайн/МегаФон/Tele2/Yota и др.) — общий публичный IP у тысяч абонентов,
+        // совпадение «N юзеров с одного IP» не несёт сигнальной нагрузки. См. RFC 6598.
+        'cashback_fraud_skip_alert_for_mobile_ip'      => true,
+        // Тумблеры подсистем антифрод-нового-поколения.
+        // Позволяют точечно отключить компонент без отключения всего антифрода.
+        // IP Intelligence: classify() через MaxMind GeoLite2-ASN + хардкод RU операторов.
+        // Если выключен — check_shared_ip работает по старой логике (фиксированный weight=15, без skip mobile).
+        'cashback_fraud_ip_intelligence_enabled'       => true,
+        // Persistent device_id (LocalStorage+IndexedDB+Cookie) + сигналы shared_device_id и device_multiple_ips.
+        // Если выключен — collector не пишет в wp_cb_fraud_device_ids, оба device-сигнала пропускаются.
+        'cashback_fraud_device_id_enabled'             => true,
+        // Cluster detection cron (union-find по device/visitor/payment/email/phone).
+        // Если выключен — hourly cron делает early return, кластеры не обновляются.
+        'cashback_fraud_cluster_detection_enabled'     => true,
+        // 152-ФЗ requirement: чекбокс согласия на форме регистрации + блокировка fraud-fingerprint endpoint без consent.
+        // Если выключен — чекбокс не показывается, валидация не выполняется, REST принимает данные без проверки.
+        // Используйте с осторожностью: только для legacy-миграции или dev-окружения.
+        'cashback_fraud_consent_required'              => true,
     );
 
     /**
@@ -98,6 +120,34 @@ class Cashback_Fraud_Settings {
 
     public static function is_email_notification_enabled(): bool {
         return (bool) get_option('cashback_fraud_email_notification_enabled', self::DEFAULTS['cashback_fraud_email_notification_enabled']);
+    }
+
+    public static function get_max_users_per_device(): int {
+        return (int) get_option('cashback_fraud_max_users_per_device', self::DEFAULTS['cashback_fraud_max_users_per_device']);
+    }
+
+    public static function get_max_ips_per_device_24h(): int {
+        return (int) get_option('cashback_fraud_max_ips_per_device_24h', self::DEFAULTS['cashback_fraud_max_ips_per_device_24h']);
+    }
+
+    public static function should_skip_alert_for_mobile_ip(): bool {
+        return (bool) get_option('cashback_fraud_skip_alert_for_mobile_ip', self::DEFAULTS['cashback_fraud_skip_alert_for_mobile_ip']);
+    }
+
+    public static function is_ip_intelligence_enabled(): bool {
+        return (bool) get_option('cashback_fraud_ip_intelligence_enabled', self::DEFAULTS['cashback_fraud_ip_intelligence_enabled']);
+    }
+
+    public static function is_device_id_enabled(): bool {
+        return (bool) get_option('cashback_fraud_device_id_enabled', self::DEFAULTS['cashback_fraud_device_id_enabled']);
+    }
+
+    public static function is_cluster_detection_enabled(): bool {
+        return (bool) get_option('cashback_fraud_cluster_detection_enabled', self::DEFAULTS['cashback_fraud_cluster_detection_enabled']);
+    }
+
+    public static function is_consent_required(): bool {
+        return (bool) get_option('cashback_fraud_consent_required', self::DEFAULTS['cashback_fraud_consent_required']);
     }
 
     // =========================================================================
@@ -188,6 +238,13 @@ class Cashback_Fraud_Settings {
             'fingerprint_retention_days'    => 'int_positive',
             'auto_flag_threshold'           => 'float_0_100',
             'email_notification_enabled'    => 'bool',
+            'max_users_per_device'          => 'int_positive',
+            'max_ips_per_device_24h'        => 'int_positive',
+            'skip_alert_for_mobile_ip'      => 'bool',
+            'ip_intelligence_enabled'       => 'bool',
+            'device_id_enabled'             => 'bool',
+            'cluster_detection_enabled'     => 'bool',
+            'consent_required'              => 'bool',
         );
 
         foreach ($settings as $short_key => $value) {

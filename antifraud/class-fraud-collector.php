@@ -31,6 +31,8 @@ class Cashback_Fraud_Collector {
         add_action('user_register', array( $this, 'on_user_register' ));
         add_action('wp_enqueue_scripts', array( $this, 'enqueue_fingerprint_script' ));
         add_action('wp_ajax_cashback_fraud_fingerprint', array( $this, 'handle_fingerprint_ajax' ));
+        // Guest device-id записываем (если согласие не требуется для guest, см. handler).
+        add_action('wp_ajax_nopriv_cashback_fraud_fingerprint', array( $this, 'handle_fingerprint_ajax' ));
     }
 
     /**
@@ -105,20 +107,29 @@ class Cashback_Fraud_Collector {
             'cashback-fraud-fingerprint',
             plugins_url('../assets/js/fraud-fingerprint.js', __FILE__),
             array(),
-            '1.0.0',
+            '1.3.0',
             true
         );
 
         wp_localize_script('cashback-fraud-fingerprint', 'cashbackFraudFP', array(
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('cashback_fraud_fingerprint_nonce'),
+            // debug=true только при WP_DEBUG, чтобы не шуметь в production console
+            'debug'   => (defined('WP_DEBUG') && WP_DEBUG),
         ));
     }
 
     /**
-     * AJAX-обработчик приёма fingerprint из браузера
+     * AJAX-обработчик приёма fingerprint из браузера.
      *
-     * @return void
+     * Принимает:
+     *  - fp              — legacy SHA-256 fingerprint (обратная совместимость)
+     *  - device_id       — UUID v4 persistent device id (новое, опционально)
+     *  - visitor_id      — FingerprintJS OSS visitor id (новое, опционально)
+     *  - components_hash — SHA-256 от состава компонент (новое, опционально)
+     *  - confidence      — FingerprintJS confidence 0..1 (новое, опционально)
+     *
+     * Ответ обратно совместим: success с дополнительным полем data.device_recorded.
      */
     public function handle_fingerprint_ajax(): void {
         if (!check_ajax_referer('cashback_fraud_fingerprint_nonce', 'nonce', false)) {
@@ -126,45 +137,104 @@ class Cashback_Fraud_Collector {
             return;
         }
 
-        if (!is_user_logged_in()) {
-            wp_send_json_error('Not logged in');
-            return;
-        }
+        // Авторизованных юзеров требуем как раньше; гость допускается только для записи device_id
+        // (legacy-flow без device_id для гостей сохраняет прежнее поведение — ошибка).
+        $is_guest = !is_user_logged_in();
+        $uid      = $is_guest ? 0 : (int) get_current_user_id();
 
-        // Rate-limit: максимум 1 fingerprint за 10 минут на пользователя
-        // wp_cache_add() атомарен: возвращает false если ключ уже существует.
-        // set_transient() обеспечивает персистентность при сбросе object cache.
-        $uid      = get_current_user_id();
-        $rate_key = 'cb_fp_rate_' . $uid;
+        // Rate-limit: 1 fingerprint за 10 минут — на uid или, для гостя, на IP.
+        $rate_subject = $is_guest ? 'ip_' . md5(self::get_client_ip()) : (string) $uid;
+        $rate_key     = 'cb_fp_rate_' . $rate_subject;
         if (!wp_cache_add($rate_key, 1, 'cashback', 600)) {
-            // Тихо принимаем повторный запрос, не перегружая БД
-            wp_send_json_success();
+            wp_send_json_success(array('device_recorded' => false, 'rate_limited' => true));
             return;
         }
-        // Персистентный флаг для окружений без постоянного object cache
         if (get_transient($rate_key)) {
             wp_cache_delete($rate_key, 'cashback');
-            wp_send_json_success();
+            wp_send_json_success(array('device_recorded' => false, 'rate_limited' => true));
             return;
         }
         set_transient($rate_key, 1, 600);
 
         $fp_hash = isset($_POST['fp']) ? sanitize_text_field(wp_unslash($_POST['fp'])) : '';
+        if ($fp_hash !== '' && (strlen($fp_hash) !== 64 || !preg_match('/^[a-f0-9]{64}$/', $fp_hash))) {
+            $fp_hash = '';
+        }
 
-        if (empty($fp_hash) || strlen($fp_hash) !== 64 || !preg_match('/^[a-f0-9]{64}$/', $fp_hash)) {
+        $device_id       = isset($_POST['device_id']) ? sanitize_text_field(wp_unslash($_POST['device_id'])) : '';
+        $visitor_id      = isset($_POST['visitor_id']) ? sanitize_text_field(wp_unslash($_POST['visitor_id'])) : '';
+        $components_hash = isset($_POST['components_hash']) ? sanitize_text_field(wp_unslash($_POST['components_hash'])) : '';
+        $confidence_raw  = isset($_POST['confidence']) ? sanitize_text_field(wp_unslash($_POST['confidence'])) : '';
+        $confidence      = ( $confidence_raw !== '' && is_numeric($confidence_raw) ) ? (float) $confidence_raw : null;
+
+        // Если ни legacy fp, ни device_id — невалидный запрос (защита от пустых пингов).
+        if ($fp_hash === '' && $device_id === '') {
             wp_send_json_error('Invalid fingerprint');
             return;
         }
 
-        self::record_fingerprint(
-            get_current_user_id(),
-            self::get_client_ip(),
-            $fp_hash,
-            self::hash_user_agent(),
-            'page_view'
-        );
+        // Гость без device_id — отвергаем (legacy-поведение требовало логина).
+        if ($is_guest && $device_id === '') {
+            wp_send_json_error('Not logged in');
+            return;
+        }
 
-        wp_send_json_success();
+        // Legacy запись в cashback_user_fingerprints — только для авторизованных (FK NOT NULL user_id).
+        if (!$is_guest && $fp_hash !== '') {
+            self::record_fingerprint(
+                $uid,
+                self::get_client_ip(),
+                $fp_hash,
+                self::hash_user_agent(),
+                'page_view'
+            );
+        }
+
+        // Новая запись в cashback_fraud_device_ids.
+        $device_recorded = false;
+        $device_id_enabled = !class_exists('Cashback_Fraud_Settings')
+            || Cashback_Fraud_Settings::is_device_id_enabled();
+        if ($device_id_enabled && $device_id !== '' && class_exists('Cashback_Fraud_Device_Id')) {
+            // 152-ФЗ: для авторизованных юзеров проверяем согласие через user_meta
+            // (ставится формой регистрации в Этапе 7). Для гостей согласие не требуется.
+            // Тумблер consent_required позволяет отключить требование (legacy/dev).
+            $consent_required = !class_exists('Cashback_Fraud_Settings')
+                || Cashback_Fraud_Settings::is_consent_required();
+            $consent_ok = $is_guest || !$consent_required;
+            if (!$consent_ok) {
+                if (class_exists('Cashback_Fraud_Consent')) {
+                    $consent_ok = (bool) call_user_func(array('Cashback_Fraud_Consent', 'has_consent'), $uid);
+                } else {
+                    // Фолбэк до этапа 7: читаем user_meta напрямую, отсутствие = нет согласия.
+                    $consent_ok = (bool) get_user_meta($uid, 'cashback_fraud_consent_at', true);
+                }
+            }
+
+            if ($consent_ok) {
+                $payload = array(
+                    'device_id'        => $device_id,
+                    'visitor_id'       => $visitor_id,
+                    'fingerprint_hash' => $fp_hash !== '' ? $fp_hash : null,
+                    'components_hash'  => $components_hash !== '' ? $components_hash : null,
+                    'confidence'       => $confidence,
+                );
+
+                $ua = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '';
+
+                $result = Cashback_Fraud_Device_Id::record(
+                    $payload,
+                    $is_guest ? null : $uid,
+                    self::get_client_ip(),
+                    $ua
+                );
+                $device_recorded = ($result !== false);
+            } else {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log(sprintf('Cashback Fraud Device ID: skipped record for user %d — no consent', $uid));
+            }
+        }
+
+        wp_send_json_success(array('device_recorded' => $device_recorded));
     }
 
     /**

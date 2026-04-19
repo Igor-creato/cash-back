@@ -37,6 +37,8 @@ class Cashback_Fraud_Detector {
         $new_alert_ids = array_merge($new_alert_ids, self::check_withdrawal_velocity());
         $new_alert_ids = array_merge($new_alert_ids, self::check_amount_anomalies());
         $new_alert_ids = array_merge($new_alert_ids, self::check_new_account_withdrawals());
+        $new_alert_ids = array_merge($new_alert_ids, self::check_shared_device_id());
+        $new_alert_ids = array_merge($new_alert_ids, self::check_device_with_multiple_ips());
 
         if (!empty($new_alert_ids)) {
             self::notify_admin($new_alert_ids);
@@ -62,6 +64,12 @@ class Cashback_Fraud_Detector {
         $fp_table  = $wpdb->prefix . 'cashback_user_fingerprints';
         $alert_ids = array();
 
+        // Исключаем общие/неинформативные IP-диапазоны:
+        // - 127.0.0.1, ::1, 0.0.0.0 — loopback / unspecified
+        // - 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 — RFC 1918 private
+        // - 100.64.0.0/10 — RFC 6598 CGNAT (мобильные операторы РФ: МТС, Билайн, МегаФон, Tele2, Yota и др.)
+        // - fc00::/7, fe80::/10 — IPv6 ULA / link-local
+        // CGNAT-IP принципиально нельзя считать признаком уникальности: один IP обслуживает тысячи абонентов.
         $results = $wpdb->get_results($wpdb->prepare(
             "SELECT ip_address, GROUP_CONCAT(DISTINCT user_id ORDER BY user_id) as user_ids,
                     COUNT(DISTINCT user_id) as user_count
@@ -71,11 +79,149 @@ class Cashback_Fraud_Detector {
                AND ip_address NOT LIKE %s
                AND ip_address NOT LIKE %s
                AND ip_address NOT BETWEEN '172.16.0.0' AND '172.31.255.255'
+               AND ip_address NOT BETWEEN '100.64.0.0' AND '100.127.255.255'
+               AND ip_address NOT LIKE %s
+               AND ip_address NOT LIKE %s
+               AND ip_address NOT LIKE %s
              GROUP BY ip_address
              HAVING user_count > %d",
             $fp_table,
             '10.%',
             '192.168.%',
+            'fc%',
+            'fd%',
+            'fe80%',
+            $threshold
+        ));
+
+        $skip_mobile = class_exists('Cashback_Fraud_Settings')
+            && Cashback_Fraud_Settings::should_skip_alert_for_mobile_ip();
+        $ip_intel_enabled = !class_exists('Cashback_Fraud_Settings')
+            || Cashback_Fraud_Settings::is_ip_intelligence_enabled();
+        $has_ip_intel = $ip_intel_enabled && class_exists('Cashback_Fraud_Ip_Intelligence');
+
+        foreach ($results as $row) {
+            if (empty($row->user_ids)) {
+                continue;
+            }
+            $user_ids = array_map('intval', explode(',', $row->user_ids));
+
+            // IP Intelligence: классификация по ASN/типу сети.
+            // Для mobile/cgnat/private — skip алерта (CGNAT-aware, см. RFC 6598).
+            // Для hosting/vpn/tor — повышенный множитель веса.
+            $ip_info = null;
+            $weight  = 15.0;
+            if ($has_ip_intel) {
+                $ip_info = Cashback_Fraud_Ip_Intelligence::classify((string) $row->ip_address);
+                $type    = isset($ip_info['type']) ? (string) $ip_info['type'] : 'unknown';
+
+                if ($skip_mobile && in_array($type, array('mobile', 'cgnat', 'private'), true)) {
+                    continue;
+                }
+
+                $multiplier = isset($ip_info['weight_multiplier']) ? (float) $ip_info['weight_multiplier'] : 1.0;
+                if ($multiplier <= 0.0) {
+                    continue;
+                }
+                $weight = round(15.0 * $multiplier, 2);
+            }
+
+            $details_extra = array();
+            if ($ip_info !== null) {
+                $details_extra = array(
+                    'ip_type'           => $ip_info['type'] ?? 'unknown',
+                    'ip_label'          => $ip_info['label'] ?? null,
+                    'ip_asn'            => $ip_info['asn'] ?? null,
+                    'ip_org'            => $ip_info['org'] ?? null,
+                    'weight_multiplier' => $ip_info['weight_multiplier'] ?? 1.0,
+                );
+            }
+
+            foreach ($user_ids as $user_id) {
+                if (self::alert_exists($user_id, 'multi_account_ip')) {
+                    continue;
+                }
+
+                $alert_id = self::create_alert(
+                    $user_id,
+                    'multi_account_ip',
+                    self::score_to_severity($weight),
+                    $weight,
+                    sprintf(
+                        'IP %s используется %d аккаунтами: %s',
+                        $row->ip_address,
+                        $row->user_count,
+                        $row->user_ids
+                    ),
+                    array_merge(
+                        array(
+                            'ip_address'      => $row->ip_address,
+                            'shared_user_ids' => $user_ids,
+                            'user_count'      => (int) $row->user_count,
+                        ),
+                        $details_extra
+                    ),
+                    array(
+                        array(
+                            'signal_type' => 'ip_match',
+                            'weight'      => $weight,
+                            'evidence'    => array_merge(
+                                array(
+                                    'ip'       => $row->ip_address,
+                                    'user_ids' => $user_ids,
+                                ),
+                                $details_extra
+                            ),
+                        ),
+                    )
+                );
+
+                if ($alert_id) {
+                    $alert_ids[] = $alert_id;
+                }
+            }
+        }
+
+        return $alert_ids;
+    }
+
+    /**
+     * CHECK 8 (composite): один device_id под >N разных user_id за 30 дней.
+     *
+     * Сильнее чем shared_ip и shared_fingerprint, потому что persistent device_id
+     * выживает clear-cookies (LocalStorage + IndexedDB + Cookie evercookie pattern).
+     * Совпадение почти однозначно указывает на multi-account.
+     *
+     * @return int[] Массив ID созданных алертов
+     */
+    private static function check_shared_device_id(): array {
+        global $wpdb;
+
+        if (!class_exists('Cashback_Fraud_Device_Id')) {
+            return array();
+        }
+
+        if (class_exists('Cashback_Fraud_Settings')
+            && !Cashback_Fraud_Settings::is_device_id_enabled()) {
+            return array();
+        }
+
+        $threshold = class_exists('Cashback_Fraud_Settings')
+            ? Cashback_Fraud_Settings::get_max_users_per_device()
+            : 2;
+        $device_table = $wpdb->prefix . 'cashback_fraud_device_ids';
+        $alert_ids    = array();
+
+        $results = $wpdb->get_results($wpdb->prepare(
+            'SELECT device_id,
+                    GROUP_CONCAT(DISTINCT user_id ORDER BY user_id) AS user_ids,
+                    COUNT(DISTINCT user_id) AS user_count
+             FROM %i
+             WHERE user_id IS NOT NULL
+               AND last_seen > DATE_SUB(NOW(), INTERVAL 30 DAY)
+             GROUP BY device_id
+             HAVING user_count > %d',
+            $device_table,
             $threshold
         ));
 
@@ -86,33 +232,128 @@ class Cashback_Fraud_Detector {
             $user_ids = array_map('intval', explode(',', $row->user_ids));
 
             foreach ($user_ids as $user_id) {
-                if (self::alert_exists($user_id, 'multi_account_ip')) {
+                if (self::alert_exists($user_id, 'shared_device_id')) {
                     continue;
                 }
 
                 $alert_id = self::create_alert(
                     $user_id,
-                    'multi_account_ip',
-                    self::score_to_severity(15.0),
-                    15.0,
+                    'shared_device_id',
+                    self::score_to_severity(30.0),
+                    30.0,
                     sprintf(
-                        'IP %s используется %d аккаунтами: %s',
-                        $row->ip_address,
+                        'Один device ID используется %d аккаунтами: %s',
                         $row->user_count,
                         $row->user_ids
                     ),
                     array(
-                        'ip_address'      => $row->ip_address,
+                        'device_id'       => $row->device_id,
                         'shared_user_ids' => $user_ids,
                         'user_count'      => (int) $row->user_count,
                     ),
                     array(
                         array(
-                            'signal_type' => 'ip_match',
-                            'weight'      => 15.0,
+                            'signal_type' => 'shared_device_id',
+                            'weight'      => 30.0,
                             'evidence'    => array(
-                                'ip'       => $row->ip_address,
-                                'user_ids' => $user_ids,
+                                'device_id' => $row->device_id,
+                                'user_ids'  => $user_ids,
+                            ),
+                        ),
+                    )
+                );
+
+                if ($alert_id) {
+                    $alert_ids[] = $alert_id;
+                }
+            }
+        }
+
+        return $alert_ids;
+    }
+
+    /**
+     * CHECK 9 (composite): один device_id с >N разных IP за 24 часа.
+     *
+     * Нормальный пользователь не меняет 5+ IP за сутки. Сигнал указывает на
+     * проксиротацию, продажу аккаунта или работу через VPN-сервис с автосменой.
+     * Критерий: разные ASN усиливают подозрение (отдельный учёт в evidence).
+     *
+     * @return int[] Массив ID созданных алертов
+     */
+    private static function check_device_with_multiple_ips(): array {
+        global $wpdb;
+
+        if (!class_exists('Cashback_Fraud_Device_Id')) {
+            return array();
+        }
+
+        if (class_exists('Cashback_Fraud_Settings')
+            && !Cashback_Fraud_Settings::is_device_id_enabled()) {
+            return array();
+        }
+
+        $threshold    = class_exists('Cashback_Fraud_Settings')
+            ? Cashback_Fraud_Settings::get_max_ips_per_device_24h()
+            : 5;
+        $device_table = $wpdb->prefix . 'cashback_fraud_device_ids';
+        $alert_ids    = array();
+
+        $results = $wpdb->get_results($wpdb->prepare(
+            'SELECT device_id,
+                    GROUP_CONCAT(DISTINCT user_id ORDER BY user_id) AS user_ids,
+                    COUNT(DISTINCT ip_address) AS ip_count,
+                    COUNT(DISTINCT asn) AS asn_count
+             FROM %i
+             WHERE last_seen > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+               AND user_id IS NOT NULL
+             GROUP BY device_id
+             HAVING ip_count > %d',
+            $device_table,
+            $threshold
+        ));
+
+        foreach ($results as $row) {
+            if (empty($row->user_ids)) {
+                continue;
+            }
+            $user_ids = array_map('intval', explode(',', $row->user_ids));
+
+            // Расширенный ip_breakdown для evidence — пригодится в admin UI.
+            $ip_breakdown = Cashback_Fraud_Device_Id::count_distinct_ips_per_device(
+                (string) $row->device_id,
+                24
+            );
+
+            foreach ($user_ids as $user_id) {
+                if (self::alert_exists($user_id, 'device_multiple_ips')) {
+                    continue;
+                }
+
+                $alert_id = self::create_alert(
+                    $user_id,
+                    'device_multiple_ips',
+                    self::score_to_severity(20.0),
+                    20.0,
+                    sprintf(
+                        'Один device ID за 24ч использовал %d разных IP (%d уникальных ASN)',
+                        (int) $row->ip_count,
+                        (int) $row->asn_count
+                    ),
+                    array(
+                        'device_id'    => $row->device_id,
+                        'ip_count'     => (int) $row->ip_count,
+                        'asn_count'    => (int) $row->asn_count,
+                        'ip_breakdown' => $ip_breakdown,
+                    ),
+                    array(
+                        array(
+                            'signal_type' => 'device_multiple_ips',
+                            'weight'      => 20.0,
+                            'evidence'    => array(
+                                'device_id' => $row->device_id,
+                                'ip_count'  => (int) $row->ip_count,
+                                'asn_count' => (int) $row->asn_count,
                             ),
                         ),
                     )

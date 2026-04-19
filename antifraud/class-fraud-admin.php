@@ -97,11 +97,19 @@ class Cashback_Fraud_Admin {
             '1.2.0'
         );
 
+        // Дополнительные стили антифрод-UI: network badges, кластеры, warning, devices.
+        wp_enqueue_style(
+            'cashback-admin-antifraud-extra-css',
+            plugins_url('../assets/css/admin-antifraud.css', __FILE__),
+            array( 'cashback-admin-antifraud-css' ),
+            '1.3.0'
+        );
+
         wp_enqueue_script(
             'cashback-admin-antifraud',
             plugins_url('../assets/js/admin-antifraud.js', __FILE__),
             array( 'jquery' ),
-            '1.0.0',
+            '1.3.0',
             true
         );
 
@@ -183,6 +191,7 @@ class Cashback_Fraud_Admin {
         $filter_status   = isset($_GET['status']) ? sanitize_text_field(wp_unslash($_GET['status'])) : '';
         $filter_severity = isset($_GET['severity']) ? sanitize_text_field(wp_unslash($_GET['severity'])) : '';
         $filter_type     = isset($_GET['alert_type']) ? sanitize_text_field(wp_unslash($_GET['alert_type'])) : '';
+        $filter_ip_type  = isset($_GET['ip_type']) ? sanitize_text_field(wp_unslash($_GET['ip_type'])) : '';
         $current_page    = min(isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1, self::MAX_ALLOWED_PAGES);
         // phpcs:enable WordPress.Security.NonceVerification.Recommended
         $offset = ( $current_page - 1 ) * self::PER_PAGE;
@@ -204,6 +213,22 @@ class Cashback_Fraud_Admin {
             $params[] = $filter_type;
         } else {
             $filter_type = '';
+        }
+
+        // Фильтр по типу сети (ip_type) — данные хранятся в JSON details.ip_type.
+        // JSON_EXTRACT доступен в MySQL 5.7+ / MariaDB 10.2.3+; при отсутствии —
+        // fallback к LIKE по сериализованному JSON-фрагменту.
+        $allowed_ip_types = array( 'mobile', 'residential', 'hosting', 'vpn', 'tor', 'cgnat', 'private', 'unknown' );
+        if ($filter_ip_type && in_array($filter_ip_type, $allowed_ip_types, true)) {
+            if (self::supports_json_extract()) {
+                $where[]  = "JSON_UNQUOTE(JSON_EXTRACT(a.details, '$.ip_type')) = %s";
+                $params[] = $filter_ip_type;
+            } else {
+                $where[]  = 'a.details LIKE %s';
+                $params[] = '%"ip_type":"' . $wpdb->esc_like($filter_ip_type) . '"%';
+            }
+        } else {
+            $filter_ip_type = '';
         }
 
         $where_sql = implode(' AND ', $where);
@@ -265,6 +290,14 @@ class Cashback_Fraud_Admin {
         }
         echo '</select> ';
 
+        // Filter: тип сети (IP intelligence)
+        echo '<select name="ip_type">';
+        echo '<option value="">' . esc_html__('Все сети', 'cashback-plugin') . '</option>';
+        foreach (self::get_ip_type_filter_options() as $val => $label) {
+            echo '<option value="' . esc_attr($val) . '"' . selected($filter_ip_type, $val, false) . '>' . esc_html($label) . '</option>';
+        }
+        echo '</select> ';
+
         submit_button(__('Фильтровать', 'cashback-plugin'), 'secondary', '', false);
         echo ' <a href="' . esc_url(admin_url('admin.php?page=cashback-antifraud&tab=alerts')) . '" class="button">' . esc_html__('Сбросить', 'cashback-plugin') . '</a>';
         echo ' <button type="button" id="fraud-run-scan" class="button button-primary">' . esc_html__('Запустить проверку', 'cashback-plugin') . '</button>';
@@ -286,6 +319,7 @@ class Cashback_Fraud_Admin {
         echo '<thead><tr>';
         echo '<th>#</th><th>' . esc_html__('Пользователь', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Тип', 'cashback-plugin') . '</th>';
+        echo '<th>' . esc_html__('Сеть', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Уровень', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Скор', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Описание', 'cashback-plugin') . '</th>';
@@ -303,6 +337,8 @@ class Cashback_Fraud_Admin {
             echo '<td>' . esc_html($alert->id) . '</td>';
             echo '<td>' . esc_html($alert->user_login ?? 'ID:' . $alert->user_id) . '<br><small>' . esc_html($alert->user_email ?? '') . '</small></td>';
             echo '<td>' . esc_html($type_labels[ $alert->alert_type ] ?? $alert->alert_type) . '</td>';
+            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render_network_cell_for_alert() возвращает pre-escaped HTML (esc_html/esc_attr внутри render_ip_type_badge).
+            echo '<td>' . self::render_network_cell_for_alert($alert) . '</td>';
             echo '<td><span class="' . esc_attr($severity_class) . '">' . esc_html(strtoupper($alert->severity)) . '</span></td>';
             echo '<td>' . esc_html(number_format((float) $alert->risk_score, 0)) . '</td>';
             echo '<td>' . esc_html(mb_strimwidth($alert->summary, 0, 80, '...')) . '</td>';
@@ -328,6 +364,7 @@ class Cashback_Fraud_Admin {
             'status'     => $filter_status,
             'severity'   => $filter_severity,
             'alert_type' => $filter_type,
+            'ip_type'    => $filter_ip_type,
             'tab'        => 'alerts',
         ));
 
@@ -1073,10 +1110,48 @@ class Cashback_Fraud_Admin {
         ), ARRAY_A);
 
         $alert['details'] = json_decode($alert['details'] ?? '{}', true);
+        if (!is_array($alert['details'])) {
+            $alert['details'] = array();
+        }
         foreach ($signals as &$s) {
             $s['evidence'] = json_decode($s['evidence'] ?? '{}', true);
         }
         unset($s);
+
+        // Network info: подтягиваем из details, либо доклассифицируем через IP Intelligence.
+        $network = self::build_network_info_for_alert($alert);
+
+        // Devices: последние 5 device_id юзера (с graceful class_exists).
+        $devices = array();
+        if (class_exists('Cashback_Fraud_Device_Id') && (int) $alert['user_id'] > 0) {
+            $devices = Cashback_Fraud_Device_Id::get_user_devices((int) $alert['user_id'], 5);
+        }
+
+        // Cluster: связанные аккаунты (graceful — модуль может отсутствовать).
+        $cluster = null;
+        if (class_exists('Cashback_Fraud_Cluster_Detector') && (int) $alert['user_id'] > 0) {
+            // phpcs:ignore Squiz.PHP.CommentedOutCode.Found -- false positive: это вызов метода, не комментарий.
+            $raw_clusters = Cashback_Fraud_Cluster_Detector::find_clusters_for_user((int) $alert['user_id']);
+            $cluster      = array();
+            foreach ((array) $raw_clusters as $c) {
+                $c = (array) $c;
+                // user_ids / link_reasons могут прийти JSON-строкой — нормализуем.
+                if (isset($c['user_ids']) && is_string($c['user_ids'])) {
+                    $decoded         = json_decode($c['user_ids'], true);
+                    $c['user_ids']   = is_array($decoded) ? $decoded : array();
+                }
+                if (isset($c['link_reasons']) && is_string($c['link_reasons'])) {
+                    $decoded            = json_decode($c['link_reasons'], true);
+                    $c['link_reasons']  = is_array($decoded) ? $decoded : array();
+                }
+                $cluster[] = $c;
+            }
+        }
+
+        // Attach extras to alert object (JS читает alert.network / alert.devices / alert.cluster).
+        $alert['network'] = $network;
+        $alert['devices'] = $devices;
+        $alert['cluster'] = $cluster;
 
         wp_send_json_success(array(
             'alert'   => $alert,
@@ -1356,17 +1431,297 @@ class Cashback_Fraud_Admin {
     // ===========================
 
     /**
+     * Рендер цветного бейджа типа сети.
+     *
+     * @param string      $type  Тип IP (mobile/residential/hosting/vpn/tor/cgnat/private/unknown/device).
+     * @param string|null $label Опциональный текст; если null — берётся из карты.
+     */
+    private static function render_ip_type_badge( string $type, ?string $label = null ): string {
+        $map = array(
+            'mobile'      => array(
+                'class' => 'mobile',
+                'text'  => __('Mobile', 'cashback-plugin'),
+            ),
+            'residential' => array(
+                'class' => 'residential',
+                'text'  => __('Home', 'cashback-plugin'),
+            ),
+            'hosting'     => array(
+                'class' => 'hosting',
+                'text'  => __('Datacenter', 'cashback-plugin'),
+            ),
+            'vpn'         => array(
+                'class' => 'vpn',
+                'text'  => __('VPN', 'cashback-plugin'),
+            ),
+            'tor'         => array(
+                'class' => 'tor',
+                'text'  => __('Tor', 'cashback-plugin'),
+            ),
+            'cgnat'       => array(
+                'class' => 'cgnat',
+                'text'  => __('CGNAT', 'cashback-plugin'),
+            ),
+            'private'     => array(
+                'class' => 'private',
+                'text'  => __('Private', 'cashback-plugin'),
+            ),
+            'device'      => array(
+                'class' => 'device',
+                'text'  => __('Device', 'cashback-plugin'),
+            ),
+            'unknown'     => array(
+                'class' => 'unknown',
+                'text'  => __('Unknown', 'cashback-plugin'),
+            ),
+        );
+
+        $info = $map[ $type ] ?? $map['unknown'];
+        $text = ( $label !== null && $label !== '' ) ? $label : $info['text'];
+
+        return sprintf(
+            '<span class="cashback-fraud-network-badge cashback-fraud-network-badge--%s">%s</span>',
+            esc_attr($info['class']),
+            esc_html($text)
+        );
+    }
+
+    /**
+     * Рендер ячейки «Сеть» в строке таблицы алертов.
+     *
+     * Для legacy-алертов без ip_type в JSON details — на лету классифицирует ip_address
+     * через Cashback_Fraud_Ip_Intelligence (если класс доступен).
+     * Для алертов device-типов (shared_device_id, device_multiple_ips) — нейтральный бейдж DEVICE.
+     */
+    private static function render_network_cell_for_alert( object $alert ): string {
+        // device-related алерты — IP может отсутствовать.
+        if (in_array($alert->alert_type, array( 'shared_device_id', 'device_multiple_ips' ), true)) {
+            return self::render_ip_type_badge('device');
+        }
+
+        $details = array();
+        if (!empty($alert->details)) {
+            $decoded = json_decode((string) $alert->details, true);
+            if (is_array($decoded)) {
+                $details = $decoded;
+            }
+        }
+
+        // 1. Берём из details (Этап 3 пишет ip_type/ip_label).
+        if (!empty($details['ip_type']) && is_string($details['ip_type'])) {
+            $label = isset($details['ip_label']) && is_string($details['ip_label']) ? $details['ip_label'] : null;
+            return self::render_ip_type_badge($details['ip_type'], $label);
+        }
+
+        // 2. Legacy-fallback: классифицируем ip_address на лету.
+        $ip = '';
+        if (!empty($details['ip_address']) && is_string($details['ip_address'])) {
+            $ip = $details['ip_address'];
+        }
+
+        if ($ip !== '' && class_exists('Cashback_Fraud_Ip_Intelligence')) {
+            $info = Cashback_Fraud_Ip_Intelligence::classify($ip);
+            return self::render_ip_type_badge((string) ( $info['type'] ?? 'unknown' ), (string) ( $info['label'] ?? '' ));
+        }
+
+        return '<span class="cashback-fraud-secondary-id">—</span>';
+    }
+
+    /**
+     * Собирает структуру network для AJAX-ответа detail-модала.
+     *
+     * @param array<string, mixed> $alert ARRAY_A алерта (с уже распарсенным details).
+     * @return array<string, mixed>|null
+     */
+    private static function build_network_info_for_alert( array $alert ): ?array {
+        $alert_type = (string) ( $alert['alert_type'] ?? '' );
+        $details    = is_array($alert['details'] ?? null) ? $alert['details'] : array();
+
+        // device-related алерты — отдаём нейтральный network-блок.
+        if (in_array($alert_type, array( 'shared_device_id', 'device_multiple_ips' ), true)) {
+            return array(
+                'type'       => 'device',
+                'label'      => __('Device', 'cashback-plugin'),
+                'asn'        => null,
+                'org'        => null,
+                'multiplier' => null,
+            );
+        }
+
+        // 1. Из details.
+        if (!empty($details['ip_type']) && is_string($details['ip_type'])) {
+            return array(
+                'type'       => $details['ip_type'],
+                'label'      => (string) ( $details['ip_label'] ?? $details['ip_type'] ),
+                'asn'        => isset($details['ip_asn']) ? (string) $details['ip_asn'] : null,
+                'org'        => isset($details['ip_org']) ? (string) $details['ip_org'] : null,
+                'multiplier' => isset($details['weight_multiplier']) ? (float) $details['weight_multiplier'] : null,
+            );
+        }
+
+        // 2. Legacy-fallback: классифицируем ip_address.
+        $ip = (string) ( $details['ip_address'] ?? '' );
+        if ($ip !== '' && class_exists('Cashback_Fraud_Ip_Intelligence')) {
+            $info = Cashback_Fraud_Ip_Intelligence::classify($ip);
+            return array(
+                'type'       => (string) ( $info['type'] ?? 'unknown' ),
+                'label'      => (string) ( $info['label'] ?? '' ),
+                'asn'        => isset($info['asn']) && $info['asn'] !== null ? (string) $info['asn'] : null,
+                'org'        => isset($info['org']) && $info['org'] !== null ? (string) $info['org'] : null,
+                'multiplier' => isset($info['weight_multiplier']) ? (float) $info['weight_multiplier'] : null,
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * Опции для dropdown-фильтра «Сеть».
+     *
+     * @return array<string, string>
+     */
+    private static function get_ip_type_filter_options(): array {
+        return array(
+            'mobile'      => __('Mobile', 'cashback-plugin'),
+            'residential' => __('Home', 'cashback-plugin'),
+            'hosting'     => __('Datacenter', 'cashback-plugin'),
+            'vpn'         => __('VPN', 'cashback-plugin'),
+            'tor'         => __('Tor', 'cashback-plugin'),
+            'cgnat'       => __('CGNAT', 'cashback-plugin'),
+            'private'     => __('Private', 'cashback-plugin'),
+            'unknown'     => __('Unknown', 'cashback-plugin'),
+        );
+    }
+
+    /**
+     * Поддерживает ли сервер JSON_EXTRACT (MySQL 5.7+, MariaDB 10.2.3+).
+     * Кэшируется в transient на сутки.
+     */
+    private static function supports_json_extract(): bool {
+        $cached = get_transient('cashback_fraud_json_extract_supported');
+        if ($cached !== false) {
+            return $cached === '1';
+        }
+
+        global $wpdb;
+        $supported = '0';
+        $version   = $wpdb->db_version();
+        // MariaDB не репортит свою версию через db_version() однозначно: на $wpdb->use_mysqli
+        // db_version() парсит mysqli_get_server_info(). Простейший runtime-чек —
+        // попробовать вызвать JSON_EXTRACT. suppress_errors на время теста.
+        $prev_show = $wpdb->show_errors(false);
+        $prev_supp = $wpdb->suppress_errors(true);
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- cap-check, кэшируем сами в transient.
+        $probe = $wpdb->get_var('SELECT JSON_EXTRACT(\'{"a":1}\', \'$.a\')');
+        $wpdb->suppress_errors($prev_supp);
+        $wpdb->show_errors($prev_show);
+        if ($probe !== null && empty($wpdb->last_error)) {
+            $supported = '1';
+        }
+        // Подавим ошибку из last_error, чтобы не всплывала позже.
+        $wpdb->last_error = '';
+        unset($version);
+
+        // phpcs:ignore WordPressVIPMinimum.Performance.LowExpiryCacheTime.CacheTimeUndetermined -- сутки = 86400с.
+        set_transient('cashback_fraud_json_extract_supported', $supported, DAY_IN_SECONDS);
+        return $supported === '1';
+    }
+
+    /**
+     * Одноразовая миграция: автоматически dismiss-нуть открытые алерты multi_account_ip
+     * за последние 90 дней, у которых IP попадает в mobile/CGNAT/private диапазоны.
+     *
+     * Идемпотентность: флаг в wp_options 'cashback_fraud_legacy_cgnat_dismissed_at'.
+     *
+     * @return int Количество dismissed-алертов (0 при повторном вызове или отсутствии IP-Intelligence).
+     */
+    public static function migrate_dismiss_legacy_cgnat_alerts(): int {
+        if (get_option('cashback_fraud_legacy_cgnat_dismissed_at')) {
+            return 0;
+        }
+
+        if (!class_exists('Cashback_Fraud_Ip_Intelligence')) {
+            // IP-Intelligence модуль отсутствует — миграция бессмысленна, но флаг ставим,
+            // чтобы не пытаться снова на каждом activation.
+            update_option('cashback_fraud_legacy_cgnat_dismissed_at', current_time('mysql'), false);
+            return 0;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'cashback_fraud_alerts';
+
+        $rows = (array) $wpdb->get_results($wpdb->prepare(
+            'SELECT id, details FROM %i
+             WHERE alert_type = %s
+             AND status = %s
+             AND created_at >= DATE_SUB(NOW(), INTERVAL 90 DAY)',
+            $table,
+            'multi_account_ip',
+            'open'
+        ));
+
+        $dismissed = 0;
+        $excluded  = array( 'mobile', 'cgnat', 'private' );
+
+        foreach ($rows as $row) {
+            $details = json_decode((string) $row->details, true);
+            if (!is_array($details)) {
+                continue;
+            }
+            $ip = (string) ( $details['ip_address'] ?? '' );
+            if ($ip === '') {
+                continue;
+            }
+            $info = Cashback_Fraud_Ip_Intelligence::classify($ip);
+            $type = (string) ( $info['type'] ?? 'unknown' );
+            if (!in_array($type, $excluded, true)) {
+                continue;
+            }
+
+            $wpdb->update(
+                $table,
+                array(
+                    'status'      => 'dismissed',
+                    'reviewed_by' => 0,
+                    'reviewed_at' => current_time('mysql'),
+                    'review_note' => 'auto_dismissed_cgnat_migration',
+                ),
+                array( 'id' => (int) $row->id ),
+                array( '%s', '%d', '%s', '%s' ),
+                array( '%d' )
+            );
+            ++$dismissed;
+        }
+
+        update_option('cashback_fraud_legacy_cgnat_dismissed_at', current_time('mysql'), false);
+
+        if ($dismissed > 0 && class_exists('Cashback_Encryption')) {
+            Cashback_Encryption::write_audit_log(
+                'fraud_legacy_cgnat_migration',
+                0,
+                'system',
+                null,
+                array( 'dismissed' => $dismissed )
+            );
+        }
+
+        return $dismissed;
+    }
+
+    /**
      * @return array<string, string>
      */
     private static function get_alert_type_labels(): array {
         return array(
-            'multi_account_ip'  => 'Общий IP',
-            'multi_account_fp'  => 'Общий fingerprint',
-            'shared_details'    => 'Общие реквизиты',
-            'cancellation_rate' => 'Высокий % отклонений',
-            'velocity'          => 'Высокая частота выводов',
-            'amount_anomaly'    => 'Аномальная сумма',
-            'new_account_risk'  => 'Новый аккаунт',
+            'multi_account_ip'    => 'Общий IP',
+            'multi_account_fp'    => 'Общий fingerprint',
+            'shared_device_id'    => 'Общий device ID',
+            'device_multiple_ips' => 'Устройство со множеством IP',
+            'shared_details'      => 'Общие реквизиты',
+            'cancellation_rate'   => 'Высокий % отклонений',
+            'velocity'            => 'Высокая частота выводов',
+            'amount_anomaly'      => 'Аномальная сумма',
+            'new_account_risk'    => 'Новый аккаунт',
         );
     }
 
