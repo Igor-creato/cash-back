@@ -249,7 +249,7 @@ class CashbackHistory {
             "SELECT id, reference_id, action_date, created_at, offer_name, order_number, cashback, order_status
              FROM %i
              {$where}
-             ORDER BY created_at DESC
+             ORDER BY COALESCE(action_date, created_at) DESC
              LIMIT %d OFFSET %d",
             array_merge( array( $table_name ), $params, array( $limit, $offset ) )
         ) );
@@ -291,12 +291,12 @@ class CashbackHistory {
      */
     private function apply_filters( string &$where, array &$params, array $filters ): void {
         if (!empty($filters['date_from'])) {
-            $where   .= ' AND created_at >= %s';
+            $where   .= ' AND COALESCE(action_date, created_at) >= %s';
             $params[] = $filters['date_from'] . ' 00:00:00';
         }
 
         if (!empty($filters['date_to'])) {
-            $where   .= ' AND created_at <= %s';
+            $where   .= ' AND COALESCE(action_date, created_at) <= %s';
             $params[] = $filters['date_to'] . ' 23:59:59';
         }
 
