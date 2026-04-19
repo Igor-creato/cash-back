@@ -10,14 +10,13 @@ if (!defined('ABSPATH')) {
  * REST-роутер модуля социальной авторизации.
  *
  * Маршруты в namespace cashback/v1:
- *  - GET  /social/{provider}/start     — инициировать OAuth flow (302)
- *  - GET  /social/{provider}/callback  — обработать редирект от провайдера
- *  - POST /social/email-prompt         — принять email от пользователя (заглушка)
- *  - GET  /social/confirm?token=...    — подтверждение по email-ссылке (заглушка)
+ *  - GET  /social/{provider}/start          — инициировать OAuth flow (302)
+ *  - GET  /social/{provider}/callback       — обработать редирект от провайдера
+ *  - POST /social/email-prompt              — принять email от пользователя (ветка C)
+ *  - GET  /social/email-prompt-form         — отрисовать форму email (HTML)
+ *  - GET  /social/confirm?token=...         — подтверждение по email-ссылке (double opt-in)
  *
- * На Этапе 1 callback/email/confirm возвращают 501 (Not implemented) — полная
- * реализация в Этапе 4. Start — валидирует провайдер и rate-limit, но не
- * выполняет редирект к провайдеру (у наследника нет get_authorize_url).
+ * Полная реализация веток A-D через Cashback_Social_Auth_Account_Manager (Этап 4).
  */
 class Cashback_Social_Auth_Router {
 
@@ -25,6 +24,8 @@ class Cashback_Social_Auth_Router {
 
     public function register(): void {
         add_action('rest_api_init', array( $this, 'register_routes' ));
+        add_filter('login_message', array( $this, 'filter_login_message' ));
+        add_action('woocommerce_before_customer_login_form', array( $this, 'render_wc_login_message' ));
     }
 
     public function register_routes(): void {
@@ -64,6 +65,16 @@ class Cashback_Social_Auth_Router {
             array(
                 'methods'             => 'POST',
                 'callback'            => array( $this, 'handle_email_prompt' ),
+                'permission_callback' => '__return_true',
+            )
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/social/email-prompt-form',
+            array(
+                'methods'             => 'GET',
+                'callback'            => array( $this, 'handle_email_prompt_form' ),
                 'permission_callback' => '__return_true',
             )
         );
@@ -131,23 +142,21 @@ class Cashback_Social_Auth_Router {
             'referral_snapshot' => Cashback_Social_Auth_Session::capture_referral_snapshot(),
             'scope_phone'       => method_exists($provider, 'is_phone_scope_enabled') ? (bool) $provider->is_phone_scope_enabled() : false,
             'ip'                => $ip,
+            'user_agent'        => $this->get_user_agent(),
         );
 
         Cashback_Social_Auth_Session::store($provider_id, $data);
 
-        // На Этапе 1 у провайдеров ещё нет реализации — не делаем редирект,
-        // а возвращаем понятную ошибку. На Этапе 2–3 провайдеры вернут URL, и
-        // тогда ниже — wp_redirect($url) + exit.
         try {
             $authorize_url = $provider->get_authorize_url($data);
         } catch (\Throwable $e) {
             return new \WP_Error(
                 'social_not_implemented',
-                __('Провайдер ещё не готов к авторизации. Этап 1 реализации.', 'cashback-plugin'),
+                __('Провайдер ещё не готов к авторизации.', 'cashback-plugin'),
                 array(
-					'status' => 501,
-					'detail' => $e->getMessage(),
-				)
+                    'status' => 501,
+                    'detail' => $e->getMessage(),
+                )
             );
         }
 
@@ -202,11 +211,13 @@ class Cashback_Social_Auth_Router {
                 'error'    => $error,
                 'ip'       => $ip,
             ));
-            return new \WP_Error('social_provider_error', $error, array( 'status' => 400 ));
+            $this->redirect_to_login_with_error('provider_error');
+            return null;
         }
 
         if ($state === '' || $code === '') {
-            return new \WP_Error('social_invalid_callback', __('Некорректный callback (нет state/code).', 'cashback-plugin'), array( 'status' => 400 ));
+            $this->redirect_to_login_with_error('invalid_callback');
+            return null;
         }
 
         $session = Cashback_Social_Auth_Session::load_and_verify($provider_id, $state);
@@ -215,39 +226,45 @@ class Cashback_Social_Auth_Router {
                 'provider' => $provider_id,
                 'ip'       => $ip,
             ));
-            return new \WP_Error('social_state_mismatch', __('Сессия устарела. Повторите вход.', 'cashback-plugin'), array( 'status' => 403 ));
+            $this->redirect_to_login_with_error('state_mismatch');
+            return null;
         }
 
-        // Debug-режим для ручной проверки провайдера: только при WP_DEBUG и явном флаге.
-        // Выполняет exchange_code + fetch_user_info и возвращает профайл JSON,
-        // НЕ создавая/привязывая пользователя. Аккаунт-менеджер — Этап 4.
+        // Debug-режим: при WP_DEBUG и debug_profile=1 — только вернуть профайл (не логинить).
         $debug_profile = defined('WP_DEBUG') && WP_DEBUG && (int) $request->get_param('debug_profile') === 1;
-        if ($debug_profile) {
-            $code_verifier = isset($session['code_verifier']) ? (string) $session['code_verifier'] : '';
-            $redirect_uri  = isset($session['redirect_uri']) ? (string) $session['redirect_uri'] : $provider->get_redirect_uri();
 
-            $exchange_extra = array(
-                'device_id' => $device_id,
-                'state'     => $state,
+        $code_verifier = isset($session['code_verifier']) ? (string) $session['code_verifier'] : '';
+        $redirect_uri  = isset($session['redirect_uri']) ? (string) $session['redirect_uri'] : $provider->get_redirect_uri();
+
+        $exchange_extra = array(
+            'device_id' => $device_id,
+            'state'     => $state,
+        );
+
+        try {
+            $token_set = $provider->exchange_code($code, $code_verifier, $redirect_uri, $exchange_extra);
+            $profile   = $provider->fetch_user_info(
+                (string) $token_set['access_token'],
+                isset($token_set['extra']) && is_array($token_set['extra']) ? $token_set['extra'] : array()
             );
+        } catch (\Throwable $e) {
+            Cashback_Social_Auth_Session::clear($provider_id);
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'provider' => $provider_id,
+                'stage'    => 'exchange_or_fetch',
+                'error'    => $e->getMessage(),
+            ));
 
-            try {
-                $token_set = $provider->exchange_code($code, $code_verifier, $redirect_uri, $exchange_extra);
-                $profile   = $provider->fetch_user_info(
-                    (string) $token_set['access_token'],
-                    isset($token_set['extra']) && is_array($token_set['extra']) ? $token_set['extra'] : array()
-                );
-            } catch (\Throwable $e) {
-                Cashback_Social_Auth_Session::clear($provider_id);
-                return new \WP_Error(
-                    'social_debug_flow_failed',
-                    $e->getMessage(),
-                    array( 'status' => 500 )
-                );
+            if ($debug_profile) {
+                return new \WP_Error('social_debug_flow_failed', $e->getMessage(), array( 'status' => 500 ));
             }
 
-            Cashback_Social_Auth_Session::clear($provider_id);
+            $this->redirect_to_login_with_error('exchange_failed');
+            return null;
+        }
 
+        if ($debug_profile) {
+            Cashback_Social_Auth_Session::clear($provider_id);
             return new \WP_REST_Response(array(
                 'debug'   => true,
                 'profile' => $profile,
@@ -260,28 +277,112 @@ class Cashback_Social_Auth_Router {
             ), 200);
         }
 
-        // Штатный flow (exchange + fetch + link/create user) — Этап 4 (Account Manager).
-        return new \WP_Error(
-            'social_not_implemented',
-            __('Обработка callback будет реализована на Этапе 4.', 'cashback-plugin'),
-            array( 'status' => 501 )
+        // Основной flow — Account Manager.
+        $session_data = array(
+            'redirect_after'    => isset($session['redirect_after']) ? (string) $session['redirect_after'] : home_url('/'),
+            'referral_snapshot' => isset($session['referral_snapshot']) && is_array($session['referral_snapshot'])
+                ? $session['referral_snapshot']
+                : array(),
+            'ip'                => $ip,
+            'user_agent'        => $this->get_user_agent(),
+            'scope_phone'       => !empty($session['scope_phone']),
         );
+
+        $result = Cashback_Social_Auth_Account_Manager::instance()
+            ->handle_callback($provider, $profile, $token_set, $session_data, $request);
+
+        $action = isset($result['action']) ? (string) $result['action'] : 'error';
+
+        if ($action === 'login') {
+            $target = isset($result['redirect_url']) ? (string) $result['redirect_url'] : home_url('/');
+            $target = wp_validate_redirect($target, home_url('/'));
+            wp_safe_redirect($target);
+            exit;
+        }
+
+        if ($action === 'prompt_email') {
+            $target = isset($result['redirect_url']) ? (string) $result['redirect_url'] : home_url('/');
+            // Здесь редиректим на внутренний endpoint /email-prompt-form (home_url base) — используем обычный wp_redirect.
+            wp_redirect($target); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- REST endpoint на том же хосте.
+            exit;
+        }
+
+        if ($action === 'pending') {
+            $this->redirect_to_login_with_message('check_email');
+            return null;
+        }
+
+        // action=error
+        $msg = isset($result['message']) ? (string) $result['message'] : __('Ошибка авторизации.', 'cashback-plugin');
+        Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+            'provider' => $provider_id,
+            'stage'    => 'account_manager_result',
+            'error'    => $msg,
+        ));
+        $this->redirect_to_login_with_error('account_error');
+        return null;
     }
 
     /**
-     * POST /social/email-prompt — заглушка.
+     * POST /social/email-prompt — принять email от пользователя (ветка C).
+     *
+     * @return \WP_Error|\WP_REST_Response
      */
     public function handle_email_prompt( \WP_REST_Request $request ) {
-        unset($request);
-        return new \WP_Error(
-            'social_not_implemented',
-            __('Email-prompt будет реализован на Этапе 4.', 'cashback-plugin'),
-            array( 'status' => 501 )
-        );
+        $ip = $this->get_client_ip();
+
+        if (class_exists('Cashback_Rate_Limiter')) {
+            $check = Cashback_Rate_Limiter::check('social_email_prompt', get_current_user_id(), $ip);
+            if (empty($check['allowed'])) {
+                Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_RATE_LIMITED, array(
+                    'stage' => 'email_prompt',
+                    'ip'    => $ip,
+                ));
+                return new \WP_Error('social_rate_limited', __('Слишком много попыток.', 'cashback-plugin'), array( 'status' => 429 ));
+            }
+        }
+
+        // Nonce (wp_rest).
+        $nonce = $request->get_header('x_wp_nonce');
+        if (!$nonce) {
+            $nonce = (string) $request->get_param('_wpnonce');
+        }
+        if (!$nonce || !wp_verify_nonce((string) $nonce, 'wp_rest')) {
+            return $this->render_email_prompt_form(
+                (string) $request->get_param('token'),
+                __('Срок действия формы истёк. Обновите страницу и попробуйте снова.', 'cashback-plugin')
+            );
+        }
+
+        $result = Cashback_Social_Auth_Account_Manager::instance()
+            ->handle_email_prompt_submission($request);
+
+        $action = isset($result['action']) ? (string) $result['action'] : 'error';
+
+        if ($action === 'pending') {
+            $this->redirect_to_login_with_message('check_email');
+            return null;
+        }
+
+        // Если ошибка — повторно рисуем форму с сообщением.
+        $msg = isset($result['message']) ? (string) $result['message'] : __('Ошибка.', 'cashback-plugin');
+        return $this->render_email_prompt_form((string) $request->get_param('token'), $msg);
     }
 
     /**
-     * GET /social/confirm — заглушка.
+     * GET /social/email-prompt-form — отрисовать форму (HTML).
+     *
+     * @return \WP_REST_Response
+     */
+    public function handle_email_prompt_form( \WP_REST_Request $request ) {
+        $token = sanitize_text_field((string) $request->get_param('token'));
+        return $this->render_email_prompt_form($token, '');
+    }
+
+    /**
+     * GET /social/confirm — подтверждение email-ссылки (double opt-in).
+     *
+     * @return \WP_Error|\WP_REST_Response
      */
     public function handle_confirm( \WP_REST_Request $request ) {
         $token = sanitize_text_field((string) $request->get_param('token'));
@@ -301,11 +402,153 @@ class Cashback_Social_Auth_Router {
             }
         }
 
-        return new \WP_Error(
-            'social_not_implemented',
-            __('Подтверждение привязки будет реализовано на Этапе 4.', 'cashback-plugin'),
-            array( 'status' => 501 )
-        );
+        $result = Cashback_Social_Auth_Account_Manager::instance()->handle_confirm($request);
+        $action = isset($result['action']) ? (string) $result['action'] : 'error';
+
+        if ($action === 'login') {
+            $target = isset($result['redirect_url']) ? (string) $result['redirect_url'] : home_url('/');
+            $target = wp_validate_redirect($target, home_url('/'));
+            wp_safe_redirect($target);
+            exit;
+        }
+
+        $msg = isset($result['message']) ? (string) $result['message'] : __('Ссылка недействительна.', 'cashback-plugin');
+        $this->render_error_page($msg);
+        return null;
+    }
+
+    // =========================================================================
+    // UI helpers
+    // =========================================================================
+
+    /**
+     * Отрисовать email-prompt форму из template.
+     *
+     * @return \WP_REST_Response
+     */
+    private function render_email_prompt_form( string $token, string $error_message ): \WP_REST_Response {
+        $template  = plugin_dir_path(__FILE__) . 'templates/email-prompt.php';
+        $endpoint  = rest_url('cashback/v1/social/email-prompt');
+        $provider  = '';
+        $site_name = get_bloginfo('name');
+        $cb_error  = $error_message;
+
+        // Шаблон использует переменные token, cb_error, endpoint, provider, site_name.
+        ob_start();
+        if (file_exists($template)) {
+            include $template;
+        } else {
+            unset($token, $cb_error);
+            echo '<p>' . esc_html__('Шаблон формы не найден.', 'cashback-plugin') . '</p>';
+        }
+        $html = (string) ob_get_clean();
+
+        $response = new \WP_REST_Response($html, 200);
+        $response->header('Content-Type', 'text/html; charset=UTF-8');
+        return $response;
+    }
+
+    /**
+     * Отрисовать простую HTML-страницу ошибки.
+     */
+    private function render_error_page( string $message ): void {
+        status_header(400);
+        nocache_headers();
+        header('Content-Type: text/html; charset=UTF-8');
+
+        $title    = esc_html__('Ошибка подтверждения', 'cashback-plugin');
+        $msg      = esc_html($message);
+        $back     = esc_url(wp_login_url());
+        $back_txt = esc_html__('Вернуться на страницу входа', 'cashback-plugin');
+
+        $html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' . $title . '</title>'
+            . '<style>body{font-family:sans-serif;max-width:520px;margin:60px auto;padding:24px;background:#f5f5f5;color:#222}'
+            . '.box{background:#fff;padding:28px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.08)}'
+            . 'a{color:#2271b1}</style></head><body><div class="box"><h1>' . $title . '</h1>'
+            . '<p>' . $msg . '</p><p><a href="' . $back . '">' . $back_txt . '</a></p>'
+            . '</div></body></html>';
+
+        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $html composed from pre-escaped fragments.
+        echo $html;
+
+        exit;
+    }
+
+    /**
+     * Редирект на страницу входа с сообщением (login_message / WC login).
+     */
+    private function redirect_to_login_with_message( string $code ): void {
+        $base   = class_exists('WooCommerce') ? wc_get_page_permalink('myaccount') : wp_login_url();
+        $target = add_query_arg('cashback_social_msg', rawurlencode($code), (string) $base);
+        wp_safe_redirect($target);
+        exit;
+    }
+
+    /**
+     * Редирект на login с кодом ошибки (error-параметр).
+     */
+    private function redirect_to_login_with_error( string $code ): void {
+        $base   = class_exists('WooCommerce') ? wc_get_page_permalink('myaccount') : wp_login_url();
+        $target = add_query_arg('cashback_social_error', rawurlencode($code), (string) $base);
+        wp_safe_redirect($target);
+        exit;
+    }
+
+    /**
+     * Добавить сообщение на wp-login.php (фильтр login_message).
+     */
+    public function filter_login_message( $message ) {
+        $msg = $this->resolve_flash_message();
+        if ($msg !== '') {
+            $message .= '<p class="message">' . esc_html($msg) . '</p>';
+        }
+        return $message;
+    }
+
+    /**
+     * Вывести сообщение на странице WooCommerce my-account (login form).
+     */
+    public function render_wc_login_message(): void {
+        $msg = $this->resolve_flash_message();
+        if ($msg !== '') {
+            echo '<div class="woocommerce-info">' . esc_html($msg) . '</div>';
+        }
+    }
+
+    /**
+     * Подобрать текст флеш-сообщения по query-параметрам.
+     */
+    private function resolve_flash_message(): string {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only flash from query.
+        if (isset($_GET['cashback_social_msg'])) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only flash from query.
+            $code = sanitize_key((string) wp_unslash($_GET['cashback_social_msg']));
+            if ($code === 'check_email') {
+                return __('Мы отправили письмо для подтверждения. Проверьте почту и перейдите по ссылке в течение 15 минут.', 'cashback-plugin');
+            }
+        }
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only flash from query.
+        if (isset($_GET['cashback_social_error'])) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only flash from query.
+            $code = sanitize_key((string) wp_unslash($_GET['cashback_social_error']));
+            switch ($code) {
+                case 'provider_error':
+                    return __('Провайдер соцсети вернул ошибку. Попробуйте ещё раз.', 'cashback-plugin');
+                case 'state_mismatch':
+                    return __('Сессия устарела. Повторите вход.', 'cashback-plugin');
+                case 'invalid_callback':
+                    return __('Некорректный ответ от соцсети. Попробуйте ещё раз.', 'cashback-plugin');
+                case 'exchange_failed':
+                    return __('Не удалось завершить вход через соцсеть. Попробуйте ещё раз.', 'cashback-plugin');
+                case 'account_error':
+                    return __('Не удалось завершить авторизацию. Попробуйте ещё раз или обратитесь в поддержку.', 'cashback-plugin');
+                default:
+                    return __('Ошибка авторизации через соцсеть.', 'cashback-plugin');
+            }
+        }
+
+        return '';
     }
 
     /**
@@ -334,5 +577,16 @@ class Cashback_Social_Auth_Router {
         $raw = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
         $ip  = preg_replace('/[^0-9a-f:\.]/i', '', $raw) ?? '';
         return substr($ip, 0, 45);
+    }
+
+    /**
+     * User-Agent (обрезанный до 255 символов).
+     */
+    private function get_user_agent(): string {
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotValidated, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPressVIPMinimum.Variables.ServerVariables.UserControlledHeaders -- UA для аудита; сохраняется verbatim, не используется в запросах.
+        $raw = isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : '';
+        $raw = wp_unslash($raw);
+        $raw = wp_strip_all_tags($raw);
+        return substr((string) $raw, 0, 255);
     }
 }

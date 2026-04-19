@@ -230,17 +230,36 @@ class Cashback_Social_Auth_DB {
     }
 
     /**
-     * Обновить last_login_at для связки.
+     * Обновить last_login_at (и опционально link_ip/link_user_agent) для связки.
+     *
+     * Если передана непустая строка $ip — обновится link_ip; аналогично $user_agent.
+     * Пустые строки трактуются как «не менять».
      */
-    public static function touch_last_login( int $link_id ): void {
+    public static function touch_last_login( int $link_id, string $ip = '', string $user_agent = '' ): void {
         global $wpdb;
+
+        if ($link_id <= 0) {
+            return;
+        }
+
+        $data    = array( 'last_login_at' => current_time('mysql') );
+        $formats = array( '%s' );
+
+        if ($ip !== '') {
+            $data['link_ip'] = substr($ip, 0, 45);
+            $formats[]       = '%s';
+        }
+        if ($user_agent !== '') {
+            $data['link_user_agent'] = substr($user_agent, 0, 255);
+            $formats[]               = '%s';
+        }
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Write to plugin-owned table.
         $wpdb->update(
             self::table_links(),
-            array( 'last_login_at' => current_time('mysql') ),
+            $data,
             array( 'id' => $link_id ),
-            array( '%s' ),
+            $formats,
             array( '%d' )
         );
     }
