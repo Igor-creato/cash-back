@@ -520,10 +520,12 @@ class Cashback_Social_Auth_Router {
         $buttons_html = '';
         if (class_exists('Cashback_Social_Auth_Renderer')) {
             $buttons_html = Cashback_Social_Auth_Renderer::instance()->render_buttons('login');
+            // На странице просроченной ссылки «или» не нужен — над кнопкой нет альтернативы.
+            $buttons_html = (string) preg_replace('/\s+data-label="[^"]*"/', '', $buttons_html);
         }
 
         $plugin_root_file = dirname(__DIR__, 2) . '/cashback-plugin.php';
-        $buttons_css_url  = esc_url(add_query_arg('ver', '1.1.1', plugins_url('assets/social-auth/css/buttons.css', $plugin_root_file)));
+        $buttons_css_url  = esc_url(add_query_arg('ver', '1.1.2', plugins_url('assets/social-auth/css/buttons.css', $plugin_root_file)));
 
         $favicon_html = '';
         $icon_32      = get_site_icon_url(32);
