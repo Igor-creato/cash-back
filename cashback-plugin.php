@@ -289,6 +289,22 @@ class CashbackPlugin {
             Cashback_Fraud_DB::create_tables();
         }
 
+        // Одноразовая миграция: автоматически dismiss-нуть legacy multi_account_ip
+        // алерты для mobile/CGNAT/private IP (после внедрения IP Intelligence в Этапе 2).
+        // Идемпотентна — флаг 'cashback_fraud_legacy_cgnat_dismissed_at'.
+        $this->require_file('antifraud/class-fraud-ip-intelligence.php');
+        $this->require_file('antifraud/class-fraud-admin.php');
+        if (class_exists('Cashback_Fraud_Admin')) {
+            Cashback_Fraud_Admin::migrate_dismiss_legacy_cgnat_alerts();
+        }
+
+        // Опция-флаг для legacy-согласий (юзеры до этой даты освобождены от
+        // явного opt-in; см. Cashback_Fraud_Consent::has_consent).
+        $this->require_file('includes/class-cashback-fraud-consent.php');
+        if (class_exists('Cashback_Fraud_Consent')) {
+            Cashback_Fraud_Consent::ensure_required_after_option();
+        }
+
         // Создание таблиц affiliate-модуля (реферальная программа)
         $this->require_file('affiliate/class-affiliate-db.php');
         if (class_exists('Cashback_Affiliate_DB')) {
@@ -324,6 +340,11 @@ class CashbackPlugin {
         // Планируем cron для очистки старых fingerprints (ежедневно)
         if (!wp_next_scheduled('cashback_fraud_cleanup_cron')) {
             wp_schedule_event(time(), 'daily', 'cashback_fraud_cleanup_cron');
+        }
+
+        // Планируем cron для cluster detection (ежечасно).
+        if (!wp_next_scheduled('cashback_fraud_cluster_detect_cron')) {
+            wp_schedule_event(time(), 'hourly', 'cashback_fraud_cluster_detect_cron');
         }
 
         // Миграция планировщика: снимаем устаревшие WP-Cron события для задач,
@@ -362,6 +383,7 @@ class CashbackPlugin {
             'cashback_health_check_cron',
             'cashback_fraud_detection_cron',
             'cashback_fraud_cleanup_cron',
+            'cashback_fraud_cluster_detect_cron',
         );
 
         foreach ($cron_hooks as $hook) {
@@ -457,8 +479,23 @@ class CashbackPlugin {
         // Антифрод: collector нужен на фронтенде (fingerprint), detector — для WP Cron
         $this->require_file('antifraud/class-fraud-db.php');
         $this->require_file('antifraud/class-fraud-settings.php');
+        // IP Intelligence — резолв IP в ASN/connection_type. Подключается ДО collector/detector,
+        // потому что Cashback_Fraud_Device_Id::record() и detector используют его для обогащения.
+        $this->require_file('antifraud/class-fraud-ip-intelligence.php');
+        // Persistent device IDs (UUID v4 + FingerprintJS visitor IDs). Должен загружаться ДО
+        // collector — collector::handle_fingerprint_ajax() вызывает Cashback_Fraud_Device_Id::record().
+        $this->require_file('antifraud/class-fraud-device-id.php');
         $this->require_file('antifraud/class-fraud-collector.php');
         $this->require_file('antifraud/class-fraud-detector.php');
+        // Cluster Detector (Этап 5): периодический union-find по device/payment/email связям.
+        $this->require_file('antifraud/class-fraud-cluster-detector.php');
+        if (class_exists('Cashback_Fraud_Cluster_Detector')) {
+            Cashback_Fraud_Cluster_Detector::register_cron();
+        }
+
+        // Согласие 152-ФЗ ст. 9 на сбор технических данных устройства
+        // (чекбокс на форме регистрации WC + хранение consent_at в user_meta).
+        $this->require_file('includes/class-cashback-fraud-consent.php');
 
         // Health-check cron обработчик (WP Cron работает через фронтенд-запросы)
         $this->require_file('admin/health-check.php');
@@ -633,6 +670,11 @@ class CashbackPlugin {
         // Инициализация антифрод-модуля
         if (class_exists('Cashback_Fraud_Collector')) {
             Cashback_Fraud_Collector::get_instance();
+        }
+
+        // Согласие 152-ФЗ: чекбокс регистрации + хуки сохранения consent.
+        if (class_exists('Cashback_Fraud_Consent')) {
+            Cashback_Fraud_Consent::init();
         }
 
         if (is_admin() && class_exists('Cashback_Fraud_Admin')) {

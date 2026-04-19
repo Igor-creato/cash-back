@@ -62,6 +62,7 @@ function cashback_plugin_uninstall(): void {
         "{$prefix}cashback_fraud_signals",
         "{$prefix}cashback_fraud_alerts",
         "{$prefix}cashback_user_fingerprints",
+        "{$prefix}cashback_fraud_device_ids",
         "{$prefix}cashback_balance_ledger",
         "{$prefix}cashback_payout_requests",
         "{$prefix}cashback_transactions",
