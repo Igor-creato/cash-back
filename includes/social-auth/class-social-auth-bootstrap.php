@@ -48,6 +48,7 @@ class Cashback_Social_Auth_Bootstrap {
             $base . 'providers/class-social-provider-yandex.php',
             $base . 'providers/class-social-provider-vkid.php',
             $base . 'class-social-auth-providers.php',
+            $base . 'class-social-auth-account-manager.php',
             $base . 'class-social-auth-router.php',
         );
 
@@ -87,6 +88,16 @@ class Cashback_Social_Auth_Bootstrap {
         if (class_exists('Cashback_Social_Auth_Router')) {
             $router = new Cashback_Social_Auth_Router();
             $router->register();
+        }
+
+        // Блокировка входа по паролю для юзеров, ожидающих подтверждения email (double opt-in).
+        if (class_exists('Cashback_Social_Auth_Account_Manager')) {
+            add_filter(
+                'authenticate',
+                array( Cashback_Social_Auth_Account_Manager::instance(), 'block_pending_login' ),
+                30,
+                3
+            );
         }
 
         if (is_admin() && class_exists('Cashback_Social_Admin')) {
