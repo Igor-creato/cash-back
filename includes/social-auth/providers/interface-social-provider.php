@@ -74,4 +74,9 @@ interface Cashback_Social_Provider_Interface {
      * Client Secret приложения (уже расшифрован).
      */
     public function get_client_secret(): string;
+
+    /**
+     * Redirect URI callback-ветки, используемый в authorize и token-exchange.
+     */
+    public function get_redirect_uri(): string;
 }

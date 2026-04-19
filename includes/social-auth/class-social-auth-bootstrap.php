@@ -99,7 +99,7 @@ class Cashback_Social_Auth_Bootstrap {
                 'authenticate',
                 array( Cashback_Social_Auth_Account_Manager::instance(), 'block_pending_login' ),
                 30,
-                3
+                1
             );
         }
 
