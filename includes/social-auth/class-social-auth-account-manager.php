@@ -97,6 +97,21 @@ class Cashback_Social_Auth_Account_Manager {
             : array();
 
         // -----------------------------------------------------------------
+        // Ветка account_link: юзер уже залогинен (привязка из ЛК).
+        // -----------------------------------------------------------------
+        if (is_user_logged_in()) {
+            return $this->handle_account_link_branch(
+                $provider,
+                $profile,
+                $token_set,
+                array(
+                    'ip'         => $ip,
+                    'user_agent' => $user_agent,
+                )
+            );
+        }
+
+        // -----------------------------------------------------------------
         // Ветка A: связка уже существует → логин.
         // -----------------------------------------------------------------
         $link = Cashback_Social_Auth_DB::find_link($provider_id, $external_id);
@@ -409,6 +424,113 @@ class Cashback_Social_Auth_Account_Manager {
     // =========================================================================
     // Internal helpers
     // =========================================================================
+
+    /**
+     * Ветка «привязка из ЛК»: пользователь уже залогинен, нажал «Привязать».
+     *
+     * @param array<string, mixed> $profile
+     * @param array<string, mixed> $token_set
+     * @param array<string, mixed> $session_data
+     * @return array{action:string, redirect_url?:string, message?:string}
+     */
+    private function handle_account_link_branch(
+        Cashback_Social_Provider_Interface $provider,
+        array $profile,
+        array $token_set,
+        array $session_data
+    ): array {
+        $provider_id     = $provider->get_id();
+        $external_id     = isset($profile['external_id']) ? (string) $profile['external_id'] : '';
+        $current_user_id = (int) get_current_user_id();
+        $ip              = isset($session_data['ip']) ? (string) $session_data['ip'] : '';
+        $user_agent      = isset($session_data['user_agent']) ? (string) $session_data['user_agent'] : '';
+
+        $redirect_base = function_exists('wc_get_account_endpoint_url')
+            ? (string) wc_get_account_endpoint_url('cashback-social')
+            : home_url('/my-account/cashback-social/');
+
+        $existing = Cashback_Social_Auth_DB::find_link($provider_id, $external_id);
+        if (is_array($existing) && !empty($existing['id'])) {
+            $owner_id = (int) $existing['user_id'];
+            if ($owner_id === $current_user_id) {
+                // Уже привязано к тому же юзеру — просто успех.
+                $link_id = (int) $existing['id'];
+                Cashback_Social_Auth_DB::touch_last_login($link_id, $ip, $user_agent);
+                Cashback_Social_Auth_Session::clear($provider_id);
+                return array(
+                    'action'       => 'login',
+                    'redirect_url' => add_query_arg('cashback_social_linked', $provider_id, $redirect_base),
+                );
+            }
+
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'provider' => $provider_id,
+                'stage'    => 'account_link',
+                'error'    => 'already_linked_to_other_user',
+                'user_id'  => $current_user_id,
+            ));
+            Cashback_Social_Auth_Session::clear($provider_id);
+            return array(
+                'action'       => 'login',
+                'redirect_url' => add_query_arg('cashback_social_error', 'already_linked', $redirect_base),
+            );
+        }
+
+        // Создаём связку на текущего юзера.
+        $link_id = Cashback_Social_Auth_DB::save_link(array(
+            'user_id'            => $current_user_id,
+            'provider'           => $provider_id,
+            'sub_provider'       => isset($profile['sub_provider']) ? $profile['sub_provider'] : null,
+            'external_id'        => $external_id,
+            'email_at_link_time' => isset($profile['email']) ? (string) $profile['email'] : null,
+            'display_name'       => isset($profile['name']) ? (string) $profile['name'] : null,
+            'avatar_url'         => isset($profile['avatar']) ? (string) $profile['avatar'] : null,
+            'link_ip'            => $ip,
+            'link_user_agent'    => $user_agent,
+        ));
+
+        if ($link_id <= 0) {
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'provider' => $provider_id,
+                'stage'    => 'account_link_save_link',
+                'user_id'  => $current_user_id,
+            ));
+            Cashback_Social_Auth_Session::clear($provider_id);
+            return array(
+                'action'       => 'login',
+                'redirect_url' => add_query_arg('cashback_social_error', 'account_error', $redirect_base),
+            );
+        }
+
+        $refresh = isset($token_set['refresh_token']) && is_string($token_set['refresh_token']) ? $token_set['refresh_token'] : '';
+        if ($refresh !== '') {
+            $expires_at = null;
+            if (!empty($token_set['expires_in'])) {
+                $expires_at = gmdate('Y-m-d H:i:s', time() + (int) $token_set['expires_in']);
+            }
+            Cashback_Social_Auth_Token_Store::save_tokens(
+                $link_id,
+                $refresh,
+                $expires_at,
+                isset($token_set['scope']) ? (string) $token_set['scope'] : ''
+            );
+        }
+
+        Cashback_Social_Auth_DB::touch_last_login($link_id, $ip, $user_agent);
+
+        Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_LINK_CREATED, array(
+            'provider' => $provider_id,
+            'user_id'  => $current_user_id,
+            'link_id'  => $link_id,
+            'context'  => 'account_link',
+        ));
+        Cashback_Social_Auth_Session::clear($provider_id);
+
+        return array(
+            'action'       => 'login',
+            'redirect_url' => add_query_arg('cashback_social_linked', $provider_id, $redirect_base),
+        );
+    }
 
     /**
      * Создать user + связку + pending(email_verify) + письмо.

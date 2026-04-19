@@ -49,6 +49,8 @@ class Cashback_Social_Auth_Bootstrap {
             $base . 'providers/class-social-provider-vkid.php',
             $base . 'class-social-auth-providers.php',
             $base . 'class-social-auth-account-manager.php',
+            $base . 'class-social-auth-renderer.php',
+            $base . 'class-social-auth-my-account.php',
             $base . 'class-social-auth-router.php',
         );
 
@@ -102,6 +104,30 @@ class Cashback_Social_Auth_Bootstrap {
 
         if (is_admin() && class_exists('Cashback_Social_Admin')) {
             new Cashback_Social_Admin();
+        }
+
+        // UI renderer + хуки форм.
+        if (class_exists('Cashback_Social_Auth_Renderer')) {
+            $renderer = Cashback_Social_Auth_Renderer::instance();
+
+            // Enqueue стилей.
+            add_action('wp_enqueue_scripts', array( $renderer, 'maybe_enqueue_front' ), 15);
+            add_action('login_enqueue_scripts', array( $renderer, 'maybe_enqueue_login' ), 15);
+
+            // Формы входа/регистрации WooCommerce (покрывают Woodmart dropdown и sidebar).
+            add_action('woocommerce_login_form_end', array( $renderer, 'print_login_buttons' ), 15);
+            add_action('woocommerce_register_form_end', array( $renderer, 'print_register_buttons' ), 15);
+
+            // Чекаут (только если не залогинен — проверка внутри метода).
+            add_action('woocommerce_before_checkout_form', array( $renderer, 'print_checkout_buttons' ), 12);
+
+            // wp-login.php.
+            add_action('login_form', array( $renderer, 'print_wp_login_buttons' ), 15);
+        }
+
+        // Вкладка ЛК «Соцсети».
+        if (class_exists('Cashback_Social_Auth_My_Account')) {
+            Cashback_Social_Auth_My_Account::instance()->register_hooks();
         }
 
         // Плановая очистка pending.
