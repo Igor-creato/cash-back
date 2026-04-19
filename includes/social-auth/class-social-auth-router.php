@@ -518,32 +518,35 @@ class Cashback_Social_Auth_Router {
         $fallback_txt = esc_html__('Вернуться на страницу входа', 'cashback-plugin');
 
         $buttons_html = '';
-        if (class_exists('Cashback_Social_Auth_Providers')) {
-            $providers = Cashback_Social_Auth_Providers::instance()->all();
-            $labels    = Cashback_Social_Auth_Providers::labels();
-            foreach ($providers as $id => $provider) {
-                if (!$provider->is_enabled()) {
-                    continue;
-                }
-                $start_url = rest_url('cashback/v1/social/' . $id . '/start');
-                $label     = isset($labels[ $id ]) ? $labels[ $id ] : $id;
-                /* translators: %s: provider label (e.g. "Яндекс ID"). */
-                $btn_text      = sprintf(__('Войти через %s', 'cashback-plugin'), $label);
-                $buttons_html .= '<a class="cb-btn" href="' . esc_url($start_url) . '">' . esc_html($btn_text) . '</a>';
-            }
+        if (class_exists('Cashback_Social_Auth_Renderer')) {
+            $buttons_html = Cashback_Social_Auth_Renderer::instance()->render_buttons('login');
+        }
+
+        $plugin_root_file = dirname(__DIR__, 2) . '/cashback-plugin.php';
+        $buttons_css_url  = esc_url(plugins_url('assets/social-auth/css/buttons.css', $plugin_root_file));
+
+        $favicon_html = '';
+        $icon_32      = get_site_icon_url(32);
+        $icon_192     = get_site_icon_url(192);
+        if (is_string($icon_32) && $icon_32 !== '') {
+            $favicon_html .= '<link rel="icon" href="' . esc_url($icon_32) . '" sizes="32x32">';
+        }
+        if (is_string($icon_192) && $icon_192 !== '') {
+            $favicon_html .= '<link rel="icon" href="' . esc_url($icon_192) . '" sizes="192x192">';
+            $favicon_html .= '<link rel="apple-touch-icon" href="' . esc_url($icon_192) . '">';
         }
 
         $html = '<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">'
             . '<meta name="viewport" content="width=device-width,initial-scale=1">'
             . '<title>' . $title . '</title>'
+            . $favicon_html
+            . '<link rel="stylesheet" href="' . $buttons_css_url . '">'
             . '<style>'
             . 'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;max-width:520px;margin:60px auto;padding:24px;background:#f5f5f5;color:#222;line-height:1.5}'
             . '.box{background:#fff;padding:32px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.08)}'
             . 'h1{margin:0 0 12px;font-size:22px}'
             . '.msg{color:#555;margin:0 0 20px}'
             . '.lead{color:#222;margin:0 0 20px}'
-            . '.cb-btn{display:block;text-align:center;padding:12px 18px;margin:10px 0;background:#2271b1;color:#fff;text-decoration:none;border-radius:6px;font-weight:500}'
-            . '.cb-btn:hover{background:#135e96}'
             . '.back{display:block;margin-top:18px;color:#666;text-align:center;font-size:14px;text-decoration:underline}'
             . '</style></head><body><div class="box">'
             . '<h1>' . $title . '</h1>'
