@@ -58,13 +58,15 @@ class Cashback_Social_Auth_Renderer {
 
         // Путь к CSS относительно корня плагина; plugins_url() превращает его в URL.
         $plugin_root_file = dirname(__DIR__, 2) . '/cashback-plugin.php';
+        $css_path         = dirname(__DIR__, 2) . '/assets/social-auth/css/buttons.css';
         $css_url          = plugins_url('assets/social-auth/css/buttons.css', $plugin_root_file);
+        $css_version      = file_exists($css_path) ? (string) filemtime($css_path) : '1.1.2';
 
         wp_register_style(
             'cashback-social-buttons',
             $css_url,
             array(),
-            '1.1.2'
+            $css_version
         );
     }
 
