@@ -38,11 +38,13 @@ class Cashback_Email_Sender {
     public function send( string $to, string $subject, string $message, string $notification_type, ?int $user_id = null ): bool {
         // Проверяем глобальную настройку
         if (!Cashback_Notifications_DB::is_globally_enabled($notification_type)) {
+            $this->log_failure($notification_type, $to, 'globally_disabled');
             return false;
         }
 
         // Проверяем предпочтения пользователя
         if ($user_id !== null && !Cashback_Notifications_DB::is_enabled($user_id, $notification_type)) {
+            $this->log_failure($notification_type, $to, 'user_disabled');
             return false;
         }
 
@@ -53,7 +55,33 @@ class Cashback_Email_Sender {
             'From: ' . $this->get_from_name() . ' <' . $this->get_from_email() . '>',
         );
 
-        return wp_mail($to, $subject, $html, $headers);
+        $ok = wp_mail($to, $subject, $html, $headers);
+        if (!$ok) {
+            $this->log_failure($notification_type, $to, 'wp_mail_failed');
+        }
+        return $ok;
+    }
+
+    /**
+     * Диагностическая запись в error_log о неудачной отправке письма.
+     *
+     * @param string $type   slug уведомления.
+     * @param string $to     адрес получателя.
+     * @param string $reason причина: globally_disabled | user_disabled | wp_mail_failed.
+     */
+    private function log_failure( string $type, string $to, string $reason ): void {
+        $payload = wp_json_encode(array(
+            'event'  => 'email_send_failed',
+            'type'   => $type,
+            'to'     => $to,
+            'reason' => $reason,
+            'ts'     => gmdate('c'),
+        ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if (!is_string($payload)) {
+            $payload = '{"event":"email_send_failed","type":"' . $type . '","reason":"' . $reason . '"}';
+        }
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+        error_log('[cashback-email] ' . $payload);
     }
 
     /**
