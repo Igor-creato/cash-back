@@ -90,7 +90,7 @@
 }
 
 .cashback-toggle input:checked + .cashback-toggle-slider {
-    background: #2271b1;
+    background: var(--wd-primary-color, var(--cashback-brand, #2271b1));
 }
 
 .cashback-toggle input:checked + .cashback-toggle-slider::before {
@@ -111,17 +111,18 @@
 }
 
 .cashback-btn-primary {
-    background: #2271b1 !important;
-    color: #fff !important;
+    background: var(--wd-primary-color, var(--cashback-brand, #2271b1)) !important;
+    color: var(--cashback-brand-text, #fff) !important;
     border: none !important;
     padding: 10px 24px !important;
     border-radius: 4px !important;
     cursor: pointer !important;
     font-size: 14px !important;
+    transition: filter 0.2s;
 }
 
 .cashback-btn-primary:hover {
-    background: #135e96 !important;
+    filter: brightness(0.9);
 }
 
 .cashback-btn-primary:disabled {
@@ -131,7 +132,7 @@
 
 .cashback-notifications-status {
     font-size: 13px;
-    color: #2271b1;
+    color: var(--wd-primary-color, var(--cashback-brand, #2271b1));
 }
 
 .cashback-notifications-status.error {

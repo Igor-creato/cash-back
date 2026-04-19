@@ -79,6 +79,17 @@ class Cashback_Notifications_Frontend {
             $ver
         );
 
+        $brand_color = Cashback_Theme_Color::get_brand_color();
+        $brand_text  = Cashback_Theme_Color::get_contrast_text_color($brand_color);
+        wp_add_inline_style(
+            'cashback-notifications',
+            sprintf(
+                ':root{--cashback-brand:%s;--cashback-brand-text:%s;}',
+                esc_attr($brand_color),
+                esc_attr($brand_text)
+            )
+        );
+
         wp_enqueue_script(
             'cashback-notifications',
             plugins_url('assets/js/cashback-notifications.js', __DIR__),
