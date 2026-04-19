@@ -767,7 +767,7 @@ class Cashback_Broadcast {
             $offset
         ), ARRAY_A);
 
-        $total_pages = $per_page > 0 ? (int) ceil($total / $per_page) : 0;
+        $total_pages = (int) ceil($total / $per_page);
 
         $default_filters = array(
             'statuses'     => array( 'active' ),
