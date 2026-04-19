@@ -510,7 +510,11 @@ class Cashback_Social_Auth_Router {
         $title        = esc_html__('Срок действия ссылки истёк', 'cashback-plugin');
         $lead         = esc_html__('Для входа ещё раз нажмите кнопку ниже — мы отправим новое письмо подтверждения.', 'cashback-plugin');
         $msg          = esc_html($message);
-        $fallback     = esc_url(wp_login_url());
+        $fallback_url = function_exists('wc_get_page_permalink') ? wc_get_page_permalink('myaccount') : home_url('/');
+        if (!is_string($fallback_url) || $fallback_url === '') {
+            $fallback_url = home_url('/');
+        }
+        $fallback     = esc_url($fallback_url);
         $fallback_txt = esc_html__('Вернуться на страницу входа', 'cashback-plugin');
 
         $buttons_html = '';
