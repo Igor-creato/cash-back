@@ -845,6 +845,19 @@ class Cashback_Fraud_Admin {
         $this->render_number_field('fingerprint_retention_days', __('Хранение fingerprints (дней)', 'cashback-plugin'), $settings, $defaults);
         echo '</table>';
 
+        // New-generation antifraud subsystems (toggles + thresholds)
+        echo '<h2>' . esc_html__('Подсистемы антифрод-нового-поколения', 'cashback-plugin') . '</h2>';
+        echo '<p class="description">' . esc_html__('Тумблеры независимых подсистем. Безопасные дефолты — все включены. Документация: obsidian/knowledge/patterns/антифрод тумблеры подсистем.md', 'cashback-plugin') . '</p>';
+        echo '<table class="form-table">';
+        $this->render_checkbox_field('ip_intelligence_enabled', __('IP Intelligence (MaxMind ASN classify, CGNAT/mobile/hosting/VPN)', 'cashback-plugin'), $settings);
+        $this->render_checkbox_field('skip_alert_for_mobile_ip', __('Пропускать alert для mobile/CGNAT IP', 'cashback-plugin'), $settings);
+        $this->render_checkbox_field('device_id_enabled', __('Persistent device_id и композитные сигналы', 'cashback-plugin'), $settings);
+        $this->render_number_field('max_users_per_device', __('Макс. пользователей с одного device', 'cashback-plugin'), $settings, $defaults);
+        $this->render_number_field('max_ips_per_device_24h', __('Макс. IP с одного device за 24 часа', 'cashback-plugin'), $settings, $defaults);
+        $this->render_checkbox_field('cluster_detection_enabled', __('Cluster detection cron (граф связанных аккаунтов)', 'cashback-plugin'), $settings);
+        $this->render_checkbox_field('consent_required', __('152-ФЗ: требовать согласие на обработку технических данных при регистрации', 'cashback-plugin'), $settings);
+        echo '</table>';
+
         echo '<p class="submit">';
         echo '<button type="submit" id="fraud-save-settings" class="button button-primary">' . esc_html__('Сохранить настройки', 'cashback-plugin') . '</button>';
         echo '</p>';
