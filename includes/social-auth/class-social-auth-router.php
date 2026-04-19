@@ -88,6 +88,18 @@ class Cashback_Social_Auth_Router {
                 'permission_callback' => '__return_true',
             )
         );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/social/unlink',
+            array(
+                'methods'             => 'POST',
+                'callback'            => array( $this, 'handle_unlink' ),
+                'permission_callback' => function () {
+                    return is_user_logged_in();
+                },
+            )
+        );
     }
 
     /**
@@ -577,6 +589,111 @@ class Cashback_Social_Auth_Router {
         $raw = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
         $ip  = preg_replace('/[^0-9a-f:\.]/i', '', $raw) ?? '';
         return substr($ip, 0, 45);
+    }
+
+    /**
+     * POST /social/unlink — отвязать социальный аккаунт текущего пользователя.
+     *
+     * @return \WP_Error|\WP_REST_Response
+     */
+    public function handle_unlink( \WP_REST_Request $request ) {
+        $ip      = $this->get_client_ip();
+        $user_id = (int) get_current_user_id();
+
+        if ($user_id <= 0) {
+            return new \WP_Error('rest_forbidden', __('Требуется авторизация.', 'cashback-plugin'), array( 'status' => 401 ));
+        }
+
+        // Nonce (wp_rest).
+        $nonce = $request->get_header('x_wp_nonce');
+        if (!$nonce) {
+            $nonce = (string) $request->get_param('_wpnonce');
+        }
+        if (!$nonce || !wp_verify_nonce((string) $nonce, 'wp_rest')) {
+            $this->redirect_account_social_with_error('unlink_failed');
+            return null;
+        }
+
+        if (class_exists('Cashback_Rate_Limiter')) {
+            $check = Cashback_Rate_Limiter::check('social_unlink', $user_id, $ip);
+            if (empty($check['allowed'])) {
+                Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_RATE_LIMITED, array(
+                    'stage' => 'unlink',
+                    'ip'    => $ip,
+                ));
+                $this->redirect_account_social_with_error('unlink_failed');
+                return null;
+            }
+        }
+
+        $provider_id = sanitize_key((string) $request->get_param('provider'));
+        if ($provider_id === '') {
+            $this->redirect_account_social_with_error('unlink_failed');
+            return null;
+        }
+
+        // Получить все связки юзера.
+        $links       = Cashback_Social_Auth_DB::get_links_for_user($user_id);
+        $target_link = null;
+        foreach ($links as $row) {
+            if (isset($row['provider']) && (string) $row['provider'] === $provider_id) {
+                $target_link = $row;
+                break;
+            }
+        }
+
+        if (!$target_link) {
+            $this->redirect_account_social_with_error('unlink_failed');
+            return null;
+        }
+
+        // Проверка: должна быть возможность войти иным способом.
+        $user         = get_userdata($user_id);
+        $has_password = $user instanceof \WP_User && $user->user_pass !== '';
+        $total_links  = count($links);
+
+        if (!$has_password && $total_links <= 1) {
+            $this->redirect_account_social_with_error('last_method');
+            return null;
+        }
+
+        $link_id = (int) $target_link['id'];
+
+        // Удалить токены и связку.
+        if (class_exists('Cashback_Social_Auth_Token_Store')) {
+            Cashback_Social_Auth_Token_Store::delete($link_id);
+        }
+        $ok = Cashback_Social_Auth_DB::delete_link($link_id);
+
+        if (!$ok) {
+            $this->redirect_account_social_with_error('unlink_failed');
+            return null;
+        }
+
+        Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_UNLINK, array(
+            'provider' => $provider_id,
+            'user_id'  => $user_id,
+            'link_id'  => $link_id,
+            'ip'       => $ip,
+        ));
+
+        // TODO (Этап 6): email-уведомление об отвязке.
+
+        $target = add_query_arg('cashback_social_unlinked', '1', (string) wc_get_account_endpoint_url('cashback-social'));
+        wp_safe_redirect($target);
+        exit;
+    }
+
+    /**
+     * Редирект на вкладку ЛК «Соцсети» с кодом ошибки.
+     */
+    private function redirect_account_social_with_error( string $code ): void {
+        $base   = function_exists('wc_get_account_endpoint_url')
+            ? (string) wc_get_account_endpoint_url('cashback-social')
+            : home_url('/my-account/cashback-social/');
+        $target = add_query_arg('cashback_social_error', rawurlencode($code), $base);
+        wp_safe_redirect($target);
+        exit;
     }
 
     /**
