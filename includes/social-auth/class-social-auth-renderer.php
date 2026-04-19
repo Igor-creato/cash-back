@@ -64,7 +64,7 @@ class Cashback_Social_Auth_Renderer {
             'cashback-social-buttons',
             $css_url,
             array(),
-            '1.1.0'
+            '1.1.1'
         );
     }
 
