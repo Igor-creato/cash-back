@@ -31,8 +31,8 @@ class Cashback_Fraud_Consent {
     public const META_KEY_CONSENT_IP      = 'cashback_fraud_consent_ip';
     public const CURRENT_CONSENT_VERSION  = '1.0';
 
-    public const OPTION_REQUIRED_AFTER    = 'cashback_fraud_consent_required_after';
-    public const POST_FIELD               = 'cashback_fraud_consent';
+    public const OPTION_REQUIRED_AFTER = 'cashback_fraud_consent_required_after';
+    public const POST_FIELD            = 'cashback_fraud_consent';
 
     /**
      * Регистрация хуков WooCommerce + социальной авторизации.
@@ -147,12 +147,13 @@ class Cashback_Fraud_Consent {
         }
 
         $privacy_url = self::get_privacy_url();
-        // POST_FIELD приходит сырым из $_POST — для preserve состояния при ошибке.
+        // POST_FIELD приходит сырым из $_POST — нужен только для preserve состояния checkbox при ошибке.
         // phpcs:ignore WordPress.Security.NonceVerification.Missing -- WooCommerce обрабатывает nonce самостоятельно для register формы.
-        $checked = isset($_POST[ self::POST_FIELD ]) && (string) wp_unslash($_POST[ self::POST_FIELD ]) === '1';
+        $raw_post = isset($_POST[ self::POST_FIELD ]) ? sanitize_text_field(wp_unslash($_POST[ self::POST_FIELD ])) : '';
+        $checked  = ( $raw_post === '1' );
 
-        $label_text  = esc_html__('Согласен на сбор технических данных устройства (IP, fingerprint браузера, device ID) для защиты от мошенничества согласно', 'cashback-plugin');
-        $link_text   = esc_html__('152-ФЗ ст. 9', 'cashback-plugin');
+        $label_text = esc_html__('Согласен на сбор технических данных устройства (IP, fingerprint браузера, device ID) для защиты от мошенничества согласно', 'cashback-plugin');
+        $link_text  = esc_html__('152-ФЗ ст. 9', 'cashback-plugin');
 
         echo '<p class="form-row form-row-wide cashback-fraud-consent">';
         echo '<label for="' . esc_attr(self::POST_FIELD) . '" class="checkbox">';
@@ -174,8 +175,12 @@ class Cashback_Fraud_Consent {
      * Валидация: чекбокс должен быть отмечен.
      *
      * @param WP_Error $errors
+     * @param string   $username Логин нового пользователя (signature WC, не используется здесь).
+     * @param string   $email    Email нового пользователя (signature WC, не используется здесь).
      */
-    public static function validate_consent( $errors, $username, $email ) {
+    public static function validate_consent( $errors, $username, $email ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter -- WC filter signature requires both args.
+        unset($username, $email);
+
         // Тумблер consent_required: при отключённом — ошибка валидации не выставляется.
         if (class_exists('Cashback_Fraud_Settings')
             && !Cashback_Fraud_Settings::is_consent_required()) {
@@ -183,7 +188,7 @@ class Cashback_Fraud_Consent {
         }
 
         // phpcs:ignore WordPress.Security.NonceVerification.Missing -- WooCommerce валидирует woocommerce-register-nonce централизованно перед вызовом этого фильтра.
-        $value = isset($_POST[ self::POST_FIELD ]) ? (string) wp_unslash($_POST[ self::POST_FIELD ]) : '';
+        $value = isset($_POST[ self::POST_FIELD ]) ? sanitize_text_field(wp_unslash($_POST[ self::POST_FIELD ])) : '';
 
         if ($value !== '1') {
             if ($errors instanceof WP_Error) {
@@ -206,7 +211,7 @@ class Cashback_Fraud_Consent {
         unset($data); // не используется, но требуется сигнатурой WC.
 
         // phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce уже проверен WooCommerce до этого хука.
-        $value = isset($_POST[ self::POST_FIELD ]) ? (string) wp_unslash($_POST[ self::POST_FIELD ]) : '';
+        $value = isset($_POST[ self::POST_FIELD ]) ? sanitize_text_field(wp_unslash($_POST[ self::POST_FIELD ])) : '';
         if ($value !== '1') {
             return;
         }
@@ -298,7 +303,9 @@ class Cashback_Fraud_Consent {
     private static function detect_client_ip(): string {
         // REMOTE_ADDR — самое надёжное на бэкенде; X-Forwarded-For не доверяем
         // без явной настройки доверенного proxy (выходит за рамки этого этапа).
-        $remote = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
+        // IP валидируется через sanitize_ip() → filter_var(FILTER_VALIDATE_IP).
+        // phpcs:ignore WordPressVIPMinimum.Variables.ServerVariables.UserControlledHeaders,WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__REMOTE_ADDR__,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        $remote = isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '';
         return self::sanitize_ip($remote);
     }
 
