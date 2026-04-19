@@ -105,14 +105,20 @@ class Cashback_Social_Auth_Router {
     /**
      * GET /social/{provider}/start
      *
-     * @return \WP_Error|\WP_REST_Response
+     * @return \WP_Error|\WP_REST_Response|null
      */
     public function handle_start( \WP_REST_Request $request ) {
         $provider_id = (string) $request->get_param('provider');
         $provider    = $this->resolve_provider($provider_id);
 
         if (!$provider) {
-            return new \WP_Error('social_provider_unknown', __('Провайдер не найден.', 'cashback-plugin'), array( 'status' => 404 ));
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'provider' => $provider_id,
+                'stage'    => 'start',
+                'reason'   => 'provider_disabled_or_unknown',
+            ));
+            $this->redirect_to_login_with_error('start_failed');
+            return null;
         }
 
         $ip = $this->get_client_ip();
@@ -162,18 +168,25 @@ class Cashback_Social_Auth_Router {
         try {
             $authorize_url = $provider->get_authorize_url($data);
         } catch (\Throwable $e) {
-            return new \WP_Error(
-                'social_not_implemented',
-                __('Провайдер ещё не готов к авторизации.', 'cashback-plugin'),
-                array(
-                    'status' => 501,
-                    'detail' => $e->getMessage(),
-                )
-            );
+            Cashback_Social_Auth_Session::clear($provider_id);
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'provider' => $provider_id,
+                'stage'    => 'start_authorize_url',
+                'error'    => $e->getMessage(),
+            ));
+            $this->redirect_to_login_with_error('start_failed');
+            return null;
         }
 
         if (!wp_http_validate_url($authorize_url)) {
-            return new \WP_Error('social_bad_authorize_url', __('Неверный authorize URL от провайдера.', 'cashback-plugin'), array( 'status' => 500 ));
+            Cashback_Social_Auth_Session::clear($provider_id);
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'provider' => $provider_id,
+                'stage'    => 'start_authorize_url',
+                'error'    => 'invalid_authorize_url',
+            ));
+            $this->redirect_to_login_with_error('start_failed');
+            return null;
         }
 
         wp_redirect($authorize_url); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- External provider redirect by design.
@@ -555,6 +568,8 @@ class Cashback_Social_Auth_Router {
                     return __('Не удалось завершить вход через соцсеть. Попробуйте ещё раз.', 'cashback-plugin');
                 case 'account_error':
                     return __('Не удалось завершить авторизацию. Попробуйте ещё раз или обратитесь в поддержку.', 'cashback-plugin');
+                case 'start_failed':
+                    return __('Не удалось начать авторизацию через соцсеть. Проверьте настройки модуля в админ-панели.', 'cashback-plugin');
                 default:
                     return __('Ошибка авторизации через соцсеть.', 'cashback-plugin');
             }
