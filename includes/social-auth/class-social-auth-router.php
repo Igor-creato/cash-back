@@ -213,6 +213,12 @@ class Cashback_Social_Auth_Router {
 
         $provider = $this->resolve_provider($provider_id);
 
+        Cashback_Social_Auth_Audit::log('callback_step', array(
+            'provider' => $provider_id,
+            'step'     => 'after_resolve_provider',
+            'has'      => $provider ? 'yes' : 'no',
+        ));
+
         if (!$provider) {
             Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
                 'provider' => $provider_id,
@@ -239,6 +245,11 @@ class Cashback_Social_Auth_Router {
                 );
             }
         }
+
+        Cashback_Social_Auth_Audit::log('callback_step', array(
+            'provider' => $provider_id,
+            'step'     => 'after_rate_limit',
+        ));
 
         $state     = sanitize_text_field((string) $request->get_param('state'));
         $code      = sanitize_text_field((string) $request->get_param('code'));
@@ -269,7 +280,19 @@ class Cashback_Social_Auth_Router {
             return null;
         }
 
+        Cashback_Social_Auth_Audit::log('callback_step', array(
+            'provider' => $provider_id,
+            'step'     => 'before_session_load',
+        ));
+
         $session = Cashback_Social_Auth_Session::load_and_verify($provider_id, $state);
+
+        Cashback_Social_Auth_Audit::log('callback_step', array(
+            'provider' => $provider_id,
+            'step'     => 'after_session_load',
+            'has'      => $session ? 'yes' : 'no',
+        ));
+
         if (!$session) {
             Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_STATE_MISMATCH, array(
                 'provider' => $provider_id,
@@ -289,6 +312,11 @@ class Cashback_Social_Auth_Router {
             'device_id' => $device_id,
             'state'     => $state,
         );
+
+        Cashback_Social_Auth_Audit::log('callback_step', array(
+            'provider' => $provider_id,
+            'step'     => 'before_exchange',
+        ));
 
         try {
             $token_set = $provider->exchange_code($code, $code_verifier, $redirect_uri, $exchange_extra);
@@ -326,6 +354,12 @@ class Cashback_Social_Auth_Router {
             ), 200);
         }
 
+        Cashback_Social_Auth_Audit::log('callback_step', array(
+            'provider' => $provider_id,
+            'step'     => 'after_exchange_ok',
+            'has_email' => !empty($profile['email']),
+        ));
+
         // Основной flow — Account Manager.
         $session_data = array(
             'redirect_after'    => isset($session['redirect_after']) ? (string) $session['redirect_after'] : home_url('/'),
@@ -337,10 +371,32 @@ class Cashback_Social_Auth_Router {
             'scope_phone'       => !empty($session['scope_phone']),
         );
 
-        $result = Cashback_Social_Auth_Account_Manager::instance()
-            ->handle_callback($provider, $profile, $token_set, $session_data, $request);
+        Cashback_Social_Auth_Audit::log('callback_step', array(
+            'provider' => $provider_id,
+            'step'     => 'before_account_manager',
+        ));
+
+        try {
+            $result = Cashback_Social_Auth_Account_Manager::instance()
+                ->handle_callback($provider, $profile, $token_set, $session_data, $request);
+        } catch (\Throwable $e) {
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'provider' => $provider_id,
+                'stage'    => 'account_manager_exception',
+                'error'    => $e->getMessage(),
+                'file'     => $e->getFile() . ':' . $e->getLine(),
+            ));
+            $this->redirect_to_login_with_error('account_error');
+            return null;
+        }
 
         $action = isset($result['action']) ? (string) $result['action'] : 'error';
+
+        Cashback_Social_Auth_Audit::log('callback_step', array(
+            'provider' => $provider_id,
+            'step'     => 'after_account_manager',
+            'action'   => $action,
+        ));
 
         if ($action === 'login') {
             $target = isset($result['redirect_url']) ? (string) $result['redirect_url'] : home_url('/');
