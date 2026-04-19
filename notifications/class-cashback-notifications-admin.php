@@ -36,6 +36,13 @@ class Cashback_Notifications_Admin {
             return;
         }
 
+        // Для вкладки «Рассылка» подгружаем ассеты визуального редактора.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Чтение ?tab= для переключения вкладок в UI.
+        $tab_query = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'settings';
+        if ($tab_query === 'broadcast' && function_exists('wp_enqueue_editor')) {
+            wp_enqueue_editor();
+        }
+
         $ver = defined('CASHBACK_PLUGIN_VERSION') ? CASHBACK_PLUGIN_VERSION : '1.0.0';
 
         wp_enqueue_style(
@@ -54,8 +61,18 @@ class Cashback_Notifications_Admin {
         );
 
         wp_localize_script('cashback-admin-notifications', 'cashbackAdminNotifications', array(
-            'ajaxUrl' => admin_url('admin-ajax.php'),
-            'nonce'   => wp_create_nonce('cashback_admin_notification_settings_nonce'),
+            'ajaxUrl'        => admin_url('admin-ajax.php'),
+            'nonce'          => wp_create_nonce('cashback_admin_notification_settings_nonce'),
+            'broadcastNonce' => wp_create_nonce('cashback_broadcast_nonce'),
+            'i18n'           => array(
+                'confirmSend'   => __('Отправить письмо всем выбранным получателям? Действие нельзя отменить после старта.', 'cashback-plugin'),
+                'confirmCancel' => __('Отменить эту рассылку? Оставшиеся письма не будут отправлены.', 'cashback-plugin'),
+                'networkError'  => __('Ошибка сети', 'cashback-plugin'),
+                'sending'       => __('Отправка...', 'cashback-plugin'),
+                'calculating'   => __('Считаем...', 'cashback-plugin'),
+                'emptySubject'  => __('Заполните тему письма.', 'cashback-plugin'),
+                'emptyBody'     => __('Заполните тело письма.', 'cashback-plugin'),
+            ),
         ));
     }
 
@@ -67,15 +84,48 @@ class Cashback_Notifications_Admin {
             wp_die(esc_html__('Недостаточно прав.', 'cashback-plugin'));
         }
 
-        $all_types = Cashback_Notifications_DB::get_all_notification_types();
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Чтение ?tab= для переключения вкладок в UI.
+        $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'settings';
+        if (!in_array($tab, array( 'settings', 'broadcast' ), true)) {
+            $tab = 'settings';
+        }
 
-        // Группируем типы для удобства
-        $user_types  = Cashback_Notifications_DB::get_user_notification_types();
-        $admin_types = array_diff_key($all_types, $user_types);
+        $tabs_base = admin_url('admin.php?page=cashback-notifications');
 
         ?>
         <div class="wrap cashback-admin-notifications">
-            <h1><?php esc_html_e('Настройки уведомлений', 'cashback-plugin'); ?></h1>
+            <h1><?php esc_html_e('Уведомления', 'cashback-plugin'); ?></h1>
+
+            <h2 class="nav-tab-wrapper">
+                <a href="<?php echo esc_url(add_query_arg('tab', 'settings', $tabs_base)); ?>"
+                    class="nav-tab <?php echo $tab === 'settings' ? 'nav-tab-active' : ''; ?>">
+                    <?php esc_html_e('Настройки', 'cashback-plugin'); ?>
+                </a>
+                <a href="<?php echo esc_url(add_query_arg('tab', 'broadcast', $tabs_base)); ?>"
+                    class="nav-tab <?php echo $tab === 'broadcast' ? 'nav-tab-active' : ''; ?>">
+                    <?php esc_html_e('Рассылка', 'cashback-plugin'); ?>
+                </a>
+            </h2>
+
+            <?php
+            if ($tab === 'broadcast') {
+                if (class_exists('Cashback_Broadcast')) {
+                    Cashback_Broadcast::get_instance()->render_broadcast_tab();
+                } else {
+                    echo '<p>' . esc_html__('Модуль рассылки недоступен.', 'cashback-plugin') . '</p>';
+                }
+                ?>
+                </div>
+                <?php
+                return;
+            }
+
+            $all_types = Cashback_Notifications_DB::get_all_notification_types();
+
+            // Группируем типы для удобства
+            $user_types  = Cashback_Notifications_DB::get_user_notification_types();
+            $admin_types = array_diff_key($all_types, $user_types);
+            ?>
 
             <form id="cashback-admin-notification-form">
 

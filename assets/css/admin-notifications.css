@@ -110,3 +110,168 @@
 .cashback-admin-notification-status.error {
     color: #d63638;
 }
+
+/* ======================================================= */
+/* Вкладка «Рассылка» */
+/* ======================================================= */
+
+.cashback-broadcast-wrap {
+    max-width: 1000px;
+}
+
+.cashback-broadcast-wrap .cashback-admin-card {
+    max-width: none;
+}
+
+.cashback-broadcast-filter-group {
+    border: 1px solid #e2e4e7;
+    padding: 10px 14px 14px;
+    margin: 0 0 12px;
+    border-radius: 4px;
+}
+
+.cashback-broadcast-filter-group legend {
+    padding: 0 6px;
+    font-size: 13px;
+    color: #1d2327;
+}
+
+.cashback-broadcast-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 18px 0 0;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.cashback-broadcast-count {
+    margin-top: 14px;
+    font-size: 14px;
+}
+
+.cashback-broadcast-count strong {
+    display: inline-block;
+    min-width: 60px;
+    margin: 0 8px;
+    font-size: 16px;
+    color: #2271b1;
+}
+
+.cashback-broadcast-status {
+    margin-left: 12px;
+    font-size: 13px;
+    color: #50575e;
+}
+
+.cashback-broadcast-status.error {
+    color: #d63638;
+}
+
+.cashback-broadcast-status.success {
+    color: #00a32a;
+}
+
+/* История */
+.cashback-broadcast-history {
+    margin-top: 12px;
+}
+
+.cashback-broadcast-history th,
+.cashback-broadcast-history td {
+    padding: 10px 12px;
+    vertical-align: middle;
+}
+
+.cashback-broadcast-history td.cashback-broadcast-sent {
+    color: #00a32a;
+    font-weight: 600;
+}
+
+.cashback-broadcast-history td.cashback-broadcast-failed {
+    color: #d63638;
+}
+
+.cashback-broadcast-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    font-size: 12px;
+    border-radius: 10px;
+    background: #f0f0f1;
+    color: #1d2327;
+    white-space: nowrap;
+}
+
+.cashback-broadcast-badge-queued {
+    background: #e5f1fb;
+    color: #2271b1;
+}
+
+.cashback-broadcast-badge-sending {
+    background: #fff3cd;
+    color: #8a6d00;
+}
+
+.cashback-broadcast-badge-done {
+    background: #e4f7ed;
+    color: #0b7b3a;
+}
+
+.cashback-broadcast-badge-cancelled {
+    background: #fbe5e5;
+    color: #a00;
+}
+
+/* Модалка предпросмотра */
+.cashback-broadcast-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.cashback-broadcast-modal-inner {
+    background: #fff;
+    border-radius: 6px;
+    width: 100%;
+    max-width: 720px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.cashback-broadcast-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid #ddd;
+}
+
+.cashback-broadcast-modal-head h3 {
+    margin: 0;
+    font-size: 15px;
+}
+
+.cashback-broadcast-modal-body {
+    flex: 1 1 auto;
+    overflow: auto;
+    padding: 0;
+    background: #f4f4f7;
+}
+
+.cashback-broadcast-modal-body iframe {
+    width: 100%;
+    height: 70vh;
+    border: 0;
+    background: #fff;
+}

@@ -82,6 +82,18 @@ class Cashback_Email_Sender {
     }
 
     /**
+     * Публичная обёртка для предпросмотра письма (используется массовой рассылкой).
+     *
+     * @param string   $subject Тема.
+     * @param string   $message Тело сообщения (будет обёрнуто в брендированный шаблон).
+     * @param int|null $user_id ID получателя (для ссылки на настройки уведомлений).
+     * @return string HTML-документ.
+     */
+    public function preview_html( string $subject, string $message, ?int $user_id = null ): string {
+        return $this->render_html_template($subject, $message, $user_id);
+    }
+
+    /**
      * Обёртка HTML-шаблона письма
      *
      * @param string   $subject Тема (для заголовка)
