@@ -32,15 +32,15 @@ class Cashback_Notifications {
         // Обработка очереди из MySQL триггеров (для постбэков, вставленных напрямую в БД)
         add_action('cashback_notification_process_queue', array( $this, 'process_queue' ));
 
-        // Регистрация 1-минутного интервала
-        // phpcs:ignore WordPress.WP.CronInterval.CronSchedulesInterval -- Intentional short interval for near-real-time notification queue processing from MySQL triggers.
-        add_filter('cron_schedules', array( $this, 'add_cron_interval' ));
-
-        // Планирование откладываем до init — иначе cron_schedules фильтр
-        // вызывает __() с textdomain до его загрузки (WP 6.7+ notice).
+        // Планирование через Action Scheduler (WooCommerce — жёсткая зависимость плагина,
+        // AS загружается им автоматически). Даёт защиту от параллельного запуска (claim)
+        // и UI мониторинга в WooCommerce → Status → Scheduled Actions.
         add_action('init', function () {
-            if (!wp_next_scheduled('cashback_notification_process_queue')) {
-                wp_schedule_event(time(), 'every_minute', 'cashback_notification_process_queue');
+            if (function_exists('as_has_scheduled_action')
+                && function_exists('as_schedule_recurring_action')
+                && !as_has_scheduled_action('cashback_notification_process_queue')
+            ) {
+                as_schedule_recurring_action(time(), 60, 'cashback_notification_process_queue', array(), 'cashback');
             }
         });
 
@@ -754,26 +754,11 @@ ID заявки: %4$d
     // =====================================================================
 
     /**
-     * Регистрация 1-минутного интервала cron
-     *
-     * @param array<string,array> $schedules
-     * @return array<string,array>
-     */
-    public function add_cron_interval( array $schedules ): array {
-        if (!isset($schedules['every_minute'])) {
-            $schedules['every_minute'] = array(
-                'interval' => 60,
-                'display'  => __('Каждую минуту', 'cashback-plugin'),
-            );
-        }
-        return $schedules;
-    }
-
-    /**
      * Обработка очереди уведомлений из MySQL триггеров
      *
-     * Вызывается WP Cron каждую минуту. Читает необработанные записи
-     * из cashback_notification_queue, отправляет email и помечает обработанными.
+     * Вызывается Action Scheduler каждую минуту (группа `cashback`).
+     * Читает необработанные записи из cashback_notification_queue,
+     * отправляет email и помечает обработанными.
      */
     public function process_queue(): void {
         global $wpdb;

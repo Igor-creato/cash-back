@@ -1611,20 +1611,28 @@ class Cashback_API_Client {
      * @return array Результаты синхронизации
      */
     public function background_sync(): array {
-        global $wpdb;
+        // Защита от параллельного запуска через единый Cashback_Lock
+        // (то же имя лока, что и у run_sync в Cashback_API_Cron — ранее здесь был
+        // отдельный GET_LOCK с другим именем, что не защищало от гонки cron+manual).
+        //
+        // Реентерабельность: если вызвано из Cashback_API_Cron::run_sync(), lock
+        // уже держится — в этом случае не захватываем и не освобождаем повторно.
+        $outer_lock_held = Cashback_Lock::is_lock_held_by_current_process();
 
-        // Защита от параллельного запуска (двойной cron, ручной + автоматический)
-        $lock_acquired = $wpdb->get_var("SELECT GET_LOCK('cashback_sync_global_lock', 30)");
-        if (!$lock_acquired) {
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('Cashback background_sync: could not acquire lock, another sync is running');
-            return array();
+        if (!$outer_lock_held) {
+            if (!Cashback_Lock::acquire(30)) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('Cashback background_sync: could not acquire lock, another sync is running');
+                return array();
+            }
         }
 
         try {
             return $this->do_background_sync();
         } finally {
-            $wpdb->get_var("SELECT RELEASE_LOCK('cashback_sync_global_lock')");
+            if (!$outer_lock_held) {
+                Cashback_Lock::release();
+            }
         }
     }
 
