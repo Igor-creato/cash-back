@@ -233,6 +233,13 @@ class Cashback_Notifications_DB {
      * @return bool
      */
     public static function is_globally_enabled( string $notification_type ): bool {
+        // Критичные для авторизации уведомления нельзя отключить глобально — иначе
+        // молча ломается double opt-in соцлогина (ветка B / D), а админ-UI об этом
+        // никак не сигнализирует. Симметрично с is_enabled().
+        if (in_array($notification_type, self::get_required_notification_types(), true)) {
+            return true;
+        }
+
         // phpcs:ignore WordPressVIPMinimum.Performance.TaxonomyMetaInOptions.PossibleTermMetaInOptions -- Plugin option key for notification-type toggle; not taxonomy term meta.
         $val = get_option('cashback_notify_' . $notification_type, '');
 
