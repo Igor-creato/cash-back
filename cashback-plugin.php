@@ -310,6 +310,12 @@ class CashbackPlugin {
             Cashback_Notifications_DB::create_tables();
         }
 
+        // Social Auth: создание таблиц и default-опций модуля соц-авторизации.
+        $this->require_file('includes/social-auth/class-social-auth-bootstrap.php');
+        if (class_exists('Cashback_Social_Auth_Bootstrap')) {
+            Cashback_Social_Auth_Bootstrap::activate();
+        }
+
         // Планируем cron для антифрод-детекции (ежечасно)
         if (!wp_next_scheduled('cashback_fraud_detection_cron')) {
             wp_schedule_event(time(), 'hourly', 'cashback_fraud_detection_cron');
@@ -523,6 +529,9 @@ class CashbackPlugin {
             $this->require_file('claims/class-claims-admin.php');
             $this->require_file('notifications/class-cashback-notifications-admin.php');
         }
+
+        // Social Auth module (Яндекс ID + VK ID) — подключаем bootstrap, он загружает остальное.
+        $this->require_file('includes/social-auth/class-social-auth-bootstrap.php');
     }
 
     /**
@@ -697,6 +706,11 @@ class CashbackPlugin {
         }
         if (is_admin() && class_exists('Cashback_Notifications_Admin')) {
             new Cashback_Notifications_Admin();
+        }
+
+        // Social Auth module — init через bootstrap (регистрирует REST-роуты и admin-страницу).
+        if (class_exists('Cashback_Social_Auth_Bootstrap')) {
+            Cashback_Social_Auth_Bootstrap::instance()->init();
         }
     }
 
