@@ -200,9 +200,25 @@ class Cashback_Social_Auth_Router {
      */
     public function handle_callback( \WP_REST_Request $request ) {
         $provider_id = (string) $request->get_param('provider');
-        $provider    = $this->resolve_provider($provider_id);
+
+        // Диагностический лог «callback-handler вошёл в работу» с ключевыми
+        // параметрами запроса. Нужен, чтобы отличать «Яндекс вернулся, но мы
+        // тихо упали» от «callback вообще не срабатывает».
+        Cashback_Social_Auth_Audit::log('callback_entry', array(
+            'provider'       => $provider_id,
+            'has_code'       => (string) $request->get_param('code') !== '',
+            'has_state'      => (string) $request->get_param('state') !== '',
+            'provider_error' => (string) $request->get_param('error'),
+        ));
+
+        $provider = $this->resolve_provider($provider_id);
 
         if (!$provider) {
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'provider' => $provider_id,
+                'stage'    => 'callback',
+                'reason'   => 'provider_disabled_or_unknown',
+            ));
             return new \WP_Error('social_provider_unknown', __('Провайдер не найден.', 'cashback-plugin'), array( 'status' => 404 ));
         }
 
@@ -241,6 +257,14 @@ class Cashback_Social_Auth_Router {
         }
 
         if ($state === '' || $code === '') {
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'provider'  => $provider_id,
+                'stage'     => 'callback',
+                'reason'    => 'invalid_callback',
+                'has_state' => $state !== '',
+                'has_code'  => $code !== '',
+                'ip'        => $ip,
+            ));
             $this->redirect_to_login_with_error('invalid_callback');
             return null;
         }
