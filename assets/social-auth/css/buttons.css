@@ -14,35 +14,14 @@
 /* Разделитель "или" — текст из атрибута data-label. */
 .cashback-social-buttons[data-label]::before {
     content: attr(data-label);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 4px 0 8px;
-    color: #8a8a8a;
-    font-size: 13px;
-    line-height: 1;
+    display: block;
+    margin: 8px 0;
+    color: #222;
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
     text-transform: lowercase;
-}
-
-.cashback-social-buttons[data-label]::before::before,
-.cashback-social-buttons[data-label]::before::after {
-    content: "";
-}
-
-/* Линии слева/справа от «или». */
-.cashback-social-buttons[data-label] {
-    position: relative;
-}
-
-.cashback-social-buttons[data-label]::before {
-    position: relative;
-}
-
-.cashback-social-buttons[data-label]::before {
-    background-image: linear-gradient(to right, #e2e2e2, #e2e2e2);
-    background-repeat: no-repeat;
-    background-size: 100% 1px;
-    background-position: 0 50%;
 }
 
 /* Кнопка. */
