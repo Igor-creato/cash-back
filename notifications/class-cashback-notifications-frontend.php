@@ -134,17 +134,25 @@ class Cashback_Notifications_Frontend {
                     </thead>
                     <tbody>
                     <?php
+                    $required_types = Cashback_Notifications_DB::get_required_notification_types();
                     foreach ($types as $slug => $label) :
                         // Если глобально выключено — показываем как disabled
                         $globally_enabled = Cashback_Notifications_DB::is_globally_enabled($slug);
-                        // Пользовательская настройка (по умолчанию — включено)
+                        $is_required      = in_array($slug, $required_types, true);
+                        // Пользовательская настройка (по умолчанию — включено).
+                        // Обязательные типы отправляются всегда — рендерим как checked+disabled.
                         $user_enabled = $prefs[ $slug ] ?? true;
-                        $checked      = $globally_enabled && $user_enabled;
+                        $checked      = $is_required ? true : ( $globally_enabled && $user_enabled );
+                        $locked       = $is_required || !$globally_enabled;
                         ?>
                         <tr>
                             <td>
                                 <?php echo esc_html($label); ?>
-                                <?php if (!$globally_enabled) : ?>
+                                <?php if ($is_required) : ?>
+                                    <span class="cashback-notifications-disabled-hint">
+                                        <?php esc_html_e('(отключить нельзя — нужно для входа)', 'cashback-plugin'); ?>
+                                    </span>
+                                <?php elseif (!$globally_enabled) : ?>
                                     <span class="cashback-notifications-disabled-hint">
                                         <?php esc_html_e('(отключено администратором)', 'cashback-plugin'); ?>
                                     </span>
@@ -157,7 +165,7 @@ class Cashback_Notifications_Frontend {
                                         name="notifications[<?php echo esc_attr($slug); ?>]"
                                         value="1"
                                         <?php checked($checked); ?>
-                                        <?php disabled(!$globally_enabled); ?>
+                                        <?php disabled($locked); ?>
                                     />
                                     <span class="cashback-toggle-slider"></span>
                                 </label>

@@ -145,8 +145,10 @@ class Cashback_Notifications_Admin {
                         </thead>
                         <tbody>
                         <?php
+                        $required_types = Cashback_Notifications_DB::get_required_notification_types();
                         foreach ($user_types as $slug => $label) :
-                            $enabled = Cashback_Notifications_DB::is_globally_enabled($slug);
+                            $enabled     = Cashback_Notifications_DB::is_globally_enabled($slug);
+                            $is_required = in_array($slug, $required_types, true);
                             ?>
                             <tr>
                                 <td><strong><?php echo esc_html($label); ?></strong></td>
@@ -157,14 +159,19 @@ class Cashback_Notifications_Admin {
                                             name="notify_<?php echo esc_attr($slug); ?>"
                                             value="1"
                                             <?php checked($enabled); ?>
+                                            <?php disabled($is_required); ?>
                                         />
                                         <span class="cashback-admin-toggle-slider"></span>
                                         <span class="cashback-admin-toggle-label">
                                             <?php
-                                            echo $enabled
-                                                ? esc_html__('Включено', 'cashback-plugin')
-                                                : esc_html__('Выключено', 'cashback-plugin');
-                                                ?>
+                                            if ($is_required) {
+                                                esc_html_e('Всегда включено', 'cashback-plugin');
+                                            } else {
+                                                echo $enabled
+                                                    ? esc_html__('Включено', 'cashback-plugin')
+                                                    : esc_html__('Выключено', 'cashback-plugin');
+                                            }
+                                            ?>
                                         </span>
                                     </label>
                                 </td>
@@ -319,8 +326,14 @@ class Cashback_Notifications_Admin {
         }
 
         $all_types = Cashback_Notifications_DB::get_all_notification_types();
+        $required  = Cashback_Notifications_DB::get_required_notification_types();
 
         foreach (array_keys($all_types) as $slug) {
+            // Обязательные типы (double opt-in соцлогина) нельзя отключить —
+            // пропускаем, чтобы POST со снятой галкой не затирал значение.
+            if (in_array($slug, $required, true)) {
+                continue;
+            }
             $key     = 'notify_' . $slug;
             $enabled = !empty($_POST[ $key ]);
             update_option('cashback_notify_' . $slug, $enabled ? 1 : 0);

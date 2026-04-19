@@ -889,12 +889,19 @@ class Cashback_Social_Auth_Account_Manager {
             return;
         }
         $confirm_url = add_query_arg('token', $token, rest_url('cashback/v1/social/confirm'));
-        Cashback_Social_Auth_Emails::instance()->send_confirm_link(
+        $sent        = Cashback_Social_Auth_Emails::instance()->send_confirm_link(
             $user,
             $this->provider_label($provider_id),
             $confirm_url,
             15
         );
+        if (!$sent && class_exists('Cashback_Social_Auth_Audit')) {
+            Cashback_Social_Auth_Audit::log('email_send_failed', array(
+                'kind'     => 'social_confirm_link',
+                'provider' => $provider_id,
+                'user_id'  => (int) $user->ID,
+            ));
+        }
     }
 
     /**
@@ -905,12 +912,19 @@ class Cashback_Social_Auth_Account_Manager {
             return;
         }
         $confirm_url = add_query_arg('token', $token, rest_url('cashback/v1/social/confirm'));
-        Cashback_Social_Auth_Emails::instance()->send_verify_email(
+        $sent        = Cashback_Social_Auth_Emails::instance()->send_verify_email(
             $user_id,
             $this->provider_label($provider_id),
             $confirm_url,
             15
         );
+        if (!$sent && class_exists('Cashback_Social_Auth_Audit')) {
+            Cashback_Social_Auth_Audit::log('email_send_failed', array(
+                'kind'     => 'social_verify_email',
+                'provider' => $provider_id,
+                'user_id'  => $user_id,
+            ));
+        }
     }
 
     /**
