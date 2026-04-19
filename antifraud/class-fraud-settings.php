@@ -40,6 +40,11 @@ class Cashback_Fraud_Settings {
         'cashback_fraud_skip_alert_for_mobile_ip'      => true,
         // Тумблеры подсистем антифрод-нового-поколения.
         // Позволяют точечно отключить компонент без отключения всего антифрода.
+        // Shared-IP signal: легаси-чек check_shared_ip (>N юзеров с одного residential IP).
+        // Если выключен — check_shared_ip делает early return, alert'ы multi_account_ip не создаются.
+        // Используйте если хотите перейти на чистую device-first парадигму (Stripe Radar / Sift подход):
+        // полагаться только на device_id + cluster detection, IP игнорировать.
+        'cashback_fraud_shared_ip_check_enabled'       => true,
         // IP Intelligence: classify() через MaxMind GeoLite2-ASN + хардкод RU операторов.
         // Если выключен — check_shared_ip работает по старой логике (фиксированный weight=15, без skip mobile).
         'cashback_fraud_ip_intelligence_enabled'       => true,
@@ -132,6 +137,10 @@ class Cashback_Fraud_Settings {
 
     public static function should_skip_alert_for_mobile_ip(): bool {
         return (bool) get_option('cashback_fraud_skip_alert_for_mobile_ip', self::DEFAULTS['cashback_fraud_skip_alert_for_mobile_ip']);
+    }
+
+    public static function is_shared_ip_check_enabled(): bool {
+        return (bool) get_option('cashback_fraud_shared_ip_check_enabled', self::DEFAULTS['cashback_fraud_shared_ip_check_enabled']);
     }
 
     public static function is_ip_intelligence_enabled(): bool {
@@ -241,6 +250,7 @@ class Cashback_Fraud_Settings {
             'max_users_per_device'          => 'int_positive',
             'max_ips_per_device_24h'        => 'int_positive',
             'skip_alert_for_mobile_ip'      => 'bool',
+            'shared_ip_check_enabled'       => 'bool',
             'ip_intelligence_enabled'       => 'bool',
             'device_id_enabled'             => 'bool',
             'cluster_detection_enabled'     => 'bool',
