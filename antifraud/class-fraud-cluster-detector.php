@@ -611,7 +611,7 @@ class Cashback_Fraud_Cluster_Detector {
         $parent = array();
         $rank   = array();
 
-        $find = function (int $x) use (&$parent, &$find): int {
+        $find = function (int $x) use (&$parent): int {
             $root = $x;
             while ($parent[$root] !== $root) {
                 $root = $parent[$root];

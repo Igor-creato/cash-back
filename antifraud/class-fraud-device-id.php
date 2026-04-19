@@ -128,11 +128,9 @@ class Cashback_Fraud_Device_Id {
         $connection_type = null;
         if (class_exists('Cashback_Fraud_Ip_Intelligence')) {
             try {
-                $info = Cashback_Fraud_Ip_Intelligence::classify($ip);
-                if (is_array($info)) {
-                    $asn             = isset($info['asn']) ? (int) $info['asn'] : null;
-                    $connection_type = isset($info['type']) ? substr((string) $info['type'], 0, 32) : null;
-                }
+                $info            = Cashback_Fraud_Ip_Intelligence::classify($ip);
+                $asn             = isset($info['asn']) ? (int) $info['asn'] : null;
+                $connection_type = isset($info['type']) ? substr((string) $info['type'], 0, 32) : null;
             } catch (\Throwable $e) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Cashback Fraud Device ID: IP intelligence failed — ' . $e->getMessage());
