@@ -190,9 +190,10 @@ class Cashback_Social_Auth_Router {
             }
         }
 
-        $state = sanitize_text_field((string) $request->get_param('state'));
-        $code  = sanitize_text_field((string) $request->get_param('code'));
-        $error = sanitize_text_field((string) $request->get_param('error'));
+        $state     = sanitize_text_field((string) $request->get_param('state'));
+        $code      = sanitize_text_field((string) $request->get_param('code'));
+        $error     = sanitize_text_field((string) $request->get_param('error'));
+        $device_id = sanitize_text_field((string) $request->get_param('device_id'));
 
         if ($error !== '') {
             Cashback_Social_Auth_Session::clear($provider_id);
@@ -225,9 +226,17 @@ class Cashback_Social_Auth_Router {
             $code_verifier = isset($session['code_verifier']) ? (string) $session['code_verifier'] : '';
             $redirect_uri  = isset($session['redirect_uri']) ? (string) $session['redirect_uri'] : $provider->get_redirect_uri();
 
+            $exchange_extra = array(
+                'device_id' => $device_id,
+                'state'     => $state,
+            );
+
             try {
-                $token_set = $provider->exchange_code($code, $code_verifier, $redirect_uri);
-                $profile   = $provider->fetch_user_info((string) $token_set['access_token']);
+                $token_set = $provider->exchange_code($code, $code_verifier, $redirect_uri, $exchange_extra);
+                $profile   = $provider->fetch_user_info(
+                    (string) $token_set['access_token'],
+                    isset($token_set['extra']) && is_array($token_set['extra']) ? $token_set['extra'] : array()
+                );
             } catch (\Throwable $e) {
                 Cashback_Social_Auth_Session::clear($provider_id);
                 return new \WP_Error(
