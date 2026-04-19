@@ -183,7 +183,7 @@ class Cashback_Social_Auth_Router {
     /**
      * GET /social/{provider}/callback
      *
-     * @return \WP_Error|\WP_REST_Response
+     * @return \WP_Error|\WP_REST_Response|null
      */
     public function handle_callback( \WP_REST_Request $request ) {
         $provider_id = (string) $request->get_param('provider');
@@ -338,7 +338,7 @@ class Cashback_Social_Auth_Router {
     /**
      * POST /social/email-prompt — принять email от пользователя (ветка C).
      *
-     * @return \WP_Error|\WP_REST_Response
+     * @return \WP_Error|\WP_REST_Response|null
      */
     public function handle_email_prompt( \WP_REST_Request $request ) {
         $ip = $this->get_client_ip();
@@ -394,7 +394,7 @@ class Cashback_Social_Auth_Router {
     /**
      * GET /social/confirm — подтверждение email-ссылки (double opt-in).
      *
-     * @return \WP_Error|\WP_REST_Response
+     * @return \WP_Error|\WP_REST_Response|null
      */
     public function handle_confirm( \WP_REST_Request $request ) {
         $token = sanitize_text_field((string) $request->get_param('token'));
@@ -594,7 +594,7 @@ class Cashback_Social_Auth_Router {
     /**
      * POST /social/unlink — отвязать социальный аккаунт текущего пользователя.
      *
-     * @return \WP_Error|\WP_REST_Response
+     * @return \WP_Error|\WP_REST_Response|null
      */
     public function handle_unlink( \WP_REST_Request $request ) {
         $ip      = $this->get_client_ip();
