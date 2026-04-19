@@ -133,12 +133,46 @@ class Cashback_Social_Auth_Account_Manager {
                 );
             }
 
-            // Если юзер помечен pending — не логиним, просим подтвердить email.
+            // Если юзер помечен pending — не логиним, пересылаем письмо подтверждения.
+            // Старый токен мог истечь или потеряться; генерируем новый и повторяем
+            // отправку, иначе пользователь получит UI-сообщение «проверьте почту»,
+            // но никакого письма не придёт.
             $pending_flag = (int) get_user_meta($user_id, self::META_PENDING, true);
             if ($pending_flag === 1) {
+                $verify_token = Cashback_Social_Auth_DB::save_pending(
+                    self::KIND_EMAIL_VERIFY,
+                    array(
+                        'user_id'        => $user_id,
+                        'link_id'        => $link_id,
+                        'provider'       => $provider_id,
+                        'redirect_after' => $safe_redirect,
+                    ),
+                    $ip
+                );
+
+                if ($verify_token !== '') {
+                    $this->send_verify_email_email($user_id, $provider_id, $verify_token);
+                    Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_PENDING_CREATED, array(
+                        'kind'     => self::KIND_EMAIL_VERIFY,
+                        'provider' => $provider_id,
+                        'user_id'  => $user_id,
+                        'reason'   => 'resend_on_branch_a',
+                        'ip'       => $ip,
+                    ));
+                } else {
+                    Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                        'provider' => $provider_id,
+                        'stage'    => 'branch_a_pending_resend',
+                        'error'    => 'save_pending_failed',
+                        'user_id'  => $user_id,
+                    ));
+                }
+
+                Cashback_Social_Auth_Session::clear($provider_id);
+
                 return array(
                     'action'  => 'pending',
-                    'message' => __('Подтвердите регистрацию через письмо, которое мы отправили ранее. Если ссылка устарела — попробуйте войти снова.', 'cashback-plugin'),
+                    'message' => __('Мы отправили письмо для подтверждения регистрации. Проверьте почту.', 'cashback-plugin'),
                 );
             }
 
