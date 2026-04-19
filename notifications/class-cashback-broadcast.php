@@ -10,8 +10,9 @@ if (!defined('ABSPATH')) {
  * Массовая email-рассылка от администрации.
  *
  * Администратор создаёт кампанию (тема + HTML-тело + фильтры аудитории),
- * получатели попадают в очередь, WP-Cron `cashback_broadcast_process`
- * каждую минуту берёт батч и отправляет через Cashback_Email_Sender.
+ * получатели попадают в очередь, Action Scheduler действие
+ * `cashback_broadcast_process` (группа `cashback`) каждую минуту берёт батч
+ * и отправляет через Cashback_Email_Sender.
  */
 class Cashback_Broadcast {
 
@@ -40,10 +41,14 @@ class Cashback_Broadcast {
         add_action('wp_ajax_cashback_broadcast_status', array( $this, 'handle_ajax_status' ));
         add_action('cashback_broadcast_process', array( $this, 'process_queue' ));
 
-        // Расписание cron-события (интервал `every_minute` регистрируется Cashback_Notifications).
+        // Планирование через Action Scheduler (WooCommerce — жёсткая зависимость плагина,
+        // AS загружается им автоматически). Тик каждую минуту, батч 50 писем внутри действия.
         add_action('init', static function (): void {
-            if (!wp_next_scheduled('cashback_broadcast_process')) {
-                wp_schedule_event(time(), 'every_minute', 'cashback_broadcast_process');
+            if (function_exists('as_has_scheduled_action')
+                && function_exists('as_schedule_recurring_action')
+                && !as_has_scheduled_action('cashback_broadcast_process')
+            ) {
+                as_schedule_recurring_action(time(), 60, 'cashback_broadcast_process', array(), 'cashback');
             }
         });
     }

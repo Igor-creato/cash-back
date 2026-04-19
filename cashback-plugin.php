@@ -320,6 +320,19 @@ class CashbackPlugin {
             wp_schedule_event(time(), 'daily', 'cashback_fraud_cleanup_cron');
         }
 
+        // Миграция планировщика: снимаем устаревшие WP-Cron события для задач,
+        // переведённых на Action Scheduler. Повторная постановка AS-actions
+        // произойдёт автоматически на init (см. Cashback_Broadcast::__construct,
+        // Cashback_Notifications::__construct, Cashback_API_Cron::maybe_schedule).
+        $as_migrated_hooks = array(
+            'cashback_broadcast_process',
+            'cashback_notification_process_queue',
+            'cashback_api_sync_statuses',
+        );
+        foreach ($as_migrated_hooks as $legacy_hook) {
+            wp_clear_scheduled_hook($legacy_hook);
+        }
+
         // Регистрируем endpoints перед flush, т.к. init хук ещё не сработал
         add_rewrite_endpoint('cashback-withdrawal', EP_ROOT | EP_PAGES);
         add_rewrite_endpoint('cashback-history', EP_ROOT | EP_PAGES);
@@ -337,14 +350,12 @@ class CashbackPlugin {
      * Метод деактивации плагина
      */
     public function deactivate() {
+        // WP-Cron хуки (остаются на нативном планировщике)
         $cron_hooks = array(
             'cashback_support_auto_delete_cron',
             'cashback_health_check_cron',
             'cashback_fraud_detection_cron',
             'cashback_fraud_cleanup_cron',
-            'cashback_api_sync_statuses', // API Валидация: фоновая синхронизация
-            'cashback_notification_process_queue', // Обработка очереди уведомлений
-            'cashback_broadcast_process', // Обработка очереди массовых рассылок
         );
 
         foreach ($cron_hooks as $hook) {
@@ -352,6 +363,21 @@ class CashbackPlugin {
             if ($timestamp) {
                 wp_unschedule_event($timestamp, $hook);
             }
+        }
+
+        // Action Scheduler хуки (переведены на AS в рамках миграции планировщика)
+        $as_hooks = array(
+            'cashback_api_sync_statuses',          // API Валидация: фоновая синхронизация
+            'cashback_notification_process_queue', // Обработка очереди уведомлений
+            'cashback_broadcast_process',          // Обработка очереди массовых рассылок
+        );
+
+        foreach ($as_hooks as $hook) {
+            if (function_exists('as_unschedule_all_actions')) {
+                as_unschedule_all_actions($hook, array(), 'cashback');
+            }
+            // Legacy cleanup: возможны устаревшие WP-Cron события от старых версий плагина
+            wp_clear_scheduled_hook($hook);
         }
     }
 

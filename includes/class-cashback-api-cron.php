@@ -1,9 +1,11 @@
 <?php
 /**
- * WP Cron для фоновой синхронизации статусов транзакций
+ * Action Scheduler для фоновой синхронизации статусов транзакций
  *
  * Каждые 2 часа запрашивает обновлённые статусы из CPA-сетей
- * и обновляет локальные транзакции.
+ * и обновляет локальные транзакции. Планирование и concurrency-защита —
+ * через Action Scheduler (группа `cashback`). Atomicity sync+accrual
+ * и блокировка админских проверок баланса — через Cashback_Lock.
  *
  * @package CashbackPlugin
  * @since   5.0.0
@@ -17,11 +19,11 @@ if (!defined('ABSPATH')) {
 
 class Cashback_API_Cron {
 
-    /** @var string Имя cron-хука */
+    /** @var string Имя хука Action Scheduler */
     const HOOK_NAME = 'cashback_api_sync_statuses';
 
-    /** @var string Интервал */
-    const INTERVAL_NAME = 'cashback_every_2_hours';
+    /** @var string Группа действий в Action Scheduler (для UI/фильтрации) */
+    const AS_GROUP = 'cashback';
 
     /** @var int Таймаут ожидания глобального lock (секунды). 0 = не ждать для cron */
     const LOCK_WAIT_TIMEOUT = 0;
@@ -30,38 +32,31 @@ class Cashback_API_Cron {
      * Инициализация: регистрация хуков и расписания
      */
     public static function init(): void {
-        // Регистрация кастомного интервала
-        add_filter('cron_schedules', array( self::class, 'add_cron_interval' ));
-
         // Регистрация обработчика
         add_action(self::HOOK_NAME, array( self::class, 'run_sync' ));
 
-        // Планирование откладываем до init — иначе cron_schedules фильтр
-        // вызывает __() с textdomain до его загрузки (WP 6.7+ notice).
+        // Планирование через Action Scheduler на init (после загрузки WooCommerce).
         add_action('init', array( self::class, 'maybe_schedule' ));
     }
 
     /**
-     * Планирование cron если не запланировано (вызывается на init)
+     * Планирование recurring action в Action Scheduler (вызывается на init).
+     *
+     * WooCommerce — жёсткая зависимость плагина, AS загружается им автоматически.
      */
     public static function maybe_schedule(): void {
-        if (!wp_next_scheduled(self::HOOK_NAME)) {
-            wp_schedule_event(time(), self::INTERVAL_NAME, self::HOOK_NAME);
+        if (function_exists('as_has_scheduled_action')
+            && function_exists('as_schedule_recurring_action')
+            && !as_has_scheduled_action(self::HOOK_NAME)
+        ) {
+            as_schedule_recurring_action(
+                time(),
+                2 * HOUR_IN_SECONDS,
+                self::HOOK_NAME,
+                array(),
+                self::AS_GROUP
+            );
         }
-    }
-
-    /**
-     * Добавить кастомный интервал 2 часа
-     *
-     * @param array $schedules
-     * @return array
-     */
-    public static function add_cron_interval( array $schedules ): array {
-        $schedules[ self::INTERVAL_NAME ] = array(
-            'interval' => 2 * HOUR_IN_SECONDS,
-            'display'  => __('Каждые 2 часа (кэшбэк синхронизация)', 'cashback-plugin'),
-        );
-        return $schedules;
     }
 
     /**
@@ -235,13 +230,21 @@ class Cashback_API_Cron {
     }
 
     /**
-     * Деактивация: снять cron при деактивации плагина
+     * Деактивация: снять запланированные действия при деактивации плагина.
+     *
+     * Снимает как AS actions (после миграции), так и WP-Cron события
+     * (legacy — могут остаться от старых версий плагина).
      */
     public static function deactivate(): void {
+        if (function_exists('as_unschedule_all_actions')) {
+            as_unschedule_all_actions(self::HOOK_NAME, array(), self::AS_GROUP);
+        }
+
         $timestamp = wp_next_scheduled(self::HOOK_NAME);
         if ($timestamp) {
             wp_unschedule_event($timestamp, self::HOOK_NAME);
         }
+        wp_clear_scheduled_hook(self::HOOK_NAME);
     }
 
     /**
