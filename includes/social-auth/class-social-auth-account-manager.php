@@ -414,7 +414,7 @@ class Cashback_Social_Auth_Account_Manager {
         if (!is_array($pending)) {
             return array(
                 'action'  => 'error',
-                'message' => __('Ссылка устарела или уже использована. Запросите новый вход через социальную сеть.', 'cashback-plugin'),
+                'message' => __('Ссылка устарела или уже использована.', 'cashback-plugin'),
             );
         }
 

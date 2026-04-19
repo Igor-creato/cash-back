@@ -200,24 +200,7 @@ class Cashback_Social_Auth_Router {
      */
     public function handle_callback( \WP_REST_Request $request ) {
         $provider_id = (string) $request->get_param('provider');
-
-        // Диагностический лог «callback-handler вошёл в работу» с ключевыми
-        // параметрами запроса. Нужен, чтобы отличать «Яндекс вернулся, но мы
-        // тихо упали» от «callback вообще не срабатывает».
-        Cashback_Social_Auth_Audit::log('callback_entry', array(
-            'provider'       => $provider_id,
-            'has_code'       => (string) $request->get_param('code') !== '',
-            'has_state'      => (string) $request->get_param('state') !== '',
-            'provider_error' => (string) $request->get_param('error'),
-        ));
-
-        $provider = $this->resolve_provider($provider_id);
-
-        Cashback_Social_Auth_Audit::log('callback_step', array(
-            'provider' => $provider_id,
-            'step'     => 'after_resolve_provider',
-            'has'      => $provider ? 'yes' : 'no',
-        ));
+        $provider    = $this->resolve_provider($provider_id);
 
         if (!$provider) {
             Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
@@ -246,11 +229,6 @@ class Cashback_Social_Auth_Router {
             }
         }
 
-        Cashback_Social_Auth_Audit::log('callback_step', array(
-            'provider' => $provider_id,
-            'step'     => 'after_rate_limit',
-        ));
-
         $state     = sanitize_text_field((string) $request->get_param('state'));
         $code      = sanitize_text_field((string) $request->get_param('code'));
         $error     = sanitize_text_field((string) $request->get_param('error'));
@@ -269,30 +247,16 @@ class Cashback_Social_Auth_Router {
 
         if ($state === '' || $code === '') {
             Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
-                'provider'  => $provider_id,
-                'stage'     => 'callback',
-                'reason'    => 'invalid_callback',
-                'has_state' => $state !== '',
-                'has_code'  => $code !== '',
-                'ip'        => $ip,
+                'provider' => $provider_id,
+                'stage'    => 'callback',
+                'reason'   => 'invalid_callback',
+                'ip'       => $ip,
             ));
             $this->redirect_to_login_with_error('invalid_callback');
             return null;
         }
 
-        Cashback_Social_Auth_Audit::log('callback_step', array(
-            'provider' => $provider_id,
-            'step'     => 'before_session_load',
-        ));
-
         $session = Cashback_Social_Auth_Session::load_and_verify($provider_id, $state);
-
-        Cashback_Social_Auth_Audit::log('callback_step', array(
-            'provider' => $provider_id,
-            'step'     => 'after_session_load',
-            'has'      => $session ? 'yes' : 'no',
-        ));
-
         if (!$session) {
             Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_STATE_MISMATCH, array(
                 'provider' => $provider_id,
@@ -312,11 +276,6 @@ class Cashback_Social_Auth_Router {
             'device_id' => $device_id,
             'state'     => $state,
         );
-
-        Cashback_Social_Auth_Audit::log('callback_step', array(
-            'provider' => $provider_id,
-            'step'     => 'before_exchange',
-        ));
 
         try {
             $token_set = $provider->exchange_code($code, $code_verifier, $redirect_uri, $exchange_extra);
@@ -354,12 +313,6 @@ class Cashback_Social_Auth_Router {
             ), 200);
         }
 
-        Cashback_Social_Auth_Audit::log('callback_step', array(
-            'provider'  => $provider_id,
-            'step'      => 'after_exchange_ok',
-            'has_email' => !empty($profile['email']),
-        ));
-
         // Основной flow — Account Manager.
         $session_data = array(
             'redirect_after'    => isset($session['redirect_after']) ? (string) $session['redirect_after'] : home_url('/'),
@@ -371,11 +324,6 @@ class Cashback_Social_Auth_Router {
             'scope_phone'       => !empty($session['scope_phone']),
         );
 
-        Cashback_Social_Auth_Audit::log('callback_step', array(
-            'provider' => $provider_id,
-            'step'     => 'before_account_manager',
-        ));
-
         try {
             $result = Cashback_Social_Auth_Account_Manager::instance()
                 ->handle_callback($provider, $profile, $token_set, $session_data, $request);
@@ -384,19 +332,12 @@ class Cashback_Social_Auth_Router {
                 'provider' => $provider_id,
                 'stage'    => 'account_manager_exception',
                 'error'    => $e->getMessage(),
-                'file'     => $e->getFile() . ':' . $e->getLine(),
             ));
             $this->redirect_to_login_with_error('account_error');
             return null;
         }
 
         $action = isset($result['action']) ? (string) $result['action'] : 'error';
-
-        Cashback_Social_Auth_Audit::log('callback_step', array(
-            'provider' => $provider_id,
-            'step'     => 'after_account_manager',
-            'action'   => $action,
-        ));
 
         if ($action === 'login') {
             $target = isset($result['redirect_url']) ? (string) $result['redirect_url'] : home_url('/');
@@ -517,8 +458,8 @@ class Cashback_Social_Auth_Router {
             exit;
         }
 
-        $msg = isset($result['message']) ? (string) $result['message'] : __('Ссылка недействительна.', 'cashback-plugin');
-        $this->render_error_page($msg);
+        $msg = isset($result['message']) ? (string) $result['message'] : __('Срок действия ссылки истёк.', 'cashback-plugin');
+        $this->render_expired_link_page($msg);
         return null;
     }
 
@@ -554,23 +495,58 @@ class Cashback_Social_Auth_Router {
     }
 
     /**
-     * Отрисовать простую HTML-страницу ошибки.
+     * Отрисовать страницу «ссылка истекла / недействительна» с кнопками
+     * социальных провайдеров и ссылкой на обычный вход.
+     *
+     * Используется когда токен подтверждения (confirm_link / email_verify)
+     * уже использован или истёк — пользователю нужно заново инициировать
+     * вход через соцсеть, чтобы получить свежее письмо.
      */
-    private function render_error_page( string $message ): void {
-        status_header(400);
+    private function render_expired_link_page( string $message ): void {
+        status_header(410);
         nocache_headers();
         header('Content-Type: text/html; charset=UTF-8');
 
-        $title    = esc_html__('Ошибка подтверждения', 'cashback-plugin');
-        $msg      = esc_html($message);
-        $back     = esc_url(wp_login_url());
-        $back_txt = esc_html__('Вернуться на страницу входа', 'cashback-plugin');
+        $title        = esc_html__('Срок действия ссылки истёк', 'cashback-plugin');
+        $lead         = esc_html__('Для входа ещё раз нажмите кнопку ниже — мы отправим новое письмо подтверждения.', 'cashback-plugin');
+        $msg          = esc_html($message);
+        $fallback     = esc_url(wp_login_url());
+        $fallback_txt = esc_html__('Вернуться на страницу входа', 'cashback-plugin');
 
-        $html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' . $title . '</title>'
-            . '<style>body{font-family:sans-serif;max-width:520px;margin:60px auto;padding:24px;background:#f5f5f5;color:#222}'
-            . '.box{background:#fff;padding:28px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.08)}'
-            . 'a{color:#2271b1}</style></head><body><div class="box"><h1>' . $title . '</h1>'
-            . '<p>' . $msg . '</p><p><a href="' . $back . '">' . $back_txt . '</a></p>'
+        $buttons_html = '';
+        if (class_exists('Cashback_Social_Auth_Providers')) {
+            $providers = Cashback_Social_Auth_Providers::instance()->all();
+            $labels    = Cashback_Social_Auth_Providers::labels();
+            foreach ($providers as $id => $provider) {
+                if (!$provider->is_enabled()) {
+                    continue;
+                }
+                $start_url = rest_url('cashback/v1/social/' . $id . '/start');
+                $label     = isset($labels[ $id ]) ? $labels[ $id ] : $id;
+                /* translators: %s: provider label (e.g. "Яндекс ID"). */
+                $btn_text = sprintf(__('Войти через %s', 'cashback-plugin'), $label);
+                $buttons_html .= '<a class="cb-btn" href="' . esc_url($start_url) . '">' . esc_html($btn_text) . '</a>';
+            }
+        }
+
+        $html = '<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">'
+            . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            . '<title>' . $title . '</title>'
+            . '<style>'
+            . 'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;max-width:520px;margin:60px auto;padding:24px;background:#f5f5f5;color:#222;line-height:1.5}'
+            . '.box{background:#fff;padding:32px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.08)}'
+            . 'h1{margin:0 0 12px;font-size:22px}'
+            . '.msg{color:#555;margin:0 0 20px}'
+            . '.lead{color:#222;margin:0 0 20px}'
+            . '.cb-btn{display:block;text-align:center;padding:12px 18px;margin:10px 0;background:#2271b1;color:#fff;text-decoration:none;border-radius:6px;font-weight:500}'
+            . '.cb-btn:hover{background:#135e96}'
+            . '.back{display:block;margin-top:18px;color:#666;text-align:center;font-size:14px;text-decoration:underline}'
+            . '</style></head><body><div class="box">'
+            . '<h1>' . $title . '</h1>'
+            . '<p class="msg">' . $msg . '</p>'
+            . '<p class="lead">' . $lead . '</p>'
+            . $buttons_html
+            . '<a class="back" href="' . $fallback . '">' . $fallback_txt . '</a>'
             . '</div></body></html>';
 
         // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $html composed from pre-escaped fragments.
