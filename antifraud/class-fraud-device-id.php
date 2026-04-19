@@ -163,11 +163,11 @@ class Cashback_Fraud_Device_Id {
         if ($existing_id > 0) {
             // UPDATE: обновляем last_seen, user_id (если был null — ставим текущий),
             // и обогащаем мета-полями (visitor_id мог появиться позже первого визита).
-            $update_data = array(
-                'last_seen'        => $now,
-                'user_agent_hash'  => $user_agent_hash,
+            $update_data   = array(
+                'last_seen'       => $now,
+                'user_agent_hash' => $user_agent_hash,
             );
-            $update_format = array('%s', '%s');
+            $update_format = array( '%s', '%s' );
 
             if ($user_id !== null && $user_id > 0) {
                 $update_data['user_id'] = $user_id;
@@ -197,9 +197,9 @@ class Cashback_Fraud_Device_Id {
             $result = $wpdb->update(
                 $table,
                 $update_data,
-                array('id' => $existing_id),
+                array( 'id' => $existing_id ),
                 $update_format,
-                array('%d')
+                array( '%d' )
             );
 
             if ($result === false) {
@@ -229,7 +229,7 @@ class Cashback_Fraud_Device_Id {
                 'first_seen'       => $now,
                 'last_seen'        => $now,
             ),
-            array('%s', '%s', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%f', '%s', '%s')
+            array( '%s', '%s', '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%f', '%s', '%s' )
         );
 
         if ($wpdb->last_error) {

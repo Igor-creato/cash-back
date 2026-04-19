@@ -55,7 +55,7 @@ class Cashback_Fraud_Cluster_Detector {
      * Регистрация cron-хука. Вызывается из bootstrap плагина.
      */
     public static function register_cron(): void {
-        add_action(self::CRON_HOOK, array(self::class, 'detect_cron_handler'));
+        add_action(self::CRON_HOOK, array( self::class, 'detect_cron_handler' ));
     }
 
     /**
@@ -101,7 +101,7 @@ class Cashback_Fraud_Cluster_Detector {
             );
         }
 
-        $start_ms = (int) (microtime(true) * 1000);
+        $start_ms = (int) ( microtime(true) * 1000 );
 
         // GROUP_CONCAT default 1024 байта — мало для крупных кластеров.
         $wpdb->query('SET SESSION group_concat_max_len = 65535');
@@ -120,27 +120,27 @@ class Cashback_Fraud_Cluster_Detector {
         $user_to_group = array();
         foreach ($clusters_groups as $gi => $group_users) {
             foreach ($group_users as $uid) {
-                $user_to_group[$uid] = $gi;
+                $user_to_group[ $uid ] = $gi;
             }
         }
 
         $group_reasons = array_fill(0, count($clusters_groups), array());
         foreach ($edges as $e) {
-            $g_a = $user_to_group[$e['user_a']] ?? null;
-            $g_b = $user_to_group[$e['user_b']] ?? null;
+            $g_a = $user_to_group[ $e['user_a'] ] ?? null;
+            $g_b = $user_to_group[ $e['user_b'] ] ?? null;
             if ($g_a !== null && $g_a === $g_b) {
-                $group_reasons[$g_a][] = array(
+                $group_reasons[ $g_a ][] = array(
                     'reason' => $e['reason'],
                     'value'  => $e['value'],
                 );
             }
         }
 
-        $now            = current_time('mysql');
-        $found_uids     = array();
-        $stats_new      = 0;
-        $stats_updated  = 0;
-        $table          = self::table();
+        $now           = current_time('mysql');
+        $found_uids    = array();
+        $stats_new     = 0;
+        $stats_updated = 0;
+        $table         = self::table();
 
         foreach ($clusters_groups as $gi => $group_users) {
             if (count($group_users) < 2) {
@@ -148,12 +148,12 @@ class Cashback_Fraud_Cluster_Detector {
             }
 
             sort($group_users);
-            $group_users = array_values(array_unique(array_map('intval', $group_users)));
-            $cluster_uid = self::generate_cluster_uid($group_users);
+            $group_users  = array_values(array_unique(array_map('intval', $group_users)));
+            $cluster_uid  = self::generate_cluster_uid($group_users);
             $found_uids[] = $cluster_uid;
 
             // Дедуп reasons + strength для UI и score.
-            $raw_reasons = $group_reasons[$gi] ?? array();
+            $raw_reasons = $group_reasons[ $gi ] ?? array();
             $deduped     = self::dedupe_reasons($raw_reasons);
             $score       = self::compute_cluster_score($deduped);
             $primary     = self::determine_primary_reason($deduped);
@@ -196,9 +196,9 @@ class Cashback_Fraud_Cluster_Detector {
             $wpdb->query($sql);
 
             if ($existed_before > 0) {
-                $stats_updated++;
+                ++$stats_updated;
             } else {
-                $stats_new++;
+                ++$stats_new;
             }
         }
 
@@ -207,9 +207,10 @@ class Cashback_Fraud_Cluster_Detector {
         $stale_removed = 0;
         if (!empty($found_uids)) {
             $placeholders = implode(',', array_fill(0, count($found_uids), '%s'));
-            $params       = array_merge(array($table), $found_uids, array(self::STALE_OPEN_DAYS));
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- placeholders bound via prepare params.
-            $sql_stale = $wpdb->prepare(
+            $params       = array_merge(array( $table ), $found_uids, array( self::STALE_OPEN_DAYS ));
+            // $placeholders содержит только %s токены, $params покрывает все позиции (1 + N + 1).
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+            $sql_stale    = $wpdb->prepare(
                 "DELETE FROM %i
                  WHERE status = 'open'
                  AND cluster_uid NOT IN ($placeholders)
@@ -217,10 +218,11 @@ class Cashback_Fraud_Cluster_Detector {
                 $params
             );
             $deleted_rows = $wpdb->query($sql_stale);
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
             $stale_removed = is_int($deleted_rows) ? $deleted_rows : 0;
         } else {
             // Нет ни одного кластера в этом прогоне — чистим только давно-устаревшие open.
-            $deleted_rows = $wpdb->query($wpdb->prepare(
+            $deleted_rows  = $wpdb->query($wpdb->prepare(
                 "DELETE FROM %i
                  WHERE status = 'open'
                  AND detected_at < DATE_SUB(NOW(), INTERVAL %d DAY)",
@@ -230,7 +232,7 @@ class Cashback_Fraud_Cluster_Detector {
             $stale_removed = is_int($deleted_rows) ? $deleted_rows : 0;
         }
 
-        $duration_ms = max(0, (int) (microtime(true) * 1000) - $start_ms);
+        $duration_ms = max(0, (int) ( microtime(true) * 1000 ) - $start_ms);
 
         return array(
             'clusters_found'         => count($found_uids),
@@ -244,7 +246,7 @@ class Cashback_Fraud_Cluster_Detector {
     /**
      * Нормализация email под gmail dot/+ trick и +suffix у других провайдеров.
      */
-    public static function normalize_email(string $email): string {
+    public static function normalize_email( string $email ): string {
         $email = strtolower(trim($email));
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return $email;
@@ -255,7 +257,7 @@ class Cashback_Fraud_Cluster_Detector {
         }
         list($local, $domain) = $parts;
 
-        $gmail_domains = array('gmail.com', 'googlemail.com');
+        $gmail_domains = array( 'gmail.com', 'googlemail.com' );
 
         // Все домены — обрезаем +suffix.
         $local = (string) preg_replace('/\+.*$/', '', $local);
@@ -272,12 +274,12 @@ class Cashback_Fraud_Cluster_Detector {
      * Нормализация телефона в E.164. Для 11-значных RU без + — добавляем +7
      * (перезаписывая ведущую 8 на 7).
      */
-    public static function normalize_phone(string $phone): string {
+    public static function normalize_phone( string $phone ): string {
         $phone = trim($phone);
         if ($phone === '') {
             return '';
         }
-        $has_plus = ($phone[0] ?? '') === '+';
+        $has_plus = ( $phone[0] ?? '' ) === '+';
         $digits   = preg_replace('/\D+/', '', $phone) ?? '';
         if ($digits === '') {
             return '';
@@ -286,7 +288,7 @@ class Cashback_Fraud_Cluster_Detector {
             return '+' . $digits;
         }
         // RU: 11 цифр, начинается с 7 или 8 → +7XXXXXXXXXX.
-        if (strlen($digits) === 11 && ($digits[0] === '7' || $digits[0] === '8')) {
+        if (strlen($digits) === 11 && ( $digits[0] === '7' || $digits[0] === '8' )) {
             return '+7' . substr($digits, 1);
         }
         // Прочее — отдаём как есть, пусть совпадает только с самим собой.
@@ -298,7 +300,7 @@ class Cashback_Fraud_Cluster_Detector {
      *
      * @return array<int, array<string, mixed>>
      */
-    public static function get_clusters(int $limit = 50, int $offset = 0, ?string $status = null): array {
+    public static function get_clusters( int $limit = 50, int $offset = 0, ?string $status = null ): array {
         global $wpdb;
         $limit  = max(1, min(500, $limit));
         $offset = max(0, $offset);
@@ -326,7 +328,7 @@ class Cashback_Fraud_Cluster_Detector {
      *
      * @return array<int, array<string, mixed>>
      */
-    public static function find_clusters_for_user(int $user_id): array {
+    public static function find_clusters_for_user( int $user_id ): array {
         global $wpdb;
         if ($user_id <= 0) {
             return array();
@@ -359,11 +361,11 @@ class Cashback_Fraud_Cluster_Detector {
             'dismissed'      => 0,
         );
         foreach ($rows as $r) {
-            $status = isset($r['status']) ? (string) $r['status'] : '';
-            $cnt    = isset($r['cnt']) ? (int) $r['cnt'] : 0;
+            $status                   = isset($r['status']) ? (string) $r['status'] : '';
+            $cnt                      = isset($r['cnt']) ? (int) $r['cnt'] : 0;
             $stats['total_clusters'] += $cnt;
-            if (isset($stats[$status])) {
-                $stats[$status] = $cnt;
+            if (isset($stats[ $status ])) {
+                $stats[ $status ] = $cnt;
             }
         }
         return $stats;
@@ -372,9 +374,9 @@ class Cashback_Fraud_Cluster_Detector {
     /**
      * Изменение статуса кластера (admin action).
      */
-    public static function update_status(int $cluster_id, string $status, int $reviewer_id, string $note = ''): bool {
+    public static function update_status( int $cluster_id, string $status, int $reviewer_id, string $note = '' ): bool {
         global $wpdb;
-        $allowed = array('open', 'reviewing', 'confirmed', 'dismissed');
+        $allowed = array( 'open', 'reviewing', 'confirmed', 'dismissed' );
         if (!in_array($status, $allowed, true) || $cluster_id <= 0 || $reviewer_id <= 0) {
             return false;
         }
@@ -386,9 +388,9 @@ class Cashback_Fraud_Cluster_Detector {
                 'reviewed_by' => $reviewer_id,
                 'reviewed_at' => current_time('mysql'),
             ),
-            array('id' => $cluster_id),
-            array('%s', '%s', '%d', '%s'),
-            array('%d')
+            array( 'id' => $cluster_id ),
+            array( '%s', '%s', '%d', '%s' ),
+            array( '%d' )
         );
         return $result !== false && $result > 0;
     }
@@ -480,7 +482,7 @@ class Cashback_Fraud_Cluster_Detector {
      */
     private static function build_edges_by_phone(): array {
         global $wpdb;
-        $usermeta = $wpdb->usermeta ?? ($wpdb->prefix . 'usermeta');
+        $usermeta = $wpdb->usermeta ?? ( $wpdb->prefix . 'usermeta' );
 
         // Не нормализуем в SQL — нужно унификацировать через PHP normalize_phone().
         // Загружаем raw billing_phone, потом группируем по нормализованному значению.
@@ -498,7 +500,7 @@ class Cashback_Fraud_Cluster_Detector {
             if ($uid <= 0 || $phone === '') {
                 continue;
             }
-            $by_phone[$phone][$uid] = true;
+            $by_phone[ $phone ][ $uid ] = true;
         }
 
         $edges = array();
@@ -513,7 +515,7 @@ class Cashback_Fraud_Cluster_Detector {
             for ($i = 1, $n = count($uids); $i < $n; $i++) {
                 $edges[] = array(
                     'user_a' => $anchor,
-                    'user_b' => $uids[$i],
+                    'user_b' => $uids[ $i ],
                     'reason' => 'phone',
                     'value'  => $phone,
                 );
@@ -527,7 +529,7 @@ class Cashback_Fraud_Cluster_Detector {
      */
     private static function build_edges_by_email_normalized(): array {
         global $wpdb;
-        $users = $wpdb->users ?? ($wpdb->prefix . 'users');
+        $users = $wpdb->users ?? ( $wpdb->prefix . 'users' );
 
         $rows = (array) $wpdb->get_results($wpdb->prepare(
             'SELECT ID, user_email FROM %i WHERE user_email != %s',
@@ -542,7 +544,7 @@ class Cashback_Fraud_Cluster_Detector {
             if ($uid <= 0 || $em === '') {
                 continue;
             }
-            $by_email[$em][$uid] = true;
+            $by_email[ $em ][ $uid ] = true;
         }
 
         $edges = array();
@@ -556,7 +558,7 @@ class Cashback_Fraud_Cluster_Detector {
             for ($i = 1, $n = count($uids); $i < $n; $i++) {
                 $edges[] = array(
                     'user_a' => $anchor,
-                    'user_b' => $uids[$i],
+                    'user_b' => $uids[ $i ],
                     'reason' => 'email_normalized',
                     'value'  => $em,
                 );
@@ -571,11 +573,11 @@ class Cashback_Fraud_Cluster_Detector {
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array{user_a:int, user_b:int, reason:string, value:string}>
      */
-    private static function expand_group_concat_to_edges(array $rows, string $reason, string $value_key, string $users_key): array {
+    private static function expand_group_concat_to_edges( array $rows, string $reason, string $value_key, string $users_key ): array {
         $edges = array();
         foreach ($rows as $row) {
-            $value = isset($row[$value_key]) ? (string) $row[$value_key] : '';
-            $users_csv = isset($row[$users_key]) ? (string) $row[$users_key] : '';
+            $value     = isset($row[ $value_key ]) ? (string) $row[ $value_key ] : '';
+            $users_csv = isset($row[ $users_key ]) ? (string) $row[ $users_key ] : '';
             if ($value === '' || $users_csv === '') {
                 continue;
             }
@@ -588,7 +590,7 @@ class Cashback_Fraud_Cluster_Detector {
             for ($i = 1, $n = count($uids); $i < $n; $i++) {
                 $edges[] = array(
                     'user_a' => $anchor,
-                    'user_b' => $uids[$i],
+                    'user_b' => $uids[ $i ],
                     'reason' => $reason,
                     'value'  => $value,
                 );
@@ -607,37 +609,37 @@ class Cashback_Fraud_Cluster_Detector {
      * @param array<int, array{user_a:int, user_b:int, reason:string, value:string}> $edges
      * @return array<int, array<int, int>>  Массив групп (каждая — отсортированный uniq array of user_ids), только size >= 2.
      */
-    public static function union_find_clusters(array $edges): array {
+    public static function union_find_clusters( array $edges ): array {
         $parent = array();
         $rank   = array();
 
-        $find = function (int $x) use (&$parent): int {
+        $find = function ( int $x ) use ( &$parent ): int {
             $root = $x;
-            while ($parent[$root] !== $root) {
-                $root = $parent[$root];
+            while ($parent[ $root ] !== $root) {
+                $root = $parent[ $root ];
             }
             // Path compression
-            while ($parent[$x] !== $root) {
-                $next       = $parent[$x];
-                $parent[$x] = $root;
-                $x          = $next;
+            while ($parent[ $x ] !== $root) {
+                $next         = $parent[ $x ];
+                $parent[ $x ] = $root;
+                $x            = $next;
             }
             return $root;
         };
 
-        $union = function (int $a, int $b) use (&$parent, &$rank, $find): void {
+        $union = function ( int $a, int $b ) use ( &$parent, &$rank, $find ): void {
             $ra = $find($a);
             $rb = $find($b);
             if ($ra === $rb) {
                 return;
             }
-            if ($rank[$ra] < $rank[$rb]) {
-                $parent[$ra] = $rb;
-            } elseif ($rank[$ra] > $rank[$rb]) {
-                $parent[$rb] = $ra;
+            if ($rank[ $ra ] < $rank[ $rb ]) {
+                $parent[ $ra ] = $rb;
+            } elseif ($rank[ $ra ] > $rank[ $rb ]) {
+                $parent[ $rb ] = $ra;
             } else {
-                $parent[$rb] = $ra;
-                $rank[$ra]++;
+                $parent[ $rb ] = $ra;
+                ++$rank[ $ra ];
             }
         };
 
@@ -647,13 +649,13 @@ class Cashback_Fraud_Cluster_Detector {
             if ($a <= 0 || $b <= 0 || $a === $b) {
                 continue;
             }
-            if (!isset($parent[$a])) {
-                $parent[$a] = $a;
-                $rank[$a]   = 0;
+            if (!isset($parent[ $a ])) {
+                $parent[ $a ] = $a;
+                $rank[ $a ]   = 0;
             }
-            if (!isset($parent[$b])) {
-                $parent[$b] = $b;
-                $rank[$b]   = 0;
+            if (!isset($parent[ $b ])) {
+                $parent[ $b ] = $b;
+                $rank[ $b ]   = 0;
             }
             $union($a, $b);
         }
@@ -661,7 +663,7 @@ class Cashback_Fraud_Cluster_Detector {
         $groups = array();
         foreach ($parent as $node => $_) {
             $root              = $find($node);
-            $groups[$root][]   = $node;
+            $groups[ $root ][] = $node;
         }
 
         $result = array();
@@ -688,16 +690,16 @@ class Cashback_Fraud_Cluster_Detector {
      * @param array<int, array{reason:string, value:string}> $raw
      * @return array<int, array{reason:string, value:string, strength:string}>
      */
-    private static function dedupe_reasons(array $raw): array {
+    private static function dedupe_reasons( array $raw ): array {
         $seen = array();
         $out  = array();
         foreach ($raw as $r) {
             $key = $r['reason'] . '|' . $r['value'];
-            if (isset($seen[$key])) {
+            if (isset($seen[ $key ])) {
                 continue;
             }
-            $seen[$key] = true;
-            $out[]      = array(
+            $seen[ $key ] = true;
+            $out[]        = array(
                 'reason'   => $r['reason'],
                 'value'    => $r['value'],
                 'strength' => self::strength_label($r['reason']),
@@ -706,8 +708,8 @@ class Cashback_Fraud_Cluster_Detector {
         return $out;
     }
 
-    private static function strength_label(string $reason): string {
-        $w = self::REASON_STRENGTH[$reason] ?? 5;
+    private static function strength_label( string $reason ): string {
+        $w = self::REASON_STRENGTH[ $reason ] ?? 5;
         if ($w >= 25) {
             return 'strong';
         }
@@ -724,19 +726,19 @@ class Cashback_Fraud_Cluster_Detector {
      *
      * @param array<int, array{reason:string, value:string, strength?:string}> $reasons
      */
-    public static function compute_cluster_score(array $reasons): float {
+    public static function compute_cluster_score( array $reasons ): float {
         $by_reason_seen = array();
         $score          = 0.0;
         foreach ($reasons as $r) {
             $reason   = $r['reason'] ?? '';
-            $strength = self::REASON_STRENGTH[$reason] ?? 0;
+            $strength = self::REASON_STRENGTH[ $reason ] ?? 0;
             if ($strength <= 0) {
                 continue;
             }
-            $count = $by_reason_seen[$reason] ?? 0;
+            $count = $by_reason_seen[ $reason ] ?? 0;
             // 1-е value полная сила, 2+ — половина.
-            $score                       += $count === 0 ? $strength : ($strength / 2);
-            $by_reason_seen[$reason]      = $count + 1;
+            $score                    += $count === 0 ? $strength : ( $strength / 2 );
+            $by_reason_seen[ $reason ] = $count + 1;
         }
         return (float) min(100.0, round($score, 2));
     }
@@ -746,11 +748,11 @@ class Cashback_Fraud_Cluster_Detector {
      *
      * @param array<int, array{reason:string, value:string, strength?:string}> $reasons
      */
-    private static function determine_primary_reason(array $reasons): string {
+    private static function determine_primary_reason( array $reasons ): string {
         $sum = array();
         foreach ($reasons as $r) {
-            $reason             = $r['reason'] ?? '';
-            $sum[$reason]        = ($sum[$reason] ?? 0) + (self::REASON_STRENGTH[$reason] ?? 0);
+            $reason         = $r['reason'] ?? '';
+            $sum[ $reason ] = ( $sum[ $reason ] ?? 0 ) + ( self::REASON_STRENGTH[ $reason ] ?? 0 );
         }
         if (empty($sum)) {
             return 'unknown';
@@ -765,7 +767,7 @@ class Cashback_Fraud_Cluster_Detector {
      *
      * @param array<int, int> $user_ids
      */
-    public static function generate_cluster_uid(array $user_ids): string {
+    public static function generate_cluster_uid( array $user_ids ): string {
         $clean = array_values(array_unique(array_map('intval', $user_ids)));
         sort($clean);
         $hash = sha1('cashback-cluster:' . implode('-', $clean));

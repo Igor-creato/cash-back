@@ -115,7 +115,7 @@ class Cashback_Fraud_Collector {
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('cashback_fraud_fingerprint_nonce'),
             // debug=true только при WP_DEBUG, чтобы не шуметь в production console
-            'debug'   => (defined('WP_DEBUG') && WP_DEBUG),
+            'debug'   => ( defined('WP_DEBUG') && WP_DEBUG ),
         ));
     }
 
@@ -146,18 +146,24 @@ class Cashback_Fraud_Collector {
         $rate_subject = $is_guest ? 'ip_' . md5(self::get_client_ip()) : (string) $uid;
         $rate_key     = 'cb_fp_rate_' . $rate_subject;
         if (!wp_cache_add($rate_key, 1, 'cashback', 600)) {
-            wp_send_json_success(array('device_recorded' => false, 'rate_limited' => true));
+            wp_send_json_success(array(
+				'device_recorded' => false,
+				'rate_limited'    => true,
+			));
             return;
         }
         if (get_transient($rate_key)) {
             wp_cache_delete($rate_key, 'cashback');
-            wp_send_json_success(array('device_recorded' => false, 'rate_limited' => true));
+            wp_send_json_success(array(
+				'device_recorded' => false,
+				'rate_limited'    => true,
+			));
             return;
         }
         set_transient($rate_key, 1, 600);
 
         $fp_hash = isset($_POST['fp']) ? sanitize_text_field(wp_unslash($_POST['fp'])) : '';
-        if ($fp_hash !== '' && (strlen($fp_hash) !== 64 || !preg_match('/^[a-f0-9]{64}$/', $fp_hash))) {
+        if ($fp_hash !== '' && ( strlen($fp_hash) !== 64 || !preg_match('/^[a-f0-9]{64}$/', $fp_hash) )) {
             $fp_hash = '';
         }
 
@@ -191,7 +197,7 @@ class Cashback_Fraud_Collector {
         }
 
         // Новая запись в cashback_fraud_device_ids.
-        $device_recorded = false;
+        $device_recorded   = false;
         $device_id_enabled = !class_exists('Cashback_Fraud_Settings')
             || Cashback_Fraud_Settings::is_device_id_enabled();
         if ($device_id_enabled && $device_id !== '' && class_exists('Cashback_Fraud_Device_Id')) {
@@ -200,10 +206,10 @@ class Cashback_Fraud_Collector {
             // Тумблер consent_required позволяет отключить требование (legacy/dev).
             $consent_required = !class_exists('Cashback_Fraud_Settings')
                 || Cashback_Fraud_Settings::is_consent_required();
-            $consent_ok = $is_guest || !$consent_required;
+            $consent_ok       = $is_guest || !$consent_required;
             if (!$consent_ok) {
                 if (class_exists('Cashback_Fraud_Consent')) {
-                    $consent_ok = (bool) call_user_func(array('Cashback_Fraud_Consent', 'has_consent'), $uid);
+                    $consent_ok = (bool) call_user_func(array( 'Cashback_Fraud_Consent', 'has_consent' ), $uid);
                 } else {
                     // Фолбэк до этапа 7: читаем user_meta напрямую, отсутствие = нет согласия.
                     $consent_ok = (bool) get_user_meta($uid, 'cashback_fraud_consent_at', true);
@@ -221,20 +227,20 @@ class Cashback_Fraud_Collector {
 
                 $ua = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '';
 
-                $result = Cashback_Fraud_Device_Id::record(
+                $result          = Cashback_Fraud_Device_Id::record(
                     $payload,
                     $is_guest ? null : $uid,
                     self::get_client_ip(),
                     $ua
                 );
-                $device_recorded = ($result !== false);
+                $device_recorded = ( $result !== false );
             } else {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log(sprintf('Cashback Fraud Device ID: skipped record for user %d — no consent', $uid));
             }
         }
 
-        wp_send_json_success(array('device_recorded' => $device_recorded));
+        wp_send_json_success(array( 'device_recorded' => $device_recorded ));
     }
 
     /**

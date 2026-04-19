@@ -94,11 +94,11 @@ class Cashback_Fraud_Detector {
             $threshold
         ));
 
-        $skip_mobile = class_exists('Cashback_Fraud_Settings')
+        $skip_mobile      = class_exists('Cashback_Fraud_Settings')
             && Cashback_Fraud_Settings::should_skip_alert_for_mobile_ip();
         $ip_intel_enabled = !class_exists('Cashback_Fraud_Settings')
             || Cashback_Fraud_Settings::is_ip_intelligence_enabled();
-        $has_ip_intel = $ip_intel_enabled && class_exists('Cashback_Fraud_Ip_Intelligence');
+        $has_ip_intel     = $ip_intel_enabled && class_exists('Cashback_Fraud_Ip_Intelligence');
 
         foreach ($results as $row) {
             if (empty($row->user_ids)) {
@@ -115,7 +115,7 @@ class Cashback_Fraud_Detector {
                 $ip_info = Cashback_Fraud_Ip_Intelligence::classify((string) $row->ip_address);
                 $type    = isset($ip_info['type']) ? (string) $ip_info['type'] : 'unknown';
 
-                if ($skip_mobile && in_array($type, array('mobile', 'cgnat', 'private'), true)) {
+                if ($skip_mobile && in_array($type, array( 'mobile', 'cgnat', 'private' ), true)) {
                     continue;
                 }
 
@@ -206,7 +206,7 @@ class Cashback_Fraud_Detector {
             return array();
         }
 
-        $threshold = class_exists('Cashback_Fraud_Settings')
+        $threshold    = class_exists('Cashback_Fraud_Settings')
             ? Cashback_Fraud_Settings::get_max_users_per_device()
             : 2;
         $device_table = $wpdb->prefix . 'cashback_fraud_device_ids';

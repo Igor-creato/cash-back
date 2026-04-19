@@ -1137,12 +1137,12 @@ class Cashback_Fraud_Admin {
                 $c = (array) $c;
                 // user_ids / link_reasons могут прийти JSON-строкой — нормализуем.
                 if (isset($c['user_ids']) && is_string($c['user_ids'])) {
-                    $decoded         = json_decode($c['user_ids'], true);
-                    $c['user_ids']   = is_array($decoded) ? $decoded : array();
+                    $decoded       = json_decode($c['user_ids'], true);
+                    $c['user_ids'] = is_array($decoded) ? $decoded : array();
                 }
                 if (isset($c['link_reasons']) && is_string($c['link_reasons'])) {
-                    $decoded            = json_decode($c['link_reasons'], true);
-                    $c['link_reasons']  = is_array($decoded) ? $decoded : array();
+                    $decoded           = json_decode($c['link_reasons'], true);
+                    $c['link_reasons'] = is_array($decoded) ? $decoded : array();
                 }
                 $cluster[] = $c;
             }

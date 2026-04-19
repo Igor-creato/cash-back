@@ -97,7 +97,7 @@ final class Cashback_Fraud_Consent_Test_Runner {
     }
 
     private function test_validate_without_checkbox_returns_error(): void {
-        $_POST = array(); // нет чекбокса.
+        $_POST  = array(); // нет чекбокса.
         $errors = new WP_Error();
         $result = Cashback_Fraud_Consent::validate_consent($errors, 'u', 'e@x.test');
         $this->assert_true(
@@ -108,7 +108,7 @@ final class Cashback_Fraud_Consent_Test_Runner {
     }
 
     private function test_validate_with_checkbox_no_error(): void {
-        $_POST = array( Cashback_Fraud_Consent::POST_FIELD => '1' );
+        $_POST  = array( Cashback_Fraud_Consent::POST_FIELD => '1' );
         $errors = new WP_Error();
         $result = Cashback_Fraud_Consent::validate_consent($errors, 'u', 'e@x.test');
         $this->assert_true(
@@ -203,14 +203,17 @@ final class Cashback_Fraud_Consent_Test_Runner {
         echo "\n=== Cashback_Fraud_Consent tests ===\n";
         foreach ($this->results as $r) {
             $status = $r['ok'] ? 'PASS' : 'FAIL';
-            echo sprintf("[%s] %s%s\n", $status, $r['name'], $r['msg'] !== '' && !$r['ok'] ? ' -- ' . $r['msg'] : '');
+            // CLI smoke-test runner (wp eval-file) — вывод в терминал, не в HTML.
+            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+            printf("[%s] %s%s\n", $status, $r['name'], $r['msg'] !== '' && !$r['ok'] ? ' -- ' . $r['msg'] : '');
             if ($r['ok']) {
-                $pass++;
+                ++$pass;
             } else {
-                $fail++;
+                ++$fail;
             }
         }
-        echo sprintf("\nTotal: %d passed, %d failed\n", $pass, $fail);
+        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+        printf("\nTotal: %d passed, %d failed\n", $pass, $fail);
     }
 }
 
