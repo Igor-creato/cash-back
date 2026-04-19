@@ -178,16 +178,103 @@ class Cashback_Email_Sender {
     }
 
     /**
-     * URL логотипа сайта из WP Customizer, либо null.
+     * URL логотипа сайта.
+     *
+     * Цепочка источников:
+     * 1) Woodmart Header Builder (опции whb_main_header → whb_<id>);
+     * 2) WP Customize → custom_logo;
+     * 3) Site Icon (favicon HD) как мягкий fallback;
+     * 4) null — шапка письма рендерится без <img>.
      */
     private function get_logo_url(): ?string {
+        $woodmart_logo = $this->get_woodmart_logo_url();
+        if ($woodmart_logo !== null) {
+            return $woodmart_logo;
+        }
+
         $logo_id = (int) get_theme_mod('custom_logo');
-        if ($logo_id <= 0) {
+        if ($logo_id > 0) {
+            $url = wp_get_attachment_image_url($logo_id, 'medium');
+            if ($url !== false && $url !== '') {
+                return $url;
+            }
+        }
+
+        $site_icon = get_site_icon_url(192);
+        if (is_string($site_icon) && $site_icon !== '') {
+            return $site_icon;
+        }
+
+        return null;
+    }
+
+    /**
+     * Извлечь URL логотипа из Woodmart Header Builder.
+     *
+     * Структура: get_option('whb_main_header') → ID активного header'а.
+     * Опция whb_<id> содержит дерево elements; ищем рекурсивно элемент
+     * с params.image (URL/ID вложения) — это и есть логотип.
+     */
+    private function get_woodmart_logo_url(): ?string {
+        $header_id = get_option('whb_main_header');
+        if (!is_string($header_id) || $header_id === '') {
             return null;
         }
 
-        $url = wp_get_attachment_image_url($logo_id, 'medium');
-        return $url !== false && $url !== '' ? $url : null;
+        $header_data = get_option('whb_' . $header_id);
+        if (!is_array($header_data) || empty($header_data['elements'])) {
+            return null;
+        }
+
+        $image = $this->find_logo_image_in_elements($header_data['elements']);
+        if (!is_array($image)) {
+            return null;
+        }
+
+        if (!empty($image['url']) && is_string($image['url'])) {
+            return $image['url'];
+        }
+
+        if (!empty($image['id'])) {
+            $url = wp_get_attachment_image_url((int) $image['id'], 'medium');
+            if ($url !== false && $url !== '') {
+                return $url;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Рекурсивный обход элементов Header Builder для поиска параметра image.
+     *
+     * @param array $elements
+     * @return array|null Массив с ключами url/id, либо null.
+     */
+    private function find_logo_image_in_elements( array $elements ): ?array {
+        foreach ($elements as $element) {
+            if (!is_array($element)) {
+                continue;
+            }
+
+            if (isset($element['params']['image']) && is_array($element['params']['image'])) {
+                $image = $element['params']['image'];
+                if (!empty($image['url']) || !empty($image['id'])) {
+                    return $image;
+                }
+            }
+
+            foreach (array( 'elements', 'columns', 'rows', 'children' ) as $nested_key) {
+                if (!empty($element[ $nested_key ]) && is_array($element[ $nested_key ])) {
+                    $found = $this->find_logo_image_in_elements($element[ $nested_key ]);
+                    if ($found !== null) {
+                        return $found;
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
