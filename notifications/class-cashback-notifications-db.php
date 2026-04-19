@@ -93,6 +93,11 @@ class Cashback_Notifications_DB {
      * @return bool true если включено (по умолчанию — включено)
      */
     public static function is_enabled( int $user_id, string $notification_type ): bool {
+        // Критичные для авторизации уведомления нельзя отключить — всегда включены.
+        if (in_array($notification_type, self::get_required_notification_types(), true)) {
+            return true;
+        }
+
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_notification_preferences';
 
@@ -178,16 +183,31 @@ class Cashback_Notifications_DB {
      */
     public static function get_user_notification_types(): array {
         return array(
-            'transaction_new'      => __('Новая транзакция (покупка через партнёра)', 'cashback-plugin'),
-            'transaction_status'   => __('Изменение статуса транзакции', 'cashback-plugin'),
-            'cashback_credited'    => __('Начисление кэшбэка на баланс', 'cashback-plugin'),
-            'ticket_reply'         => __('Ответ на тикет поддержки', 'cashback-plugin'),
-            'claim_created'        => __('Заявка на неначисленный кэшбэк', 'cashback-plugin'),
-            'claim_status'         => __('Изменение статуса заявки', 'cashback-plugin'),
-            'affiliate_referral'   => __('Регистрация нового реферала', 'cashback-plugin'),
-            'affiliate_commission' => __('Начисление партнёрского вознаграждения', 'cashback-plugin'),
-            'broadcast'            => __('Массовые рассылки от администрации', 'cashback-plugin'),
+            'transaction_new'         => __('Новая транзакция (покупка через партнёра)', 'cashback-plugin'),
+            'transaction_status'      => __('Изменение статуса транзакции', 'cashback-plugin'),
+            'cashback_credited'       => __('Начисление кэшбэка на баланс', 'cashback-plugin'),
+            'ticket_reply'            => __('Ответ на тикет поддержки', 'cashback-plugin'),
+            'claim_created'           => __('Заявка на неначисленный кэшбэк', 'cashback-plugin'),
+            'claim_status'            => __('Изменение статуса заявки', 'cashback-plugin'),
+            'affiliate_referral'      => __('Регистрация нового реферала', 'cashback-plugin'),
+            'affiliate_commission'    => __('Начисление партнёрского вознаграждения', 'cashback-plugin'),
+            'broadcast'               => __('Массовые рассылки от администрации', 'cashback-plugin'),
+            'social_confirm_link'     => __('Подтверждение привязки соцсети (обязательно)', 'cashback-plugin'),
+            'social_verify_email'     => __('Подтверждение email при регистрации через соцсеть (обязательно)', 'cashback-plugin'),
+            'social_account_linked'   => __('Соцсеть привязана к аккаунту', 'cashback-plugin'),
+            'social_account_unlinked' => __('Соцсеть отвязана от аккаунта', 'cashback-plugin'),
         );
+    }
+
+    /**
+     * Slug-и уведомлений, которые нельзя отключить в ЛК (критичные для flow авторизации).
+     *
+     * Используется `Cashback_Notifications_Frontend` для рендеринга чекбоксов как disabled+checked.
+     *
+     * @return array<int, string>
+     */
+    public static function get_required_notification_types(): array {
+        return array( 'social_confirm_link', 'social_verify_email' );
     }
 
     /**
