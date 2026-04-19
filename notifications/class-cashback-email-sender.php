@@ -102,9 +102,12 @@ class Cashback_Email_Sender {
      * @return string HTML
      */
     private function render_html_template( string $subject, string $message, ?int $user_id = null ): string {
-        $site_name = $this->get_from_name();
-        $site_url  = home_url('/');
-        $signature = (string) get_option('cashback_email_signature', '');
+        $site_name   = $this->get_from_name();
+        $site_url    = home_url('/');
+        $signature   = (string) get_option('cashback_email_signature', '');
+        $brand_color = $this->get_brand_color();
+        $text_color  = $this->get_contrast_text_color($brand_color);
+        $logo_url    = $this->get_logo_url();
 
         $settings_link = '';
         if ($user_id !== null && function_exists('wc_get_account_endpoint_url')) {
@@ -124,10 +127,23 @@ class Cashback_Email_Sender {
         $html .= '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;max-width:600px;width:100%;">';
 
         // Шапка
-        $html .= '<tr><td style="background:#2271b1;padding:20px 32px;">';
-        $html .= '<a href="' . esc_url($site_url) . '" style="color:#ffffff;text-decoration:none;font-size:20px;font-weight:bold;">';
+        $html .= '<tr><td style="background:' . esc_attr($brand_color) . ';padding:20px 32px;">';
+        $html .= '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>';
+
+        if ($logo_url !== null) {
+            $html .= '<td style="padding-right:12px;vertical-align:middle;">';
+            $html .= '<a href="' . esc_url($site_url) . '" style="text-decoration:none;display:inline-block;">';
+            $html .= '<img src="' . esc_url($logo_url) . '" height="40" alt="' . esc_attr($site_name) . '" style="display:block;border:0;max-height:40px;width:auto;">';
+            $html .= '</a></td>';
+        }
+
+        $html .= '<td style="vertical-align:middle;">';
+        $html .= '<a href="' . esc_url($site_url) . '" style="color:' . esc_attr($text_color) . ';text-decoration:none;font-size:20px;font-weight:bold;">';
         $html .= esc_html($site_name);
-        $html .= '</a></td></tr>';
+        $html .= '</a></td>';
+
+        $html .= '</tr></table>';
+        $html .= '</td></tr>';
 
         // Тело
         $html .= '<tr><td style="padding:32px;color:#333333;font-size:15px;line-height:1.6;">';
@@ -147,7 +163,7 @@ class Cashback_Email_Sender {
 
         if ($settings_link) {
             $html .= '<p style="margin:0;">';
-            $html .= '<a href="' . esc_url($settings_link) . '" style="color:#2271b1;text-decoration:underline;">';
+            $html .= '<a href="' . esc_url($settings_link) . '" style="color:' . esc_attr($brand_color) . ';text-decoration:underline;">';
             $html .= esc_html__('Настроить уведомления', 'cashback-plugin');
             $html .= '</a></p>';
         }
@@ -159,6 +175,67 @@ class Cashback_Email_Sender {
         $html .= '</body></html>';
 
         return $html;
+    }
+
+    /**
+     * Основной брендовый цвет для шапки и ссылок.
+     *
+     * Приоритет: primary-color активной темы (Woodmart хранит массив с ключом 'idle')
+     * → fallback #2271b1.
+     */
+    private function get_brand_color(): string {
+        $fallback = '#2271b1';
+        $primary  = get_theme_mod('primary-color');
+
+        if (is_array($primary) && isset($primary['idle'])) {
+            $primary = $primary['idle'];
+        }
+
+        if (!is_string($primary) || $primary === '') {
+            return $fallback;
+        }
+
+        $hex = sanitize_hex_color($primary);
+        if ($hex) {
+            return $hex;
+        }
+
+        if (preg_match('/^#[0-9a-fA-F]{6}$/', $primary)) {
+            return $primary;
+        }
+
+        return $fallback;
+    }
+
+    /**
+     * URL логотипа сайта из WP Customizer, либо null.
+     */
+    private function get_logo_url(): ?string {
+        $logo_id = (int) get_theme_mod('custom_logo');
+        if ($logo_id <= 0) {
+            return null;
+        }
+
+        $url = wp_get_attachment_image_url($logo_id, 'medium');
+        return $url !== false && $url !== '' ? $url : null;
+    }
+
+    /**
+     * Подбирает читаемый цвет текста (#ffffff или #1a1a1a) для фона $hex.
+     * Используется формула luma: Y = 0.299R + 0.587G + 0.114B, порог 128.
+     */
+    private function get_contrast_text_color( string $hex ): string {
+        $hex = ltrim($hex, '#');
+        if (strlen($hex) !== 6) {
+            return '#ffffff';
+        }
+
+        $r = hexdec(substr($hex, 0, 2));
+        $g = hexdec(substr($hex, 2, 2));
+        $b = hexdec(substr($hex, 4, 2));
+        $y = 0.299 * $r + 0.587 * $g + 0.114 * $b;
+
+        return $y >= 128 ? '#1a1a1a' : '#ffffff';
     }
 
     /**
