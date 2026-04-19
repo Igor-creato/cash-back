@@ -60,6 +60,13 @@ class Cashback_Fraud_Detector {
      */
     private static function check_shared_ip(): array {
         global $wpdb;
+
+        // Тумблер: shared-IP сигнал можно полностью отключить (device-first парадигма).
+        if (class_exists('Cashback_Fraud_Settings')
+            && !Cashback_Fraud_Settings::is_shared_ip_check_enabled()) {
+            return array();
+        }
+
         $threshold = Cashback_Fraud_Settings::get_max_users_per_ip();
         $fp_table  = $wpdb->prefix . 'cashback_user_fingerprints';
         $alert_ids = array();

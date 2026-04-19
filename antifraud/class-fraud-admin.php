@@ -816,6 +816,7 @@ class Cashback_Fraud_Admin {
         // Multi-Account Detection
         echo '<h2>' . esc_html__('Детекция мультиаккаунтов', 'cashback-plugin') . '</h2>';
         echo '<table class="form-table">';
+        $this->render_checkbox_field('shared_ip_check_enabled', __('Проверять shared-IP (легаси-сигнал)', 'cashback-plugin'), $settings);
         $this->render_number_field('max_users_per_ip', __('Макс. пользователей с одного IP', 'cashback-plugin'), $settings, $defaults);
         $this->render_number_field('max_users_per_fingerprint', __('Макс. пользователей с одного fingerprint', 'cashback-plugin'), $settings, $defaults);
         $this->render_number_field('max_accounts_per_details_hash', __('Макс. аккаунтов на одни реквизиты', 'cashback-plugin'), $settings, $defaults);
