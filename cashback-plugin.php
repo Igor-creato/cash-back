@@ -344,6 +344,7 @@ class CashbackPlugin {
             'cashback_fraud_cleanup_cron',
             'cashback_api_sync_statuses', // API Валидация: фоновая синхронизация
             'cashback_notification_process_queue', // Обработка очереди уведомлений
+            'cashback_broadcast_process', // Обработка очереди массовых рассылок
         );
 
         foreach ($cron_hooks as $hook) {
@@ -475,6 +476,7 @@ class CashbackPlugin {
         $this->require_file('notifications/class-cashback-email-sender.php');
         $this->require_file('notifications/class-cashback-notifications.php');
         $this->require_file('notifications/class-cashback-notifications-frontend.php');
+        $this->require_file('notifications/class-cashback-broadcast.php');
 
         // Admin-only файлы (is_admin() = true для admin pages, admin-ajax.php, REST через admin)
         if (is_admin()) {
@@ -659,6 +661,9 @@ class CashbackPlugin {
         }
         if (class_exists('Cashback_Email_Sender')) {
             Cashback_Email_Sender::get_instance();
+        }
+        if (class_exists('Cashback_Broadcast')) {
+            Cashback_Broadcast::get_instance();
         }
         if (class_exists('Cashback_Notifications_Frontend')) {
             Cashback_Notifications_Frontend::get_instance();

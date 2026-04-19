@@ -46,9 +46,43 @@ class Cashback_Notifications_DB {
             KEY idx_transaction (transaction_id)
         ) {$charset_collate};";
 
+        // Кампании массовых email-рассылок (создаются администратором).
+        $sql_broadcast_campaigns = "CREATE TABLE IF NOT EXISTS `{$prefix}cashback_broadcast_campaigns` (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            campaign_uuid CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+            subject VARCHAR(255) NOT NULL,
+            body_html LONGTEXT NOT NULL,
+            audience_filters TEXT DEFAULT NULL,
+            total_recipients INT UNSIGNED NOT NULL DEFAULT 0,
+            sent_count INT UNSIGNED NOT NULL DEFAULT 0,
+            failed_count INT UNSIGNED NOT NULL DEFAULT 0,
+            status VARCHAR(20) NOT NULL DEFAULT 'queued',
+            created_by BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            completed_at DATETIME DEFAULT NULL,
+            UNIQUE KEY uniq_uuid (campaign_uuid),
+            KEY idx_status_created (status, created_at)
+        ) {$charset_collate};";
+
+        // Очередь получателей кампании.
+        $sql_broadcast_queue = "CREATE TABLE IF NOT EXISTS `{$prefix}cashback_broadcast_queue` (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            campaign_id BIGINT UNSIGNED NOT NULL,
+            user_id BIGINT UNSIGNED NOT NULL,
+            email VARCHAR(190) NOT NULL,
+            status VARCHAR(10) NOT NULL DEFAULT 'pending',
+            attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
+            error VARCHAR(255) DEFAULT NULL,
+            processed_at DATETIME DEFAULT NULL,
+            UNIQUE KEY uniq_campaign_user (campaign_id, user_id),
+            KEY idx_campaign_status (campaign_id, status)
+        ) {$charset_collate};";
+
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql_prefs);
         dbDelta($sql_queue);
+        dbDelta($sql_broadcast_campaigns);
+        dbDelta($sql_broadcast_queue);
     }
 
     /**
@@ -152,6 +186,7 @@ class Cashback_Notifications_DB {
             'claim_status'         => __('Изменение статуса заявки', 'cashback-plugin'),
             'affiliate_referral'   => __('Регистрация нового реферала', 'cashback-plugin'),
             'affiliate_commission' => __('Начисление партнёрского вознаграждения', 'cashback-plugin'),
+            'broadcast'            => __('Массовые рассылки от администрации', 'cashback-plugin'),
         );
     }
 
