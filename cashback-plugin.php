@@ -498,6 +498,7 @@ class CashbackPlugin {
         $this->require_file('claims/class-claims-frontend.php');
 
         // Notifications module (email-уведомления) — загружается везде (фронт + админ + AJAX)
+        $this->require_file('includes/class-cashback-theme-color.php');
         $this->require_file('notifications/class-cashback-notifications-db.php');
         $this->require_file('notifications/class-cashback-email-sender.php');
         $this->require_file('notifications/class-cashback-notifications.php');
