@@ -52,6 +52,9 @@ class Cashback_Rate_Limiter {
         'claims_submit'                             => 'write',
         'cashback_save_notification_prefs'          => 'write',
         'claims_mark_read'                          => 'write',
+        'social_start'                              => 'write',
+        'social_callback'                           => 'write',
+        'social_confirm'                            => 'write',
 
         // --- Read ---
         'get_user_balance'                          => 'read',
