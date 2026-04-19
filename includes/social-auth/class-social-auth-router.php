@@ -524,7 +524,7 @@ class Cashback_Social_Auth_Router {
                 $start_url = rest_url('cashback/v1/social/' . $id . '/start');
                 $label     = isset($labels[ $id ]) ? $labels[ $id ] : $id;
                 /* translators: %s: provider label (e.g. "Яндекс ID"). */
-                $btn_text = sprintf(__('Войти через %s', 'cashback-plugin'), $label);
+                $btn_text      = sprintf(__('Войти через %s', 'cashback-plugin'), $label);
                 $buttons_html .= '<a class="cb-btn" href="' . esc_url($start_url) . '">' . esc_html($btn_text) . '</a>';
             }
         }
