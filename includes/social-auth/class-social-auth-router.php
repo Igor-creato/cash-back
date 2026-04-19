@@ -677,7 +677,15 @@ class Cashback_Social_Auth_Router {
             'ip'       => $ip,
         ));
 
-        // TODO (Этап 6): email-уведомление об отвязке.
+        // Security-уведомление об отвязке соцсети.
+        if (class_exists('Cashback_Social_Auth_Emails')) {
+            Cashback_Social_Auth_Emails::instance()->send_account_unlinked(
+                $user_id,
+                $this->provider_label_for_email($provider_id),
+                $ip,
+                $this->get_user_agent()
+            );
+        }
 
         $target = add_query_arg('cashback_social_unlinked', '1', (string) wc_get_account_endpoint_url('cashback-social'));
         wp_safe_redirect($target);
@@ -694,6 +702,20 @@ class Cashback_Social_Auth_Router {
         $target = add_query_arg('cashback_social_error', rawurlencode($code), $base);
         wp_safe_redirect($target);
         exit;
+    }
+
+    /**
+     * Человеко-читаемое имя провайдера (для email-уведомлений).
+     */
+    private function provider_label_for_email( string $provider_id ): string {
+        switch ($provider_id) {
+            case 'yandex':
+                return 'Яндекс ID';
+            case 'vkid':
+                return 'VK ID';
+            default:
+                return $provider_id;
+        }
     }
 
     /**
