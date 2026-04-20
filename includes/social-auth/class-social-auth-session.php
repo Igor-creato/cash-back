@@ -76,9 +76,14 @@ class Cashback_Social_Auth_Session {
         $cookie_token  = bin2hex(random_bytes(16)); // 32 hex chars
         $transient_key = self::TRANSIENT_PREFIX . $provider . '_' . $cookie_token;
 
+        $signature = self::sign($cookie_token);
+        if ($signature === '') {
+            // Fail-closed: без корректного секрета подписывать cookie нельзя.
+            return false;
+        }
+
         set_transient($transient_key, $data, self::TTL_SECONDS);
 
-        $signature    = self::sign($cookie_token);
         $cookie_value = $cookie_token . '.' . $signature;
 
         if (headers_sent()) {
@@ -130,7 +135,7 @@ class Cashback_Social_Auth_Session {
         }
 
         $expected = self::sign($cookie_token);
-        if (!hash_equals($expected, $signature)) {
+        if ($expected === '' || !hash_equals($expected, $signature)) {
             return null;
         }
 
@@ -220,6 +225,8 @@ class Cashback_Social_Auth_Session {
     /**
      * HMAC подписи cookie-токена.
      * Использует CB_ENCRYPTION_KEY как секрет; запасной вариант — AUTH_KEY.
+     * Fail-closed: возвращает пустую строку, если секрет не настроен; вызывающие
+     * code-paths (store/load_and_verify) обязаны трактовать '' как ошибку.
      */
     private static function sign( string $token ): string {
         $secret = defined('CB_ENCRYPTION_KEY') ? (string) CB_ENCRYPTION_KEY : '';
@@ -227,8 +234,9 @@ class Cashback_Social_Auth_Session {
             $secret = (string) AUTH_KEY;
         }
         if ($secret === '') {
-            // Крайний фолбэк — чтобы не падать; логируем, UX-ошибка вернётся через state-mismatch.
-            $secret = 'cashback-social-fallback-secret';
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[cashback-social] session::sign aborted — no secret configured (CB_ENCRYPTION_KEY/AUTH_KEY)');
+            return '';
         }
         return hash_hmac('sha256', $token, $secret);
     }
