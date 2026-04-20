@@ -6,6 +6,16 @@
 (function ($) {
   'use strict';
 
+  function safeHtml(dirty) {
+    if (typeof window.cashbackSafeHtml === 'function') {
+      return window.cashbackSafeHtml(dirty);
+    }
+    if (typeof DOMPurify !== 'undefined') {
+      return DOMPurify.sanitize(dirty);
+    }
+    return dirty;
+  }
+
   function getFilters() {
     return {
       date_from: $('#history-date-from').val() || '',
@@ -28,9 +38,9 @@
       }, filters),
       success: function (response) {
         if (response.success) {
-          $('#transactions-table-container').html(response.data.html);
+          $('#transactions-table-container').html(safeHtml(response.data.html));
           $('#pagination-container').html(
-            window.CashbackPagination.build(response.data.current_page, response.data.total_pages)
+            safeHtml(window.CashbackPagination.build(response.data.current_page, response.data.total_pages))
           );
         }
       }

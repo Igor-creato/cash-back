@@ -10,6 +10,16 @@
 
     var data = cashbackAffiliateData;
 
+    function safeHtml(dirty) {
+        if (typeof window.cashbackSafeHtml === 'function') {
+            return window.cashbackSafeHtml(dirty);
+        }
+        if (typeof DOMPurify !== 'undefined') {
+            return DOMPurify.sanitize(dirty);
+        }
+        return dirty;
+    }
+
     /* ── Copy referral link ── */
     $(document).on('click', '.cashback-affiliate-copy-btn', function () {
         var targetId = $(this).data('target');
@@ -46,7 +56,7 @@
         }, function (resp) {
             $container.css('opacity', '1');
             if (resp.success && resp.data.html) {
-                $container.html(resp.data.html);
+                $container.html(safeHtml(resp.data.html));
             }
         }).fail(function () {
             $container.css('opacity', '1');
@@ -68,7 +78,7 @@
         }, function (resp) {
             $container.css('opacity', '1');
             if (resp.success && resp.data.html) {
-                $container.html(resp.data.html);
+                $container.html(safeHtml(resp.data.html));
             }
         }).fail(function () {
             $container.css('opacity', '1');
