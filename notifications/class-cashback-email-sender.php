@@ -28,14 +28,15 @@ class Cashback_Email_Sender {
     /**
      * Отправить email пользователю с проверкой предпочтений
      *
-     * @param string $to                Email получателя
-     * @param string $subject           Тема письма
-     * @param string $message           Текст сообщения (plain text, будет обёрнут в HTML)
-     * @param string $notification_type Тип уведомления (slug)
-     * @param int|null $user_id         ID пользователя (для проверки предпочтений)
+     * @param string   $to                Email получателя
+     * @param string   $subject           Тема письма
+     * @param string   $message           Текст сообщения (plain text, будет обёрнут в HTML)
+     * @param string   $notification_type Тип уведомления (slug)
+     * @param int|null $user_id           ID пользователя (для проверки предпочтений)
+     * @param array    $extra_headers     Доп. заголовки (например Reply-To) — добавляются к стандартным.
      * @return bool Отправлено или нет
      */
-    public function send( string $to, string $subject, string $message, string $notification_type, ?int $user_id = null ): bool {
+    public function send( string $to, string $subject, string $message, string $notification_type, ?int $user_id = null, array $extra_headers = array() ): bool {
         // Проверяем глобальную настройку
         if (!Cashback_Notifications_DB::is_globally_enabled($notification_type)) {
             $this->log_failure($notification_type, $to, 'globally_disabled');
@@ -48,18 +49,57 @@ class Cashback_Email_Sender {
             return false;
         }
 
-        $html = $this->render_html_template($subject, $message, $user_id);
-
-        $headers = array(
-            'Content-Type: text/html; charset=UTF-8',
-            'From: ' . $this->get_from_name() . ' <' . $this->get_from_email() . '>',
-        );
+        $html    = $this->render_html_template($subject, $message, $user_id);
+        $headers = $this->build_default_headers($extra_headers);
 
         $ok = wp_mail($to, $subject, $html, $headers);
         if (!$ok) {
             $this->log_failure($notification_type, $to, 'wp_mail_failed');
         }
         return $ok;
+    }
+
+    /**
+     * Отправка критичного уведомления (password reset, ban, фрод-блокировка).
+     *
+     * Обходит проверку предпочтений и глобальных тумблеров: такие письма
+     * пользователь/админ не должен иметь возможности заглушить через UI.
+     *
+     * @param string   $to            Email получателя.
+     * @param string   $subject       Тема.
+     * @param string   $message       Готовое HTML-тело (будет обёрнуто в шаблон).
+     * @param int|null $user_id       Получатель (для ссылки «настроить уведомления» в футере).
+     * @param array    $extra_headers Доп. заголовки.
+     * @return bool
+     */
+    public function send_critical( string $to, string $subject, string $message, ?int $user_id = null, array $extra_headers = array() ): bool {
+        $html    = $this->render_html_template($subject, $message, $user_id);
+        $headers = $this->build_default_headers($extra_headers);
+
+        $ok = wp_mail($to, $subject, $html, $headers);
+        if (!$ok) {
+            $this->log_failure('critical', $to, 'wp_mail_failed');
+        }
+        return $ok;
+    }
+
+    /**
+     * Собрать стандартные заголовки (Content-Type + From) плюс пользовательские.
+     *
+     * @param array<int|string, string> $extra
+     * @return array<int, string>
+     */
+    private function build_default_headers( array $extra = array() ): array {
+        $headers = array(
+            'Content-Type: text/html; charset=UTF-8',
+            'From: ' . $this->get_from_name() . ' <' . $this->get_from_email() . '>',
+        );
+        foreach ($extra as $h) {
+            if (is_string($h) && $h !== '') {
+                $headers[] = $h;
+            }
+        }
+        return $headers;
     }
 
     /**
@@ -91,18 +131,14 @@ class Cashback_Email_Sender {
      * @param string $message           Текст сообщения
      * @param string $notification_type Тип уведомления
      */
-    public function send_admin( string $subject, string $message, string $notification_type ): void {
+    public function send_admin( string $subject, string $message, string $notification_type, array $extra_headers = array() ): void {
         if (!Cashback_Notifications_DB::is_globally_enabled($notification_type)) {
             return;
         }
 
-        $admins = get_users(array( 'role__in' => array( 'administrator', 'shop_manager' ) ));
-        $html   = $this->render_html_template($subject, $message);
-
-        $headers = array(
-            'Content-Type: text/html; charset=UTF-8',
-            'From: ' . $this->get_from_name() . ' <' . $this->get_from_email() . '>',
-        );
+        $admins  = get_users(array( 'role__in' => array( 'administrator', 'shop_manager' ) ));
+        $html    = $this->render_html_template($subject, $message);
+        $headers = $this->build_default_headers($extra_headers);
 
         foreach ($admins as $admin) {
             wp_mail($admin->user_email, $subject, $html, $headers);

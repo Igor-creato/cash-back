@@ -256,35 +256,17 @@ class Cashback_Social_Auth_Emails {
         string $user_agent,
         bool $with_meta
     ): string {
-        $brand    = $this->brand_color();
-        $text_col = $this->text_color_on_brand($brand);
-
-        $html = '<p>' . sprintf(
-            /* translators: %s: user display name */
-            esc_html__('Здравствуйте, %s!', 'cashback-plugin'),
-            esc_html($user_name)
-        ) . '</p>';
+        $html = Cashback_Email_Builder::greeting($user_name);
 
         if ($intro !== '') {
-            $html .= '<p>' . $intro . '</p>';
+            $html .= Cashback_Email_Builder::paragraph($intro);
         }
 
-        $html .= '<p style="margin:24px 0;">';
-        $html .= '<a href="' . esc_url($button_url) . '" style="display:inline-block;padding:12px 24px;background:' . esc_attr($brand) . ';color:' . esc_attr($text_col) . ';text-decoration:none;border-radius:4px;font-weight:bold;">';
-        $html .= esc_html($button_text);
-        $html .= '</a>';
-        $html .= '</p>';
-
-        $html .= '<p style="color:#888;font-size:13px;margin:16px 0;">';
-        $html .= sprintf(
-            /* translators: %d: TTL in minutes */
-            esc_html__('Ссылка действительна %d минут. Если это не вы — просто проигнорируйте письмо.', 'cashback-plugin'),
-            $ttl_minutes
-        );
-        $html .= '</p>';
+        $html .= Cashback_Email_Builder::button($button_text, $button_url);
+        $html .= Cashback_Email_Builder::ttl_note($ttl_minutes);
 
         if ($with_meta) {
-            $html .= $this->build_meta_block($ip, $user_agent);
+            $html .= Cashback_Email_Builder::meta_block($ip, $user_agent);
         }
 
         return $html;
@@ -294,75 +276,16 @@ class Cashback_Social_Auth_Emails {
      * Информационное тело письма (без кнопки, с блоком IP/UA/timestamp и advice).
      */
     private function build_info_body( string $user_name, string $message, string $ip, string $user_agent, bool $with_security_advice ): string {
-        $html = '<p>' . sprintf(
-            /* translators: %s: user display name */
-            esc_html__('Здравствуйте, %s!', 'cashback-plugin'),
-            esc_html($user_name)
-        ) . '</p>';
-
-        $html .= '<p>' . $message . '</p>';
+        $html  = Cashback_Email_Builder::greeting($user_name);
+        $html .= Cashback_Email_Builder::paragraph($message);
 
         if ($with_security_advice) {
-            $support_url = function_exists('wc_get_account_endpoint_url')
-                ? (string) wc_get_account_endpoint_url('cashback-support')
-                : home_url('/my-account/cashback-support/');
-
-            /* translators: %s: support page URL */
-            $advice_tpl = __('Если это были не вы — смените пароль и свяжитесь с <a href="%s">поддержкой</a>.', 'cashback-plugin');
-            $advice     = sprintf(
-                wp_kses($advice_tpl, array( 'a' => array( 'href' => array() ) )),
-                esc_url($support_url)
-            );
-
-            $html .= '<p style="color:#888;font-size:13px;margin:16px 0;">' . $advice . '</p>';
+            $html .= Cashback_Email_Builder::security_advice();
         }
 
-        $html .= $this->build_meta_block($ip, $user_agent);
+        $html .= Cashback_Email_Builder::meta_block($ip, $user_agent);
 
         return $html;
-    }
-
-    /**
-     * Блок метаданных (IP, UA, timestamp) — помогает пользователю понять, он ли это был.
-     */
-    private function build_meta_block( string $ip, string $user_agent ): string {
-        $timestamp = wp_date(
-            get_option('date_format', 'Y-m-d') . ' ' . get_option('time_format', 'H:i'),
-            time()
-        );
-
-        $html  = '<hr style="border:none;border-top:1px solid #eee;margin:24px 0;">';
-        $html .= '<p style="color:#888;font-size:12px;line-height:1.6;margin:0;">';
-        if ($ip !== '') {
-            $html .= esc_html__('IP:', 'cashback-plugin') . ' ' . esc_html($ip) . '<br>';
-        }
-        if ($user_agent !== '') {
-            $html .= esc_html__('Браузер:', 'cashback-plugin') . ' ' . esc_html($user_agent) . '<br>';
-        }
-        $html .= esc_html__('Время:', 'cashback-plugin') . ' ' . esc_html((string) $timestamp);
-        $html .= '</p>';
-
-        return $html;
-    }
-
-    /**
-     * Брендовый цвет из активной темы (с fallback).
-     */
-    private function brand_color(): string {
-        if (class_exists('Cashback_Theme_Color')) {
-            return Cashback_Theme_Color::get_brand_color();
-        }
-        return '#2271b1';
-    }
-
-    /**
-     * Контрастный цвет текста для кнопки.
-     */
-    private function text_color_on_brand( string $brand ): string {
-        if (class_exists('Cashback_Theme_Color')) {
-            return Cashback_Theme_Color::get_contrast_text_color($brand);
-        }
-        return '#ffffff';
     }
 
     /**

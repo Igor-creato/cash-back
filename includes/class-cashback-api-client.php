@@ -3348,17 +3348,20 @@ class Cashback_API_Client {
      * @param array $results Результаты check_campaign_statuses()
      */
     private function send_campaign_deactivation_notification( array $results ): void {
-        $admin_email = get_option('admin_email');
-        if (empty($admin_email)) {
+        if (!class_exists('Cashback_Email_Sender') || !class_exists('Cashback_Email_Builder')) {
             return;
         }
 
         $site_name = get_bloginfo('name');
-        $subject   = sprintf('[Cashback] %s: Магазины деактивированы из-за отключения кампаний', $site_name);
+        $subject   = sprintf(
+            /* translators: %s: site name */
+            __('[Cashback] %s: Магазины деактивированы из-за отключения кампаний', 'cashback-plugin'),
+            $site_name
+        );
 
-        $body  = "Отчёт о статусах кампаний CPA-сетей\n";
-        $body .= str_repeat('=', 50) . "\n";
-        $body .= sprintf("Дата: %s\n\n", current_time('mysql'));
+        $dump  = "Отчёт о статусах кампаний CPA-сетей\n";
+        $dump .= str_repeat('=', 50) . "\n";
+        $dump .= sprintf("Дата: %s\n\n", current_time('mysql'));
 
         foreach ($results as $network => $result) {
             if (!( $result['success'] ?? false )) {
@@ -3368,17 +3371,23 @@ class Cashback_API_Client {
                 continue;
             }
 
-            $body .= sprintf("[%s]\n", strtoupper($network));
-            $body .= sprintf("  Кампаний всего: %d\n", $result['total_campaigns']);
-            $body .= sprintf("  Деактивировано товаров: %d\n", $result['deactivated']);
-            $body .= sprintf("  Реактивировано товаров: %d\n", $result['reactivated']);
-            $body .= sprintf("  Пропущено (без offer_id): %d\n", $result['skipped']);
-            $body .= "\n";
+            $dump .= sprintf("[%s]\n", strtoupper($network));
+            $dump .= sprintf("  Кампаний всего: %d\n", $result['total_campaigns']);
+            $dump .= sprintf("  Деактивировано товаров: %d\n", $result['deactivated']);
+            $dump .= sprintf("  Реактивировано товаров: %d\n", $result['reactivated']);
+            $dump .= sprintf("  Пропущено (без offer_id): %d\n", $result['skipped']);
+            $dump .= "\n";
         }
 
-        $body .= str_repeat('-', 50) . "\n";
-        $body .= 'Просмотр: ' . admin_url('admin.php?page=cashback-api-validation&tab=campaigns') . "\n";
+        $body  = Cashback_Email_Builder::paragraph(
+            esc_html__('Обнаружены изменения статусов CPA-кампаний. Детали ниже.', 'cashback-plugin')
+        );
+        $body .= Cashback_Email_Builder::preformatted($dump);
+        $body .= Cashback_Email_Builder::button(
+            __('Открыть API-валидацию', 'cashback-plugin'),
+            admin_url('admin.php?page=cashback-api-validation&tab=campaigns')
+        );
 
-        wp_mail($admin_email, $subject, $body);
+        Cashback_Email_Sender::get_instance()->send_admin($subject, $body, 'api_sync_report');
     }
 }

@@ -266,41 +266,56 @@ class Cashback_Health_Check {
      * @return void
      */
     private static function send_report( array $issues ): void {
-        $admin_email = get_option('admin_email');
-        $site_name   = get_bloginfo('name');
+        $site_name = get_bloginfo('name');
 
         $critical_count = count(array_filter($issues, fn( $i ) => $i['severity'] === 'CRITICAL'));
         $warning_count  = count(array_filter($issues, fn( $i ) => $i['severity'] === 'WARNING'));
 
-        // Определяем тему письма по серьёзности
         if ($critical_count > 0) {
-            $subject = "[CRITICAL] {$site_name}: Cashback — обнаружены критические проблемы ({$critical_count})";
+            $subject = sprintf(
+                /* translators: 1: site name, 2: critical count */
+                __('[CRITICAL] %1$s: Cashback — обнаружены критические проблемы (%2$d)', 'cashback-plugin'),
+                $site_name,
+                $critical_count
+            );
         } else {
-            $subject = "[WARNING] {$site_name}: Cashback — обнаружены предупреждения ({$warning_count})";
+            $subject = sprintf(
+                /* translators: 1: site name, 2: warning count */
+                __('[WARNING] %1$s: Cashback — обнаружены предупреждения (%2$d)', 'cashback-plugin'),
+                $site_name,
+                $warning_count
+            );
         }
 
-        // Формируем тело письма
-        $body  = "Cashback Health Check Report\n";
-        $body .= str_repeat('=', 50) . "\n";
-        $body .= sprintf("Дата: %s\n", current_time('mysql'));
-        $body .= sprintf("Сайт: %s\n", home_url());
-        $body .= sprintf("Критических: %d | Предупреждений: %d\n", $critical_count, $warning_count);
-        $body .= str_repeat('=', 50) . "\n\n";
+        $dump  = "Cashback Health Check Report\n";
+        $dump .= str_repeat('=', 50) . "\n";
+        $dump .= sprintf("Дата: %s\n", current_time('mysql'));
+        $dump .= sprintf("Сайт: %s\n", home_url());
+        $dump .= sprintf("Критических: %d | Предупреждений: %d\n", $critical_count, $warning_count);
+        $dump .= str_repeat('=', 50) . "\n\n";
 
         foreach ($issues as $issue) {
-            $body .= sprintf("[%s] %s\n  → %s\n\n", $issue['severity'], $issue['type'], $issue['message']);
+            $dump .= sprintf("[%s] %s\n  → %s\n\n", $issue['severity'], $issue['type'], $issue['message']);
         }
 
-        $body .= str_repeat('-', 50) . "\n";
-        $body .= "Автоматическая проверка Cashback Plugin\n";
-
-        wp_mail($admin_email, $subject, $body);
-
-        // Дублируем в лог
+        // Дублируем в лог независимо от email
         foreach ($issues as $issue) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log(sprintf('Cashback Health Check [%s] %s: %s', $issue['severity'], $issue['type'], $issue['message']));
         }
+
+        if (!class_exists('Cashback_Email_Sender') || !class_exists('Cashback_Email_Builder')) {
+            return;
+        }
+
+        $body  = Cashback_Email_Builder::definition_list(array(
+            __('Сайт', 'cashback-plugin')           => (string) home_url(),
+            __('Критических', 'cashback-plugin')    => (string) $critical_count,
+            __('Предупреждений', 'cashback-plugin') => (string) $warning_count,
+        ));
+        $body .= Cashback_Email_Builder::preformatted($dump);
+
+        Cashback_Email_Sender::get_instance()->send_admin($subject, $body, 'health_check_report');
     }
 }
 

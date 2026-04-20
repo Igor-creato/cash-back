@@ -1052,23 +1052,36 @@ class Cashback_Fraud_Detector {
             return;
         }
 
-        $admin_email = get_option('admin_email');
-        $site_name   = get_bloginfo('name');
-        $admin_url   = admin_url('admin.php?page=cashback-antifraud');
+        if (!class_exists('Cashback_Email_Sender') || !class_exists('Cashback_Email_Builder')) {
+            return;
+        }
+
+        $site_name = get_bloginfo('name');
+        $admin_url = admin_url('admin.php?page=cashback-antifraud');
 
         $critical_count = count(array_filter($alerts, fn( $a ) => $a->severity === 'critical' || $a->severity === 'high'));
         $subject        = $critical_count > 0
-            ? "[FRAUD] {$site_name}: {$critical_count} критических алертов"
-            : "[FRAUD] {$site_name}: " . count($alerts) . ' новых алертов';
+            ? sprintf(
+                /* translators: 1: site name, 2: critical count */
+                __('[FRAUD] %1$s: %2$d критических алертов', 'cashback-plugin'),
+                $site_name,
+                $critical_count
+            )
+            : sprintf(
+                /* translators: 1: site name, 2: total alerts */
+                __('[FRAUD] %1$s: %2$d новых алертов', 'cashback-plugin'),
+                $site_name,
+                count($alerts)
+            );
 
-        $body  = "Cashback Antifraud Report\n";
-        $body .= str_repeat('=', 50) . "\n";
-        $body .= sprintf("Дата: %s\n", current_time('mysql'));
-        $body .= sprintf("Новых алертов: %d\n", count($alerts));
-        $body .= str_repeat('=', 50) . "\n\n";
+        $dump  = "Cashback Antifraud Report\n";
+        $dump .= str_repeat('=', 50) . "\n";
+        $dump .= sprintf("Дата: %s\n", current_time('mysql'));
+        $dump .= sprintf("Новых алертов: %d\n", count($alerts));
+        $dump .= str_repeat('=', 50) . "\n\n";
 
         foreach ($alerts as $alert) {
-            $body .= sprintf(
+            $dump .= sprintf(
                 "[%s] %s\n  User: %s (%s)\n  Score: %.0f | Type: %s\n  %s\n\n",
                 strtoupper($alert->severity),
                 $alert->alert_type,
@@ -1080,10 +1093,20 @@ class Cashback_Fraud_Detector {
             );
         }
 
-        $body .= str_repeat('-', 50) . "\n";
-        $body .= "Просмотр: {$admin_url}\n";
+        $body = Cashback_Email_Builder::paragraph(
+            sprintf(
+                /* translators: %d: number of new alerts */
+                esc_html__('Новых фрод-алертов: %d', 'cashback-plugin'),
+                count($alerts)
+            )
+        );
+        $body .= Cashback_Email_Builder::preformatted($dump);
+        $body .= Cashback_Email_Builder::button(
+            __('Открыть антифрод-панель', 'cashback-plugin'),
+            $admin_url
+        );
 
-        wp_mail($admin_email, $subject, $body);
+        Cashback_Email_Sender::get_instance()->send_admin($subject, $body, 'fraud_admin_digest');
     }
 }
 

@@ -1417,18 +1417,18 @@ class Cashback_Fraud_Admin {
 
             $wpdb->query('COMMIT');
 
-            // Email notification (non-critical, after commit)
+            // Email notification (non-critical delivery, after commit — но содержимое security)
             $user = get_userdata($user_id);
-            if ($user && $user->user_email) {
-                wp_mail(
+            if ($user && $user->user_email && class_exists('Cashback_Email_Sender') && class_exists('Cashback_Email_Builder')) {
+                Cashback_Email_Sender::get_instance()->send_critical(
                     $user->user_email,
                     __('Ваш аккаунт кэшбэк заблокирован', 'cashback-plugin'),
-                    sprintf(
-                        "Здравствуйте, %s!\n\nВаш аккаунт кэшбэк был заблокирован.\nПричина: %s\n\nВаш баланс был заморожен.\nДля разблокировки обратитесь к администратору: %s",
-                        $user->display_name,
-                        $ban_reason,
-                        get_option('admin_email')
-                    )
+                    Cashback_Email_Builder::banned_account_body(
+                        $user->display_name !== '' ? $user->display_name : $user->user_login,
+                        $ban_reason !== '' ? $ban_reason : __('Не указана', 'cashback-plugin'),
+                        (string) get_option('admin_email')
+                    ),
+                    (int) $user->ID
                 );
             }
 

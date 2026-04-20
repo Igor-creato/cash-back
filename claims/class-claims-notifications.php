@@ -10,9 +10,12 @@ if (!defined('ABSPATH')) {
  * Claims Notifications Module
  *
  * Sends email notifications for:
- * - Claim creation (to user)
- * - Status changes (to user)
- * - New claim alerts (to admins)
+ * - Claim creation (to user, slug claim_created)
+ * - Status changes (to user, slug claim_status)
+ * - New claim alerts (to admins, slug claim_admin_alert)
+ *
+ * Все письма идут через Cashback_Email_Sender — общая брендированная обёртка
+ * (шапка с логотипом, футер со ссылкой «Настроить уведомления»).
  */
 class Cashback_Claims_Notifications {
 
@@ -37,56 +40,61 @@ class Cashback_Claims_Notifications {
             $claim_id
         );
 
-        $message = sprintf(
-            /* translators: 1: product name, 2: order ID, 3: claim ID */
-            __('Ваша заявка на неначисленный кэшбэк принята.
+        $claims_url = function_exists('wc_get_account_endpoint_url')
+            ? (string) wc_get_account_endpoint_url('cashback_lost_cashback')
+            : home_url('/my-account/cashback_lost_cashback/');
 
-Магазин: %1$s
-Номер заказа: %2$s
-ID заявки: %3$s
-
-Вы можете отслеживать статус заявки в личном кабинете: %4$s', 'cashback-plugin'),
-            $data['product_name'] ?? '—',
-            $data['order_id'] ?? '—',
-            $claim_id,
-            wc_get_account_endpoint_url('cashback_lost_cashback')
+        $body  = Cashback_Email_Builder::greeting($this->display_name($user));
+        $body .= Cashback_Email_Builder::paragraph(
+            esc_html__('Ваша заявка на неначисленный кэшбэк принята.', 'cashback-plugin')
+        );
+        $body .= Cashback_Email_Builder::definition_list(array(
+            __('Магазин', 'cashback-plugin')      => (string) ( $data['product_name'] ?? '—' ),
+            __('Номер заказа', 'cashback-plugin') => (string) ( $data['order_id'] ?? '—' ),
+            __('ID заявки', 'cashback-plugin')    => (string) $claim_id,
+        ));
+        $body .= Cashback_Email_Builder::button(
+            __('Открыть заявку', 'cashback-plugin'),
+            $claims_url
         );
 
-        $this->send_email($user->user_email, $subject, $message);
+        $this->send_to_user($user, $subject, $body, 'claim_created');
     }
 
     /**
      * Notify admins about new claim.
      */
     public function notify_admin_new_claim( int $claim_id, int $user_id, array $data ): void {
-        $admins = get_users(array( 'role__in' => array( 'administrator', 'shop_manager' ) ));
-
-        foreach ($admins as $admin) {
-            $subject = sprintf(
-                /* translators: %d: claim ID */
-                __('Новая заявка на кэшбэк #%d', 'cashback-plugin'),
-                $claim_id
-            );
-
-            $user = get_user_by('id', $user_id);
-
-            $message = sprintf(
-                /* translators: 1: username, 2: product, 3: order ID, 4: claim ID */
-                __('Пользователь %1$s подал заявку на неначисленный кэшбэк.
-
-Магазин: %2$s
-Номер заказа: %3$s
-ID заявки: %4$s
-
-Просмотрите заявку в админ-панели.', 'cashback-plugin'),
-                $user ? $user->display_name : '—',
-                $data['product_name'] ?? '—',
-                $data['order_id'] ?? '—',
-                $claim_id
-            );
-
-            $this->send_email($admin->user_email, $subject, $message);
+        if (!class_exists('Cashback_Email_Sender')) {
+            return;
         }
+
+        $user = get_user_by('id', $user_id);
+
+        $subject = sprintf(
+            /* translators: %d: claim ID */
+            __('Новая заявка на кэшбэк #%d', 'cashback-plugin'),
+            $claim_id
+        );
+
+        $body = Cashback_Email_Builder::paragraph(
+            sprintf(
+                /* translators: %s: username */
+                esc_html__('Пользователь %s подал заявку на неначисленный кэшбэк.', 'cashback-plugin'),
+                esc_html($user ? $this->display_name($user) : '—')
+            )
+        );
+        $body .= Cashback_Email_Builder::definition_list(array(
+            __('Магазин', 'cashback-plugin')      => (string) ( $data['product_name'] ?? '—' ),
+            __('Номер заказа', 'cashback-plugin') => (string) ( $data['order_id'] ?? '—' ),
+            __('ID заявки', 'cashback-plugin')    => (string) $claim_id,
+        ));
+        $body .= Cashback_Email_Builder::button(
+            __('Открыть в админке', 'cashback-plugin'),
+            admin_url('admin.php?page=cashback-claims&action=view&claim_id=' . $claim_id)
+        );
+
+        Cashback_Email_Sender::get_instance()->send_admin($subject, $body, 'claim_admin_alert');
     }
 
     /**
@@ -126,38 +134,49 @@ ID заявки: %4$s
             $label
         );
 
-        $message = sprintf(
-            /* translators: 1: claim ID, 2: new status label, 3: admin note, 4: claims URL */
-            __('Статус вашей заявки #%1$s изменён на "%2$s".
+        $claims_url = function_exists('wc_get_account_endpoint_url')
+            ? (string) wc_get_account_endpoint_url('cashback_lost_cashback')
+            : home_url('/my-account/cashback_lost_cashback/');
 
-%3$s
-
-Просмотреть заявку: %4$s', 'cashback-plugin'),
-            $claim_id,
-            $label,
-            $note ? __('Комментарий: ', 'cashback-plugin') . $note : '',
-            wc_get_account_endpoint_url('cashback_lost_cashback')
+        $body  = Cashback_Email_Builder::greeting($this->display_name($user));
+        $body .= Cashback_Email_Builder::paragraph(
+            sprintf(
+                /* translators: 1: claim ID, 2: new status label */
+                esc_html__('Статус вашей заявки #%1$s изменён на «%2$s».', 'cashback-plugin'),
+                (int) $claim_id,
+                esc_html($label)
+            )
+        );
+        if ($note !== '') {
+            $body .= Cashback_Email_Builder::paragraph_multiline(
+                __('Комментарий: ', 'cashback-plugin') . $note
+            );
+        }
+        $body .= Cashback_Email_Builder::button(
+            __('Открыть заявку', 'cashback-plugin'),
+            $claims_url
         );
 
-        $this->send_email($user->user_email, $subject, $message);
+        $this->send_to_user($user, $subject, $body, 'claim_status');
     }
 
     /**
-     * Send email with plugin branding.
+     * Унифицированная отправка пользователю через Cashback_Email_Sender.
      */
-    private function send_email( string $to, string $subject, string $message ): void {
-        $headers = array(
-            'Content-Type: text/html; charset=UTF-8',
-            'From: ' . get_option('blogname') . ' <' . get_option('admin_email') . '>',
+    private function send_to_user( WP_User $user, string $subject, string $body_html, string $notification_type ): void {
+        if (!class_exists('Cashback_Email_Sender')) {
+            return;
+        }
+        Cashback_Email_Sender::get_instance()->send(
+            $user->user_email,
+            $subject,
+            $body_html,
+            $notification_type,
+            (int) $user->ID
         );
+    }
 
-        $html  = '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">';
-        $html .= '<h2 style="color: #333;">' . esc_html(get_option('blogname')) . '</h2>';
-        $html .= '<p style="white-space: pre-line;">' . wp_kses_post($message) . '</p>';
-        $html .= '<hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">';
-        $html .= '<p style="color: #999; font-size: 12px;">' . esc_html__('Это автоматическое сообщение, не отвечайте на него.', 'cashback-plugin') . '</p>';
-        $html .= '</div>';
-
-        wp_mail($to, $subject, $html, $headers);
+    private function display_name( WP_User $user ): string {
+        return $user->display_name !== '' ? $user->display_name : $user->user_login;
     }
 }
