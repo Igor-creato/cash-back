@@ -630,7 +630,26 @@ class Cashback_Partner_Management_Admin {
             return;
         }
 
-        // Проверяем лимит с учетом существующих параметров
+        $new_count = 0;
+        foreach ($param_names as $pn) {
+            if (!empty($pn)) {
+                ++$new_count;
+            }
+        }
+
+        // iter-26 F-26-003: проверка лимита внутри транзакции с блокировкой существующих
+        // параметров сети. Без FOR UPDATE параллельные AJAX-запросы обходили порог 10.
+        $wpdb->query('START TRANSACTION');
+
+        // Блокируем существующие параметры сети (gap-free row-lock по network_id-индексу).
+        $wpdb->get_results(
+            $wpdb->prepare(
+                'SELECT id FROM %i WHERE network_id = %d FOR UPDATE',
+                $this->params_table,
+                $network_id
+            )
+        );
+
         $existing_count = (int) $wpdb->get_var(
             $wpdb->prepare(
                 'SELECT COUNT(*) FROM %i WHERE network_id = %d',
@@ -639,20 +658,11 @@ class Cashback_Partner_Management_Admin {
             )
         );
 
-        $new_count = 0;
-        foreach ($param_names as $pn) {
-            if (!empty($pn)) {
-                ++$new_count;
-            }
-        }
-
         if (( $existing_count + $new_count ) > 10) {
+            $wpdb->query('ROLLBACK');
             wp_send_json_error(array( 'message' => 'Максимальное количество параметров — 10. Сейчас уже ' . $existing_count . '.' ));
             return;
         }
-
-        // Добавляем новые параметры
-        $wpdb->query('START TRANSACTION');
 
         $insert_error      = false;
         $param_names_count = count($param_names);
