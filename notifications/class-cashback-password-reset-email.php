@@ -21,7 +21,14 @@ class Cashback_Password_Reset_Email {
 
     public static function init(): void {
         add_filter('retrieve_password_notification_email', array( __CLASS__, 'filter_wp_reset_email' ), 10, 4);
-        add_action('woocommerce_loaded', array( __CLASS__, 'register_wc_handler' ));
+
+        // WooCommerce фаерит woocommerce_loaded на plugins_loaded @ -1, наш плагин грузится на @ 10 —
+        // к этому моменту действие уже отработало, и add_action('woocommerce_loaded', ...) был бы no-op.
+        if (did_action('woocommerce_loaded') || function_exists('WC')) {
+            self::register_wc_handler();
+        } else {
+            add_action('woocommerce_loaded', array( __CLASS__, 'register_wc_handler' ));
+        }
     }
 
     /**
