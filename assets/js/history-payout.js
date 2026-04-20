@@ -6,6 +6,19 @@
 jQuery(document).ready(function ($) {
   'use strict';
 
+  function safeHtml(dirty) {
+    if (typeof window.cashbackSafeHtml === 'function') {
+      return window.cashbackSafeHtml(dirty);
+    }
+    if (typeof DOMPurify !== 'undefined') {
+      return DOMPurify.sanitize(dirty);
+    }
+    return dirty;
+  }
+
+  var currentXhr = null;
+  var loadSequence = 0;
+
   function getFilters() {
     return {
       date_from: $('#payout-date-from').val() || '',
@@ -18,7 +31,14 @@ jQuery(document).ready(function ($) {
   function loadPage(page) {
     var filters = getFilters();
 
-    $.ajax({
+    // Отменить предыдущий запрос, чтобы поздний ответ не перезаписал новый результат.
+    if (currentXhr && typeof currentXhr.abort === 'function') {
+      try { currentXhr.abort(); } catch (e) {}
+    }
+
+    var mySeq = ++loadSequence;
+
+    currentXhr = $.ajax({
       url: payout_ajax.ajax_url,
       type: 'POST',
       data: $.extend({
@@ -27,10 +47,14 @@ jQuery(document).ready(function ($) {
         page: page
       }, filters),
       success: function (response) {
+        // Игнорировать ответ, если уже стартовал более новый loadPage().
+        if (mySeq !== loadSequence) {
+          return;
+        }
         if (response.success) {
-          $('#payouts-table-container').html(response.data.html);
+          $('#payouts-table-container').html(safeHtml(response.data.html));
           $('#pagination-container').html(
-            window.CashbackPagination.build(response.data.current_page, response.data.total_pages)
+            safeHtml(window.CashbackPagination.build(response.data.current_page, response.data.total_pages))
           );
         }
       }
