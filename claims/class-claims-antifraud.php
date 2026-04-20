@@ -85,28 +85,31 @@ class Cashback_Claims_Antifraud {
         $reasons    = array();
         $suspicious = array();
 
-        if ($today_count >= self::MAX_CLAIMS_PER_DAY) {
+        $day_limit  = self::get_max_claims_per_day();
+        $week_limit = self::get_max_claims_per_week();
+
+        if ($today_count >= $day_limit) {
             $reasons[] = sprintf(
                 /* translators: %d: max claims per day */
                 __('Превышен лимит заявок в день (максимум %d).', 'cashback-plugin'),
-                self::MAX_CLAIMS_PER_DAY
+                $day_limit
             );
         }
 
-        if ($week_count >= self::MAX_CLAIMS_PER_WEEK) {
+        if ($week_count >= $week_limit) {
             $reasons[] = sprintf(
                 /* translators: %d: max claims per week */
                 __('Превышен лимит заявок в неделю (максимум %d).', 'cashback-plugin'),
-                self::MAX_CLAIMS_PER_WEEK
+                $week_limit
             );
         }
 
-        if ($today_count >= self::MAX_CLAIMS_PER_DAY * 0.8) {
+        if ($today_count >= $day_limit * 0.8) {
             $suspicious[] = sprintf(
                 /* translators: 1: current claims today, 2: max claims per day */
                 __('Пользователь приближается к дневному лимиту (%1$d/%2$d).', 'cashback-plugin'),
                 $today_count,
-                self::MAX_CLAIMS_PER_DAY
+                $day_limit
             );
         }
 
