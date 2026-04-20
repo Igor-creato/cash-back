@@ -59,6 +59,19 @@ class Cashback_Email_Sender {
         if (!$ok) {
             $this->log_failure($notification_type, $to, 'wp_mail_failed');
         }
+
+        /**
+         * Fired после попытки отправить email — используется push-диспетчером
+         * (`Cashback_Push_Dispatcher`) для параллельной отправки push-уведомлений
+         * на мобильные устройства пользователя.
+         *
+         * @param int|null $user_id           Получатель (null если рассылка без user_id).
+         * @param string   $notification_type slug уведомления.
+         * @param string   $subject           Заголовок (reuse как push title).
+         * @param string   $message           Сырой текст (будет обрезан под лимиты push).
+         */
+        do_action('cashback_notification_dispatched', $user_id, $notification_type, $subject, $message);
+
         return $ok;
     }
 

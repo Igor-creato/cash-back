@@ -481,6 +481,87 @@ class Mariadb_Plugin {
             KEY `idx_type_user` (`rate_type`,`user_id`)
         ) ENGINE=InnoDB {$charset_collate} COMMENT='История изменений ставок кэшбэка и партнёрской комиссии';";
 
+        // Таблица refresh-токенов мобильного приложения (JWT-аутентификация).
+        // Plaintext токен хешируется (SHA-256) перед сохранением — клиент получает его один раз.
+        // Ротация: при обмене refresh → новый токен с тем же `family_id`, старый помечается `revoked_at`.
+        // Reuse detection: если revoked-токен предъявлен повторно — инвалидируется вся `family_id`.
+        $table_refresh_tokens = "CREATE TABLE IF NOT EXISTS `{$wpdb->prefix}cashback_refresh_tokens` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `user_id` bigint(20) unsigned NOT NULL COMMENT 'WP user ID',
+            `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'UUID v7 цепочки ротаций (session family)',
+            `token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'SHA-256(plaintext) — plaintext не хранится',
+            `device_id` varchar(128) DEFAULT NULL COMMENT 'Expo installation id / device id',
+            `device_name` varchar(128) DEFAULT NULL COMMENT 'Имя устройства (iPhone 15, Pixel 8 и т.п.)',
+            `platform` enum('ios','android','web') DEFAULT NULL COMMENT 'Платформа клиента',
+            `app_version` varchar(32) DEFAULT NULL COMMENT 'Версия мобильного приложения',
+            `ip_address` varchar(45) DEFAULT NULL COMMENT 'IPv4/IPv6 адрес последней выдачи',
+            `user_agent` varchar(255) DEFAULT NULL COMMENT 'User-Agent (обрезан до 255)',
+            `issued_at` datetime NOT NULL COMMENT 'Время выпуска',
+            `expires_at` datetime NOT NULL COMMENT 'Когда истекает',
+            `revoked_at` datetime DEFAULT NULL COMMENT 'Когда отозван (NULL = активный)',
+            `revoked_reason` varchar(32) DEFAULT NULL COMMENT 'rotation|logout|logout_all|reuse_detected|expired|admin',
+            `replaced_by` bigint(20) unsigned DEFAULT NULL COMMENT 'FK на следующий токен в цепочке ротации',
+            `last_used_at` datetime DEFAULT NULL COMMENT 'Когда был использован для refresh в последний раз',
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_token_hash` (`token_hash`),
+            KEY `idx_user_active` (`user_id`,`revoked_at`),
+            KEY `idx_family` (`family_id`),
+            KEY `idx_expires` (`expires_at`),
+            KEY `idx_user_device` (`user_id`,`device_id`)
+        ) ENGINE=InnoDB {$charset_collate} COMMENT='Refresh-токены JWT-сессий мобильного приложения';";
+
+        // Таблица одноразовых auth-действий: email-verify, password-reset.
+        // Plaintext токен (256 бит энтропии) хешируется SHA-256 перед сохранением.
+        // Семантика одноразовости: поле `used_at` выставляется при успешном потреблении.
+        // На каждого user_id + purpose — только один активный токен (старые инвалидируются при выпуске нового).
+        $table_auth_actions = "CREATE TABLE IF NOT EXISTS `{$wpdb->prefix}cashback_auth_actions` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `user_id` bigint(20) unsigned NOT NULL COMMENT 'WP user ID',
+            `purpose` enum('email_verify','password_reset') NOT NULL COMMENT 'Назначение токена',
+            `token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'SHA-256(plaintext)',
+            `ip_address` varchar(45) DEFAULT NULL COMMENT 'IP запроса',
+            `user_agent` varchar(255) DEFAULT NULL COMMENT 'User-Agent запроса',
+            `created_at` datetime NOT NULL COMMENT 'Время выпуска',
+            `expires_at` datetime NOT NULL COMMENT 'Срок действия',
+            `used_at` datetime DEFAULT NULL COMMENT 'Время потребления (NULL = активный)',
+            `invalidated_at` datetime DEFAULT NULL COMMENT 'Время аннулирования (например, выпуск нового)',
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_auth_token_hash` (`token_hash`),
+            KEY `idx_auth_user_purpose` (`user_id`,`purpose`,`used_at`,`invalidated_at`),
+            KEY `idx_auth_expires` (`expires_at`)
+        ) ENGINE=InnoDB {$charset_collate} COMMENT='Одноразовые токены email-verify / password-reset';";
+
+        // Таблица избранных магазинов пользователя (Phase 6).
+        // Один магазин может быть в избранном у многих — PK (user_id, product_id).
+        $table_user_favorites = "CREATE TABLE IF NOT EXISTS `{$wpdb->prefix}cashback_user_favorites` (
+            `user_id` bigint(20) unsigned NOT NULL COMMENT 'WP user ID',
+            `product_id` bigint(20) unsigned NOT NULL COMMENT 'WP product (post) ID',
+            `created_at` datetime NOT NULL COMMENT 'Когда добавлен в избранное',
+            PRIMARY KEY (`user_id`,`product_id`),
+            KEY `idx_fav_product` (`product_id`),
+            KEY `idx_fav_user_created` (`user_id`,`created_at`)
+        ) ENGINE=InnoDB {$charset_collate} COMMENT='Избранные магазины пользователей (мобильное приложение)';";
+
+        // Таблица Expo push-токенов мобильного приложения (Phase 8).
+        // UNIQUE по expo_token — один токен может принадлежать только одному юзеру/устройству.
+        // Индекс (user_id, last_used_at) — для выборки активных токенов пользователя при рассылке.
+        $table_push_tokens = "CREATE TABLE IF NOT EXISTS `{$wpdb->prefix}cashback_push_tokens` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `user_id` bigint(20) unsigned NOT NULL COMMENT 'WP user ID',
+            `expo_token` varchar(255) NOT NULL COMMENT 'ExponentPushToken[...]',
+            `device_id` varchar(128) NOT NULL COMMENT 'Expo installation id',
+            `platform` enum('ios','android') NOT NULL,
+            `app_version` varchar(32) DEFAULT NULL,
+            `locale` varchar(8) DEFAULT NULL COMMENT 'IETF язык (ru, en-US)',
+            `failure_count` smallint(5) unsigned NOT NULL DEFAULT 0 COMMENT 'Счётчик DeviceNotRegistered/InvalidCredentials — для выбраковки',
+            `created_at` datetime NOT NULL,
+            `last_used_at` datetime NOT NULL,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_push_expo_token` (`expo_token`),
+            KEY `idx_push_user_used` (`user_id`,`last_used_at`),
+            KEY `idx_push_user_device` (`user_id`,`device_id`)
+        ) ENGINE=InnoDB {$charset_collate} COMMENT='Expo push-токены мобильных устройств';";
+
         // Порядок создания: сначала справочники, потом зависимые таблицы
         $tables = array(
             'cashback_payout_methods'            => $table_payout_methods,
@@ -498,6 +579,10 @@ class Mariadb_Plugin {
             'cashback_validation_checkpoints'    => $table_validation_checkpoints,
             'cashback_sync_log'                  => $table_sync_log,
             'cashback_rate_history'              => $table_rate_history,
+            'cashback_refresh_tokens'            => $table_refresh_tokens,
+            'cashback_auth_actions'              => $table_auth_actions,
+            'cashback_user_favorites'            => $table_user_favorites,
+            'cashback_push_tokens'               => $table_push_tokens,
         );
 
         $failed_tables = array();
@@ -616,6 +701,32 @@ class Mariadb_Plugin {
             "ALTER TABLE `{$wpdb->prefix}cashback_user_profile`
                 ADD CONSTRAINT `chk_cashback_rate_range`
                 CHECK (`cashback_rate` BETWEEN 0.00 AND 100.00)",
+
+            // cashback_refresh_tokens: токены удаляются вместе с пользователем.
+            "ALTER TABLE `{$wpdb->prefix}cashback_refresh_tokens`
+                ADD CONSTRAINT `fk_refresh_tokens_user` FOREIGN KEY (`user_id`)
+                REFERENCES `{$wpdb->prefix}users` (`ID`) ON DELETE CASCADE",
+            "ALTER TABLE `{$wpdb->prefix}cashback_refresh_tokens`
+                ADD CONSTRAINT `fk_refresh_tokens_replaced_by` FOREIGN KEY (`replaced_by`)
+                REFERENCES `{$wpdb->prefix}cashback_refresh_tokens` (`id`) ON DELETE SET NULL",
+
+            // cashback_auth_actions: токены удаляются вместе с пользователем.
+            "ALTER TABLE `{$wpdb->prefix}cashback_auth_actions`
+                ADD CONSTRAINT `fk_auth_actions_user` FOREIGN KEY (`user_id`)
+                REFERENCES `{$wpdb->prefix}users` (`ID`) ON DELETE CASCADE",
+
+            // cashback_user_favorites: избранное удаляется при удалении юзера или поста-магазина.
+            "ALTER TABLE `{$wpdb->prefix}cashback_user_favorites`
+                ADD CONSTRAINT `fk_fav_user` FOREIGN KEY (`user_id`)
+                REFERENCES `{$wpdb->prefix}users` (`ID`) ON DELETE CASCADE",
+            "ALTER TABLE `{$wpdb->prefix}cashback_user_favorites`
+                ADD CONSTRAINT `fk_fav_product` FOREIGN KEY (`product_id`)
+                REFERENCES `{$wpdb->prefix}posts` (`ID`) ON DELETE CASCADE",
+
+            // cashback_push_tokens: удаляются при удалении пользователя.
+            "ALTER TABLE `{$wpdb->prefix}cashback_push_tokens`
+                ADD CONSTRAINT `fk_push_user` FOREIGN KEY (`user_id`)
+                REFERENCES `{$wpdb->prefix}users` (`ID`) ON DELETE CASCADE",
 
             // cashback_balance_ledger
             "ALTER TABLE `{$wpdb->prefix}cashback_balance_ledger`
@@ -2223,6 +2334,208 @@ class Mariadb_Plugin {
                 }
             }
         }
+    }
+
+    /**
+     * Точечная авто-миграция: создаёт таблицу `cashback_refresh_tokens`, если её ещё нет.
+     *
+     * Вызывается из CashbackPlugin::maybe_run_migrations() при bootstrap на уже развёрнутых
+     * инсталляциях (чтобы не требовать реактивации плагина при выкатке мобильного API).
+     * Идемпотентно: `CREATE TABLE IF NOT EXISTS` + константы FK добавляются через
+     * `add_table_constraints()` (пропускает дубликаты).
+     */
+    public function migrate_ensure_refresh_tokens_table(): void {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cashback_refresh_tokens';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.DirectDatabaseQuery.SchemaChange -- idempotent schema check.
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists === $table) {
+            return;
+        }
+
+        $charset_collate = $wpdb->get_charset_collate();
+
+        // SQL синхронизирован со схемой в create_tables() — менять в двух местах одновременно.
+        $sql = "CREATE TABLE IF NOT EXISTS `{$table}` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `user_id` bigint(20) unsigned NOT NULL COMMENT 'WP user ID',
+            `family_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'UUID v7 цепочки ротаций (session family)',
+            `token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'SHA-256(plaintext) — plaintext не хранится',
+            `device_id` varchar(128) DEFAULT NULL COMMENT 'Expo installation id / device id',
+            `device_name` varchar(128) DEFAULT NULL COMMENT 'Имя устройства',
+            `platform` enum('ios','android','web') DEFAULT NULL COMMENT 'Платформа клиента',
+            `app_version` varchar(32) DEFAULT NULL COMMENT 'Версия мобильного приложения',
+            `ip_address` varchar(45) DEFAULT NULL COMMENT 'IPv4/IPv6 адрес последней выдачи',
+            `user_agent` varchar(255) DEFAULT NULL COMMENT 'User-Agent (обрезан до 255)',
+            `issued_at` datetime NOT NULL COMMENT 'Время выпуска',
+            `expires_at` datetime NOT NULL COMMENT 'Когда истекает',
+            `revoked_at` datetime DEFAULT NULL COMMENT 'Когда отозван (NULL = активный)',
+            `revoked_reason` varchar(32) DEFAULT NULL COMMENT 'rotation|logout|logout_all|reuse_detected|expired|admin',
+            `replaced_by` bigint(20) unsigned DEFAULT NULL COMMENT 'FK на следующий токен в цепочке ротации',
+            `last_used_at` datetime DEFAULT NULL COMMENT 'Когда был использован для refresh в последний раз',
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_token_hash` (`token_hash`),
+            KEY `idx_user_active` (`user_id`,`revoked_at`),
+            KEY `idx_family` (`family_id`),
+            KEY `idx_expires` (`expires_at`),
+            KEY `idx_user_device` (`user_id`,`device_id`)
+        ) ENGINE=InnoDB {$charset_collate} COMMENT='Refresh-токены JWT-сессий мобильного приложения';";
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.DirectDatabaseQuery.SchemaChange -- static DDL, $wpdb->prefix validated.
+        $result = $wpdb->query($sql);
+        if (false === $result) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration] Failed to create cashback_refresh_tokens: ' . $wpdb->last_error);
+            return;
+        }
+
+        // FK (не фатально, если не установятся — таблица работает и без них).
+        $users_table = $wpdb->prefix . 'users';
+        $suppress    = $wpdb->suppress_errors(true);
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.DirectDatabaseQuery.SchemaChange -- DDL through prepared %i.
+        $wpdb->query($wpdb->prepare('ALTER TABLE %i ADD CONSTRAINT `fk_refresh_tokens_user` FOREIGN KEY (`user_id`) REFERENCES %i (`ID`) ON DELETE CASCADE', $table, $users_table));
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.DirectDatabaseQuery.SchemaChange -- DDL through prepared %i.
+        $wpdb->query($wpdb->prepare('ALTER TABLE %i ADD CONSTRAINT `fk_refresh_tokens_replaced_by` FOREIGN KEY (`replaced_by`) REFERENCES %i (`id`) ON DELETE SET NULL', $table, $table));
+        $wpdb->suppress_errors($suppress);
+    }
+
+    /**
+     * Точечная авто-миграция: создаёт таблицу `cashback_auth_actions`, если её ещё нет.
+     *
+     * Хранит одноразовые токены email-verify / password-reset. Plaintext хешируется SHA-256.
+     * Идемпотентно: `CREATE TABLE IF NOT EXISTS`; FK добавляются через suppress_errors.
+     */
+    public function migrate_ensure_auth_actions_table(): void {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cashback_auth_actions';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.DirectDatabaseQuery.SchemaChange -- idempotent schema check.
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists === $table) {
+            return;
+        }
+
+        $charset_collate = $wpdb->get_charset_collate();
+
+        // SQL синхронизирован с create_tables() — менять в двух местах одновременно.
+        $sql = "CREATE TABLE IF NOT EXISTS `{$table}` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `user_id` bigint(20) unsigned NOT NULL COMMENT 'WP user ID',
+            `purpose` enum('email_verify','password_reset') NOT NULL COMMENT 'Назначение токена',
+            `token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'SHA-256(plaintext)',
+            `ip_address` varchar(45) DEFAULT NULL COMMENT 'IP запроса',
+            `user_agent` varchar(255) DEFAULT NULL COMMENT 'User-Agent запроса',
+            `created_at` datetime NOT NULL COMMENT 'Время выпуска',
+            `expires_at` datetime NOT NULL COMMENT 'Срок действия',
+            `used_at` datetime DEFAULT NULL COMMENT 'Время потребления (NULL = активный)',
+            `invalidated_at` datetime DEFAULT NULL COMMENT 'Время аннулирования',
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_auth_token_hash` (`token_hash`),
+            KEY `idx_auth_user_purpose` (`user_id`,`purpose`,`used_at`,`invalidated_at`),
+            KEY `idx_auth_expires` (`expires_at`)
+        ) ENGINE=InnoDB {$charset_collate} COMMENT='Одноразовые токены email-verify / password-reset';";
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.DirectDatabaseQuery.SchemaChange -- static DDL, $wpdb->prefix validated.
+        $result = $wpdb->query($sql);
+        if (false === $result) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration] Failed to create cashback_auth_actions: ' . $wpdb->last_error);
+            return;
+        }
+
+        $users_table = $wpdb->prefix . 'users';
+        $suppress    = $wpdb->suppress_errors(true);
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.DirectDatabaseQuery.SchemaChange -- DDL through prepared %i.
+        $wpdb->query($wpdb->prepare('ALTER TABLE %i ADD CONSTRAINT `fk_auth_actions_user` FOREIGN KEY (`user_id`) REFERENCES %i (`ID`) ON DELETE CASCADE', $table, $users_table));
+        $wpdb->suppress_errors($suppress);
+    }
+
+    /**
+     * Точечная авто-миграция: создаёт `cashback_user_favorites` если её нет.
+     */
+    public function migrate_ensure_favorites_table(): void {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cashback_user_favorites';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.DirectDatabaseQuery.SchemaChange -- idempotent schema check.
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists === $table) {
+            return;
+        }
+
+        $charset_collate = $wpdb->get_charset_collate();
+        $sql             = "CREATE TABLE IF NOT EXISTS `{$table}` (
+            `user_id` bigint(20) unsigned NOT NULL COMMENT 'WP user ID',
+            `product_id` bigint(20) unsigned NOT NULL COMMENT 'WP product (post) ID',
+            `created_at` datetime NOT NULL COMMENT 'Когда добавлен в избранное',
+            PRIMARY KEY (`user_id`,`product_id`),
+            KEY `idx_fav_product` (`product_id`),
+            KEY `idx_fav_user_created` (`user_id`,`created_at`)
+        ) ENGINE=InnoDB {$charset_collate} COMMENT='Избранные магазины пользователей (мобильное приложение)';";
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.DirectDatabaseQuery.SchemaChange -- static DDL.
+        $result = $wpdb->query($sql);
+        if (false === $result) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- diagnostic.
+            error_log('[Cashback Migration] Failed to create cashback_user_favorites: ' . $wpdb->last_error);
+            return;
+        }
+
+        $users_table = $wpdb->prefix . 'users';
+        $posts_table = $wpdb->prefix . 'posts';
+        $suppress    = $wpdb->suppress_errors(true);
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.DirectDatabaseQuery.SchemaChange -- DDL through prepared %i.
+        $wpdb->query($wpdb->prepare('ALTER TABLE %i ADD CONSTRAINT `fk_fav_user` FOREIGN KEY (`user_id`) REFERENCES %i (`ID`) ON DELETE CASCADE', $table, $users_table));
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.DirectDatabaseQuery.SchemaChange -- DDL through prepared %i.
+        $wpdb->query($wpdb->prepare('ALTER TABLE %i ADD CONSTRAINT `fk_fav_product` FOREIGN KEY (`product_id`) REFERENCES %i (`ID`) ON DELETE CASCADE', $table, $posts_table));
+        $wpdb->suppress_errors($suppress);
+    }
+
+    /**
+     * Точечная авто-миграция: создаёт `cashback_push_tokens` если её нет.
+     */
+    public function migrate_ensure_push_tokens_table(): void {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cashback_push_tokens';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.DirectDatabaseQuery.SchemaChange -- idempotent schema check.
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists === $table) {
+            return;
+        }
+
+        $charset_collate = $wpdb->get_charset_collate();
+        $sql             = "CREATE TABLE IF NOT EXISTS `{$table}` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `user_id` bigint(20) unsigned NOT NULL,
+            `expo_token` varchar(255) NOT NULL,
+            `device_id` varchar(128) NOT NULL,
+            `platform` enum('ios','android') NOT NULL,
+            `app_version` varchar(32) DEFAULT NULL,
+            `locale` varchar(8) DEFAULT NULL,
+            `failure_count` smallint(5) unsigned NOT NULL DEFAULT 0,
+            `created_at` datetime NOT NULL,
+            `last_used_at` datetime NOT NULL,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_push_expo_token` (`expo_token`),
+            KEY `idx_push_user_used` (`user_id`,`last_used_at`),
+            KEY `idx_push_user_device` (`user_id`,`device_id`)
+        ) ENGINE=InnoDB {$charset_collate} COMMENT='Expo push-токены мобильных устройств';";
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.DirectDatabaseQuery.SchemaChange -- static DDL.
+        $result = $wpdb->query($sql);
+        if (false === $result) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- diagnostic.
+            error_log('[Cashback Migration] Failed to create cashback_push_tokens: ' . $wpdb->last_error);
+            return;
+        }
+
+        $users_table = $wpdb->prefix . 'users';
+        $suppress    = $wpdb->suppress_errors(true);
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.DirectDatabaseQuery.SchemaChange -- DDL through prepared %i.
+        $wpdb->query($wpdb->prepare('ALTER TABLE %i ADD CONSTRAINT `fk_push_user` FOREIGN KEY (`user_id`) REFERENCES %i (`ID`) ON DELETE CASCADE', $table, $users_table));
+        $wpdb->suppress_errors($suppress);
     }
 }
 
