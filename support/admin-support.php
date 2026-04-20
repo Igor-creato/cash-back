@@ -1305,25 +1305,51 @@ class Cashback_Support_Admin {
         if (!$user) {
             return;
         }
-
-        $ticket_number = Cashback_Support_DB::format_ticket_number($ticket_id);
-        $email_subject = sprintf('Ответ на тикет %s: %s', $ticket_number, $subject);
-
-        $account_url = '';
-        if (function_exists('wc_get_account_endpoint_url')) {
-            $account_url = wc_get_account_endpoint_url('cashback-support');
+        if (!class_exists('Cashback_Email_Sender') || !class_exists('Cashback_Email_Builder')) {
+            return;
         }
 
-        $body = sprintf(
-            "Здравствуйте, %s!\n\nВы получили ответ на ваш тикет %s «%s».\n\nОтвет:\n%s\n\n%s",
-            $user->display_name,
+        $ticket_number = Cashback_Support_DB::format_ticket_number($ticket_id);
+        $email_subject = sprintf(
+            /* translators: 1: ticket number, 2: ticket subject */
+            __('Ответ на тикет %1$s: %2$s', 'cashback-plugin'),
             $ticket_number,
-            $subject,
-            wp_trim_words($admin_message, 100, '...'),
-            $account_url ? "Просмотреть: {$account_url}" : ''
+            $subject
         );
 
-        wp_mail($user->user_email, $email_subject, $body);
+        $account_url = function_exists('wc_get_account_endpoint_url')
+            ? (string) wc_get_account_endpoint_url('cashback-support')
+            : '';
+
+        $display_name = $user->display_name !== '' ? $user->display_name : $user->user_login;
+        $excerpt      = wp_trim_words($admin_message, 100, '...');
+
+        $body  = Cashback_Email_Builder::greeting($display_name);
+        $body .= Cashback_Email_Builder::paragraph(
+            sprintf(
+                /* translators: 1: ticket number, 2: ticket subject */
+                esc_html__('Вы получили ответ на ваш тикет %1$s «%2$s».', 'cashback-plugin'),
+                esc_html($ticket_number),
+                esc_html($subject)
+            )
+        );
+        $body .= Cashback_Email_Builder::paragraph('<strong>' . esc_html__('Ответ:', 'cashback-plugin') . '</strong>');
+        $body .= Cashback_Email_Builder::paragraph_multiline($excerpt);
+
+        if ($account_url !== '') {
+            $body .= Cashback_Email_Builder::button(
+                __('Открыть тикет', 'cashback-plugin'),
+                $account_url
+            );
+        }
+
+        Cashback_Email_Sender::get_instance()->send(
+            $user->user_email,
+            $email_subject,
+            $body,
+            'ticket_reply',
+            (int) $user->ID
+        );
     }
 
     private function get_priority_label( string $priority ): string {

@@ -544,6 +544,8 @@ class CashbackPlugin {
         $this->require_file('includes/class-cashback-theme-color.php');
         $this->require_file('notifications/class-cashback-notifications-db.php');
         $this->require_file('notifications/class-cashback-email-sender.php');
+        $this->require_file('notifications/class-cashback-email-builder.php');
+        $this->require_file('notifications/class-cashback-password-reset-email.php');
         $this->require_file('notifications/class-cashback-notifications.php');
         $this->require_file('notifications/class-cashback-notifications-frontend.php');
         $this->require_file('notifications/class-cashback-broadcast.php');

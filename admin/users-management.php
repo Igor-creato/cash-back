@@ -859,15 +859,17 @@ class Cashback_Users_Management_Admin {
 
             // ✉️ Email ПОСЛЕ транзакции (некритичная операция)
             $user = get_userdata($user_id);
-            if ($user && $user->user_email) {
-                $subject = 'Ваш аккаунт кэшбэк заблокирован';
-                $message = sprintf(
-                    "Здравствуйте, %s!\n\nВаш аккаунт кэшбэк был заблокирован.\nПричина: %s\n\nВаш баланс был заморожен.\nДля разблокировки обратитесь к администратору: %s",
-                    $user->display_name,
-                    $ban_reason ?: 'Не указана',
-                    get_option('admin_email')
+            if ($user && $user->user_email && class_exists('Cashback_Email_Sender') && class_exists('Cashback_Email_Builder')) {
+                Cashback_Email_Sender::get_instance()->send_critical(
+                    $user->user_email,
+                    __('Ваш аккаунт кэшбэк заблокирован', 'cashback-plugin'),
+                    Cashback_Email_Builder::banned_account_body(
+                        $user->display_name !== '' ? $user->display_name : $user->user_login,
+                        $ban_reason !== '' ? $ban_reason : __('Не указана', 'cashback-plugin'),
+                        (string) get_option('admin_email')
+                    ),
+                    (int) $user->ID
                 );
-                wp_mail($user->user_email, $subject, $message);
             }
 
             return true;

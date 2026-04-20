@@ -219,9 +219,13 @@ class Cashback_Notifications_DB {
         return array_merge(
             self::get_user_notification_types(),
             array(
-                'user_registered'    => __('Регистрация нового пользователя', 'cashback-plugin'),
-                'ticket_admin_alert' => __('Уведомления администратору о тикетах', 'cashback-plugin'),
-                'claim_admin_alert'  => __('Уведомления администратору о заявках', 'cashback-plugin'),
+                'user_registered'         => __('Регистрация нового пользователя', 'cashback-plugin'),
+                'ticket_admin_alert'      => __('Уведомления администратору о тикетах', 'cashback-plugin'),
+                'claim_admin_alert'       => __('Уведомления администратору о заявках', 'cashback-plugin'),
+                'fraud_admin_digest'      => __('Фрод-дайджест администратору', 'cashback-plugin'),
+                'health_check_report'     => __('Отчёт health-check (диагностика)', 'cashback-plugin'),
+                'api_sync_report'         => __('Отчёт о синхронизации CPA-кампаний', 'cashback-plugin'),
+                'contact_form_submission' => __('Сообщения из формы обратной связи', 'cashback-plugin'),
             )
         );
     }

@@ -279,28 +279,35 @@ class Cashback_Contact_Form {
             ));
         }
 
-        // Отправка email
-        $admin_email = get_option('admin_email');
-        $site_name   = get_option('blogname');
+        // Отправка email через брендированный шаблон (Cashback_Email_Sender)
+        if (!class_exists('Cashback_Email_Sender') || !class_exists('Cashback_Email_Builder')) {
+            wp_send_json_error(array(
+                'code'    => 'mail_error',
+                'message' => 'При отправке сообщения произошла ошибка. Попробуйте позже.',
+            ));
+        }
 
+        $admin_email   = (string) get_option('admin_email');
+        $site_name     = (string) get_option('blogname');
         $email_subject = sprintf('[%s] %s', $site_name, $subject);
 
-        $email_body = sprintf(
-            "От: %s <%s>\nТема: %s\n\nСообщение:\n%s\n\n--\nОтправлено через форму обратной связи на сайте %s\nIP: %s",
-            $name,
-            $email,
-            $subject,
-            $message,
-            $site_name,
-            $ip
-        );
+        $body  = Cashback_Email_Builder::definition_list(array(
+            __('От', 'cashback-plugin')   => $name . ' <' . $email . '>',
+            __('Тема', 'cashback-plugin') => $subject,
+            __('IP', 'cashback-plugin')   => $ip,
+            __('Сайт', 'cashback-plugin') => $site_name,
+        ));
+        $body .= Cashback_Email_Builder::paragraph('<strong>' . esc_html__('Сообщение:', 'cashback-plugin') . '</strong>');
+        $body .= Cashback_Email_Builder::paragraph_multiline($message);
 
-        $headers = array(
-            'Content-Type: text/plain; charset=UTF-8',
-            sprintf('Reply-To: %s <%s>', $name, $email),
+        $sent = Cashback_Email_Sender::get_instance()->send(
+            $admin_email,
+            $email_subject,
+            $body,
+            'contact_form_submission',
+            null,
+            array( sprintf('Reply-To: %s <%s>', $name, $email) )
         );
-
-        $sent = wp_mail($admin_email, $email_subject, $email_body, $headers);
 
         if (!$sent) {
             wp_send_json_error(array(

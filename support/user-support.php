@@ -1211,8 +1211,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
      * Отправка email уведомления администратору
      */
     private function send_admin_notification( int $ticket_id, string $event_type, string $subject ): void {
-        $admin_email = get_option('admin_email');
-        if (!$admin_email) {
+        if (!class_exists('Cashback_Email_Sender') || !class_exists('Cashback_Email_Builder')) {
             return;
         }
 
@@ -1220,22 +1219,34 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
         $ticket_number = Cashback_Support_DB::format_ticket_number($ticket_id);
 
         if ($event_type === 'new_ticket') {
-            $email_subject = sprintf('Новый тикет %s: %s', $ticket_number, $subject);
+            $email_subject = sprintf(
+                /* translators: 1: ticket number, 2: ticket subject */
+                __('Новый тикет %1$s: %2$s', 'cashback-plugin'),
+                $ticket_number,
+                $subject
+            );
         } else {
-            $email_subject = sprintf('Новый ответ в тикете %s: %s', $ticket_number, $subject);
+            $email_subject = sprintf(
+                /* translators: 1: ticket number, 2: ticket subject */
+                __('Новый ответ в тикете %1$s: %2$s', 'cashback-plugin'),
+                $ticket_number,
+                $subject
+            );
         }
 
         $admin_url = admin_url('admin.php?page=cashback-support&action=view&ticket_id=' . $ticket_id);
 
-        $body = sprintf(
-            "Пользователь: %s (%s)\nТема: %s\n\nПросмотреть в админке: %s",
-            $user->user_login,
-            $user->user_email,
-            $subject,
+        $body  = Cashback_Email_Builder::definition_list(array(
+            __('Пользователь', 'cashback-plugin') => $user->user_login . ' (' . $user->user_email . ')',
+            __('Номер тикета', 'cashback-plugin') => $ticket_number,
+            __('Тема', 'cashback-plugin')         => $subject,
+        ));
+        $body .= Cashback_Email_Builder::button(
+            __('Открыть в админке', 'cashback-plugin'),
             $admin_url
         );
 
-        wp_mail($admin_email, $email_subject, $body);
+        Cashback_Email_Sender::get_instance()->send_admin($email_subject, $body, 'ticket_admin_alert');
     }
 
     private function get_priority_label( string $priority ): string {
