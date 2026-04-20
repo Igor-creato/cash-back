@@ -2840,7 +2840,7 @@ open_questions:
 - **Needs-human:** —
   - open_questions: серверный рендер claims HTML-фрагментов (output-экранирование и enqueue DOMPurify на admin-claims) + парный server-side дедуп request_id в claims-manager/claims-admin.
 - **Верификация:** `node -c` — syntax ok для обоих изменённых JS; phpcs/phpstan для JS не применим; локального eslint нет. `admin-antifraud.js` — без находок, без изменений.
-- **Коммит:** PENDING
+- **Коммит:** c4ae0b0
 
 <details><summary>Codex JSON iter-33</summary>
 
@@ -2988,9 +2988,9 @@ open_questions:
 | admin/js/api-validation.js            |  1157 | ✅     |   32 | 0C/0H/0M/0L |    0 | —       | без находок |
 | assets/js/cashback-withdrawal.js      |   818 | ✅     |   32 | 0C/2H/0M/1L |    3 | 4516a36 | F-32-001 XSS `.html()→.text()/DOM` (4 места); F-32-002 PII/nonce удалены из console (12 мест); F-32-003 parseFloat→decimal-string через regex |
 | assets/js/admin-payouts.js            |   681 | ✅     |   32 | 0C/0H/1M/0L |    1 | 4516a36 | F-32-004 double-submit guard: disable save-btn до ответа + request_id (UUID v4) для server-side dedupe (ожидает парного PHP-дедупа в admin/payouts.php) |
-| assets/js/admin-payout-detail.js      |   484 | ✅     |   33 | 0C/0H/2M/0L |    2 | PENDING | F-33-001/002 formatAmount → строковая decimal-валидация (нет parseFloat, нет возврата сырого input); op.count → safeInt |
+| assets/js/admin-payout-detail.js      |   484 | ✅     |   33 | 0C/0H/2M/0L |    2 | c4ae0b0 | F-33-001/002 formatAmount → строковая decimal-валидация (нет parseFloat, нет возврата сырого input); op.count → safeInt |
 | assets/js/admin-antifraud.js          |   480 | ✅     |   33 | 0C/0H/0M/0L |    0 | —       | без находок            |
-| assets/js/admin-claims.js             |   470 | ⚠️     |   33 | 0C/1H/1M/0L |    2 | PENDING | F-33-003 safeHtml() обёртка (DOMPurify fallback) на 4 HTML-sink-ах; F-33-004 request_id на claims_submit/admin_transition/admin_add_note (ожидает парный PHP-дедуп в claims). Codex needs-human: серверный рендер HTML-фрагментов (escape claim.comment/order_id/merchant) — cross-cutting server audit |
+| assets/js/admin-claims.js             |   470 | ⚠️     |   33 | 0C/1H/1M/0L |    2 | c4ae0b0 | F-33-003 safeHtml() обёртка (DOMPurify fallback) на 4 HTML-sink-ах; F-33-004 request_id на claims_submit/admin_transition/admin_add_note (ожидает парный PHP-дедуп в claims). Codex needs-human: серверный рендер HTML-фрагментов (escape claim.comment/order_id/merchant) — cross-cutting server audit |
 | assets/js/admin-partner-management.js |   376 | ⬜     |    — | —           |    — | —      | partners UI            |
 | assets/js/admin-users-management.js   |   350 | ⬜     |    — | —           |    — | —      | users UI               |
 | assets/js/fraud-fingerprint.js        |   335 | ⬜     |    — | —           |    — | —      | fingerprint client     |
