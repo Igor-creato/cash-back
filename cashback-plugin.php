@@ -833,6 +833,12 @@ class CashbackPlugin {
             return false;
         }
 
+        // Ограничиваем права доступа к файлу ключа (owner read/write only).
+        if (function_exists('chmod')) {
+            // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- chmod может выдавать warning на ФС без поддержки прав (Windows); сбой некритичен, файл уже создан.
+            @chmod($key_file, 0600);
+        }
+
         // Определяем константу для текущего запроса
         define('CB_ENCRYPTION_KEY', $key);
 
