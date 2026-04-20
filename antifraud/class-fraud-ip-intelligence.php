@@ -352,8 +352,9 @@ class Cashback_Fraud_Ip_Intelligence {
 				);
             }
         } catch (\Throwable $e) {
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Cashback Fraud IP Intelligence: лог ошибки лукапа.
-            error_log(sprintf('Cashback Fraud IP Intelligence: lookup failed for %s — %s', $ip, $e->getMessage()));
+            $ip_hash = hash('sha256', (string) $ip);
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Cashback Fraud IP Intelligence: лог ошибки лукапа (без PII).
+            error_log(sprintf('Cashback Fraud IP Intelligence: lookup failed [ip_hash=%s] [type=%s]', $ip_hash, get_class($e)));
             return null;
         }
 
