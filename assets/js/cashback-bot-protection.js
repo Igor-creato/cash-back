@@ -115,11 +115,9 @@
         script.async = true;
 
         var timeout = setTimeout(function () {
-            // Таймаут 5с — graceful degradation
+            // Таймаут 5с — fail-closed: CAPTCHA обязательна.
             console.warn('[CB Bot Protection] SmartCaptcha script load timeout');
-            if (pendingRetry) {
-                retryWithoutCaptcha();
-            }
+            abortPendingRetry('CAPTCHA недоступна. Попробуйте позже.');
         }, 5000);
 
         script.onload = function () {
@@ -131,9 +129,7 @@
         script.onerror = function () {
             clearTimeout(timeout);
             console.warn('[CB Bot Protection] SmartCaptcha script load error');
-            if (pendingRetry) {
-                retryWithoutCaptcha();
-            }
+            abortPendingRetry('CAPTCHA недоступна. Попробуйте позже.');
         };
 
         document.head.appendChild(script);
@@ -201,13 +197,20 @@
     }
 
     /**
-     * Retry без CAPTCHA (graceful degradation при недоступности SmartCaptcha).
+     * Отменить отложенный запрос с fail-closed сообщением пользователю.
      */
-    function retryWithoutCaptcha() {
+    function abortPendingRetry(message) {
         if (!pendingRetry) return;
         var retry = pendingRetry;
         pendingRetry = null;
-        $.ajax(retry);
+        $('.cb-captcha-container').hide().empty();
+        if (retry && typeof retry.error === 'function') {
+            try {
+                retry.error({ status: 0, responseJSON: { success: false, data: { message: message } } }, 'captcha_unavailable', message);
+            } catch (e) {}
+        } else if (typeof window.alert === 'function') {
+            window.alert(message);
+        }
     }
 
     // =========================================================================
