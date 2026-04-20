@@ -24,7 +24,11 @@
 
         var edge  = (typeof opts.edge === 'number') ? opts.edge : 2;
         var range = (typeof opts.range === 'number') ? opts.range : 2;
-        var containerClass = opts.containerClass || 'woocommerce-pagination';
+        var rawClass = opts.containerClass || 'woocommerce-pagination';
+        // Whitelist CSS-имён классов: только [a-zA-Z0-9_-], разделённые пробелами.
+        var containerClass = String(rawClass).split(/\s+/)
+            .filter(function (c) { return /^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(c); })
+            .join(' ') || 'woocommerce-pagination';
 
         var pagesSet = {};
         var i;
