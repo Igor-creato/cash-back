@@ -14,6 +14,19 @@
         return String(text).replace(/[&<>"']/g, function (m) { return map[m]; });
     }
 
+    function makeRequestId() {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            return window.crypto.randomUUID();
+        }
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+            var r = Math.random() * 16 | 0;
+            var v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+
+    var MONEY_RE = /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/;
+
     function showSuccessNotice(message) {
         var notice = $('<div>').addClass('notice notice-success is-dismissible')
             .append($('<p>').text(message));
@@ -132,7 +145,8 @@
                 action: 'transfer_unregistered_transaction',
                 transaction_id: transferTransactionId,
                 email: email,
-                nonce: cashbackTransactionsData.transferNonce
+                nonce: cashbackTransactionsData.transferNonce,
+                request_id: makeRequestId()
             }, function (response) {
                 if (response.success) {
                     $('#transfer-modal').hide();
@@ -209,7 +223,8 @@
 
         // --- Save ---
         $(document).on('click', '.save-btn', function () {
-            var row = $(this).closest('tr');
+            var $saveBtn = $(this);
+            var row = $saveBtn.closest('tr');
             var transactionId = row.data('transaction-id');
             var tab = row.data('tab');
             var changedData = {};
@@ -245,28 +260,33 @@
                 return;
             }
 
-            // Client-side validation
+            // Client-side validation (decimal-string, без float-арифметики)
             if (changedData.sum_order !== undefined) {
-                var sumVal = parseFloat(changedData.sum_order);
-                if (isNaN(sumVal) || sumVal < 0) {
-                    alert('Сумма заказа должна быть неотрицательным числом.');
+                var sumStr = String(changedData.sum_order).trim().replace(',', '.');
+                if (!MONEY_RE.test(sumStr)) {
+                    alert('Сумма заказа должна быть неотрицательным числом с точностью до 2 знаков.');
                     return;
                 }
+                changedData.sum_order = sumStr;
             }
             if (changedData.comission !== undefined) {
-                var comVal = parseFloat(changedData.comission);
-                if (isNaN(comVal) || comVal < 0) {
-                    alert('Комиссия должна быть неотрицательным числом.');
+                var comStr = String(changedData.comission).trim().replace(',', '.');
+                if (!MONEY_RE.test(comStr)) {
+                    alert('Комиссия должна быть неотрицательным числом с точностью до 2 знаков.');
                     return;
                 }
+                changedData.comission = comStr;
             }
 
             var data = $.extend({
                 action: 'update_transaction',
                 transaction_id: transactionId,
                 tab: tab,
-                nonce: cashbackTransactionsData.updateNonce
+                nonce: cashbackTransactionsData.updateNonce,
+                request_id: makeRequestId()
             }, changedData);
+
+            $saveBtn.prop('disabled', true);
 
             $.post(ajaxurl, data, function (response) {
                 if (response.success) {
@@ -287,6 +307,8 @@
                     errorMsg = 'Ошибка соединения: HTTP ' + jqXHR.status;
                 }
                 alert(errorMsg);
+            }).always(function () {
+                $saveBtn.prop('disabled', false);
             });
         });
 

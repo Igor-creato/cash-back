@@ -7,6 +7,17 @@
 jQuery(document).ready(function ($) {
   'use strict';
 
+  function makeRequestId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      return window.crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = Math.random() * 16 | 0;
+      var v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
   // === Смена сети в выпадающем списке ===
   $(document).on('change', '#_affiliate_network_id', function () {
     var networkId = $(this).val();
@@ -184,6 +195,7 @@ jQuery(document).ready(function ($) {
         param_id: paramId,
         param_name: paramName,
         param_type: paramType,
+        request_id: makeRequestId(),
       },
       function (response) {
         if (response.success) {
@@ -226,6 +238,7 @@ jQuery(document).ready(function ($) {
         action: 'delete_network_param',
         nonce: wcAffiliateNetworkData.deleteParamNonce,
         param_id: paramId,
+        request_id: makeRequestId(),
       },
       function (response) {
         if (response.success) {
