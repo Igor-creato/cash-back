@@ -209,7 +209,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
         }
 
         if ($code !== 200) {
-            return $this->fetch_error("HTTP {$code}: " . wp_json_encode($body));
+            return $this->fetch_error("HTTP {$code}: " . $this->safe_error_summary($body));
         }
 
         $results = $body['results'] ?? array();
@@ -248,10 +248,19 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
                 );
             }
 
-            $actions     = $result['actions'];
-            $total       = $result['total'];
-            $all_actions = array_merge($all_actions, $actions);
-            $offset     += $limit;
+            $actions = $result['actions'];
+            $total   = $result['total'];
+            // Дедупликация по стабильному id action: offset-пагинация на изменяемой выборке
+            // может вернуть одну и ту же action дважды при повторах/смене статуса между страницами.
+            foreach ($actions as $action) {
+                $action_id = isset($action['id']) ? (string) $action['id'] : '';
+                if ($action_id !== '') {
+                    $all_actions[ $action_id ] = $action;
+                } else {
+                    $all_actions[] = $action;
+                }
+            }
+            $offset += $limit;
             ++$page;
 
             // Защита от rate limit — пауза между запросами (100ms)
@@ -263,7 +272,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
 
         return array(
             'success' => true,
-            'actions' => $all_actions,
+            'actions' => array_values($all_actions),
             'total'   => $total,
             'error'   => null,
         );
@@ -357,7 +366,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
                 return array(
                     'success'   => false,
                     'campaigns' => $all_campaigns,
-                    'error'     => "Admitad advcampaigns HTTP {$code}: " . wp_json_encode($body),
+                    'error'     => "Admitad advcampaigns HTTP {$code}: " . $this->safe_error_summary($body),
                 );
             }
 
@@ -405,5 +414,36 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             'open'                 => 'waiting',
             'hold'                 => 'waiting',
         );
+    }
+
+    /**
+     * Формирует безопасное summary тела ответа Admitad для строк ошибок.
+     *
+     * В `$body` могут быть order_id, subid, email, results — их нельзя пробрасывать
+     * вверх по стеку и писать в логи. Берём только allowlist полей с общей диагностикой.
+     *
+     * @param mixed $body Распарсенное тело ответа или null.
+     * @return string
+     */
+    private function safe_error_summary( $body ): string {
+        if (!is_array($body)) {
+            return 'non-json body';
+        }
+        $allow   = array( 'code', 'error', 'error_description', 'detail', 'status', 'status_code' );
+        $summary = array();
+        foreach ($allow as $key) {
+            if (!array_key_exists($key, $body)) {
+                continue;
+            }
+            $value = $body[ $key ];
+            if (is_scalar($value)) {
+                $summary[ $key ] = (string) $value;
+            }
+        }
+        if (empty($summary)) {
+            return 'body redacted';
+        }
+        $encoded = wp_json_encode($summary);
+        return is_string($encoded) ? $encoded : 'body redacted';
     }
 }
