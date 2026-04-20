@@ -300,11 +300,28 @@
         }
       }
 
+      // iter-32 F-32-004: idempotency + double-submit guard.
+      // Блокируем кнопку сразу и передаём request_id (UUID v4). Повторные клики,
+      // сетевые ретраи и двойная доставка не создают дублирующие state-changing запросы.
+      const saveBtn = row.find('.save-btn');
+      if (saveBtn.prop('disabled')) {
+        return;
+      }
+      saveBtn.prop('disabled', true);
+
+      const requestId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+          const r = (Math.random() * 16) | 0;
+          return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+        });
+
       // Отправка AJAX запроса
       const data = {
         action: 'update_payout_request',
         payout_id: payoutId,
         nonce: cashbackPayoutsData.updateNonce,
+        request_id: requestId,
         ...changedData,
       };
 
@@ -338,6 +355,8 @@
         }
 
         alert(errorMsg);
+      }).always(function () {
+        saveBtn.prop('disabled', false);
       });
     });
   }
