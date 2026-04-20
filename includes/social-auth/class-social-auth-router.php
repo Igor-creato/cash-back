@@ -739,15 +739,17 @@ class Cashback_Social_Auth_Router {
 
         $link_id = (int) $target_link['id'];
 
-        // Удалить токены и связку.
-        if (class_exists('Cashback_Social_Auth_Token_Store')) {
-            Cashback_Social_Auth_Token_Store::delete($link_id);
-        }
+        // Удалить связку, и только после успеха — токены (избегаем состояния
+        // «токены удалены, связка осталась»).
         $ok = Cashback_Social_Auth_DB::delete_link($link_id);
 
         if (!$ok) {
             $this->redirect_account_social_with_error('unlink_failed');
             return null;
+        }
+
+        if (class_exists('Cashback_Social_Auth_Token_Store')) {
+            Cashback_Social_Auth_Token_Store::delete($link_id);
         }
 
         Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_UNLINK, array(

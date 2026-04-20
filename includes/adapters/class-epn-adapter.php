@@ -109,7 +109,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
             $epn_error              = $ssid_body['errors'][0]['error_description'] ?? '';
             $this->last_token_error = 'EPN SSID failed (HTTP ' . $ssid_code . '). ' . $epn_error;
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('Cashback API Client: EPN SSID failed. Code: ' . $ssid_code . ', Body: ' . wp_json_encode($ssid_body));
+            error_log('Cashback API Client: EPN SSID failed. Code: ' . $ssid_code . ', Error: ' . $epn_error);
             return null;
         }
 
@@ -380,14 +380,15 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
                     $error_msg = 'EPN 403: Недостаточно прав API-клиента (403001). Проверьте роль в EPN.';
                 } else {
                     $error_msg = 'EPN 403: Токен отклонён. Проверьте права доступа и IP сервера.';
-                    if (!empty($raw_body)) {
-                        $error_msg .= ' Raw: ' . mb_substr($raw_body, 0, 200);
-                    }
                 }
             }
 
+            $log_context = array(
+                'http_code' => $code,
+                'error'     => $body['errors'][0]['error_description'] ?? '',
+            );
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('Cashback EPN fetch_actions error: HTTP ' . $code . ', Raw body: ' . mb_substr($raw_body, 0, 500));
+            error_log('Cashback EPN fetch_actions error: ' . wp_json_encode($log_context));
 
             return $this->fetch_error($error_msg);
         }
