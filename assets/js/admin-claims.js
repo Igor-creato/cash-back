@@ -10,6 +10,27 @@ jQuery(function($) {
             : '';
     }
 
+    function safeHtml(dirty) {
+        if (typeof window.cashbackSafeHtml === 'function') {
+            return window.cashbackSafeHtml(dirty);
+        }
+        if (typeof DOMPurify !== 'undefined') {
+            return DOMPurify.sanitize(dirty);
+        }
+        return dirty;
+    }
+
+    function makeRequestId() {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            return window.crypto.randomUUID();
+        }
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0;
+            var v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+
     /* ========================================
         Tab switching (matches support module)
         ======================================== */
@@ -154,6 +175,7 @@ jQuery(function($) {
         $.post(ajaxUrl, {
             action: 'claims_submit',
             claim_nonce: data.submitNonce,
+            request_id: makeRequestId(),
             click_id: $('#claim-click-id').val(),
             order_id: $('#claim-order-id').val(),
             order_value: $('#claim-order-value').val(),
@@ -228,7 +250,7 @@ jQuery(function($) {
 
         $.post(ajaxUrl, postData, function(res) {
             if (res.success) {
-                $('#clicks-table-container').html(res.data.html);
+                $('#clicks-table-container').html(safeHtml(res.data.html));
                 $('#clicks-pagination').html(buildPagination(page, res.data.pages));
             }
         });
@@ -299,7 +321,7 @@ jQuery(function($) {
             search: filters.search
         }, function(res) {
             if (res.success) {
-                $('#claims-table-container').html(res.data.html);
+                $('#claims-table-container').html(safeHtml(res.data.html));
                 $('#claims-pagination').html(buildPagination(page, res.data.pages));
             }
         });
@@ -322,7 +344,7 @@ jQuery(function($) {
             claim_id: claimId
         }, function(res) {
             if (res.success) {
-                $('#claim-detail-body').html(res.data.html);
+                $('#claim-detail-body').html(safeHtml(res.data.html));
                 $('#claim-detail-modal').show();
                 $row.removeClass('claim-row-unread').find('.claims-tab-badge').remove();
             }
@@ -406,6 +428,7 @@ jQuery(function($) {
             $.post(ajaxUrl, {
                 action: 'claims_admin_transition',
                 nonce: data.transitionNonce,
+                request_id: makeRequestId(),
                 claim_id: claimId,
                 new_status: action,
                 note: $('#claim-note-text').val() || ''
@@ -430,6 +453,7 @@ jQuery(function($) {
         $.post(ajaxUrl, {
             action: 'claims_admin_add_note',
             nonce: data.noteNonce,
+            request_id: makeRequestId(),
             claim_id: claimId,
             note: note
         }, function(res) {
@@ -442,7 +466,7 @@ jQuery(function($) {
                     claim_id: claimId
                 }, function(r) {
                     if (r.success) {
-                        $('#claim-detail-body').html(r.data.html);
+                        $('#claim-detail-body').html(safeHtml(r.data.html));
                     }
                 });
             } else {

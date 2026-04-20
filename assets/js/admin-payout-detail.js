@@ -339,11 +339,19 @@
    * @returns {string}
    */
   function formatAmount(value) {
-    const num = parseFloat(value);
-    if (isNaN(num)) {
-      return value;
+    const raw = String(value == null ? '' : value).trim().replace(',', '.');
+    const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(raw);
+    if (!match) {
+      return '0.00 ₽';
     }
-    return num.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₽';
+    const whole = match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    const frac = (match[3] || '').padEnd(2, '0').slice(0, 2);
+    return match[1] + whole + '.' + frac + ' ₽';
+  }
+
+  function safeInt(value) {
+    const raw = String(value == null ? '' : value).trim();
+    return /^-?\d+$/.test(raw) ? raw : '0';
   }
 
   /**
@@ -413,7 +421,7 @@
         const op = result.operations_summary[i];
         html += '<tr style="border-top:1px solid #eee;">';
         html += '<td style="' + cellStyle + '">' + escapeHtml(op.label) + '</td>';
-        html += '<td style="text-align:center; ' + cellStyle + ' color:#666;">' + op.count + ' шт.</td>';
+        html += '<td style="text-align:center; ' + cellStyle + ' color:#666;">' + safeInt(op.count) + ' шт.</td>';
         html += '<td style="text-align:right; ' + cellStyle + ' font-weight:500;">' + escapeHtml(op.sum) + ' ₽</td>';
         html += '</tr>';
       }
