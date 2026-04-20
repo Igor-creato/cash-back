@@ -46,18 +46,24 @@ jQuery(document).ready(function ($) {
       return false;
     }
 
-    // Получаем введенную сумму
-    var amountInput = withdrawalAmount.val();
-    // Заменяем запятую на точку для корректной обработки чисел
-    var amount = parseFloat(amountInput.replace(',', '.'));
+    // iter-32 F-32-003: строгая decimal-валидация без parseFloat.
+    // parseFloat принимает частично валидные строки ("1abc" → 1) и IEEE-float-арифметику,
+    // что создаёт расхождения между введённым и отправленным значением. Отправляем на
+    // сервер нормализованную decimal-строку; сервер — single source of truth для сумм.
+    var amountInput      = withdrawalAmount.val();
+    var normalizedAmount = String(amountInput || '').trim().replace(',', '.');
 
-    // Проверяем, является ли введенное значение корректным числом
-    if (isNaN(amount) || amount <= 0) {
+    // Проверка формата + нулевого значения. Сервер валидирует повторно.
+    if (
+      !/^\d+(?:\.\d{1,2})?$/.test(normalizedAmount) ||
+      normalizedAmount === '0' ||
+      normalizedAmount === '0.00' ||
+      normalizedAmount === '0.0'
+    ) {
       withdrawalAmount.addClass('input--error');
-      $('#withdrawal-messages').html(
-        '<div class="error-message">' +
-          'Пожалуйста, введите корректную сумму для вывода.' +
-          '</div>',
+      // iter-32 F-32-001: безопасная вставка текста (DOM-построение вместо .html()).
+      $('#withdrawal-messages').empty().append(
+        $('<div>').addClass('error-message').text('Пожалуйста, введите корректную сумму для вывода.'),
       );
       // Разблокируем форму, так как не отправляем запрос
       submitBtn.prop('disabled', false);
@@ -74,7 +80,7 @@ jQuery(document).ready(function ($) {
     // Подготовка данных для AJAX запроса
     var data = {
       action: 'process_cashback_withdrawal',
-      withdrawal_amount: amount,
+      withdrawal_amount: normalizedAmount,
       nonce: cashback_ajax.withdrawal_submit_nonce,
       idempotency_key: withdrawalIdempotencyKey,
     };
@@ -89,9 +95,9 @@ jQuery(document).ready(function ($) {
           // Обновляем идемпотентный ключ после подтверждённого успеха
           withdrawalIdempotencyKey = generateIdempotencyKey();
 
-          // Успешный вывод
-          $('#withdrawal-messages').html(
-            '<div class="success-message">' + response.data + '</div>',
+          // iter-32 F-32-001: server-data идёт через .text(), не .html() — XSS закрыт.
+          $('#withdrawal-messages').empty().append(
+            $('<div>').addClass('success-message').text(String(response.data || '')),
           );
 
           // Очищаем поле ввода
@@ -105,7 +111,10 @@ jQuery(document).ready(function ($) {
             typeof response.data === 'object' && response.data !== null
               ? response.data.message
               : response.data;
-          $('#withdrawal-messages').html('<div class="error-message">' + errorMsg + '</div>');
+          // iter-32 F-32-001: error-сообщение с сервера выводим как текст.
+          $('#withdrawal-messages').empty().append(
+            $('<div>').addClass('error-message').text(String(errorMsg || '')),
+          );
 
           // Если сервер указал показать форму настроек (платёжная система или банк неактивны)
           var isFormError =
@@ -178,10 +187,10 @@ function updateBalanceDisplay() {
         var pending = response.data.pending_balance;
         var paid    = response.data.paid_balance;
 
-        // Обновляем отображение на странице вывода (элементы по ID)
-        jQuery('#cashback-balance-amount').html(response.data.formatted_balance);
-        jQuery('#cashback-pending-amount').html(response.data.formatted_pending);
-        jQuery('#cashback-paid-amount').html(response.data.formatted_paid);
+        // iter-32 F-32-001: server-formatted данные через .text(), не .html() (defense-in-depth).
+        jQuery('#cashback-balance-amount').text(String(response.data.formatted_balance || ''));
+        jQuery('#cashback-pending-amount').text(String(response.data.formatted_pending || ''));
+        jQuery('#cashback-paid-amount').text(String(response.data.formatted_paid || ''));
 
         // Обновляем максимальное значение для поля ввода
         jQuery('#withdrawal-amount').attr('max', avail);
@@ -198,7 +207,7 @@ function updateBalanceDisplay() {
       }
     },
     error: function () {
-      console.log('Ошибка при обновлении баланса');
+      // iter-32 F-32-002: diagnostic console-лог удалён (PII/nonce policy).
     },
   });
 }
@@ -209,11 +218,9 @@ function updateBalanceDisplay() {
 jQuery(document).ready(function ($) {
   // Проверяем наличие cashback_ajax
   if (typeof cashback_ajax === 'undefined') {
-    console.error('cashback_ajax is not defined');
+    // iter-32 F-32-002: cashback_ajax содержит nonce — не логируем даже при отсутствии.
     return;
   }
-
-  console.log('Payout settings handler loaded', cashback_ajax);
 
   /**
    * Валидация номера телефона для СБП.
@@ -626,7 +633,7 @@ jQuery(document).ready(function ($) {
    */
   $(document).on('click', '#edit_payout_settings_btn', function (e) {
     e.preventDefault();
-    console.log('Edit payout settings button clicked');
+    // iter-32 F-32-002: debug-лог удалён.
 
     // Скрываем блок с отображением данных
     $('#payout_settings_display').hide();
@@ -646,7 +653,7 @@ jQuery(document).ready(function ($) {
    */
   $(document).on('click', '#cancel_edit_payout_settings_btn', function (e) {
     e.preventDefault();
-    console.log('Cancel edit payout settings button clicked');
+    // iter-32 F-32-002: debug-лог удалён.
 
     // Показываем блок с отображением данных
     $('#payout_settings_display').show();
@@ -661,7 +668,7 @@ jQuery(document).ready(function ($) {
    */
   $(document).on('click', '#save_payout_settings_btn', function (e) {
     e.preventDefault();
-    console.log('Save payout settings button clicked');
+    // iter-32 F-32-002: debug-лог удалён (payoutAccount — PII).
 
     const payoutMethodId = $('#payout_method_id').val();
     const payoutAccount = $('#payout_account').val();
@@ -669,7 +676,7 @@ jQuery(document).ready(function ($) {
     const bankInputVal = $('#bank_search_input').val().trim();
     const nonce = cashback_ajax.nonce;
 
-    console.log('Form values:', { payoutMethodId, payoutAccount, bankId, bankInputVal });
+    // iter-32 F-32-002: payoutAccount / bankId — PII, удалены из console-лога.
 
     // Сбрасываем подсветку ошибок перед валидацией
     $('#payout_method_id').removeClass('input--error');
@@ -766,7 +773,7 @@ jQuery(document).ready(function ($) {
     // Очищаем предыдущие сообщения
     $('#payout_settings_message').text('').removeClass('success error');
 
-    console.log('Sending AJAX request to:', cashback_ajax.ajax_url);
+    // iter-32 F-32-002: отправка AJAX без debug-логирования (URL/body/response/xhr содержат PII и nonce).
 
     // Отправляем AJAX-запрос
     $.ajax({
@@ -780,11 +787,9 @@ jQuery(document).ready(function ($) {
         security: nonce,
       },
       beforeSend: function () {
-        console.log('AJAX request started');
         $('#save_payout_settings_btn').prop('disabled', true).text('Сохранение...');
       },
       success: function (response) {
-        console.log('AJAX response:', response);
         if (response.success) {
           $('#payout_settings_message')
             .removeClass('error')
@@ -802,15 +807,14 @@ jQuery(document).ready(function ($) {
             .text(response.data.message || 'Ошибка при сохранении данных');
         }
       },
-      error: function (xhr, status, error) {
-        console.error('AJAX error:', xhr, status, error);
+      error: function () {
+        // iter-32 F-32-002: xhr может содержать response-body с серверными деталями; не логируем.
         $('#payout_settings_message')
           .removeClass('success')
           .addClass('error')
           .text('Ошибка соединения');
       },
       complete: function () {
-        console.log('AJAX request completed');
         $('#save_payout_settings_btn').prop('disabled', false).text('Сохранить настройки');
       },
     });
