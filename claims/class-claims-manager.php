@@ -110,6 +110,8 @@ class Cashback_Claims_Manager {
             $insert_format[]                   = '%s';
         }
 
+        $wpdb->query('START TRANSACTION');
+
         $inserted = $wpdb->insert(
             "{$wpdb->prefix}cashback_claims",
             $insert_data,
@@ -117,7 +119,9 @@ class Cashback_Claims_Manager {
         );
 
         if (!$inserted) {
-            if (strpos($wpdb->last_error, 'Duplicate entry') !== false && strpos($wpdb->last_error, 'uk_click_user') !== false) {
+            $last_error = $wpdb->last_error;
+            $wpdb->query('ROLLBACK');
+            if (strpos($last_error, 'Duplicate entry') !== false && strpos($last_error, 'uk_click_user') !== false) {
                 return array(
 					'success' => false,
 					'error'   => __('Заявка по этому переходу уже подана. Повторная заявка невозможна, дождитесь решения сервиса.', 'cashback-plugin'),
@@ -131,7 +135,15 @@ class Cashback_Claims_Manager {
 
         $claim_id = (int) $wpdb->insert_id;
 
-        self::log_event($claim_id, 'submitted', __('Заявка создана пользователем.', 'cashback-plugin'), $user_id, 'user');
+        if (!self::log_event($claim_id, 'submitted', __('Заявка создана пользователем.', 'cashback-plugin'), $user_id, 'user')) {
+            $wpdb->query('ROLLBACK');
+            return array(
+				'success' => false,
+				'error'   => __('Не удалось создать заявку. Попробуйте позже.', 'cashback-plugin'),
+			);
+        }
+
+        $wpdb->query('COMMIT');
 
         $post_analysis = Cashback_Claims_Antifraud::post_submit_analysis($claim_id, $user_id, $data['order_id'], $ip, $ua);
         if ($post_analysis['is_suspicious']) {
@@ -173,13 +185,17 @@ class Cashback_Claims_Manager {
         }
 
         $claims_table = $wpdb->prefix . 'cashback_claims';
-        $claim        = $wpdb->get_row($wpdb->prepare(
-            'SELECT claim_id, user_id, status FROM %i WHERE claim_id = %d',
+
+        $wpdb->query('START TRANSACTION');
+
+        $claim = $wpdb->get_row($wpdb->prepare(
+            'SELECT claim_id, user_id, status FROM %i WHERE claim_id = %d FOR UPDATE',
             $claims_table,
             $claim_id
         ), ARRAY_A);
 
         if (!$claim) {
+            $wpdb->query('ROLLBACK');
             return array(
 				'success' => false,
 				'error'   => __('Заявка не найдена.', 'cashback-plugin'),
@@ -190,6 +206,7 @@ class Cashback_Claims_Manager {
         $allowed        = self::VALID_TRANSITIONS[ $current_status ] ?? array();
 
         if (!in_array($new_status, $allowed, true)) {
+            $wpdb->query('ROLLBACK');
             return array(
 				'success' => false,
 				'error'   => sprintf(
@@ -201,22 +218,41 @@ class Cashback_Claims_Manager {
 			);
         }
 
-        $updated = $wpdb->update(
-            "{$wpdb->prefix}cashback_claims",
-            array( 'status' => $new_status ),
-            array( 'claim_id' => $claim_id ),
-            array( '%s' ),
-            array( '%d' )
-        );
+        $updated = $wpdb->query($wpdb->prepare(
+            'UPDATE %i SET status = %s WHERE claim_id = %d AND status = %s',
+            $claims_table,
+            $new_status,
+            $claim_id,
+            $current_status
+        ));
 
         if ($updated === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Diagnostic log for DB failure; user sees sanitized message.
+            error_log('cashback_claims transition_status DB error: ' . $wpdb->last_error);
+            $wpdb->query('ROLLBACK');
             return array(
 				'success' => false,
-				'error'   => $wpdb->last_error,
+				'error'   => __('Не удалось обновить статус. Попробуйте позже.', 'cashback-plugin'),
 			);
         }
 
-        self::log_event($claim_id, $new_status, $note, $actor_id, $actor_type);
+        if ((int) $updated !== 1) {
+            $wpdb->query('ROLLBACK');
+            return array(
+				'success' => false,
+				'error'   => __('Статус заявки уже изменён другим действием. Обновите страницу.', 'cashback-plugin'),
+			);
+        }
+
+        if (!self::log_event($claim_id, $new_status, $note, $actor_id, $actor_type)) {
+            $wpdb->query('ROLLBACK');
+            return array(
+				'success' => false,
+				'error'   => __('Не удалось обновить статус. Попробуйте позже.', 'cashback-plugin'),
+			);
+        }
+
+        $wpdb->query('COMMIT');
 
         do_action('cashback_claim_status_changed', $claim_id, $current_status, $new_status, $note, $actor_type, $actor_id);
 
@@ -231,11 +267,12 @@ class Cashback_Claims_Manager {
      * @param string $note
      * @param int|null $actor_id
      * @param string $actor_type
+     * @return bool True on successful insert, false otherwise.
      */
-    public static function log_event( int $claim_id, string $status, string $note = '', ?int $actor_id = null, string $actor_type = 'system' ): void {
+    public static function log_event( int $claim_id, string $status, string $note = '', ?int $actor_id = null, string $actor_type = 'system' ): bool {
         global $wpdb;
 
-        $wpdb->insert(
+        $inserted = $wpdb->insert(
             "{$wpdb->prefix}cashback_claim_events",
             array(
                 'claim_id'      => $claim_id,
@@ -247,6 +284,8 @@ class Cashback_Claims_Manager {
             ),
             array( '%d', '%s', '%s', '%d', '%s', '%d' )
         );
+
+        return $inserted !== false && $inserted > 0;
     }
 
     /**
