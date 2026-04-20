@@ -298,17 +298,6 @@ class Cashback_Broadcast {
             ));
         }
 
-        // Одна активная кампания за раз.
-        $active = $wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM %i WHERE status IN ('queued','sending') LIMIT 1",
-            self::table_campaigns()
-        ));
-        if ($active) {
-            wp_send_json_error(array(
-                'message' => __('Уже есть активная рассылка. Дождитесь её завершения или отмените.', 'cashback-plugin'),
-            ));
-        }
-
         $subject = isset($_POST['subject']) ? sanitize_text_field(wp_unslash($_POST['subject'])) : '';
         $body    = isset($_POST['body'])
             ? wp_kses_post(wp_unslash($_POST['body']))
@@ -341,6 +330,37 @@ class Cashback_Broadcast {
 
         $now = current_time('mysql');
 
+        // iter-24 F-24-001 + F-24-002: атомарное создание кампании и очереди под row-lock.
+        // Блокирующая проверка «одна активная кампания» + INSERT campaign + INSERT queue batches — всё в одной транзакции.
+        $wpdb->query('START TRANSACTION');
+
+        // Блокирующая проверка активной кампании (FOR UPDATE предотвращает TOCTOU).
+        $active = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM %i WHERE status IN ('queued','sending') LIMIT 1 FOR UPDATE",
+            self::table_campaigns()
+        ));
+        if ($active) {
+            $wpdb->query('ROLLBACK');
+            wp_send_json_error(array(
+                'message' => __('Уже есть активная рассылка. Дождитесь её завершения или отмените.', 'cashback-plugin'),
+            ));
+        }
+
+        // Повторная проверка UUID под блокировкой (race между первичной идемпотентностью и INSERT).
+        $existing_locked = $wpdb->get_var($wpdb->prepare(
+            'SELECT id FROM %i WHERE campaign_uuid = %s FOR UPDATE',
+            self::table_campaigns(),
+            $uuid
+        ));
+        if ($existing_locked) {
+            $wpdb->query('ROLLBACK');
+            wp_send_json_success(array(
+                'campaign_id' => (int) $existing_locked,
+                'status'      => 'queued',
+                'message'     => __('Кампания уже создана.', 'cashback-plugin'),
+            ));
+        }
+
         // Вставка кампании.
         $ok = $wpdb->insert(
             self::table_campaigns(),
@@ -359,24 +379,35 @@ class Cashback_Broadcast {
             array( '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%d', '%s' )
         );
         if (!$ok) {
+            $wpdb->query('ROLLBACK');
             wp_send_json_error(array( 'message' => __('Не удалось создать кампанию.', 'cashback-plugin') ));
         }
         $campaign_id = (int) $wpdb->insert_id;
 
-        // Наполнение очереди батчами (мультирядные INSERT).
+        // Наполнение очереди батчами (мультирядные INSERT). Любой сбой батча → ROLLBACK всей кампании.
         $queue_table = self::table_queue();
         $batch       = array();
         $batch_size  = 500;
         foreach ($recipients as $user_id => $email) {
             $batch[] = array( $campaign_id, (int) $user_id, $email );
             if (count($batch) >= $batch_size) {
-                $this->insert_queue_batch($queue_table, $batch);
+                $inserted = $this->insert_queue_batch($queue_table, $batch);
+                if ($inserted === false) {
+                    $wpdb->query('ROLLBACK');
+                    wp_send_json_error(array( 'message' => __('Не удалось создать кампанию.', 'cashback-plugin') ));
+                }
                 $batch = array();
             }
         }
         if (!empty($batch)) {
-            $this->insert_queue_batch($queue_table, $batch);
+            $inserted = $this->insert_queue_batch($queue_table, $batch);
+            if ($inserted === false) {
+                $wpdb->query('ROLLBACK');
+                wp_send_json_error(array( 'message' => __('Не удалось создать кампанию.', 'cashback-plugin') ));
+            }
         }
+
+        $wpdb->query('COMMIT');
 
         // Audit-log.
         if (class_exists('Cashback_Encryption')) {
@@ -406,12 +437,16 @@ class Cashback_Broadcast {
      *
      * @param string                      $table Имя таблицы.
      * @param array<int,array{0:int,1:int,2:string}> $rows  Батч: [[campaign_id, user_id, email], ...]
+     *
+     * @return int|false Число фактически вставленных строк, либо false при ошибке SQL.
+     *                   INSERT IGNORE подавляет дубли по uniq_campaign_user, возвращая 0..N;
+     *                   вызывающий отличает штатный частичный успех от сбоя по !== false.
      */
-    private function insert_queue_batch( string $table, array $rows ): void {
+    private function insert_queue_batch( string $table, array $rows ) {
         global $wpdb;
 
         if (empty($rows)) {
-            return;
+            return 0;
         }
 
         $placeholders = array();
@@ -427,7 +462,7 @@ class Cashback_Broadcast {
             . implode(',', $placeholders);
 
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- Placeholders статически сформированы; значения биндятся через prepare().
-        $wpdb->query($wpdb->prepare($sql, array_merge(array( $table ), $values)));
+        return $wpdb->query($wpdb->prepare($sql, array_merge(array( $table ), $values)));
     }
 
     // =====================================================================
@@ -586,51 +621,123 @@ class Cashback_Broadcast {
 
         $batch_size = self::batch_size();
         $max_att    = self::MAX_ATTEMPTS;
+        $now_sql    = current_time('mysql');
+
+        // iter-24 F-24-003: recovery застрявших 'processing' (воркер упал до финализации).
+        // Только строки, не обновлявшие processed_at > 10 минут — это точно brошенные.
+        // В штатном цикле claim→send→финализация processed_at обновляется в claim phase.
+        $wpdb->query($wpdb->prepare(
+            "UPDATE %i SET status = 'pending'
+              WHERE campaign_id = %d
+                AND status = 'processing'
+                AND (processed_at IS NULL OR processed_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE))",
+            self::table_queue(),
+            $campaign_id
+        ));
+
+        // iter-24 F-24-003: атомарный claim батча через промежуточный статус 'processing'.
+        // Короткая транзакция с FOR UPDATE + bulk UPDATE страхует от дублей при параллельных воркерах.
+        $wpdb->query('START TRANSACTION');
 
         $rows = $wpdb->get_results($wpdb->prepare(
             "SELECT id, user_id, email, attempts FROM %i
               WHERE campaign_id = %d AND status = 'pending' AND attempts < %d
               ORDER BY id ASC
-              LIMIT %d",
+              LIMIT %d
+              FOR UPDATE",
             self::table_queue(),
             $campaign_id,
             $max_att,
             $batch_size
         ), ARRAY_A);
 
+        if (empty($rows)) {
+            $wpdb->query('COMMIT');
+        } else {
+            $claim_ids = array();
+            foreach ($rows as $r) {
+                $claim_ids[] = (int) $r['id'];
+            }
+            $ph_ids    = implode(',', array_fill(0, count($claim_ids), '%d'));
+            $claim_sql = "UPDATE %i SET status = 'processing', attempts = attempts + 1, processed_at = %s WHERE id IN ({$ph_ids}) AND status = 'pending'";
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $ph_ids is a '%d'-list of fixed length; values bound via prepare().
+            $wpdb->query($wpdb->prepare($claim_sql, array_merge(array( self::table_queue(), $now_sql ), $claim_ids)));
+            $wpdb->query('COMMIT');
+
+            // В памяти обновляем attempts после claim (для логики is_last).
+            foreach ($rows as $k => $r) {
+                $rows[ $k ]['attempts'] = (int) $r['attempts'] + 1;
+            }
+        }
+
         if (!empty($rows) && class_exists('Cashback_Email_Sender')) {
             $sender       = Cashback_Email_Sender::get_instance();
             $sent_delta   = 0;
             $failed_delta = 0;
-            $now          = current_time('mysql');
 
             foreach ($rows as $row) {
                 $queue_id = (int) $row['id'];
+
+                // iter-24 F-24-004: повторная проверка статуса кампании перед каждой отправкой.
+                // Если админ отменил кампанию в середине батча — прекращаем и помечаем строку cancelled.
+                $current_status = $wpdb->get_var($wpdb->prepare(
+                    'SELECT status FROM %i WHERE id = %d',
+                    self::table_campaigns(),
+                    $campaign_id
+                ));
+                if ($current_status !== 'sending') {
+                    $wpdb->update(
+                        self::table_queue(),
+                        array(
+                            'status'       => 'failed',
+                            'error'        => 'cancelled',
+                            'processed_at' => $now_sql,
+                        ),
+                        array(
+                            'id'     => $queue_id,
+                            'status' => 'processing',
+                        ),
+                        array( '%s', '%s', '%s' ),
+                        array( '%d', '%s' )
+                    );
+                    ++$failed_delta;
+                    continue;
+                }
+
                 $user_id  = (int) $row['user_id'];
                 $email    = (string) $row['email'];
-                $attempts = (int) $row['attempts'] + 1;
+                $attempts = (int) $row['attempts'];
                 $is_last  = $attempts >= $max_att;
 
                 $ok = false;
                 try {
                     $ok = $sender->send($email, $subject, $body, self::NOTIFICATION_TYPE, $user_id);
                 } catch (\Throwable $e) {
+                    // iter-24 F-24-005: в лог идёт только класс исключения + идентификаторы, без PII / SMTP-деталей.
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Diagnostic logging for broadcast send failure.
-                    error_log('[Cashback Broadcast] send failed: ' . $e->getMessage());
+                    error_log(sprintf(
+                        '[Cashback Broadcast] send failed; campaign_id=%d queue_id=%d class=%s',
+                        $campaign_id,
+                        $queue_id,
+                        get_class($e)
+                    ));
                     $ok = false;
                 }
 
                 if ($ok) {
+                    // CAS: апдейт только если строка всё ещё в 'processing' (защита от параллельных manipulations).
                     $wpdb->update(
                         self::table_queue(),
                         array(
                             'status'       => 'sent',
-                            'attempts'     => $attempts,
-                            'processed_at' => $now,
+                            'processed_at' => $now_sql,
                         ),
-                        array( 'id' => $queue_id ),
-                        array( '%s', '%d', '%s' ),
-                        array( '%d' )
+                        array(
+                            'id'     => $queue_id,
+                            'status' => 'processing',
+                        ),
+                        array( '%s', '%s' ),
+                        array( '%d', '%s' )
                     );
                     ++$sent_delta;
                 } else {
@@ -640,13 +747,15 @@ class Cashback_Broadcast {
                         self::table_queue(),
                         array(
                             'status'       => $new_status,
-                            'attempts'     => $attempts,
                             'error'        => $error,
-                            'processed_at' => $is_last ? $now : null,
+                            'processed_at' => $is_last ? $now_sql : null,
                         ),
-                        array( 'id' => $queue_id ),
-                        array( '%s', '%d', '%s', '%s' ),
-                        array( '%d' )
+                        array(
+                            'id'     => $queue_id,
+                            'status' => 'processing',
+                        ),
+                        array( '%s', '%s', '%s' ),
+                        array( '%d', '%s' )
                     );
                     if ($is_last) {
                         ++$failed_delta;
@@ -666,9 +775,13 @@ class Cashback_Broadcast {
             }
         }
 
-        // Есть ли ещё pending для этой кампании?
+        // Есть ли ещё pending/processing для этой кампании?
+        // iter-24 F-24-003: 'processing' тоже считаем как незавершённые, чтобы не финализировать кампанию
+        // при наличии in-flight строк от другого воркера.
         $still_pending = (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM %i WHERE campaign_id = %d AND status = 'pending' AND attempts < %d",
+            "SELECT COUNT(*) FROM %i
+              WHERE campaign_id = %d
+                AND ((status = 'pending' AND attempts < %d) OR status = 'processing')",
             self::table_queue(),
             $campaign_id,
             $max_att
