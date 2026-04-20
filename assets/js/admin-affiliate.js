@@ -10,6 +10,17 @@
 
     var data = cashbackAffiliateAdmin;
 
+    function makeRequestId() {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            return window.crypto.randomUUID();
+        }
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+            var r = Math.random() * 16 | 0;
+            var v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+
     /* ── Module toggle ── */
     $(document).on('change', '#affiliate-module-toggle', function () {
         var enabled = $(this).is(':checked');
@@ -17,7 +28,8 @@
         $.post(data.ajaxurl, {
             action:  'affiliate_toggle_module',
             nonce:   data.toggleNonce,
-            enabled: enabled ? 1 : 0
+            enabled: enabled ? 1 : 0,
+            request_id: makeRequestId()
         }, function (resp) {
             if (resp.success) {
                 location.reload();
@@ -38,7 +50,8 @@
             nonce:             data.settingsNonce,
             cookie_ttl:        $('#aff-cookie-ttl').val(),
             rules_url:         $('#aff-rules-url').val(),
-            antifraud_enabled: $('#aff-antifraud-enabled').is(':checked') ? 1 : 0
+            antifraud_enabled: $('#aff-antifraud-enabled').is(':checked') ? 1 : 0,
+            request_id:        makeRequestId()
         }, function (resp) {
             $btn.prop('disabled', false);
             if (resp.success) {
@@ -58,7 +71,7 @@
             '<div class="aff-rate-modal">' +
             '<h3>Изменить ставку</h3>' +
             '<div class="aff-rate-input-group">' +
-            '<input type="number" id="aff-modal-rate" min="0" max="100" step="0.01" placeholder="Глобальная" value="' + (currentRate || '') + '">' +
+            '<input type="number" id="aff-modal-rate" min="0" max="100" step="0.01" placeholder="Глобальная" value="' + escapeHtml(String(currentRate == null ? '' : currentRate)) + '">' +
             '<span>%</span>' +
             '</div>' +
             '<p><small>Оставьте пустым для глобальной ставки.</small></p>' +
@@ -81,7 +94,8 @@
                 nonce:          data.partnerNonce,
                 user_id:        userId,
                 partner_action: 'set_rate',
-                rate:           rate
+                rate:           rate,
+                request_id:     makeRequestId()
             }, function (resp) {
                 overlay.remove();
                 if (resp.success) {
@@ -111,7 +125,8 @@
             action:         'affiliate_update_partner',
             nonce:          data.partnerNonce,
             user_id:        userId,
-            partner_action: 'disable'
+            partner_action: 'disable',
+            request_id:     makeRequestId()
         }, function (resp) {
             if (resp.success) {
                 location.reload();
@@ -133,7 +148,8 @@
             action:         'affiliate_update_partner',
             nonce:          data.partnerNonce,
             user_id:        userId,
-            partner_action: 'enable'
+            partner_action: 'enable',
+            request_id:     makeRequestId()
         }, function (resp) {
             if (resp.success) {
                 location.reload();
@@ -226,7 +242,8 @@
             nonce: data.bulkRateNonce,
             old_rate: oldRate,
             new_rate: newRate,
-            preview: 0
+            preview: 0,
+            request_id: makeRequestId()
         }, function (response) {
             if (response.success) {
                 $info.html('<span style="color: green;">Обновлено партнёров: ' + response.data.updated + '</span>');
@@ -274,9 +291,9 @@
             '<table class="form-table"><tbody>' +
             '<tr><th>Кешбэк реферала</th><td><strong>' + escapeHtml(String(currentCashback)) + ' ₽</strong></td></tr>' +
             '<tr><th><label for="aff-edit-rate">Ставка (%)</label></th>' +
-            '<td><input type="number" id="aff-edit-rate" min="0" max="100" step="0.01" value="' + currentRate + '" class="small-text"></td></tr>' +
+            '<td><input type="number" id="aff-edit-rate" min="0" max="100" step="0.01" value="' + escapeHtml(String(currentRate == null ? '' : currentRate)) + '" class="small-text"></td></tr>' +
             '<tr><th><label for="aff-edit-amount">Комиссия (₽)</label></th>' +
-            '<td><input type="number" id="aff-edit-amount" min="0" step="0.01" value="' + currentAmount + '" class="small-text"></td></tr>' +
+            '<td><input type="number" id="aff-edit-amount" min="0" step="0.01" value="' + escapeHtml(String(currentAmount == null ? '' : currentAmount)) + '" class="small-text"></td></tr>' +
             '<tr><th><label for="aff-edit-status">Статус</label></th>' +
             '<td><select id="aff-edit-status">' + statusOptions + '</select></td></tr>' +
             '</tbody></table>' +
@@ -287,11 +304,28 @@
 
         $('body').append(overlay);
 
-        // Пересчёт комиссии при изменении ставки
+        // Пересчёт комиссии при изменении ставки (целочисленная арифметика в копейках)
         overlay.on('input', '#aff-edit-rate', function () {
-            var rate = parseFloat($(this).val()) || 0;
-            var commission = Math.round(currentCashback * rate) / 100;
-            overlay.find('#aff-edit-amount').val(commission.toFixed(2));
+            var rateStr = String($(this).val()).trim().replace(',', '.');
+            if (!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(rateStr)) {
+                overlay.find('#aff-edit-amount').val('');
+                return;
+            }
+            var cashbackStr = String(currentCashback == null ? '' : currentCashback).trim().replace(',', '.');
+            var cbMatch = /^(\d+)(?:\.(\d{1,2}))?$/.exec(cashbackStr);
+            var rateMatch = /^(\d+)(?:\.(\d{1,2}))?$/.exec(rateStr);
+            if (!cbMatch || !rateMatch) {
+                overlay.find('#aff-edit-amount').val('');
+                return;
+            }
+            var cashbackKop = parseInt(cbMatch[1], 10) * 100 +
+                parseInt(((cbMatch[2] || '') + '00').slice(0, 2), 10);
+            var rateHundredths = parseInt(rateMatch[1], 10) * 100 +
+                parseInt(((rateMatch[2] || '') + '00').slice(0, 2), 10);
+            var commissionKop = Math.round(cashbackKop * rateHundredths / 10000);
+            var whole = Math.floor(commissionKop / 100);
+            var frac = commissionKop % 100;
+            overlay.find('#aff-edit-amount').val(whole + '.' + (frac < 10 ? '0' + frac : String(frac)));
         });
 
         overlay.on('click', '.aff-modal-cancel', function () {
@@ -307,7 +341,8 @@
                 accrual_id:        accrualId,
                 commission_rate:   overlay.find('#aff-edit-rate').val(),
                 commission_amount: overlay.find('#aff-edit-amount').val(),
-                status:            overlay.find('#aff-edit-status').val()
+                status:            overlay.find('#aff-edit-status').val(),
+                request_id:        makeRequestId()
             }, function (resp) {
                 overlay.remove();
                 if (resp.success) {
