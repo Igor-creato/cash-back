@@ -110,10 +110,17 @@ class Cashback_Email_Sender {
      * @param string $reason причина: globally_disabled | user_disabled | wp_mail_failed.
      */
     private function log_failure( string $type, string $to, string $reason ): void {
+        // iter-25 F-25-001: маскируем email в диагностическом логе, чтобы PII не попадало в error_log.
+        $masked_to = '';
+        if ($to !== '' && strpos($to, '@') !== false) {
+            [ $local, $domain ] = explode('@', $to, 2);
+            $masked_to          = substr($local, 0, 1) . '***@' . $domain;
+        }
+
         $payload = wp_json_encode(array(
             'event'  => 'email_send_failed',
             'type'   => $type,
-            'to'     => $to,
+            'to'     => $masked_to,
             'reason' => $reason,
             'ts'     => gmdate('c'),
         ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
