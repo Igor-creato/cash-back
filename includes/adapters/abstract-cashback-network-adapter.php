@@ -92,8 +92,12 @@ abstract class Cashback_Network_Adapter_Base implements Cashback_Network_Adapter
      */
     protected function http_get( string $url, array $headers, int $timeout = 60 ) {
         $args = array(
-            'timeout' => $timeout,
-            'headers' => $headers,
+            'timeout'            => $timeout,
+            'headers'            => $headers,
+            // Явная защита transport-слоя: не полагаемся на глобальные WP-фильтры,
+            // которые могут быть ослаблены сторонними плагинами/dev-override.
+            'sslverify'          => true,
+            'reject_unsafe_urls' => true,
         );
 
         // wp_remote_get использует отдельный параметр user-agent,
@@ -117,9 +121,13 @@ abstract class Cashback_Network_Adapter_Base implements Cashback_Network_Adapter
      */
     protected function http_post( string $url, array $headers, $body, int $timeout = 30 ) {
         return wp_remote_post($url, array(
-            'timeout' => $timeout,
-            'headers' => $headers,
-            'body'    => $body,
+            'timeout'            => $timeout,
+            'headers'            => $headers,
+            'body'               => $body,
+            // Явная защита transport-слоя: не полагаемся на глобальные WP-фильтры,
+            // которые могут быть ослаблены сторонними плагинами/dev-override.
+            'sslverify'          => true,
+            'reject_unsafe_urls' => true,
         ));
     }
 
