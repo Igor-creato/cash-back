@@ -1021,23 +1021,29 @@ class Cashback_Fraud_Admin {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_fraud_alerts';
 
+        // Атомарное ревью: транзакция + SELECT ... FOR UPDATE предотвращают TOCTOU
+        // между одновременными ревью разных админов и автоматическим подтверждением при бане.
+        $wpdb->query('START TRANSACTION');
+
         $alert = $wpdb->get_row($wpdb->prepare(
-            'SELECT * FROM %i WHERE id = %d',
+            'SELECT * FROM %i WHERE id = %d FOR UPDATE',
             $table,
             $alert_id
         ));
 
         if (!$alert) {
+            $wpdb->query('ROLLBACK');
             wp_send_json_error(array( 'message' => 'Алерт не найден' ));
             return;
         }
 
         if (in_array($alert->status, array( 'confirmed', 'dismissed' ), true)) {
+            $wpdb->query('ROLLBACK');
             wp_send_json_error(array( 'message' => 'Алерт уже обработан' ));
             return;
         }
 
-        $wpdb->update(
+        $updated = $wpdb->update(
             $table,
             array(
                 'status'      => $new_status,
@@ -1049,6 +1055,18 @@ class Cashback_Fraud_Admin {
             array( '%s', '%d', '%s', '%s' ),
             array( '%d' )
         );
+
+        if ($updated === false) {
+            $wpdb->query('ROLLBACK');
+            if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging (debug only).
+                error_log('[cashback] fraud review_alert update: ' . $wpdb->last_error);
+            }
+            wp_send_json_error(array( 'message' => 'Ошибка обновления алерта' ));
+            return;
+        }
+
+        $wpdb->query('COMMIT');
 
         // Audit log
         if (class_exists('Cashback_Encryption')) {
@@ -1338,7 +1356,7 @@ class Cashback_Fraud_Admin {
                 throw new \Exception('Пользователь уже забанен');
             }
 
-            $wpdb->update(
+            $profile_updated = $wpdb->update(
                 $profile_table,
                 array(
                     'status'     => 'banned',
@@ -1350,6 +1368,10 @@ class Cashback_Fraud_Admin {
                 array( '%s', '%s', '%s', '%s' ),
                 array( '%d' )
             );
+
+            if ($profile_updated === false) {
+                throw new \Exception('Не удалось обновить профиль пользователя');
+            }
 
             // PHP-фолбэк: заморозка баланса (идемпотентно при наличии триггера)
             Cashback_Trigger_Fallbacks::freeze_balance_on_ban($user_id);
@@ -1364,7 +1386,7 @@ class Cashback_Fraud_Admin {
             ));
 
             foreach ($active_requests as $request) {
-                $wpdb->update(
+                $request_updated = $wpdb->update(
                     $requests_table,
                     array(
                         'status'      => 'declined',
@@ -1375,6 +1397,10 @@ class Cashback_Fraud_Admin {
                     array( '%s', '%s', '%s' ),
                     array( '%d' )
                 );
+
+                if ($request_updated === false) {
+                    throw new \Exception('Не удалось отклонить активную заявку на выплату');
+                }
 
                 if (class_exists('Cashback_Encryption')) {
                     Cashback_Encryption::write_audit_log(
@@ -1391,7 +1417,7 @@ class Cashback_Fraud_Admin {
             }
 
             // Confirm all open alerts for this user
-            $wpdb->query($wpdb->prepare(
+            $alerts_updated = $wpdb->query($wpdb->prepare(
                 "UPDATE `{$wpdb->prefix}cashback_fraud_alerts`
                  SET status = 'confirmed',
                      reviewed_by = %d,
@@ -1403,6 +1429,10 @@ class Cashback_Fraud_Admin {
                 'Автоматически подтверждён при бане',
                 $user_id
             ));
+
+            if ($alerts_updated === false) {
+                throw new \Exception('Не удалось подтвердить открытые алерты');
+            }
 
             // Audit
             if (class_exists('Cashback_Encryption')) {

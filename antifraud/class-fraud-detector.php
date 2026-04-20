@@ -976,9 +976,10 @@ class Cashback_Fraud_Detector {
 
         $alert_id = (int) $wpdb->insert_id;
 
-        // Создаём сигналы
+        // Создаём сигналы. Любая ошибка INSERT откатывает всю транзакцию (atomicity),
+        // чтобы алерт не остался без доказательной базы.
         foreach ($signals as $signal) {
-            $wpdb->insert(
+            $ok = $wpdb->insert(
                 $signals_table,
                 array(
                     'alert_id'    => $alert_id,
@@ -989,6 +990,13 @@ class Cashback_Fraud_Detector {
                 ),
                 array( '%d', '%s', '%f', '%s', '%s' )
             );
+
+            if ($ok === false) {
+                $wpdb->query('ROLLBACK');
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('Cashback Fraud Detector: Failed to create signal — ' . $wpdb->last_error);
+                return null;
+            }
         }
 
         $wpdb->query('COMMIT');
