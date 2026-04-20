@@ -519,6 +519,30 @@ class CashbackPlugin {
         // --- REST API для браузерного расширения ---
         $this->require_file('includes/class-cashback-rest-api.php');
 
+        // --- Mobile API (cashback/v2) с JWT-аутентификацией ---
+        $this->require_file('includes/mobile/class-cashback-jwt.php');
+        $this->require_file('includes/mobile/class-cashback-refresh-token-store.php');
+        $this->require_file('includes/mobile/class-cashback-jwt-auth.php');
+        $this->require_file('includes/mobile/class-cashback-auth-action-store.php');
+        $this->require_file('includes/mobile/class-cashback-password-policy.php');
+        $this->require_file('includes/mobile/class-cashback-mobile-registration.php');
+        $this->require_file('includes/mobile/class-cashback-mobile-password-reset.php');
+        $this->require_file('includes/mobile/class-cashback-social-mobile-exchange.php');
+        $this->require_file('includes/mobile/class-cashback-mobile-stores-service.php');
+        $this->require_file('includes/mobile/class-cashback-mobile-me-service.php');
+        $this->require_file('includes/mobile/class-cashback-mobile-transactions-service.php');
+        $this->require_file('includes/mobile/class-cashback-mobile-affiliate-service.php');
+        $this->require_file('includes/mobile/class-cashback-mobile-payouts-service.php');
+        $this->require_file('includes/mobile/class-cashback-mobile-favorites-service.php');
+        $this->require_file('includes/mobile/class-cashback-mobile-signed-url.php');
+        $this->require_file('includes/mobile/class-cashback-mobile-claims-service.php');
+        $this->require_file('includes/mobile/class-cashback-mobile-support-service.php');
+        $this->require_file('includes/mobile/class-cashback-push-token-store.php');
+        $this->require_file('includes/mobile/class-cashback-push-dispatcher.php');
+        $this->require_file('includes/mobile/class-cashback-mobile-app-config.php');
+        $this->require_file('includes/mobile/class-cashback-mobile-cors.php');
+        $this->require_file('includes/mobile/class-cashback-mobile-rest-controller.php');
+
         // Шорткоды (доступны на фронтенде и в превью редактора)
         $this->require_file('includes/class-cashback-shortcodes.php');
 
@@ -579,6 +603,41 @@ class CashbackPlugin {
         if (!class_exists('Mariadb_Plugin')) {
             return;
         }
+
+        // Авто-создание таблицы cashback_refresh_tokens (мобильная JWT-сессия).
+        // Идемпотентно: метод сам проверит наличие таблицы.
+        try {
+            Mariadb_Plugin::get_instance()->migrate_ensure_refresh_tokens_table();
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback] Auto-migration for cashback_refresh_tokens failed: ' . $e->getMessage());
+        }
+
+        // Авто-создание таблицы cashback_auth_actions (email-verify / password-reset).
+        try {
+            Mariadb_Plugin::get_instance()->migrate_ensure_auth_actions_table();
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback] Auto-migration for cashback_auth_actions failed: ' . $e->getMessage());
+        }
+
+        // Авто-создание таблицы cashback_user_favorites (Phase 6).
+        try {
+            Mariadb_Plugin::get_instance()->migrate_ensure_favorites_table();
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback] Auto-migration for cashback_user_favorites failed: ' . $e->getMessage());
+        }
+
+        // Авто-создание таблицы cashback_push_tokens (Phase 8).
+        try {
+            Mariadb_Plugin::get_instance()->migrate_ensure_push_tokens_table();
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback] Auto-migration for cashback_push_tokens failed: ' . $e->getMessage());
+        }
+
+        global $wpdb;
 
         // Миграция: reference_id для таблиц транзакций.
         // Проверяем фактическое наличие колонки, а не флаг в wp_options
@@ -698,6 +757,23 @@ class CashbackPlugin {
         // --- REST API для браузерного расширения ---
         if (class_exists('Cashback_REST_API')) {
             Cashback_REST_API::get_instance();
+        }
+
+        // --- Mobile API (cashback/v2): JWT-аутентификация + REST endpoints ---
+        if (class_exists('Cashback_JWT_Auth')) {
+            Cashback_JWT_Auth::init();
+        }
+        if (class_exists('Cashback_Mobile_Stores_Service')) {
+            Cashback_Mobile_Stores_Service::init();
+        }
+        if (class_exists('Cashback_Push_Dispatcher')) {
+            Cashback_Push_Dispatcher::init();
+        }
+        if (class_exists('Cashback_Mobile_CORS')) {
+            Cashback_Mobile_CORS::init();
+        }
+        if (class_exists('Cashback_Mobile_REST_Controller')) {
+            Cashback_Mobile_REST_Controller::init();
         }
 
         // Шорткоды
