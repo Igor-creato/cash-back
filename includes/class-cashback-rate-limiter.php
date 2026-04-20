@@ -159,6 +159,16 @@ class Cashback_Rate_Limiter {
 			);
         }
 
+        // Заблокированный IP (grey score >= блок-порог) — отклоняем до истечения GREY_TTL,
+        // как задекларировано в комментарии класса (>=80 → все AJAX отклоняются).
+        if (self::is_blocked_ip($ip)) {
+            return array(
+                'allowed'     => false,
+                'remaining'   => 0,
+                'retry_after' => self::GREY_TTL,
+            );
+        }
+
         [$limit, $window] = self::TIERS[ $tier ];
 
         // Для серых IP — урезаем лимит на critical/write

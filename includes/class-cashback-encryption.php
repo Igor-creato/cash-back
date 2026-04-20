@@ -343,11 +343,48 @@ class Cashback_Encryption {
                 'entity_id'   => $entity_id,
                 'ip_address'  => self::get_client_ip(),
                 'user_agent'  => isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : null,
-                'details'     => $extra_details ? wp_json_encode($extra_details, JSON_UNESCAPED_UNICODE) : null,
+                'details'     => $extra_details ? wp_json_encode(self::redact_audit_details($extra_details), JSON_UNESCAPED_UNICODE) : null,
                 'created_at'  => current_time('mysql'),
             ),
             array( '%s', '%d', '%s', '%d', '%s', '%s', '%s', '%s' )
         );
+    }
+
+    /**
+     * Редактирует чувствительные поля в details перед записью в аудит-лог.
+     *
+     * @param array<string,mixed> $details
+     * @return array<string,mixed>
+     */
+    private static function redact_audit_details( array $details ): array {
+        $sensitive_keys = array(
+            'account',
+            'payout_account',
+            'full_name',
+            'card',
+            'pan',
+            'cvv',
+            'token',
+            'secret',
+            'password',
+            'pwd',
+            'api_key',
+            'apikey',
+            'encrypted_details',
+            'auth_tag',
+            'iv',
+            'nonce',
+        );
+        foreach ($details as $key => $value) {
+            if (is_array($value)) {
+                $details[ $key ] = self::redact_audit_details($value);
+                continue;
+            }
+            if (in_array(strtolower((string) $key), $sensitive_keys, true)) {
+                $details[ $key ] = '[REDACTED]';
+            }
+        }
+        return $details;
     }
 
     /**
