@@ -161,9 +161,25 @@
         $btn.prop('disabled', true)
             .html('<span class="cb-contact-spinner"></span>Отправка...');
 
+        // iter-30 F-30-003: идемпотентность через request_id (UUID v4).
+        // Один submit-клик → один id. При сетевом ретрае клиент пошлёт тот же id,
+        // и сервер вернёт прежний успешный ответ вместо повторной отправки email.
+        var $form = $('#cb-contact-form');
+        var requestId = $form.data('cbRequestId');
+        if (!requestId) {
+            requestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+                ? crypto.randomUUID()
+                : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                    var r = (Math.random() * 16) | 0;
+                    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+                });
+            $form.data('cbRequestId', requestId);
+        }
+
         var data = {
             action: 'cashback_contact_submit',
             nonce: config.nonce,
+            request_id: requestId,
             contact_name: $('#cb-contact-name').val(),
             contact_email: $('#cb-contact-email').val(),
             contact_subject: $('#cb-contact-subject').val(),
@@ -172,7 +188,6 @@
         };
 
         // Honeypot + timing (если bot-protection.js добавил поля)
-        var $form = $('#cb-contact-form');
         var $hp = $form.find('input[name="cb_website_url"]');
         if ($hp.length) {
             data.cb_website_url = $hp.val();
@@ -188,6 +203,8 @@
                     showMessage(response.data.message, 'success');
                     // Очистить форму
                     $form[0].reset();
+                    // iter-30 F-30-003: сбрасываем request_id, чтобы следующая отправка получила свежий UUID.
+                    $form.removeData('cbRequestId');
                     resetCaptcha();
                 } else {
                     var msg = (response.data && response.data.message) || 'Произошла ошибка.';
