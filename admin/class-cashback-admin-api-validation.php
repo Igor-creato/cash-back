@@ -921,7 +921,11 @@ echo 'style="display:none"';}
         );
 
         if ($wpdb->last_error) {
-            wp_send_json_error(array( 'message' => 'Ошибка сохранения: ' . $wpdb->last_error ));
+            if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging (debug only).
+                error_log('[cashback] api-validation network save: ' . $wpdb->last_error);
+            }
+            wp_send_json_error(array( 'message' => 'Ошибка сохранения настроек. Подробности записаны в журнал.' ));
         }
 
         // Сохраняем credentials если указаны новые
@@ -1173,7 +1177,11 @@ echo 'style="display:none"';}
         );
 
         if ($updated === false || $wpdb->last_error) {
-            wp_send_json_error(array( 'message' => 'Ошибка обновления: ' . $wpdb->last_error ));
+            if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging (debug only).
+                error_log('[cashback] api-validation edit_transaction: ' . $wpdb->last_error);
+            }
+            wp_send_json_error(array( 'message' => 'Ошибка обновления транзакции. Подробности записаны в журнал.' ));
         }
 
         $this->log_audit('edit_transaction', $transaction_id, array(
@@ -1326,7 +1334,11 @@ echo 'style="display:none"';}
             if (strpos($error, 'Duplicate') !== false) {
                 wp_send_json_error(array( 'message' => 'Транзакция уже существует (дубликат uniq_id/partner)' ));
             }
-            wp_send_json_error(array( 'message' => 'Ошибка вставки: ' . $error ));
+            if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging (debug only).
+                error_log('[cashback] api-validation add_transaction: ' . $error);
+            }
+            wp_send_json_error(array( 'message' => 'Ошибка добавления транзакции. Подробности записаны в журнал.' ));
         }
 
         $insert_id = $wpdb->insert_id;
@@ -1415,7 +1427,11 @@ echo 'style="display:none"';}
         );
 
         if ($updated === false || $wpdb->last_error) {
-            wp_send_json_error(array( 'message' => 'Ошибка обновления: ' . $wpdb->last_error ));
+            if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging (debug only).
+                error_log('[cashback] api-validation overwrite_transaction: ' . $wpdb->last_error);
+            }
+            wp_send_json_error(array( 'message' => 'Ошибка обновления транзакции. Подробности записаны в журнал.' ));
         }
 
         $this->log_audit('overwrite_transaction', $local_id, array(
@@ -1813,7 +1829,11 @@ echo 'style="display:none"';}
             $results = $client->check_campaign_statuses($only_slug);
             wp_send_json_success($results);
         } catch (Exception $e) {
-            wp_send_json_error($e->getMessage());
+            if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging (debug only).
+                error_log('[cashback] api-validation check_campaigns: ' . $e->getMessage());
+            }
+            wp_send_json_error('Ошибка проверки кампаний. Подробности записаны в журнал.');
         }
     }
 
