@@ -210,9 +210,11 @@ class HistoryPayout {
 
         $this->apply_payout_filters($where, $params, $filters);
 
+        // iter-29 F-29-001: не фетчим payout_account для user-экрана истории — достаточно masked_details.
+        // Data minimization: plaintext-реквизит не попадает в PHP-память и возможные debug-dump'ы.
         // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where from allowlisted conditions with %s/%d placeholders; array_merge hides actual argument count from sniff.
         return $wpdb->get_results($wpdb->prepare(
-            "SELECT id, reference_id, created_at, total_amount, payout_method, payout_account, masked_details, provider, status
+            "SELECT id, reference_id, created_at, total_amount, payout_method, masked_details, provider, status
              FROM %i
              {$where}
              ORDER BY created_at DESC
@@ -444,16 +446,16 @@ class HistoryPayout {
 
     /**
      * Получает маскированный номер счёта для отображения.
-     * Использует masked_details если доступен, иначе fallback на payout_account.
+     * iter-29 F-29-001: fail-closed — показываем только уже маскированное значение из masked_details.
+     * Если оно отсутствует или класс шифрования не загружен — отображаем «Скрыто»
+     * вместо сырого payout_account.
      */
     private function get_display_account( $payout ): string {
-        if (class_exists('Cashback_Encryption')) {
-            return Cashback_Encryption::get_masked_account(
-                $payout->masked_details ?? null,
-                $payout->payout_account ?? null
-            );
+        $masked = $payout->masked_details ?? null;
+        if (!empty($masked) && class_exists('Cashback_Encryption')) {
+            return Cashback_Encryption::get_masked_account($masked, null);
         }
-        return $payout->payout_account ?? '';
+        return __('Скрыто', 'cashback-plugin');
     }
 
     /**
