@@ -155,6 +155,8 @@
                     var $modal = $('#cashback-broadcast-preview-modal').show();
                     var iframe = document.getElementById('cashback-broadcast-preview-frame');
                     if (iframe) {
+                        // Sandbox без allow-scripts/allow-same-origin — скрипты в preview не исполняются.
+                        iframe.setAttribute('sandbox', '');
                         iframe.setAttribute('srcdoc', response.data.html);
                     }
                 } else {

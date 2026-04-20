@@ -86,8 +86,16 @@
         var $msg = $('#cb-contact-messages');
         $msg.removeClass('cb-msg-success cb-msg-error')
             .addClass(type === 'success' ? 'cb-msg-success' : 'cb-msg-error')
-            .html(text.replace(/\n/g, '<br>'))
-            .show();
+            .empty();
+
+        var lines = String(text == null ? '' : text).split('\n');
+        for (var i = 0; i < lines.length; i++) {
+            if (i > 0) {
+                $msg.append(document.createElement('br'));
+            }
+            $msg.append(document.createTextNode(lines[i]));
+        }
+        $msg.show();
 
         // Scroll to message
         $('html, body').animate({
