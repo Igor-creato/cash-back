@@ -3,6 +3,19 @@
 
     $(document).ready(function() {
 
+        function makeRequestId() {
+            if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+                return window.crypto.randomUUID();
+            }
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                var r = Math.random() * 16 | 0;
+                var v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        var isCreatingTicket = false;
+
         // ========= Переключение вкладок =========
         $('.cashback-support-tab').on('click', function() {
             var tab = $(this).data('tab');
@@ -58,6 +71,10 @@
         $('#support-create-form').on('submit', function(e) {
             e.preventDefault();
 
+            if (isCreatingTicket) {
+                return;
+            }
+
             var subject = $('#support-subject').val().trim();
             var priority = $('#support-priority').val();
             var message = $('#support-message').val().trim();
@@ -92,12 +109,15 @@
                 return;
             }
 
+            isCreatingTicket = true;
+
             var btn = $('#support-submit-btn');
             btn.prop('disabled', true).text('Отправка...');
 
             var fd = new FormData();
             fd.append('action', 'support_create_ticket');
             fd.append('nonce', cashback_support.create_nonce);
+            fd.append('request_id', makeRequestId());
             fd.append('subject', subject);
             fd.append('priority', priority);
             fd.append('message', message);
@@ -153,6 +173,9 @@
                 error: function() {
                     showAlert('support-create-alert', 'error', 'Ошибка при отправке, попробуйте еще раз');
                     btn.prop('disabled', false).text('Отправить');
+                },
+                complete: function() {
+                    isCreatingTicket = false;
                 }
             });
         });
@@ -352,9 +375,9 @@
                 },
                 success: function (response) {
                     if (response.success) {
-                        $('#support-tickets-container').html(response.data.html);
+                        $('#support-tickets-container').html(cashbackSafeHtml(response.data.html));
                         $('#support-pagination').html(
-                            window.CashbackPagination.build(response.data.current_page, response.data.total_pages)
+                            cashbackSafeHtml(window.CashbackPagination.build(response.data.current_page, response.data.total_pages))
                         );
                     }
                 }
