@@ -444,9 +444,10 @@ class Cashback_Support_Admin {
                                 <a href="
                                 <?php
                                 echo esc_url(add_query_arg(array(
-									'page'      => 'cashback-support',
-									'action'    => 'view',
-									'ticket_id' => $ticket->id,
+									'page'       => 'cashback-support',
+									'action'     => 'view',
+									'ticket_id'  => $ticket->id,
+									'view_nonce' => wp_create_nonce('support_view_ticket_' . $ticket->id),
 								), admin_url('admin.php')));
 ?>
 " class="button button-small">
@@ -526,18 +527,28 @@ class Cashback_Support_Admin {
             return;
         }
 
-        // Помечаем сообщения пользователя как прочитанные
-        $wpdb->update(
-            $this->messages_table,
-            array( 'is_read' => 1 ),
-            array(
-				'ticket_id' => $ticket_id,
-				'is_admin'  => 0,
-				'is_read'   => 0,
-			),
-            array( '%d' ),
-            array( '%d', '%d', '%d' )
-        );
+        // iter-27 F-27-001: CSRF-guard. UPDATE is_read — state change, требует nonce,
+        // привязанного к ticket_id. Без валидного nonce тикет рендерится (read-only view),
+        // но пометка «прочитано» не применяется — внешний URL не может
+        // скрытно сбросить непрочитанные сообщения.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Валидируется через wp_verify_nonce ниже, состояние меняется только при $can_mark_read=true.
+        $view_nonce    = isset($_GET['view_nonce']) ? sanitize_text_field(wp_unslash($_GET['view_nonce'])) : '';
+        $can_mark_read = $view_nonce !== '' && (bool) wp_verify_nonce($view_nonce, 'support_view_ticket_' . $ticket_id);
+
+        if ($can_mark_read) {
+            // Помечаем сообщения пользователя как прочитанные
+            $wpdb->update(
+                $this->messages_table,
+                array( 'is_read' => 1 ),
+                array(
+                    'ticket_id' => $ticket_id,
+                    'is_admin'  => 0,
+                    'is_read'   => 0,
+                ),
+                array( '%d' ),
+                array( '%d', '%d', '%d' )
+            );
+        }
 
         // Получаем все сообщения
         $messages = $wpdb->get_results($wpdb->prepare(
