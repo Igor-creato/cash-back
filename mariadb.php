@@ -82,11 +82,18 @@ class Mariadb_Plugin {
         } catch (\Throwable $e) {
             ob_end_clean();
             if (function_exists('wc_get_logger')) {
-                wc_get_logger()->error('Mariadb Plugin Activation Error: ' . $e->getMessage());
+                wc_get_logger()->error('Mariadb Plugin Activation Error', array(
+                    'source' => 'cashback-mariadb',
+                    'error'  => $e->getMessage(),
+                    'file'   => $e->getFile(),
+                    'line'   => $e->getLine(),
+                ));
             }
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('Mariadb Plugin Activation Error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
-            wp_die('Ошибка активации плагина Mariadb: ' . esc_html($e->getMessage()));
+            if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging (debug only).
+                error_log('Mariadb Plugin Activation Error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            }
+            wp_die(esc_html__('Ошибка активации плагина. Подробности записаны в журнал.', 'cashback-plugin'));
         }
     }
 
