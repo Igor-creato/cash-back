@@ -116,11 +116,15 @@ class Cashback_Affiliate_Service {
         ));
 
         $signature = $this->compute_cookie_hmac($payload);
-        $ttl       = Cashback_Affiliate_DB::get_cookie_ttl_days();
-        $expire    = time() + ( $ttl * DAY_IN_SECONDS );
-        $secure    = is_ssl();
-        $path      = COOKIEPATH ?: '/';
-        $domain    = COOKIE_DOMAIN ?: '';
+        if ($signature === '') {
+            // Fail-closed: секрет не сконфигурирован, не выставляем cookie с предсказуемой подписью.
+            return;
+        }
+        $ttl    = Cashback_Affiliate_DB::get_cookie_ttl_days();
+        $expire = time() + ( $ttl * DAY_IN_SECONDS );
+        $secure = is_ssl();
+        $path   = COOKIEPATH ?: '/';
+        $domain = COOKIE_DOMAIN ?: '';
 
         // Безопасные параметры: HttpOnly, SameSite=Lax
         setcookie(self::COOKIE_NAME, $payload, array(
@@ -161,9 +165,9 @@ class Cashback_Affiliate_Service {
         // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- HMAC signature value, hash_equals-compared as-is; sanitation would alter bytes.
         $signature = wp_unslash($_COOKIE[ self::COOKIE_SIG_NAME ]);
 
-        // Верификация HMAC
+        // Верификация HMAC (fail-closed: пустой expected означает отсутствие секрета).
         $expected = self::compute_cookie_hmac_static($payload);
-        if (!hash_equals($expected, $signature)) {
+        if ($expected === '' || !hash_equals($expected, $signature)) {
             return null;
         }
 
@@ -287,7 +291,11 @@ class Cashback_Affiliate_Service {
     }
 
     private static function compute_cookie_hmac_static( string $payload ): string {
-        $key = defined('CB_ENCRYPTION_KEY') ? CB_ENCRYPTION_KEY : 'fallback-not-secure';
+        $key = defined('CB_ENCRYPTION_KEY') ? (string) CB_ENCRYPTION_KEY : '';
+        if ($key === '') {
+            // Fail-closed: секрет не сконфигурирован — подпись не генерируется.
+            return '';
+        }
         return hash_hmac('sha256', $payload, $key);
     }
 
