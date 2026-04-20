@@ -192,22 +192,27 @@ class Cashback_Social_Provider_Vkid extends Cashback_Social_Provider_Abstract {
         $data = $response['body'];
 
         if ($response['status'] < 200 || $response['status'] >= 300 || empty($data['access_token'])) {
-            $err  = isset($data['error']) ? (string) $data['error'] : 'http_' . $response['status'];
-            $desc = isset($data['error_description']) ? (string) $data['error_description'] : '';
+            $err_raw = isset($data['error']) ? (string) $data['error'] : 'http_' . $response['status'];
+            $err     = sanitize_key($err_raw);
+            if ($err === '') {
+                $err = 'http_' . (string) $response['status'];
+            }
+            $desc_raw  = isset($data['error_description']) ? (string) $data['error_description'] : '';
+            $desc_safe = wp_strip_all_tags($desc_raw);
+            $desc_safe = function_exists('mb_substr') ? mb_substr($desc_safe, 0, 120) : substr($desc_safe, 0, 120);
 
             Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
                 'provider' => $this->get_id(),
                 'stage'    => 'exchange_code',
                 'status'   => $response['status'],
                 'error'    => $err,
-                'desc'     => $desc,
+                'desc'     => $desc_safe,
             ));
 
             $message = sprintf(
-                'VK ID token exchange failed (%s): %s %s',
+                'VK ID token exchange failed (%s): %s',
                 (string) $response['status'],
-                $err,
-                $desc
+                $err
             );
             // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Server-side exception, caught by REST router and not rendered as HTML.
             throw new \RuntimeException($message);
@@ -269,22 +274,27 @@ class Cashback_Social_Provider_Vkid extends Cashback_Social_Provider_Abstract {
         $user = isset($data['user']) && is_array($data['user']) ? $data['user'] : array();
 
         if ($response['status'] < 200 || $response['status'] >= 300 || empty($user)) {
-            $err  = isset($data['error']) ? (string) $data['error'] : 'http_' . $response['status'];
-            $desc = isset($data['error_description']) ? (string) $data['error_description'] : '';
+            $err_raw = isset($data['error']) ? (string) $data['error'] : 'http_' . $response['status'];
+            $err     = sanitize_key($err_raw);
+            if ($err === '') {
+                $err = 'http_' . (string) $response['status'];
+            }
+            $desc_raw  = isset($data['error_description']) ? (string) $data['error_description'] : '';
+            $desc_safe = wp_strip_all_tags($desc_raw);
+            $desc_safe = function_exists('mb_substr') ? mb_substr($desc_safe, 0, 120) : substr($desc_safe, 0, 120);
 
             Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
                 'provider' => $this->get_id(),
                 'stage'    => 'fetch_user_info',
                 'status'   => $response['status'],
                 'error'    => $err,
-                'desc'     => $desc,
+                'desc'     => $desc_safe,
             ));
 
             $message = sprintf(
-                'VK ID user_info failed (%s): %s %s',
+                'VK ID user_info failed (%s): %s',
                 (string) $response['status'],
-                $err,
-                $desc
+                $err
             );
             // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Server-side exception, caught by REST router and not rendered as HTML.
             throw new \RuntimeException($message);
