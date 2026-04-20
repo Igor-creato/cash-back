@@ -46,7 +46,7 @@ class Cashback_Social_Auth_Audit {
         $payload = array(
             'event' => $event,
             'ts'    => gmdate('c'),
-        ) + $context;
+        ) + self::redact_context($context);
 
         $json = wp_json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($json === false) {
@@ -55,5 +55,49 @@ class Cashback_Social_Auth_Audit {
 
         // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin audit logging.
         error_log('[cashback-social] ' . $json);
+    }
+
+    /**
+     * Редактировать чувствительные поля в аудит-контексте перед записью в лог.
+     * OAuth-секреты (code/state/токены/cookie), PII (email/recipient/phone,
+     * user_agent целиком) заменяются на маркер `[redacted]`. Рекурсивно.
+     *
+     * @param array<string, mixed> $context
+     * @return array<string, mixed>
+     */
+    private static function redact_context( array $context ): array {
+        static $sensitive_keys = array(
+            'code',
+            'state',
+            'cookie',
+            'token',
+            'access_token',
+            'refresh_token',
+            'id_token',
+            'email',
+            'recipient',
+            'user_email',
+            'phone',
+            'user_agent',
+            'password',
+            'secret',
+            'api_key',
+            'authorization',
+            'auth_tag',
+            'iv',
+            'nonce',
+        );
+
+        foreach ($context as $key => $value) {
+            if (is_string($key) && in_array(strtolower($key), $sensitive_keys, true)) {
+                $context[ $key ] = '[redacted]';
+                continue;
+            }
+            if (is_array($value)) {
+                $context[ $key ] = self::redact_context($value);
+            }
+        }
+
+        return $context;
     }
 }
