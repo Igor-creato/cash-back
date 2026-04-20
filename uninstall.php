@@ -139,17 +139,36 @@ function cashback_plugin_uninstall(): void {
     $upload_dir  = wp_upload_dir();
     $support_dir = $upload_dir['basedir'] . '/cashback-support';
     if (is_dir($support_dir)) {
-        $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($support_dir, RecursiveDirectoryIterator::SKIP_DOTS),
-            RecursiveIteratorIterator::CHILD_FIRST
-        );
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence during uninstall cleanup; missing/locked entries are non-fatal.
-                @rmdir($file->getRealPath());
-            } else {
-                // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence during uninstall cleanup; missing/locked entries are non-fatal.
-                @unlink($file->getRealPath());
+        // Safety: удаляем только то, что физически лежит внутри $support_dir;
+        // symlink/junction не следуем по target (удаляем саму ссылку по pathname).
+        $support_root = realpath($support_dir);
+        if ($support_root !== false) {
+            $support_root_prefix = rtrim($support_root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+            $iterator            = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($support_dir, RecursiveDirectoryIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::CHILD_FIRST
+            );
+            foreach ($iterator as $file) {
+                if ($file->isLink()) {
+                    // Удаляем саму ссылку, не её target.
+                    // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence during uninstall cleanup; missing/locked entries are non-fatal.
+                    @unlink($file->getPathname());
+                    continue;
+                }
+
+                $resolved = $file->getRealPath();
+                if ($resolved === false || strpos($resolved, $support_root_prefix) !== 0) {
+                    // Путь выходит за пределы support-каталога — пропускаем.
+                    continue;
+                }
+
+                if ($file->isDir()) {
+                    // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence during uninstall cleanup; missing/locked entries are non-fatal.
+                    @rmdir($resolved);
+                } else {
+                    // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence during uninstall cleanup; missing/locked entries are non-fatal.
+                    @unlink($resolved);
+                }
             }
         }
         // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Intentional silence during uninstall cleanup; missing/locked entries are non-fatal.
