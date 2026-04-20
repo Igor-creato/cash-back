@@ -62,13 +62,13 @@
       '</p>' +
       '<div class="wc-affiliate-modal-actions">' +
       '<a href="' +
-      redirectUrl +
-      '" target="_blank" rel="nofollow" class="wc-affiliate-btn wc-affiliate-btn-primary" id="wc-affiliate-continue">' +
-      '\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C \u0431\u0435\u0437 \u0430\u0432\u0442\u043E\u0440\u0438\u0437\u0430\u0446\u0438\u0438</a>' +
-      '<a href="' +
       wcAffiliateParams.loginUrl +
       '" class="wc-affiliate-btn wc-affiliate-btn-secondary" id="wc-affiliate-cancel">' +
       '\u0410\u0432\u0442\u043E\u0440\u0438\u0437\u043E\u0432\u0430\u0442\u044C\u0441\u044F \u0438\u043B\u0438 \u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C\u0441\u044F</a>' +
+      '<a href="' +
+      redirectUrl +
+      '" target="_blank" rel="nofollow" class="wc-affiliate-btn wc-affiliate-btn-primary" id="wc-affiliate-continue">' +
+      '\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C \u0431\u0435\u0437 \u0430\u0432\u0442\u043E\u0440\u0438\u0437\u0430\u0446\u0438\u0438</a>' +
       '</div></div></div>';
 
     $('body').append(modal);
