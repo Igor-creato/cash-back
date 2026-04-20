@@ -234,9 +234,12 @@ class Cashback_Contact_Form {
             }
         }
 
-        // Nonce (для залогиненных — проверяем, для гостей — мягко)
+        // iter-30 F-30-001: nonce обязателен для всех (включая гостей).
+        // wp_create_nonce для неавторизованных использует анонимный session-cookie, поэтому
+        // валидный nonce у guest'а есть. Раньше проверка делалась только для залогиненных —
+        // фронтальный CSRF-вектор для гостевой контактной формы закрыт.
         $nonce_valid = check_ajax_referer('cashback_contact_form_nonce', 'nonce', false);
-        if (is_user_logged_in() && !$nonce_valid) {
+        if (!$nonce_valid) {
             wp_send_json_error(array(
                 'code'    => 'error',
                 'message' => 'Сессия истекла. Обновите страницу и попробуйте снова.',
@@ -279,6 +282,27 @@ class Cashback_Contact_Form {
             ));
         }
 
+        // iter-30 F-30-003: идемпотентность по request_id (UUID v4/v7 от клиента).
+        // Повторная доставка того же POST (сетевой ретрай, двойной клик) возвращает прежний
+        // успешный ответ без повторной отправки email администратору. request_id опционален —
+        // клиенты без поддержки идемпотентности получают прежнее поведение (без дедупликации).
+        $request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $raw_request_id = sanitize_text_field(wp_unslash($_POST['request_id']));
+            if ((bool) preg_match('/^[a-f0-9]{8}-?[a-f0-9]{4}-?[a-f0-9]{4}-?[a-f0-9]{4}-?[a-f0-9]{12}$/i', $raw_request_id)) {
+                $request_id = strtolower(str_replace('-', '', $raw_request_id));
+            }
+        }
+        $idem_key = '';
+        if ($request_id !== '') {
+            $idem_key = 'cb_contact_idem_' . $request_id;
+            if (get_transient($idem_key) !== false) {
+                wp_send_json_success(array(
+                    'message' => 'Спасибо! Ваше сообщение успешно отправлено.',
+                ));
+            }
+        }
+
         // Отправка email через брендированный шаблон (Cashback_Email_Sender)
         if (!class_exists('Cashback_Email_Sender') || !class_exists('Cashback_Email_Builder')) {
             wp_send_json_error(array(
@@ -318,6 +342,11 @@ class Cashback_Contact_Form {
 
         // Увеличиваем счётчик rate limit
         set_transient($rate_key, $rate_count + 1, self::RATE_WINDOW);
+
+        // iter-30 F-30-003: фиксируем результат для идемпотентного ретрая (TTL = rate-window).
+        if ($idem_key !== '') {
+            set_transient($idem_key, 1, HOUR_IN_SECONDS);
+        }
 
         wp_send_json_success(array(
             'message' => 'Спасибо! Ваше сообщение успешно отправлено.',
