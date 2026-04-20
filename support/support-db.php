@@ -857,22 +857,37 @@ class Cashback_Support_DB {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_support_tickets';
 
-        // Собираем ID тикетов для удаления файлов с диска
+        // iter-27 F-27-003: сначала DB-delete в транзакции под row-lock, затем удаление
+        // файлов с диска. Раньше файлы удалялись до DELETE — при сбое DB тикет оставался
+        // в БД без вложений (потеря доказательной базы по спорам/выплатам).
+        $wpdb->query('START TRANSACTION');
+
         $ticket_ids = $wpdb->get_col($wpdb->prepare(
-            "SELECT id FROM %i WHERE status = 'closed' AND closed_at IS NOT NULL AND closed_at < DATE_SUB(NOW(), INTERVAL 1 MONTH)",
+            "SELECT id FROM %i WHERE status = 'closed' AND closed_at IS NOT NULL AND closed_at < DATE_SUB(NOW(), INTERVAL 1 MONTH) FOR UPDATE",
             $table
         ));
 
-        if (!empty($ticket_ids)) {
-            foreach ($ticket_ids as $tid) {
-                self::delete_ticket_files((int) $tid);
-            }
+        if (empty($ticket_ids)) {
+            $wpdb->query('COMMIT');
+            return 0;
         }
 
         $deleted = $wpdb->query($wpdb->prepare(
             "DELETE FROM %i WHERE status = 'closed' AND closed_at IS NOT NULL AND closed_at < DATE_SUB(NOW(), INTERVAL 1 MONTH)",
             $table
         ));
+
+        if ($deleted === false) {
+            $wpdb->query('ROLLBACK');
+            return 0;
+        }
+
+        $wpdb->query('COMMIT');
+
+        // Файлы удаляем только после подтверждённого COMMIT.
+        foreach ($ticket_ids as $tid) {
+            self::delete_ticket_files((int) $tid);
+        }
 
         return max(0, (int) $deleted);
     }
