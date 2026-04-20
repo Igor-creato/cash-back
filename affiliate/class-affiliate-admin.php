@@ -973,23 +973,10 @@ class Cashback_Affiliate_Admin {
             wp_send_json_error(array( 'message' => 'Не указан ID начисления.' ));
         }
 
-        // Получаем текущую запись
-        $accrual = $wpdb->get_row($wpdb->prepare(
-            'SELECT * FROM %i WHERE id = %d LIMIT 1',
-            $accruals_table, $accrual_id
-        ), ARRAY_A);
-
-        if (!$accrual) {
-            wp_send_json_error(array( 'message' => 'Начисление не найдено.' ));
-        }
-
-        // Запрет редактирования финального статуса
-        if ($accrual['status'] === 'available') {
-            wp_send_json_error(array( 'message' => 'Начисление со статусом «Зачислен на баланс» нельзя редактировать.' ));
-        }
-
+        // Предварительная валидация POST-входа (до транзакции)
         $update_data    = array();
         $update_formats = array();
+        $new_status     = null;
 
         // Ставка
         if (isset($_POST['commission_rate'])) {
@@ -1011,9 +998,31 @@ class Cashback_Affiliate_Admin {
             $update_formats[]                 = '%s';
         }
 
-        // Статус (только для pending/declined — можно менять друг на друга)
         if (isset($_POST['status'])) {
-            $new_status          = sanitize_text_field(wp_unslash($_POST['status']));
+            $new_status = sanitize_text_field(wp_unslash($_POST['status']));
+        }
+
+        // Атомарный read-modify-write под row-lock (iter-23 F-23-001)
+        $wpdb->query('START TRANSACTION');
+
+        $accrual = $wpdb->get_row($wpdb->prepare(
+            'SELECT * FROM %i WHERE id = %d FOR UPDATE',
+            $accruals_table, $accrual_id
+        ), ARRAY_A);
+
+        if (!$accrual) {
+            $wpdb->query('ROLLBACK');
+            wp_send_json_error(array( 'message' => 'Начисление не найдено.' ));
+        }
+
+        // Запрет редактирования финального статуса
+        if ($accrual['status'] === 'available') {
+            $wpdb->query('ROLLBACK');
+            wp_send_json_error(array( 'message' => 'Начисление со статусом «Зачислен на баланс» нельзя редактировать.' ));
+        }
+
+        // Статус (только для pending/declined — можно менять друг на друга)
+        if ($new_status !== null) {
             $allowed_transitions = array(
                 'pending'  => array( 'pending', 'declined' ),
                 'declined' => array( 'pending', 'declined' ),
@@ -1022,6 +1031,7 @@ class Cashback_Affiliate_Admin {
             );
             $allowed             = $allowed_transitions[ $accrual['status'] ] ?? array();
             if (!in_array($new_status, $allowed, true)) {
+                $wpdb->query('ROLLBACK');
                 wp_send_json_error(array( 'message' => 'Недопустимый переход статуса.' ));
             }
             if ($new_status !== $accrual['status']) {
@@ -1031,6 +1041,7 @@ class Cashback_Affiliate_Admin {
         }
 
         if (empty($update_data)) {
+            $wpdb->query('ROLLBACK');
             wp_send_json_error(array( 'message' => 'Нет данных для обновления.' ));
         }
 
@@ -1043,8 +1054,16 @@ class Cashback_Affiliate_Admin {
         );
 
         if ($updated === false) {
-            wp_send_json_error(array( 'message' => 'Ошибка обновления: ' . $wpdb->last_error ));
+            $db_err = $wpdb->last_error;
+            $wpdb->query('ROLLBACK');
+            if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- debug-only diagnostic.
+                error_log('[Cashback Affiliate] edit_accrual DB error: ' . $db_err);
+            }
+            wp_send_json_error(array( 'message' => 'Ошибка обновления.' ));
         }
+
+        $wpdb->query('COMMIT');
 
         // Аудит-лог
         if (class_exists('Cashback_Encryption')) {
