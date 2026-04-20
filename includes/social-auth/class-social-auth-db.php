@@ -265,19 +265,48 @@ class Cashback_Social_Auth_DB {
     }
 
     /**
-     * Удалить связку (каскадно удалит связанный токен через отдельный вызов Token_Store).
+     * Удалить связку и каскадно связанный refresh_token в единой транзакции.
+     * Вызывающие не обязаны отдельно звать Token_Store::delete() — каскад
+     * гарантирован здесь, чтобы после unlink не оставалось orphaned секретов.
      */
     public static function delete_link( int $link_id ): bool {
         global $wpdb;
 
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Write to plugin-owned table.
-        $ok = $wpdb->delete(
-            self::table_links(),
-            array( 'id' => $link_id ),
-            array( '%d' )
-        );
+        if ($link_id <= 0) {
+            return false;
+        }
 
-        return (bool) $ok;
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Transaction boundary.
+        $wpdb->query('START TRANSACTION');
+
+        try {
+            if (class_exists('Cashback_Social_Auth_Token_Store')) {
+                Cashback_Social_Auth_Token_Store::delete($link_id);
+            }
+
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Write to plugin-owned table.
+            $ok = $wpdb->delete(
+                self::table_links(),
+                array( 'id' => $link_id ),
+                array( '%d' )
+            );
+
+            if ($ok === false) {
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Rollback.
+                $wpdb->query('ROLLBACK');
+                return false;
+            }
+
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Commit.
+            $wpdb->query('COMMIT');
+            return (bool) $ok;
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Rollback on error.
+            $wpdb->query('ROLLBACK');
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[cashback-social] delete_link failed: ' . $e->getMessage());
+            return false;
+        }
     }
 
     // =========================================================================
@@ -371,19 +400,25 @@ class Cashback_Social_Auth_DB {
             return null;
         }
 
-        // Пометить как потреблённый атомарно (UPDATE ... WHERE consumed_at IS NULL).
+        // Пометить как потреблённый атомарно. expires_at добавлен в WHERE, чтобы
+        // закрыть TOCTOU между SELECT-проверкой истечения и UPDATE: если токен
+        // истёк между проверкой и записью, UPDATE не выполнится.
+        // expires_at хранится в UTC (см. save_pending → gmdate), поэтому и
+        // сравнение ведём в UTC.
+        $now_utc = gmdate('Y-m-d H:i:s');
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Atomic mark-consumed.
         $updated = $wpdb->query(
             $wpdb->prepare(
                 // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix.
-                "UPDATE {$table} SET consumed_at = %s WHERE id = %d AND consumed_at IS NULL",
+                "UPDATE {$table} SET consumed_at = %s WHERE id = %d AND consumed_at IS NULL AND expires_at >= %s",
                 current_time('mysql'),
-                (int) $row['id']
+                (int) $row['id'],
+                $now_utc
             )
         );
 
         if (!$updated) {
-            // Кто-то другой уже потребил запись между SELECT и UPDATE.
+            // Кто-то другой уже потребил запись между SELECT и UPDATE, либо токен успел истечь.
             return null;
         }
 
