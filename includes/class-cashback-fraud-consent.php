@@ -26,10 +26,11 @@ if (!defined('ABSPATH')) {
  */
 class Cashback_Fraud_Consent {
 
-    public const META_KEY_CONSENT_AT      = 'cashback_fraud_consent_at';
-    public const META_KEY_CONSENT_VERSION = 'cashback_fraud_consent_version';
-    public const META_KEY_CONSENT_IP      = 'cashback_fraud_consent_ip';
-    public const CURRENT_CONSENT_VERSION  = '1.0';
+    public const META_KEY_CONSENT_AT           = 'cashback_fraud_consent_at';
+    public const META_KEY_CONSENT_VERSION      = 'cashback_fraud_consent_version';
+    public const META_KEY_CONSENT_IP           = 'cashback_fraud_consent_ip';
+    public const META_KEY_CONSENT_WITHDRAWN_AT = 'cashback_fraud_consent_withdrawn_at';
+    public const CURRENT_CONSENT_VERSION       = '1.0';
 
     public const OPTION_REQUIRED_AFTER = 'cashback_fraud_consent_required_after';
     public const POST_FIELD            = 'cashback_fraud_consent';
@@ -67,6 +68,14 @@ class Cashback_Fraud_Consent {
         if (class_exists('Cashback_Fraud_Settings')
             && !Cashback_Fraud_Settings::is_consent_required()) {
             return true;
+        }
+
+        // Явный отзыв consent имеет приоритет над legacy-fallback'ом по дате регистрации:
+        // пользователь, зарегистрированный до required_after и отозвавший согласие,
+        // не должен продолжать считаться согласившимся.
+        $withdrawn_at = (string) get_user_meta($user_id, self::META_KEY_CONSENT_WITHDRAWN_AT, true);
+        if ($withdrawn_at !== '') {
+            return false;
         }
 
         $consent_at = (string) get_user_meta($user_id, self::META_KEY_CONSENT_AT, true);
@@ -117,6 +126,8 @@ class Cashback_Fraud_Consent {
             return;
         }
 
+        // При повторной выдаче согласия снимаем флаг отзыва, иначе has_consent() продолжит возвращать false.
+        delete_user_meta($user_id, self::META_KEY_CONSENT_WITHDRAWN_AT);
         update_user_meta($user_id, self::META_KEY_CONSENT_AT, current_time('mysql'));
         update_user_meta($user_id, self::META_KEY_CONSENT_VERSION, $version);
         update_user_meta($user_id, self::META_KEY_CONSENT_IP, self::sanitize_ip($ip));
@@ -130,6 +141,9 @@ class Cashback_Fraud_Consent {
         if ($user_id <= 0) {
             return;
         }
+        // Явный маркер отзыва фиксируем до удаления meta — иначе legacy-пользователь
+        // (зарегистрированный до required_after) продолжил бы считаться согласившимся.
+        update_user_meta($user_id, self::META_KEY_CONSENT_WITHDRAWN_AT, current_time('mysql'));
         delete_user_meta($user_id, self::META_KEY_CONSENT_AT);
         delete_user_meta($user_id, self::META_KEY_CONSENT_VERSION);
         delete_user_meta($user_id, self::META_KEY_CONSENT_IP);
