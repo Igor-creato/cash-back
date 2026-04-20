@@ -4,6 +4,17 @@ jQuery(document).ready(function($) {
         return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
     }
 
+    function makeRequestId() {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            return window.crypto.randomUUID();
+        }
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+            var r = Math.random() * 16 | 0;
+            var v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+
     // Обработка клика по кнопке "Редактировать"
     $('.edit-btn').on('click', function() {
         var row = $(this).closest('tr');
@@ -39,12 +50,15 @@ jQuery(document).ready(function($) {
 
     // Обработка клика по кнопке "Сохранить"
     $('.save-btn').on('click', function() {
-        var row = $(this).closest('tr');
+        var $saveBtn = $(this);
+        if ($saveBtn.prop('disabled')) return;
+        var row = $saveBtn.closest('tr');
         var id = row.data('id');
         var data = {
             'action': 'update_bank',
             'id': id,
-            'nonce': cashbackBanksData.updateNonce
+            'nonce': cashbackBanksData.updateNonce,
+            'request_id': makeRequestId()
         };
 
         row.find('.edit-input').each(function() {
@@ -52,6 +66,8 @@ jQuery(document).ready(function($) {
             var field = input.data('field');
             data[field] = input.val();
         });
+
+        $saveBtn.prop('disabled', true);
 
         $.post(ajaxurl, data, function(response) {
             if (response.success) {
@@ -75,8 +91,10 @@ jQuery(document).ready(function($) {
                     $('.notice-success').fadeOut().remove();
                 }, 3000);
             } else {
-                alert('Ошибка при обновлении банка: ' + response.data.message);
+                alert('Ошибка при обновлении банка: ' + (response.data && response.data.message ? response.data.message : 'неизвестная ошибка'));
             }
+        }).always(function() {
+            $saveBtn.prop('disabled', false);
         });
     });
 
@@ -103,15 +121,22 @@ jQuery(document).ready(function($) {
     $('#add-bank').on('submit', function(e) {
         e.preventDefault();
 
+        var $form = $(this);
+        var $submitBtn = $form.find('input[type="submit"], button[type="submit"]');
+        if ($submitBtn.prop('disabled')) return;
+
         var formData = {
             'action': 'add_bank',
             'nonce': cashbackBanksData.addNonce,
+            'request_id': makeRequestId(),
             'bank_code': $('#bank_code').val(),
             'name': $('#name').val(),
             'short_name': $('#short_name').val(),
             'is_active': $('#is_active').val(),
             'sort_order': $('#sort_order').val()
         };
+
+        $submitBtn.prop('disabled', true);
 
         $.post(ajaxurl, formData, function(response) {
             if (response.success) {
@@ -128,7 +153,10 @@ jQuery(document).ready(function($) {
                 $('html, body').animate({
                     scrollTop: $('.bank-add-error').offset().top - 50
                 }, 300);
+                $submitBtn.prop('disabled', false);
             }
+        }).fail(function() {
+            $submitBtn.prop('disabled', false);
         });
     });
 });
