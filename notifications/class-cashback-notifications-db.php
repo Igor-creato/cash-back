@@ -171,9 +171,31 @@ class Cashback_Notifications_DB {
      * @param array<string,bool> $prefs   [notification_type => enabled]
      */
     public static function save_preferences( int $user_id, array $prefs ): void {
+        // iter-25 F-25-002: all-or-nothing сохранение набора предпочтений.
+        // Без транзакции частичный сбой оставлял бы смешанное состояние флагов.
+        global $wpdb;
+
+        $wpdb->query('START TRANSACTION');
+        $table = $wpdb->prefix . 'cashback_notification_preferences';
+
         foreach ($prefs as $type => $enabled) {
-            self::set_preference($user_id, $type, $enabled);
+            $result = $wpdb->query( $wpdb->prepare(
+                'INSERT INTO %i (user_id, notification_type, enabled)
+                 VALUES (%d, %s, %d)
+                 ON DUPLICATE KEY UPDATE enabled = VALUES(enabled)',
+                $table,
+                $user_id,
+                $type,
+                $enabled ? 1 : 0
+            ) );
+
+            if ($result === false) {
+                $wpdb->query('ROLLBACK');
+                return;
+            }
         }
+
+        $wpdb->query('COMMIT');
     }
 
     /**
