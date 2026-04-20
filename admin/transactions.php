@@ -421,6 +421,24 @@ class Cashback_Transactions_Admin {
                 return;
             }
 
+            // iter-28 F-28-002: проверяем state-machine переход через общий валидатор
+            // (такой же контур используется в admin-api-validation). MariaDB-trigger
+            // валидирует переходы на уровне БД как fallback, но раннее обнаружение
+            // в PHP даёт понятное сообщение оператору и избегает «DB error».
+            if (isset($update_data['order_status'])
+                && class_exists('Cashback_Trigger_Fallbacks')
+                && (string) $update_data['order_status'] !== (string) $current['order_status']) {
+                $validation = Cashback_Trigger_Fallbacks::validate_status_transition(
+                    (string) $current['order_status'],
+                    (string) $update_data['order_status']
+                );
+                if ($validation !== true) {
+                    $wpdb->query('ROLLBACK');
+                    wp_send_json_error(array( 'message' => $validation ));
+                    return;
+                }
+            }
+
             $result = $wpdb->update(
                 $table_name,
                 $update_data,

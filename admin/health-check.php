@@ -138,29 +138,50 @@ class Cashback_Health_Check {
         $table_requests = $wpdb->prefix . 'cashback_payout_requests';
         $issues         = array();
 
-        // Пользователи с pending_balance > 0, но без активных заявок
+        // iter-28 F-28-003: сверяем pending_balance пользователя с суммой активных
+        // заявок на выплату. Раньше ловили только «pending>0 и заявок нет»; теперь
+        // детектируем любой drift (pending != sum(active payouts)), включая случаи
+        // pending=1000 при активных заявках на 700 или 1300.
         $mismatched = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT b.user_id, b.pending_balance
+                "SELECT b.user_id,
+                        b.pending_balance,
+                        COALESCE(SUM(CASE WHEN r.status IN ('waiting','processing','needs_retry')
+                                          THEN r.total_amount ELSE 0 END), 0) AS payout_sum
                  FROM %i b
-                 LEFT JOIN %i r
-                    ON b.user_id = r.user_id AND r.status IN ('waiting', 'processing', 'needs_retry')
-                 WHERE b.pending_balance > 0
-                 AND r.id IS NULL",
+                 LEFT JOIN %i r ON b.user_id = r.user_id
+                 GROUP BY b.user_id, b.pending_balance
+                 HAVING CAST(b.pending_balance AS DECIMAL(18,2)) <> CAST(payout_sum AS DECIMAL(18,2))",
                 $table_balance,
                 $table_requests
             )
         );
 
         foreach ($mismatched as $row) {
-            $issues[] = array(
-                'severity' => 'WARNING',
-                'type'     => 'pending_without_payout',
-                'message'  => sprintf(
+            $pending_f = (float) $row->pending_balance;
+            $payout_f  = (float) $row->payout_sum;
+            if ($payout_f === 0.0 && $pending_f > 0.0) {
+                $msg  = sprintf(
                     'user_id=%d имеет pending_balance=%.2f, но нет активных заявок на выплату',
                     $row->user_id,
-                    $row->pending_balance
-                ),
+                    $pending_f
+                );
+                $type = 'pending_without_payout';
+            } else {
+                $msg  = sprintf(
+                    'user_id=%d: pending_balance=%.2f, сумма активных заявок=%.2f (расхождение %.2f)',
+                    $row->user_id,
+                    $pending_f,
+                    $payout_f,
+                    $pending_f - $payout_f
+                );
+                $type = 'balance_payout_sum_mismatch';
+            }
+
+            $issues[] = array(
+                'severity' => 'WARNING',
+                'type'     => $type,
+                'message'  => $msg,
             );
         }
 
