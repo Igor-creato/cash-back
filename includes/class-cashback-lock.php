@@ -108,14 +108,9 @@ class Cashback_Lock {
      * @return bool true если lock активен
      */
     public static function is_lock_active(): bool {
-        // Быстрая проверка через wp_options (не требует GET_LOCK)
-        $lock_data = get_option(self::OPTION_KEY);
-
-        if (empty($lock_data) || !is_array($lock_data)) {
-            return false;
-        }
-
-        // Дополнительно проверяем через MySQL IS_FREE_LOCK — он является источником правды
+        // MySQL IS_FREE_LOCK — первичный источник правды; wp_options хранит только метаданные видимости.
+        // Если бы wp_options проверялось первым, пустая/потерянная запись давала бы false,
+        // пока MySQL-lock реально удерживается — это fail-open и пропуск параллельных операций с балансом.
         global $wpdb;
         $lock_name = self::get_prefixed_lock_name();
         $is_free   = $wpdb->get_var($wpdb->prepare('SELECT IS_FREE_LOCK(%s)', $lock_name));
@@ -129,7 +124,8 @@ class Cashback_Lock {
 
         // MySQL lock занят. Если TTL истёк — пытаем cleanup (для wp_options),
         // но lock всё ещё считаем активным т.к. MySQL его держит
-        if (isset($lock_data['expires_at']) && time() > (int) $lock_data['expires_at']) {
+        $lock_data = get_option(self::OPTION_KEY);
+        if (is_array($lock_data) && isset($lock_data['expires_at']) && time() > (int) $lock_data['expires_at']) {
             self::cleanup_stale_lock();
         }
 
