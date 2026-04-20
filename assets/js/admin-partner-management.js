@@ -23,9 +23,9 @@ jQuery(document).ready(function($) {
                 selectHtml += '</select>';
                 cell.html(selectHtml);
             } else if (field === 'sort_order') {
-                cell.html('<input type="number" class="edit-input" data-field="' + field + '" value="' + currentValue + '" min="0" style="width:100%;box-sizing:border-box;" />');
+                cell.html('<input type="number" class="edit-input" data-field="' + field + '" value="' + escapeHtml(currentValue) + '" min="0" style="width:100%;box-sizing:border-box;" />');
             } else {
-                cell.html('<input type="text" class="edit-input" data-field="' + field + '" value="' + currentValue + '" style="width:100%;box-sizing:border-box;" />');
+                cell.html('<input type="text" class="edit-input" data-field="' + field + '" value="' + escapeHtml(currentValue) + '" style="width:100%;box-sizing:border-box;" />');
             }
         });
 
@@ -117,8 +117,9 @@ jQuery(document).ready(function($) {
                 window.location.href = baseUrl + '&message=added';
             } else {
                 $('.notice-error.partner-add-error').remove();
-                var errorHtml = '<div class="notice notice-error is-dismissible partner-add-error"><p>' + response.data.message + '</p></div>';
-                $('#add-partner-form').before(errorHtml);
+                var $notice = $('<div>', { 'class': 'notice notice-error is-dismissible partner-add-error' })
+                    .append($('<p>').text((response.data && response.data.message) ? response.data.message : 'Ошибка'));
+                $('#add-partner-form').before($notice);
                 $('html, body').animate({
                     scrollTop: $('.partner-add-error').offset().top - 50
                 }, 300);
@@ -317,8 +318,10 @@ jQuery(document).ready(function($) {
     // Уведомление для вкладки параметров
     function showParamsNotice(type, message) {
         $('.params-notice').remove();
-        var html = '<div class="notice notice-' + type + ' is-dismissible params-notice"><p>' + message + '</p></div>';
-        $('#network-params-form').before(html);
+        var safeType = type === 'success' ? 'success' : 'error';
+        var $notice = $('<div>', { 'class': 'notice notice-' + safeType + ' is-dismissible params-notice' })
+            .append($('<p>').text(message == null ? '' : String(message)));
+        $('#network-params-form').before($notice);
         setTimeout(function() {
             $('.params-notice').fadeOut().remove();
         }, 3000);

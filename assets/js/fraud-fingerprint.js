@@ -167,9 +167,9 @@
 
             if (!id) {
                 id = generateUuidV4();
-                dbg('cb_fp: generated new device_id', id);
+                dbg('cb_fp: generated new device_id');
             } else {
-                dbg('cb_fp: restored device_id', id);
+                dbg('cb_fp: restored device_id');
             }
 
             // Sync во все три хранилища (восстановление из любого источника на следующий визит).
@@ -192,12 +192,12 @@
             var dynImport = new Function('u', 'return import(u)');
             return dynImport(FP_CDN).then(function (mod) {
                 return mod && (mod.default || mod);
-            }).catch(function (err) {
-                dbg('cb_fp: FingerprintJS CDN load failed', err);
+            }).catch(function () {
+                dbg('cb_fp: FingerprintJS CDN load failed');
                 return null;
             });
         } catch (e) {
-            dbg('cb_fp: dynamic import unsupported', e);
+            dbg('cb_fp: dynamic import unsupported');
             return Promise.resolve(null);
         }
     }
@@ -316,18 +316,20 @@
                         confidence: confidence
                     };
                 });
-            }).catch(function (err) {
-                dbg('cb_fp: FingerprintJS get() failed', err);
+            }).catch(function () {
+                dbg('cb_fp: FingerprintJS get() failed');
                 return { device_id: deviceId, fingerprint_hash: legacyHash };
             });
         }).then(function (payload) {
             return sendToServer(payload);
-        }).then(function () {
+        }).then(function (response) {
+            if (!response || !response.ok) {
+                throw new Error('fingerprint submit failed');
+            }
             sessionStorage.setItem('cb_fp_sent', '1');
-        }).catch(function (err) {
-            dbg('cb_fp: pipeline failed', err);
-            // Set the flag anyway to avoid a busy retry loop in this session.
-            try { sessionStorage.setItem('cb_fp_sent', '1'); } catch (e) {}
+        }).catch(function () {
+            dbg('cb_fp: pipeline failed');
+            // Флаг не ставим: при следующей загрузке страницы сеанс попытается отправить снова.
         });
     }
 

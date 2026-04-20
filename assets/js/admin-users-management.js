@@ -4,6 +4,17 @@ jQuery(document).ready(function($) {
         return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
     }
 
+    function makeRequestId() {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            return window.crypto.randomUUID();
+        }
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0;
+            var v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+
     // Массовое изменение ставки кэшбэка — предпросмотр
     $('#bulk-rate-preview').on('click', function() {
         var oldRate = $('#bulk-old-rate').val().trim();
@@ -80,6 +91,7 @@ jQuery(document).ready(function($) {
         $.post(ajaxurl, {
             action: 'bulk_update_cashback_rate',
             nonce: cashbackUsersData.bulkRateNonce,
+            request_id: makeRequestId(),
             old_rate: oldRate,
             new_rate: newRate,
             preview: 0
@@ -230,11 +242,13 @@ jQuery(document).ready(function($) {
         }
 
         if (changedData.hasOwnProperty('min_payout_amount')) {
-            var minPayoutAmount = parseFloat(changedData['min_payout_amount']);
-            if (isNaN(minPayoutAmount) || minPayoutAmount < 0) {
-                alert('Минимальная сумма выплаты должна быть положительным числом');
+            var rawMinPayout = String(changedData['min_payout_amount']).trim().replace(',', '.');
+            if (!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(rawMinPayout)) {
+                alert('Минимальная сумма выплаты должна быть десятичным числом с точностью до 2 знаков');
                 return;
             }
+            changedData['min_payout_amount'] = rawMinPayout;
+            data['min_payout_amount'] = rawMinPayout;
         }
 
         if (changedData.hasOwnProperty('status')) {
