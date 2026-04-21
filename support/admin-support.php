@@ -1021,20 +1021,44 @@ class Cashback_Support_Admin {
             return;
         }
 
-        // Вставляем сообщение
-        $inserted = $wpdb->insert(
-            $this->messages_table,
-            array(
-                'ticket_id' => $ticket_id,
-                'user_id'   => get_current_user_id(),
-                'message'   => $message,
-                'is_admin'  => 1,
-                'is_read'   => 0,
-            ),
-            array( '%d', '%d', '%s', '%d', '%d' )
+        // Вставляем сообщение. Колонка request_id (Группа 6 ADR шаг 3d) даёт schema-level
+        // защиту от дубля даже при истечении transient'а Cashback_Idempotency.
+        $insert_data   = array(
+            'ticket_id' => $ticket_id,
+            'user_id'   => get_current_user_id(),
+            'message'   => $message,
+            'is_admin'  => 1,
+            'is_read'   => 0,
         );
+        $insert_format = array( '%d', '%d', '%s', '%d', '%d' );
+        if ('' !== $idem_request_id) {
+            $insert_data['request_id'] = $idem_request_id;
+            $insert_format[]           = '%s';
+        }
+
+        $inserted = $wpdb->insert($this->messages_table, $insert_data, $insert_format);
 
         if (!$inserted) {
+            $classification = self::classify_support_message_insert_error($wpdb->last_error);
+
+            // Schema-level idempotent replay: UNIQUE(request_id) пойман другим воркером или после
+            // истечения transient'а. Возвращаем существующий message_id без повторных side-effects
+            // (email/status — уже выполнены в том процессе, который создал оригинальную запись).
+            if (
+                'duplicate_request_id' === $classification
+                && '' !== $idem_request_id
+            ) {
+                $existing_id = self::find_existing_message_by_request_id($wpdb, $idem_request_id);
+                if (null !== $existing_id) {
+                    $wpdb->query('ROLLBACK');
+                    wp_send_json_success(array(
+                        'message_id' => $existing_id,
+                        'replay'     => true,
+                    ));
+                    return;
+                }
+            }
+
             $wpdb->query('ROLLBACK');
             if ($idem_request_id !== '') {
                 Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
@@ -1465,6 +1489,39 @@ class Cashback_Support_Admin {
             'not_urgent' => 'priority-not_urgent',
         );
         return $classes[ $priority ] ?? '';
+    }
+
+    /**
+     * Распознать какой UNIQUE ключ сработал по $wpdb->last_error (Группа 6 ADR шаг 3d).
+     *
+     * @return string 'duplicate_request_id' | 'other'
+     */
+    public static function classify_support_message_insert_error( string $last_error ): string {
+        if ('' === $last_error || false === strpos($last_error, 'Duplicate entry')) {
+            return 'other';
+        }
+        if (false !== strpos($last_error, "'uk_request_id'")) {
+            return 'duplicate_request_id';
+        }
+        return 'other';
+    }
+
+    /**
+     * Lookup существующего message_id по UNIQUE(request_id).
+     * Используется для idempotent replay в handle_admin_reply при UNIQUE-конфликте.
+     *
+     * @param object $wpdb wpdb или совместимый stub.
+     */
+    public static function find_existing_message_by_request_id( object $wpdb, string $request_id ): ?int {
+        $table = $wpdb->prefix . 'cashback_support_messages';
+        $sql   = $wpdb->prepare(
+            'SELECT id FROM %i WHERE request_id = %s LIMIT 1',
+            $table,
+            $request_id
+        );
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- $sql получен из $wpdb->prepare() выше; lookup для idempotent replay не кэшируется.
+        $id = $wpdb->get_var($sql);
+        return null !== $id ? (int) $id : null;
     }
 }
 
