@@ -330,6 +330,32 @@ class Cashback_Bank_Management_Admin {
             return;
         }
 
+        // Server-side дедуп request_id (Группа 5 ADR, F-37-004).
+        // Retry прокси / двойной submit → сервер вернёт сохранённый ответ вместо
+        // повторного UPDATE. Старые клиенты без request_id работают как раньше.
+        $idem_scope      = 'admin_bank_update';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => 'Запрос уже обрабатывается. Повторите через несколько секунд.',
+                ), 409);
+                return;
+            }
+        }
+
         global $wpdb;
 
         $id         = intval(wp_unslash($_POST['id'] ?? 0));
@@ -341,6 +367,9 @@ class Cashback_Bank_Management_Admin {
 
         // Валидация данных
         if (empty($bank_code) || empty($name)) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Заполните все обязательные поля.' ));
             return;
         }
@@ -361,19 +390,27 @@ class Cashback_Bank_Management_Admin {
         );
 
         if ($result === false) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Ошибка при обновлении банка в базе данных.' ));
             return;
         }
 
-        // Возвращаем обновленные данные
-        wp_send_json_success(array(
+        $response_data = array(
             'id'         => $id,
             'bank_code'  => $bank_code,
             'name'       => $name,
             'short_name' => $short_name,
             'is_active'  => $is_active,
             'sort_order' => $sort_order,
-        ));
+        );
+
+        if ($idem_request_id !== '') {
+            Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response_data);
+        }
+
+        wp_send_json_success($response_data);
     }
 
     /**
