@@ -1218,72 +1218,133 @@ class Cashback_Affiliate_Service {
     }
 
     /**
-     * Повторная заморозка affiliate-части после разбана, если affiliate_status=disabled.
-     * Вызывается из users-management.php handle_user_unban().
+     * Атомарная повторная заморозка affiliate-части после разбана.
+     *
+     * Контракт (F-22-005, F-28-001):
+     *   - Вызывается если affiliate_status = 'disabled' → нужно вернуть
+     *     affiliate_frozen_amount обратно во frozen_balance.
+     *   - При $in_transaction = true (по умолчанию) caller ДОЛЖЕН держать
+     *     свою TX; метод берёт SELECT ... FOR UPDATE и меняет balance
+     *     в рамках этой TX — без race-окна между unban и re-freeze.
+     *   - При $in_transaction = false — метод открывает свою TX/COMMIT/ROLLBACK.
+     *   - idempotency_key: 'aff_refreeze_{user_id}_{UUIDv7}' — уникален per
+     *     invocation, защищает от дублей при быстрых повторных разбанах
+     *     (ключ на time() давал коллизии в пределах секунды).
+     *
+     * @return bool true — успех либо no-op (affiliate не disabled / нулевой hold).
      */
-    public static function re_freeze_after_unban( int $user_id ): void {
+    public static function re_freeze_after_unban_atomic( int $user_id, bool $in_transaction = true ): bool {
         global $wpdb;
         $prefix         = $wpdb->prefix;
         $profiles_table = $prefix . 'cashback_affiliate_profiles';
         $balance_table  = $prefix . 'cashback_user_balance';
         $ledger_table   = $prefix . 'cashback_balance_ledger';
 
-        $profile = $wpdb->get_row($wpdb->prepare(
-            'SELECT affiliate_status, affiliate_frozen_amount
-             FROM %i
-             WHERE user_id = %d LIMIT 1',
-            $profiles_table,
-            $user_id
-        ), ARRAY_A);
-
-        if (!$profile || $profile['affiliate_status'] !== 'disabled') {
-            return;
+        $owns_tx = !$in_transaction;
+        if ($owns_tx) {
+            $wpdb->query('START TRANSACTION');
         }
 
-        $frozen_amount = (float) $profile['affiliate_frozen_amount'];
-        if ($frozen_amount <= 0) {
-            return;
-        }
+        try {
+            $profile = $wpdb->get_row($wpdb->prepare(
+                'SELECT affiliate_status, affiliate_frozen_amount
+                 FROM %i
+                 WHERE user_id = %d LIMIT 1',
+                $profiles_table,
+                $user_id
+            ), ARRAY_A);
 
-        // После разбана всё frozen ушло в available через триггер.
-        // Нужно вернуть affiliate-часть обратно в frozen.
-        $balance = $wpdb->get_row($wpdb->prepare(
-            'SELECT available_balance FROM %i
-             WHERE user_id = %d LIMIT 1',
-            $balance_table,
-            $user_id
-        ), ARRAY_A);
+            if (!$profile || $profile['affiliate_status'] !== 'disabled') {
+                if ($owns_tx) {
+                    $wpdb->query('COMMIT');
+                }
+                return true;
+            }
 
-        $available = (float) ( $balance['available_balance'] ?? 0 );
-        $re_freeze = min($frozen_amount, $available);
+            $frozen_amount = (float) $profile['affiliate_frozen_amount'];
+            if ($frozen_amount <= 0) {
+                if ($owns_tx) {
+                    $wpdb->query('COMMIT');
+                }
+                return true;
+            }
 
-        if ($re_freeze > 0) {
-            $idemp_key = 'aff_refreeze_' . $user_id . '_' . time();
-
-            $wpdb->query($wpdb->prepare(
-                'INSERT INTO %i
-                     (user_id, type, amount, reference_type, idempotency_key)
-                 VALUES (%d, \'affiliate_freeze\', %s, \'affiliate_freeze\', %s)
-                 ON DUPLICATE KEY UPDATE id = id',
-                $ledger_table,
-                $user_id,
-                number_format(-$re_freeze, 2, '.', ''),
-                $idemp_key
-            ));
-
-            $wpdb->query($wpdb->prepare(
-                'UPDATE %i
-                 SET available_balance = available_balance - CAST(%s AS DECIMAL(18,2)),
-                     frozen_balance    = frozen_balance + CAST(%s AS DECIMAL(18,2)),
-                     version = version + 1
-                 WHERE user_id = %d AND available_balance >= CAST(%s AS DECIMAL(18,2))',
+            // FOR UPDATE: блокируем balance-строку, чтобы параллельный вывод
+            // не успел списать available ДО нашего SELECT→UPDATE.
+            $balance = $wpdb->get_row($wpdb->prepare(
+                'SELECT available_balance FROM %i
+                 WHERE user_id = %d LIMIT 1 FOR UPDATE',
                 $balance_table,
-                number_format($re_freeze, 2, '.', ''),
-                number_format($re_freeze, 2, '.', ''),
-                $user_id,
-                number_format($re_freeze, 2, '.', '')
-            ));
+                $user_id
+            ), ARRAY_A);
+
+            $available = (float) ( $balance['available_balance'] ?? 0 );
+            $re_freeze = min($frozen_amount, $available);
+
+            if ($re_freeze > 0) {
+                // UUIDv7-based ключ: монотонен, уникален per invocation.
+                $idemp_key = 'aff_refreeze_' . $user_id . '_' . cashback_generate_uuid7(false);
+
+                $ledger_insert = $wpdb->query($wpdb->prepare(
+                    'INSERT INTO %i
+                         (user_id, type, amount, reference_type, idempotency_key)
+                     VALUES (%d, \'affiliate_freeze\', %s, \'affiliate_freeze\', %s)
+                     ON DUPLICATE KEY UPDATE id = id',
+                    $ledger_table,
+                    $user_id,
+                    number_format(-$re_freeze, 2, '.', ''),
+                    $idemp_key
+                ));
+                if ($ledger_insert === false) {
+                    throw new \RuntimeException('re_freeze ledger INSERT failed: ' . $wpdb->last_error);
+                }
+
+                $balance_update = $wpdb->query($wpdb->prepare(
+                    'UPDATE %i
+                     SET available_balance = available_balance - CAST(%s AS DECIMAL(18,2)),
+                         frozen_balance    = frozen_balance + CAST(%s AS DECIMAL(18,2)),
+                         version = version + 1
+                     WHERE user_id = %d AND available_balance >= CAST(%s AS DECIMAL(18,2))',
+                    $balance_table,
+                    number_format($re_freeze, 2, '.', ''),
+                    number_format($re_freeze, 2, '.', ''),
+                    $user_id,
+                    number_format($re_freeze, 2, '.', '')
+                ));
+                if ($balance_update === false) {
+                    throw new \RuntimeException('re_freeze balance UPDATE failed: ' . $wpdb->last_error);
+                }
+            }
+
+            if ($owns_tx) {
+                $wpdb->query('COMMIT');
+            }
+            return true;
+
+        } catch (\Throwable $e) {
+            if ($owns_tx) {
+                $wpdb->query('ROLLBACK');
+            }
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Affiliate] re_freeze_after_unban_atomic error: ' . $e->getMessage());
+            if (!$owns_tx) {
+                throw $e;
+            }
+            return false;
         }
+    }
+
+    /**
+     * Backward-compatible wrapper для re_freeze_after_unban_atomic().
+     * Открывает собственную TX. Оставлен для внешних вызовов, которые не
+     * держат свою транзакцию.
+     *
+     * Для новых callsite'ов используйте re_freeze_after_unban_atomic()
+     * с $in_transaction=true — чтобы re-freeze выполнялся в той же TX
+     * что и unban (F-28-001 race-окно закрыто только так).
+     */
+    public static function re_freeze_after_unban( int $user_id ): void {
+        self::re_freeze_after_unban_atomic($user_id, false);
     }
 
     /* ═══════════════════════════════════════

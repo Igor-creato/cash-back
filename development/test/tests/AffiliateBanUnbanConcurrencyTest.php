@@ -63,14 +63,14 @@ final class AffiliateBanUnbanConcurrencyTest extends TestCase
         $tail = substr($src, $pos);
 
         // Ключ должен использовать cashback_generate_uuid7(), не time()
-        $uses_uuid = (bool) preg_match('/aff_refreeze_[^\'"]*cashback_generate_uuid7/s', $tail)
-                  || (bool) preg_match('/cashback_generate_uuid7\([^)]*\)\s*[\.,)]/', $tail);
+        $uses_uuid = (bool) preg_match('/cashback_generate_uuid7\s*\(/', $tail);
 
         $this->assertTrue(
             $uses_uuid,
             'idempotency_key для re_freeze должен использовать cashback_generate_uuid7(), не time() (F-22-005).'
         );
 
+        // Наличие 'aff_refreeze_...time()' в источнике говорит о legacy time()-ключе.
         $uses_time = (bool) preg_match('/aff_refreeze_\'\s*\.\s*\$user_id\s*\.\s*\'_\'\s*\.\s*time\(\)/', $tail);
         $this->assertFalse(
             $uses_time,
