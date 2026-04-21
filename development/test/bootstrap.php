@@ -97,17 +97,40 @@ if (!function_exists('current_time')) {
     }
 }
 
+/**
+ * Stateful моки wp_options для тестов: позволяют round-trip'ить значения
+ * через update_option → get_option. Значения хранятся в $GLOBALS['_cb_test_options'].
+ * Сбрасывается каждый тест через tearDown (тесты сами управляют состоянием).
+ */
+if (!isset($GLOBALS['_cb_test_options'])) {
+    $GLOBALS['_cb_test_options'] = array();
+}
+
 if (!function_exists('get_option')) {
     function get_option(string $option, mixed $default = false): mixed
     {
-        return $default;
+        return array_key_exists($option, $GLOBALS['_cb_test_options'])
+            ? $GLOBALS['_cb_test_options'][ $option ]
+            : $default;
     }
 }
 
 if (!function_exists('update_option')) {
     function update_option(string $option, mixed $value, mixed $autoload = null): bool
     {
+        $GLOBALS['_cb_test_options'][ $option ] = $value;
         return true;
+    }
+}
+
+if (!function_exists('delete_option')) {
+    function delete_option(string $option): bool
+    {
+        if (array_key_exists($option, $GLOBALS['_cb_test_options'])) {
+            unset($GLOBALS['_cb_test_options'][ $option ]);
+            return true;
+        }
+        return false;
     }
 }
 
@@ -372,6 +395,13 @@ require_once $plugin_root . '/mariadb.php';
 // Антифрод: настройки и детектор
 require_once $plugin_root . '/antifraud/class-fraud-settings.php';
 require_once $plugin_root . '/antifraud/class-fraud-detector.php';
+
+// CAPTCHA (использует настройки бот-защиты — зашифрованный server_key)
+$_cb_captcha_file = $plugin_root . '/includes/class-cashback-captcha.php';
+if (file_exists($_cb_captcha_file) && !class_exists('Cashback_Captcha')) {
+    require_once $_cb_captcha_file;
+}
+unset($_cb_captcha_file);
 
 // Класс статуса пользователя (реальный файл — загружаем до мок-класса)
 $_cb_user_status_file = $plugin_root . '/includes/class-cashback-user-status.php';
