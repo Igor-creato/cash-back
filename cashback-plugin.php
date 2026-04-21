@@ -160,6 +160,11 @@ class CashbackPlugin {
         // auto-run на plugins_loaded чтобы подхватить upgrade без re-activation плагина.
         add_action('plugins_loaded', array( 'CashbackPlugin', 'migrate_schema_idempotency_v1' ), 110);
         add_action('admin_notices', array( 'CashbackPlugin', 'schema_idempotency_blocked_notice' ));
+        // Миграция группы 7 (шаг 3 ADR): создание таблицы cashback_rate_limit_counters
+        // для атомарного INSERT ... ON DUPLICATE KEY UPDATE (SQL rate-limit backend).
+        add_action('plugins_loaded', array( 'CashbackPlugin', 'migrate_rate_limit_v1' ), 115);
+        // GC группы 7 (шаг 10 ADR): hourly очистка expired rate-limit counters.
+        add_action('cashback_rate_limit_gc_cron', array( 'CashbackPlugin', 'rate_limit_gc_cron_handler' ));
         add_action('before_woocommerce_init', array( $this, 'declare_woocommerce_compatibility' ));
         // Единая пагинация — CSS для админки (используется на всех cashback-* страницах).
         add_action('admin_enqueue_scripts', array( $this, 'enqueue_pagination_admin_assets' ));
@@ -290,6 +295,11 @@ class CashbackPlugin {
             wp_schedule_event(time(), 'daily', 'cashback_health_check_cron');
         }
 
+        // Группа 7 (шаг 10 ADR): hourly GC для cashback_rate_limit_counters.
+        if (!wp_next_scheduled('cashback_rate_limit_gc_cron')) {
+            wp_schedule_event(time() + HOUR_IN_SECONDS, 'hourly', 'cashback_rate_limit_gc_cron');
+        }
+
         // Создание таблиц антифрод-модуля
         $this->require_file('antifraud/class-fraud-db.php');
         if (class_exists('Cashback_Fraud_DB')) {
@@ -391,6 +401,7 @@ class CashbackPlugin {
             'cashback_fraud_detection_cron',
             'cashback_fraud_cleanup_cron',
             'cashback_fraud_cluster_detect_cron',
+            'cashback_rate_limit_gc_cron',
         );
 
         foreach ($cron_hooks as $hook) {
@@ -912,6 +923,34 @@ class CashbackPlugin {
         }
 
         ( new Cashback_Schema_Idempotency_Migration($wpdb) )->run();
+    }
+
+    /**
+     * Группа 7 (шаг 3 ADR): rate-limit counters schema миграция.
+     * Создаёт {$wpdb->prefix}cashback_rate_limit_counters — хранилище для атомарного
+     * INSERT ... ON DUPLICATE KEY UPDATE (Cashback_Rate_Limit_SQL_Counter).
+     * Идемпотентна (guard по option cashback_rate_limit_v1_applied + CREATE TABLE IF NOT EXISTS).
+     */
+    public static function migrate_rate_limit_v1(): void {
+        global $wpdb;
+
+        if (!class_exists('Cashback_Rate_Limit_Migration')) {
+            require_once __DIR__ . '/includes/class-cashback-rate-limit-migration.php';
+        }
+
+        ( new Cashback_Rate_Limit_Migration($wpdb) )->run();
+    }
+
+    /**
+     * Группа 7 (шаг 10 ADR): hourly GC для cashback_rate_limit_counters.
+     * Удаляет expired rows, batch-лимит 5000 (защита от OLTP-лока).
+     */
+    public static function rate_limit_gc_cron_handler(): void {
+        if (!class_exists('Cashback_Rate_Limit_GC')) {
+            require_once __DIR__ . '/includes/class-cashback-rate-limit-gc.php';
+        }
+
+        \Cashback_Rate_Limit_GC::cron_handler();
     }
 
     /**

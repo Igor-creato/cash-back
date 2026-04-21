@@ -168,12 +168,28 @@ class Cashback_Contact_Form {
      * Обработка AJAX-отправки формы.
      */
     public function handle_submit(): void {
-        // Rate limit по IP
-        $ip         = $this->get_ip();
-        $rate_key   = 'cb_contact_rate_' . substr(md5($ip), 0, 12);
-        $rate_count = (int) get_transient($rate_key);
+        // Rate limit по IP — Группа 7 (шаг 8 ADR): атомарный counter вместо
+        // неатомарного get_transient/set_transient. Инкремент происходит ДО
+        // валидации (ранее — только после успешного submit), чтобы rejected-попытки
+        // тоже учитывались в квоте — иначе атакующий обошёл бы лимит через
+        // намеренно-проваленные отправки (bot-check/honeypot).
+        $ip        = $this->get_ip();
+        $scope_key = 'contact_' . substr(sha1($ip), 0, 40);
 
-        if ($rate_count >= self::RATE_LIMIT) {
+        if (!class_exists('Cashback_Rate_Limiter')) {
+            require_once __DIR__ . '/class-cashback-rate-limiter.php';
+        }
+
+        try {
+            $counter = \Cashback_Rate_Limiter::counter_backend();
+            $result  = $counter->increment($scope_key, self::RATE_WINDOW, self::RATE_LIMIT);
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Rate-limit backend diagnostic (group 7, step 8).
+            error_log('[cashback-contact-form] rate-limit backend error: ' . $e->getMessage());
+            $result = array( 'allowed' => true, 'hits' => 1, 'reset_at' => time() + self::RATE_WINDOW );
+        }
+
+        if (! $result['allowed']) {
             wp_send_json_error(array(
                 'code'    => 'rate_limited',
                 'message' => 'Слишком много сообщений. Попробуйте через час.',
@@ -340,8 +356,8 @@ class Cashback_Contact_Form {
             ));
         }
 
-        // Увеличиваем счётчик rate limit
-        set_transient($rate_key, $rate_count + 1, self::RATE_WINDOW);
+        // Группа 7 (шаг 8 ADR): счётчик rate-limit уже инкрементирован в начале
+        // handle_submit() через атомарный backend — повторный set_transient не нужен.
 
         // iter-30 F-30-003: фиксируем результат для идемпотентного ретрая (TTL = rate-window).
         if ($idem_key !== '') {
