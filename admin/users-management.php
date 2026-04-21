@@ -657,7 +657,36 @@ class Cashback_Users_Management_Admin {
             return;
         }
 
+        // Server-side дедуп request_id (Группа 5 ADR, F-34-005).
+        // Preview-запросы проходят без claim (read-only); apply-запросы защищены.
+        $preview_raw     = !empty($_POST['preview']);
+        $idem_scope      = 'admin_users_bulk_cashback_rate';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (!$preview_raw && isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => 'Запрос уже обрабатывается. Повторите через несколько секунд.',
+                ), 409);
+                return;
+            }
+        }
+
         if (!isset($_POST['old_rate'], $_POST['new_rate'])) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Не указаны параметры.' ));
             return;
         }
@@ -667,6 +696,9 @@ class Cashback_Users_Management_Admin {
         $preview      = !empty($_POST['preview']);
 
         if (!preg_match('/^\d+(\.\d{1,2})?$/', $new_rate) || bccomp($new_rate, '0', 2) < 0 || bccomp($new_rate, '100', 2) > 0) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Новая ставка должна быть числом от 0 до 100.' ));
             return;
         }
@@ -677,6 +709,9 @@ class Cashback_Users_Management_Admin {
 
         if (!$is_all) {
             if (!preg_match('/^\d+(\.\d{1,2})?$/', $old_rate_raw) || bccomp($old_rate_raw, '0', 2) < 0 || bccomp($old_rate_raw, '100', 2) > 0) {
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                }
                 wp_send_json_error(array( 'message' => 'Текущая ставка должна быть числом от 0 до 100 или "all".' ));
                 return;
             }
@@ -706,6 +741,9 @@ class Cashback_Users_Management_Admin {
         }
 
         if ($count === 0) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Не найдено пользователей для обновления.' ));
             return;
         }
@@ -733,6 +771,9 @@ class Cashback_Users_Management_Admin {
 
             if ($result === false) {
                 $wpdb->query('ROLLBACK');
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                }
                 wp_send_json_error(array( 'message' => 'Ошибка при обновлении базы данных.' ));
                 return;
             }
@@ -769,15 +810,24 @@ class Cashback_Users_Management_Admin {
             $wpdb->query('COMMIT');
         } catch (Exception $e) {
             $wpdb->query('ROLLBACK');
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Ошибка при обновлении базы данных.' ));
             return;
         }
 
-        wp_send_json_success(array(
+        $response_data = array(
             'updated'  => (int) $result,
             'old_rate' => $old_rate_raw,
             'new_rate' => $new_rate,
-        ));
+        );
+
+        if ($idem_request_id !== '') {
+            Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response_data);
+        }
+
+        wp_send_json_success($response_data);
     }
 
     /**
