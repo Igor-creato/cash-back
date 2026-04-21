@@ -26,7 +26,6 @@ final class Cashback_Admin_Outbound_Allowlist {
     public const OPTION_KEY   = 'cashback_outbound_allowlist_custom';
     public const NONCE_ACTION = 'cashback_outbound_allowlist_nonce';
     public const MAX_CUSTOM   = 50;
-    public const MENU_SLUG    = 'cashback-outbound-allowlist';
 
     /**
      * Reserved TLD/suffixes — нельзя добавлять такие хосты через UI,
@@ -53,8 +52,6 @@ final class Cashback_Admin_Outbound_Allowlist {
     }
 
     private function __construct() {
-        add_action('admin_menu', array( $this, 'register_menu' ));
-        add_action('admin_enqueue_scripts', array( $this, 'enqueue_assets' ));
         add_action('wp_ajax_cashback_outbound_allowlist_add', array( $this, 'ajax_add' ));
         add_action('wp_ajax_cashback_outbound_allowlist_remove', array( $this, 'ajax_remove' ));
 
@@ -67,46 +64,6 @@ final class Cashback_Admin_Outbound_Allowlist {
         if ($option === self::OPTION_KEY && class_exists('Cashback_Outbound_HTTP_Guard')) {
             Cashback_Outbound_HTTP_Guard::invalidate_cache();
         }
-    }
-
-    public function register_menu(): void {
-        add_submenu_page(
-            'cashback-overview',
-            __('Разрешённые домены', 'cashback-plugin'),
-            __('Разрешённые домены', 'cashback-plugin'),
-            'manage_options',
-            self::MENU_SLUG,
-            array( $this, 'render_page' )
-        );
-    }
-
-    public function enqueue_assets( string $hook ): void {
-        // Подключаем только на своей странице.
-        $allowed = array(
-            'cashback_page_' . self::MENU_SLUG,
-            'cashback-overview_page_' . self::MENU_SLUG,
-            'admin_page_' . self::MENU_SLUG,
-        );
-        if (!in_array($hook, $allowed, true)) {
-            return;
-        }
-
-        wp_enqueue_script(
-            'cashback-admin-outbound-allowlist',
-            plugins_url('../assets/js/admin-outbound-allowlist.js', __FILE__),
-            array( 'jquery' ),
-            '1.0.0',
-            true
-        );
-
-        wp_localize_script('cashback-admin-outbound-allowlist', 'cashbackOutboundAllowlist', array(
-            'nonce'   => wp_create_nonce(self::NONCE_ACTION),
-            'ajaxurl' => admin_url('admin-ajax.php'),
-            'i18n'    => array(
-                'confirmRemove' => __('Удалить этот домен из allowlist?', 'cashback-plugin'),
-                'errorGeneric'  => __('Произошла ошибка. Попробуйте снова.', 'cashback-plugin'),
-            ),
-        ));
     }
 
     // ================================================================
@@ -456,18 +413,23 @@ final class Cashback_Admin_Outbound_Allowlist {
     // Рендер страницы
     // ================================================================
 
-    public function render_page(): void {
+    /**
+     * Рендер содержимого вкладки «Разрешенные домены API Base URL»
+     * на странице «Партнеры» (admin.php?page=cashback-partners&tab=outbound-allowlist).
+     *
+     * Вызывается из partner/partner-management.php в ветке условного рендера вкладок.
+     * НЕ обёрнут в <div class="wrap"> — внешнюю обёртку даёт страница «Партнеры».
+     */
+    public function render_tab_content(): void {
         if (!current_user_can('manage_options')) {
             wp_die(esc_html__('Недостаточно прав.', 'cashback-plugin'));
         }
 
         $baseline = $this->get_baseline_hosts();
         $custom   = $this->get_custom_list();
-        $nonce    = wp_create_nonce(self::NONCE_ACTION);
         ?>
-        <div class="wrap">
-            <h1 class="wp-heading-inline"><?php esc_html_e('Разрешённые домены для исходящих запросов', 'cashback-plugin'); ?></h1>
-            <p><?php esc_html_e('SSRF-защита плагина. Любой исходящий HTTP-запрос, хост которого отсутствует в этом списке, будет отклонён.', 'cashback-plugin'); ?></p>
+        <div style="margin-top: 20px;">
+            <p><?php esc_html_e('SSRF-защита плагина. Любой исходящий HTTP-запрос, хост которого отсутствует в этом списке, будет отклонён. В частности, в поле «API Base URL» партнёра можно вписать только домены из этого allowlist.', 'cashback-plugin'); ?></p>
 
             <h2><?php esc_html_e('Baseline (встроено в плагин)', 'cashback-plugin'); ?></h2>
             <table class="wp-list-table widefat fixed striped">
@@ -539,7 +501,6 @@ final class Cashback_Admin_Outbound_Allowlist {
             <p class="description"><?php echo esc_html($limit_text); ?></p>
         </div>
         <?php
-        unset($nonce); // nonce печатается через wp_nonce_field выше.
     }
 }
 
