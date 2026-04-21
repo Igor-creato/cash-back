@@ -673,7 +673,7 @@ class Cashback_Affiliate_Service {
             // Построчный INSERT ledger с проверкой rows_affected — ключ F-22-001:
             // только реально вставленные строки (rows_affected=1) дают вклад в balance-delta.
             // ON DUPLICATE KEY UPDATE id=id = дубль → rows_affected=0 → delta НЕ применяется.
-            $effective_deltas = array();
+            $effective_deltas         = array();
             $effective_inserted_count = 0;
             foreach ($ledger_values as $idx => $row_tpl) {
                 $offset      = $idx * 7;
