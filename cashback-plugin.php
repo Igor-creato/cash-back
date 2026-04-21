@@ -156,6 +156,10 @@ class CashbackPlugin {
         // One-time миграция plaintext-секретов в wp_options → ENC:v1:ciphertext.
         // Запуск после load_dependencies (prio=10 в init), идемпотентна (guard по флагу).
         add_action('plugins_loaded', array( 'Cashback_Encryption', 'migrate_plaintext_options' ), 100);
+        // Миграция группы 6 (шаг 2 ADR): schema-level idempotency. Идемпотентна (guard по флагу),
+        // auto-run на plugins_loaded чтобы подхватить upgrade без re-activation плагина.
+        add_action('plugins_loaded', array( 'CashbackPlugin', 'migrate_schema_idempotency_v1' ), 110);
+        add_action('admin_notices', array( 'CashbackPlugin', 'schema_idempotency_blocked_notice' ));
         add_action('before_woocommerce_init', array( $this, 'declare_woocommerce_compatibility' ));
         // Единая пагинация — CSS для админки (используется на всех cashback-* страницах).
         add_action('admin_enqueue_scripts', array( $this, 'enqueue_pagination_admin_assets' ));
@@ -892,6 +896,51 @@ class CashbackPlugin {
             '<div class="notice notice-warning"><p><strong>%s:</strong> %s</p></div>',
             esc_html__('Cashback Plugin', 'cashback-plugin'),
             esc_html__('MySQL-триггеры не были созданы (binary logging без SUPER привилегии). Плагин работает в режиме PHP-фолбэков. Для полной защиты данных на уровне БД обратитесь к хостинг-провайдеру.', 'cashback-plugin')
+        );
+    }
+
+    /**
+     * Группа 6 (шаг 2 ADR): schema-level idempotency миграция.
+     * Static — чтобы вызываться из plugins_loaded без инстанса плагина.
+     * Идемпотентна (внутренний guard по option cashback_schema_idempotency_v1_applied).
+     */
+    public static function migrate_schema_idempotency_v1(): void {
+        global $wpdb;
+
+        if (!class_exists('Cashback_Schema_Idempotency_Migration')) {
+            require_once __DIR__ . '/includes/class-cashback-schema-idempotency-migration.php';
+        }
+
+        ( new Cashback_Schema_Idempotency_Migration($wpdb) )->run();
+    }
+
+    /**
+     * Admin-notice: миграция группы 6 заблокирована из-за найденных дублей.
+     * Сообщает админу, что нужно запустить tools/dedup-rows-*.php перед применением UNIQUE.
+     */
+    public static function schema_idempotency_blocked_notice(): void {
+        $blocked = get_option('cashback_schema_idempotency_v1_blocked');
+        if (!is_array($blocked) || empty($blocked['duplicate_checks'])) {
+            return;
+        }
+
+        $parts = array();
+        foreach ((array) $blocked['duplicate_checks'] as $scope => $count) {
+            if ((int) $count > 0) {
+                $parts[] = sprintf('%s: %d', (string) $scope, (int) $count);
+            }
+        }
+        if (empty($parts)) {
+            return;
+        }
+
+        printf(
+            '<div class="notice notice-error"><p><strong>%s:</strong> %s</p><p>%s</p><p><code>%s</code></p></div>',
+            esc_html__('Cashback Plugin — миграция схемы заблокирована', 'cashback-plugin'),
+            esc_html__('Обнаружены дубликаты, мешающие наложению UNIQUE-ключей (группа 6 ADR).', 'cashback-plugin'),
+            /* translators: %s: comma-separated list of "scope: duplicate_groups_count" pairs */
+            esc_html(sprintf(__('Группы дубликатов: %s. Запустите dedup-скрипты и повторите активацию плагина.', 'cashback-plugin'), implode(', ', $parts))),
+            'wp eval-file wp-content/plugins/cash-back/tools/dedup-rows-&lt;table&gt;.php --confirm=yes'
         );
     }
 
