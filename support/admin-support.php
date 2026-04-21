@@ -729,11 +729,25 @@ class Cashback_Support_Admin {
                 var btn = $(this);
                 btn.prop('disabled', true).text('Отправка...');
 
+                // Группа 5 ADR: request_id per submit-клик. Сетевой retry с тем же id
+                // вернёт сохранённый ответ вместо дубля admin-сообщения.
+                var requestId = btn.data('cb-request-id');
+                if (!requestId) {
+                    requestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+                        ? crypto.randomUUID()
+                        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                            var r = (Math.random() * 16) | 0;
+                            return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+                        });
+                    btn.data('cb-request-id', requestId);
+                }
+
                 var fd = new FormData();
                 fd.append('action', 'support_admin_reply');
                 fd.append('ticket_id', ticketId);
                 fd.append('message', message);
                 fd.append('nonce', '<?php echo esc_js($reply_nonce); ?>');
+                fd.append('request_id', requestId);
 
                 var fileInput = document.getElementById('support-admin-files');
                 if (fileInput && fileInput.files.length) {
@@ -757,6 +771,8 @@ class Cashback_Support_Admin {
                             $statusBadge.removeClass('status-open status-closed').addClass('status-answered').text('Отвечен');
                             showAdminNotice('success', 'Сообщение отправлено');
                             if (typeof updateSupportBadge === 'function') updateSupportBadge();
+                            // Группа 5: сбрасываем request_id — следующий клик получит свежий UUID.
+                            btn.removeData('cb-request-id');
                         } else {
                             showAdminNotice('error', response.data.message || 'Ошибка при отправке');
                         }
@@ -903,17 +919,49 @@ class Cashback_Support_Admin {
             return;
         }
 
+        // Server-side дедуп request_id (Группа 5 ADR, F-27-002).
+        // Retry прокси / двойной submit → сервер вернёт сохранённый ответ вместо
+        // дубля admin-сообщения, повторного изменения статуса тикета и повторного email.
+        $idem_scope      = 'support_admin_reply';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => 'Запрос уже обрабатывается. Повторите через несколько секунд.',
+                ), 409);
+                return;
+            }
+        }
+
         global $wpdb;
 
         $ticket_id = isset($_POST['ticket_id']) ? absint(wp_unslash($_POST['ticket_id'])) : 0;
         $message   = isset($_POST['message']) && is_string($_POST['message']) ? sanitize_textarea_field(wp_unslash($_POST['message'])) : '';
 
         if (!$ticket_id || empty($message)) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Заполните все поля.' ));
             return;
         }
 
         if (mb_strlen($message) > 5000) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Сообщение слишком длинное (максимум 5000 символов).' ));
             return;
         }
@@ -926,6 +974,9 @@ class Cashback_Support_Admin {
             $max_files   = Cashback_Support_DB::get_max_files_per_message();
 
             if ($files_count > $max_files) {
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                }
                 wp_send_json_error(array( 'message' => sprintf('Максимум %d файлов.', $max_files) ));
                 return;
             }
@@ -954,12 +1005,18 @@ class Cashback_Support_Admin {
 
         if (!$ticket) {
             $wpdb->query('ROLLBACK');
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Тикет не найден.' ));
             return;
         }
 
         if ($ticket->status === 'closed') {
             $wpdb->query('ROLLBACK');
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Невозможно ответить на закрытый тикет.' ));
             return;
         }
@@ -979,6 +1036,9 @@ class Cashback_Support_Admin {
 
         if (!$inserted) {
             $wpdb->query('ROLLBACK');
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Ошибка при сохранении сообщения.' ));
             return;
         }
@@ -999,6 +1059,9 @@ class Cashback_Support_Admin {
 
         if ($updated === false) {
             $wpdb->query('ROLLBACK');
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Ошибка при обновлении статуса тикета.' ));
             return;
         }
@@ -1037,6 +1100,11 @@ class Cashback_Support_Admin {
         $response = array( 'html' => $this->render_message_html($msg, $msg_attachments) );
         if (!empty($upload_errors)) {
             $response['upload_warnings'] = $upload_errors;
+        }
+
+        // Фиксируем результат для идемпотентного retry.
+        if ($idem_request_id !== '') {
+            Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response);
         }
 
         wp_send_json_success($response);
