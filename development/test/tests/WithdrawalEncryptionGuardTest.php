@@ -138,12 +138,15 @@ class WithdrawalEncryptionGuardTest extends TestCase
         $this->assertSame('encryption_unavailable', $resp['data']['code'] ?? null);
         $this->assertArrayHasKey('message', $resp['data']);
 
-        // Критично: НИ ОДНА запись в БД не должна быть создана.
-        $write_calls = array_filter(
+        // Критично: таблица профиля не должна быть изменена.
+        // (запись в cashback_audit_log допустима — это аудит события отказа).
+        $profile_writes = array_filter(
             $this->wpdb->calls,
             static fn(array $c): bool => in_array($c['method'], ['insert', 'update'], true)
+                && isset($c['args'][0])
+                && str_contains((string) $c['args'][0], 'cashback_user_profile')
         );
-        $this->assertEmpty($write_calls, 'БД не должна быть изменена при fail-closed отказе');
+        $this->assertEmpty($profile_writes, 'Таблица cashback_user_profile не должна быть изменена при fail-closed отказе');
     }
 
     // ================================================================
@@ -227,11 +230,13 @@ class WithdrawalEncryptionGuardTest extends TestCase
             'При настроенном шифровании и отсутствии ciphertext метод должен отказать (defense-in-depth)'
         );
 
-        $writes = array_filter(
+        $profile_writes = array_filter(
             $this->wpdb->calls,
             static fn(array $c): bool => in_array($c['method'], ['insert', 'update'], true)
+                && isset($c['args'][0])
+                && str_contains((string) $c['args'][0], 'cashback_user_profile')
         );
-        $this->assertEmpty($writes, 'БД не должна быть тронута');
+        $this->assertEmpty($profile_writes, 'Таблица cashback_user_profile не должна быть тронута');
     }
 
     // ================================================================

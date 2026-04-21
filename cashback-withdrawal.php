@@ -441,10 +441,13 @@ class CashbackWithdrawal {
 
         if (class_exists('Cashback_Encryption') && method_exists('Cashback_Encryption', 'write_audit_log')) {
             try {
-                Cashback_Encryption::write_audit_log('encryption_unavailable', array(
-                    'scope'   => $scope,
-                    'user_id' => $user_id,
-                ));
+                Cashback_Encryption::write_audit_log(
+                    'encryption_unavailable',
+                    $user_id,
+                    'withdrawal',
+                    null,
+                    array( 'scope' => $scope )
+                );
             } catch (\Throwable $e) {
                 // Аудит-лог не должен ломать основной поток; проглатываем.
             }

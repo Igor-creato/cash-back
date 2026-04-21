@@ -457,6 +457,10 @@ class CashbackPlugin {
         // Утилита шифрования (загружаем первой, т.к. используется в других компонентах)
         $this->require_file('includes/class-cashback-encryption.php');
 
+        // Recovery-флоу при утере ключа: admin-страница + Action Scheduler hook.
+        // Загружается всегда (не только в админке), чтобы AS-хендлер был доступен при обработке cron-очереди.
+        $this->require_file('admin/class-cashback-encryption-recovery.php');
+
         // SSRF-guard для исходящих HTTP-запросов (использует Cashback_Encryption::write_audit_log)
         $this->require_file('includes/class-cashback-outbound-http-guard.php');
 
@@ -644,6 +648,13 @@ class CashbackPlugin {
         // Бот-защита: инициализация guard (до других компонентов)
         if (class_exists('Cashback_Bot_Protection')) {
             Cashback_Bot_Protection::init();
+        }
+
+        // Механизм аварийного восстановления шифрования: admin-страница + AS-action.
+        // init() идемпотентен — регистрирует хуки, включая admin_init/admin_notices
+        // (срабатывают только в админке) и AS-hook (срабатывает в WP-cron).
+        if (class_exists('Cashback_Encryption_Recovery')) {
+            Cashback_Encryption_Recovery::init();
         }
 
         // Инициализация Mariadb_Plugin (регистрирует user_register хук)
