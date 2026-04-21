@@ -70,7 +70,7 @@ class Cashback_Support_Admin {
             'cashback-safe-html',
             plugins_url('assets/js/safe-html.js', __FILE__),
             array( 'dompurify' ),
-            '1.0.0',
+            '1.1.0',
             false
         );
     }
