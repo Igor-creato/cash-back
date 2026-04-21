@@ -201,6 +201,33 @@ class Cashback_Notifications_Frontend {
             return;
         }
 
+        // Server-side дедуп request_id (Группа 5 ADR, F-39-003).
+        // Frontend-хендлер (нет manage_options): идемпотентность нужна на случай
+        // двойного submit или retry прокси — повторный UPDATE настроек безопасен,
+        // но даёт лишний DB round-trip и (при подключённых хуках) лишние side-effects.
+        $idem_scope      = 'frontend_notification_prefs_save';
+        $idem_user_id    = $user_id;
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => __('Запрос уже обрабатывается. Повторите через несколько секунд.', 'cashback-plugin'),
+                ), 409);
+                return;
+            }
+        }
+
         $types = Cashback_Notifications_DB::get_user_notification_types();
 
         // Парсим: если чекбокс не отправлен — значит выключен
@@ -215,6 +242,11 @@ class Cashback_Notifications_Frontend {
 
         Cashback_Notifications_DB::save_preferences($user_id, $prefs);
 
-        wp_send_json_success(array( 'message' => __('Настройки сохранены.', 'cashback-plugin') ));
+        $response_data = array( 'message' => __('Настройки сохранены.', 'cashback-plugin') );
+        if ($idem_request_id !== '') {
+            Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response_data);
+        }
+
+        wp_send_json_success($response_data);
     }
 }
