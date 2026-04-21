@@ -344,10 +344,39 @@ class Cashback_Transactions_Admin {
             return;
         }
 
+        // Server-side дедуп request_id (Группа 5 ADR, F-35-002).
+        // Клиент опционально шлёт UUID; retry с тем же id вернёт сохранённый ответ
+        // вместо повторного UPDATE. Старые клиенты без request_id работают как раньше.
+        $idem_scope      = 'admin_transaction_update';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => 'Запрос уже обрабатывается. Повторите через несколько секунд.',
+                ), 409);
+                return;
+            }
+        }
+
         global $wpdb;
 
         $transaction_id = intval($_POST['transaction_id'] ?? 0);
         if ($transaction_id <= 0) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Некорректный ID транзакции.' ));
             return;
         }
@@ -489,6 +518,10 @@ class Cashback_Transactions_Admin {
             $wpdb->query('ROLLBACK');
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log(sprintf('[Cashback Transactions] Exception updating ID %d: %s', $transaction_id, $e->getMessage()));
+            // Освобождаем idempotency-слот: retry должен получить возможность переобработать.
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Ошибка при обновлении транзакции.' ));
             return;
         }
@@ -501,7 +534,14 @@ class Cashback_Transactions_Admin {
             $transaction_id
         ), ARRAY_A);
 
-        wp_send_json_success(array( 'transaction_data' => $updated ));
+        $response_data = array( 'transaction_data' => $updated );
+
+        // Фиксируем результат для идемпотентного retry.
+        if ($idem_request_id !== '') {
+            Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response_data);
+        }
+
+        wp_send_json_success($response_data);
     }
 
     public function handle_get_transaction(): void {
