@@ -93,7 +93,7 @@ class OutboundAllowlistAdminTest extends TestCase
             Cashback_Admin_Outbound_Allowlist::get_instance()->handle_add(
                 array( 'host' => $host, 'reason' => $reason )
             );
-        } catch (\RuntimeException $e) {
+        } catch (\Throwable $e) {
             return $this->decode_json_response($e->getMessage());
         }
         $this->fail('handle_add did not call wp_send_json_*');
@@ -105,7 +105,7 @@ class OutboundAllowlistAdminTest extends TestCase
             Cashback_Admin_Outbound_Allowlist::get_instance()->handle_remove(
                 array( 'host' => $host )
             );
-        } catch (\RuntimeException $e) {
+        } catch (\Throwable $e) {
             return $this->decode_json_response($e->getMessage());
         }
         $this->fail('handle_remove did not call wp_send_json_*');

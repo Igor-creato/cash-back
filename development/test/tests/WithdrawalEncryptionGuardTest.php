@@ -125,8 +125,8 @@ class WithdrawalEncryptionGuardTest extends TestCase
 
         try {
             $withdrawal->save_payout_settings();
-            $this->fail('Ожидали, что wp_send_json_error бросит RuntimeException');
-        } catch (\RuntimeException $e) {
+            $this->fail('Ожидали, что wp_send_json_error прервёт выполнение');
+        } catch (\Throwable $e) {
             $this->assertStringStartsWith('wp_send_json_error:', $e->getMessage());
         }
 

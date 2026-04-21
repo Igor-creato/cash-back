@@ -361,6 +361,16 @@ if (!function_exists('wc_get_logger')) {
     }
 }
 
+/**
+ * Сигнал прерывания запроса, эмулирующий wp_send_json_success / wp_send_json_error / wp_die в тестах.
+ * Наследник \Error (не \Exception) — так продакшен-код с `catch (\Exception)`
+ * внутри AJAX-хендлеров НЕ перехватывает signal случайно, ломая flow-control.
+ * Тесты ловят его через catch (\Throwable) или конкретный класс.
+ */
+if (!class_exists('Cashback_Test_Halt_Signal')) {
+    class Cashback_Test_Halt_Signal extends \Error {}
+}
+
 if (!function_exists('wp_send_json_success')) {
     function wp_send_json_success(mixed $data = null, int $status_code = 200, int $flags = 0): void
     {
@@ -369,7 +379,7 @@ if (!function_exists('wp_send_json_success')) {
             'data'        => $data,
             'status_code' => $status_code,
         );
-        throw new \RuntimeException('wp_send_json_success: ' . json_encode(['success' => true, 'data' => $data]));
+        throw new Cashback_Test_Halt_Signal('wp_send_json_success: ' . json_encode(['success' => true, 'data' => $data]));
     }
 }
 
@@ -381,14 +391,14 @@ if (!function_exists('wp_send_json_error')) {
             'data'        => $data,
             'status_code' => $status_code,
         );
-        throw new \RuntimeException('wp_send_json_error: ' . json_encode(['success' => false, 'data' => $data]));
+        throw new Cashback_Test_Halt_Signal('wp_send_json_error: ' . json_encode(['success' => false, 'data' => $data]));
     }
 }
 
 if (!function_exists('wp_die')) {
     function wp_die(mixed $message = '', mixed $title = '', mixed $args = []): never
     {
-        throw new \RuntimeException('wp_die: ' . (is_string($message) ? $message : json_encode($message)));
+        throw new Cashback_Test_Halt_Signal('wp_die: ' . (is_string($message) ? $message : json_encode($message)));
     }
 }
 
