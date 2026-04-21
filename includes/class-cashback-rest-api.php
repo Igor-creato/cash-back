@@ -974,33 +974,41 @@ HTML;
 
     /**
      * Rate limiting (двухуровневый, аналогично WC_Affiliate_URL_Params).
+     *
+     * Группа 7 (шаг 7 ADR): переход с get_transient/set_transient race-паттерна на
+     * атомарный Cashback_Rate_Limiter::counter_backend(). Scope_keys идентичны
+     * wc-affiliate-url-params — это намеренно: клики через WC-кнопку и через REST
+     * endpoint делят один общий счётчик по IP (и IP+product_id), как было раньше.
      */
     private function get_click_rate_status( string $ip_address, int $product_id ): string {
         $window = self::RATE_LIMIT_WINDOW;
 
-        $pp_hash = substr(md5($ip_address . '|' . $product_id), 0, 12);
-        $pp_key  = 'cb_pp_' . $pp_hash;
+        $pp_scope = 'pp_' . substr(sha1($ip_address . '|' . $product_id), 0, 40);
+        $gl_scope = 'gl_' . substr(sha1($ip_address), 0, 40);
 
-        $gl_hash = substr(md5($ip_address), 0, 12);
-        $gl_key  = 'cb_gl_' . $gl_hash;
+        if (!class_exists('Cashback_Rate_Limiter')) {
+            require_once __DIR__ . '/class-cashback-rate-limiter.php';
+        }
 
-        $pp_count = (int) get_transient($pp_key);
-        $gl_count = (int) get_transient($gl_key);
+        try {
+            $counter = \Cashback_Rate_Limiter::counter_backend();
+            $pp      = $counter->increment($pp_scope, $window, self::RATE_PER_PRODUCT_BLOCK);
+            $gl      = $counter->increment($gl_scope, $window, self::RATE_GLOBAL_BLOCK);
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Rate-limit backend diagnostic (group 7, step 7).
+            error_log('[cashback-rest-api] rate-limit backend error: ' . $e->getMessage());
 
-        if (
-            $pp_count >= self::RATE_PER_PRODUCT_BLOCK ||
-            $gl_count >= self::RATE_GLOBAL_BLOCK
-        ) {
+            return 'normal';
+        }
+
+        $pp_hits = (int) $pp['hits'];
+        $gl_hits = (int) $gl['hits'];
+
+        if ($pp_hits >= self::RATE_PER_PRODUCT_BLOCK || $gl_hits >= self::RATE_GLOBAL_BLOCK) {
             return 'blocked';
         }
 
-        set_transient($pp_key, $pp_count + 1, $window);
-        set_transient($gl_key, $gl_count + 1, $window);
-
-        if (
-            ( $pp_count + 1 ) > self::RATE_PER_PRODUCT_SPAM ||
-            ( $gl_count + 1 ) > self::RATE_GLOBAL_SPAM
-        ) {
+        if ($pp_hits > self::RATE_PER_PRODUCT_SPAM || $gl_hits > self::RATE_GLOBAL_SPAM) {
             return 'spam';
         }
 
