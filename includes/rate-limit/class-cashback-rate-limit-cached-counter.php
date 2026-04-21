@@ -68,6 +68,7 @@ final class Cashback_Rate_Limit_Cached_Counter implements Cashback_Rate_Limit_Co
 
         if (false === $result['allowed']) {
             $ttl = min($this->deny_cache_ttl, max(1, (int) $result['reset_at'] - $now));
+            // phpcs:ignore WordPressVIPMinimum.Performance.LowExpiryCacheTime.CacheTimeUndetermined -- Короткое TTL by design: кеш denied-ответов для 1–5с, чтобы погасить retry-спам после первого отказа. Никогда не должен пережить window лимита (reset_at).
             wp_cache_set($cache_key, $result, self::CACHE_GROUP, $ttl);
         }
 

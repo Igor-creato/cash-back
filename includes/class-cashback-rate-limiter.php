@@ -265,7 +265,7 @@ class Cashback_Rate_Limiter {
         self::require_rate_limit_classes();
 
         global $wpdb;
-        $sql  = new \Cashback_Rate_Limit_SQL_Counter(
+        $sql           = new \Cashback_Rate_Limit_SQL_Counter(
             $wpdb,
             $wpdb->prefix . \Cashback_Rate_Limit_Migration::TABLE_SUFFIX
         );

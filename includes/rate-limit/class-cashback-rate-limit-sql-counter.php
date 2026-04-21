@@ -124,6 +124,7 @@ final class Cashback_Rate_Limit_SQL_Counter implements Cashback_Rate_Limit_Count
 
         $read = $pdo->prepare($select_sql);
         $read->execute(array( $scope_key ));
+        // phpcs:ignore WordPress.DB.RestrictedClasses.mysql__PDO -- PDO ветка существует для integration-тестов на TEMPORARY-таблицах (DedupSchemaIntegrationTest). Production-путь — MODE_WPDB в run_wpdb().
         $row = $read->fetch(\PDO::FETCH_ASSOC);
 
         return is_array($row) ? $row : null;
@@ -145,6 +146,7 @@ final class Cashback_Rate_Limit_SQL_Counter implements Cashback_Rate_Limit_Count
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.NotPrepared
         $wpdb->query($prepared_upsert);
 
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $select_wp собран из $select_sql с безопасно-quoted table-name + фиксированной последовательностью placeholders.
         $prepared_select = $wpdb->prepare($select_wp, $scope_key);
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.NotPrepared
         $row = $wpdb->get_row($prepared_select, ARRAY_A);
