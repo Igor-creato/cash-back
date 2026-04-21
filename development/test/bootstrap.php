@@ -534,6 +534,73 @@ if (!function_exists('sanitize_key')) {
     }
 }
 
+// ============================================================
+// Admin-стабы: capabilities, email, users.
+// Тесты управляют состоянием через:
+//   $GLOBALS['_cb_test_current_user_can'] — bool (default true)
+//   $GLOBALS['_cb_test_mail_calls']       — массив вызовов wp_mail
+//   $GLOBALS['_cb_test_admin_users']      — список (id,email) для get_users
+// ============================================================
+
+if (!isset($GLOBALS['_cb_test_current_user_can'])) {
+    $GLOBALS['_cb_test_current_user_can'] = true;
+}
+if (!isset($GLOBALS['_cb_test_mail_calls'])) {
+    $GLOBALS['_cb_test_mail_calls'] = array();
+}
+if (!isset($GLOBALS['_cb_test_admin_users'])) {
+    $GLOBALS['_cb_test_admin_users'] = array();
+}
+
+if (!function_exists('current_user_can')) {
+    function current_user_can(string $capability, mixed ...$args): bool
+    {
+        return (bool) $GLOBALS['_cb_test_current_user_can'];
+    }
+}
+
+if (!function_exists('wp_mail')) {
+    function wp_mail(string|array $to, string $subject, string $message, string|array $headers = '', array|string $attachments = array()): bool
+    {
+        $GLOBALS['_cb_test_mail_calls'][] = array(
+            'to'      => $to,
+            'subject' => $subject,
+            'message' => $message,
+            'headers' => $headers,
+        );
+        return true;
+    }
+}
+
+if (!function_exists('get_users')) {
+    function get_users(array $args = array()): array
+    {
+        return $GLOBALS['_cb_test_admin_users'];
+    }
+}
+
+if (!function_exists('absint')) {
+    function absint(mixed $maybeint): int
+    {
+        return abs((int) $maybeint);
+    }
+}
+
+if (!function_exists('sanitize_email')) {
+    function sanitize_email(string $email): string
+    {
+        $email = trim($email);
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false ? $email : '';
+    }
+}
+
+if (!function_exists('sanitize_textarea_field')) {
+    function sanitize_textarea_field(string $str): string
+    {
+        return trim(strip_tags($str));
+    }
+}
+
 if (!function_exists('sprintf')) {
     // sprintf уже есть в PHP — не переопределяем
 }
