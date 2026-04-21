@@ -172,7 +172,8 @@ class Cashback_Fraud_Settings {
     }
 
     public static function get_captcha_server_key(): string {
-        return (string) get_option('cashback_captcha_server_key', '');
+        $stored = (string) get_option('cashback_captcha_server_key', '');
+        return Cashback_Encryption::decrypt_if_ciphertext($stored);
     }
 
     public static function get_grey_threshold(): int {
@@ -198,15 +199,22 @@ class Cashback_Fraud_Settings {
     }
 
     /**
-     * Получить все настройки бот-защиты с текущими значениями
+     * Получить все настройки бот-защиты с текущими значениями.
+     * captcha_server_key расшифровывается прозрачно — админ-форма редактирует plaintext.
      *
      * @return array<string, mixed>
      */
     public static function get_all_bot_settings(): array {
         $settings = array();
         foreach (self::BOT_DEFAULTS as $key => $default) {
-            $short_key              = str_replace('cashback_', '', $key);
-            $settings[ $short_key ] = get_option($key, $default);
+            $short_key = str_replace('cashback_', '', $key);
+            $value     = get_option($key, $default);
+
+            if ($key === 'cashback_captcha_server_key') {
+                $value = Cashback_Encryption::decrypt_if_ciphertext((string) $value);
+            }
+
+            $settings[ $short_key ] = $value;
         }
         return $settings;
     }
@@ -305,6 +313,13 @@ class Cashback_Fraud_Settings {
                 $float = (float) $value;
                 return ( $float >= 0 && $float <= 100 ) ? $float : null;
 
+            case 'secret':
+                // Plaintext-секрет: санитизация + шифрование перед записью в wp_options.
+                // encrypt_if_needed graceful — при неконфигурированном ключе вернёт
+                // plaintext (жёсткий fail-closed — область Группы 4 ADR).
+                $plaintext = sanitize_text_field((string) $value);
+                return Cashback_Encryption::encrypt_if_needed($plaintext);
+
             default:
                 return sanitize_text_field((string) $value);
         }
@@ -319,7 +334,7 @@ class Cashback_Fraud_Settings {
         $validation = array(
             'bot_protection_enabled' => 'bool',
             'captcha_client_key'     => 'string',
-            'captcha_server_key'     => 'string',
+            'captcha_server_key'     => 'secret',
             'bot_grey_threshold'     => 'int_positive',
             'bot_block_threshold'    => 'int_positive',
         );
