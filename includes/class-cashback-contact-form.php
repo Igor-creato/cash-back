@@ -186,7 +186,11 @@ class Cashback_Contact_Form {
         } catch (\Throwable $e) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Rate-limit backend diagnostic (group 7, step 8).
             error_log('[cashback-contact-form] rate-limit backend error: ' . $e->getMessage());
-            $result = array( 'allowed' => true, 'hits' => 1, 'reset_at' => time() + self::RATE_WINDOW );
+            $result = array(
+				'allowed'  => true,
+				'hits'     => 1,
+				'reset_at' => time() + self::RATE_WINDOW,
+			);
         }
 
         if (! $result['allowed']) {
