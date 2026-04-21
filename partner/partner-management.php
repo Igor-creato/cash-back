@@ -71,6 +71,28 @@ class Cashback_Partner_Management_Admin {
             'deleteParamNonce' => wp_create_nonce('delete_network_param_nonce'),
             'updateParamNonce' => wp_create_nonce('update_network_param_nonce'),
         ));
+
+        // JS для вкладки «Разрешенные домены API Base URL» (tab=outbound-allowlist).
+        // Подключаем всегда на странице партнёров — JS активируется только если
+        // на странице есть соответствующая форма/кнопки.
+        if (class_exists('Cashback_Admin_Outbound_Allowlist')) {
+            wp_enqueue_script(
+                'cashback-admin-outbound-allowlist',
+                plugins_url('../assets/js/admin-outbound-allowlist.js', __FILE__),
+                array( 'jquery' ),
+                '1.0.0',
+                true
+            );
+
+            wp_localize_script('cashback-admin-outbound-allowlist', 'cashbackOutboundAllowlist', array(
+                'nonce'   => wp_create_nonce(Cashback_Admin_Outbound_Allowlist::NONCE_ACTION),
+                'ajaxurl' => admin_url('admin-ajax.php'),
+                'i18n'    => array(
+                    'confirmRemove' => __('Удалить этот домен из allowlist?', 'cashback-plugin'),
+                    'errorGeneric'  => __('Произошла ошибка. Попробуйте снова.', 'cashback-plugin'),
+                ),
+            ));
+        }
     }
 
     /**
@@ -195,7 +217,7 @@ class Cashback_Partner_Management_Admin {
         // Определяем активную вкладку
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin UI tab selector, allowlist-validated below.
         $active_tab = isset($_GET['tab']) ? sanitize_text_field(wp_unslash($_GET['tab'])) : 'partners';
-        if (!in_array($active_tab, array( 'partners', 'params' ), true)) {
+        if (!in_array($active_tab, array( 'partners', 'params', 'outbound-allowlist' ), true)) {
             $active_tab = 'partners';
         }
 ?>
@@ -211,6 +233,8 @@ class Cashback_Partner_Management_Admin {
                     class="nav-tab <?php echo $active_tab === 'partners' ? 'nav-tab-active' : ''; ?>">Партнеры</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=cashback-partners&tab=params')); ?>"
                     class="nav-tab <?php echo $active_tab === 'params' ? 'nav-tab-active' : ''; ?>">Добавить передаваемые в URL</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=cashback-partners&tab=outbound-allowlist')); ?>"
+                    class="nav-tab <?php echo $active_tab === 'outbound-allowlist' ? 'nav-tab-active' : ''; ?>">Разрешенные домены API Base URL</a>
             </nav>
 
             <?php if ($active_tab === 'params') : ?>
@@ -253,6 +277,14 @@ class Cashback_Partner_Management_Admin {
                         <button type="button" id="save-network-params" class="button button-primary">Сохранить</button>
                     </p>
                 </div>
+
+            <?php elseif ($active_tab === 'outbound-allowlist') : ?>
+                <!-- Вкладка: разрешённые домены API Base URL (SSRF allowlist) -->
+                <?php
+                if (class_exists('Cashback_Admin_Outbound_Allowlist')) {
+                    Cashback_Admin_Outbound_Allowlist::get_instance()->render_tab_content();
+                }
+                ?>
 
             <?php else : ?>
                 <!-- Вкладка партнеров -->
