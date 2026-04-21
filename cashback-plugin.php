@@ -570,6 +570,7 @@ class CashbackPlugin {
             $this->require_file('support/admin-support.php');
             $this->require_file('antifraud/class-fraud-admin.php');
             $this->require_file('admin/class-cashback-admin-api-validation.php');
+            $this->require_file('admin/class-cashback-admin-outbound-allowlist.php');
             $this->require_file('affiliate/class-affiliate-admin.php');
             $this->require_file('claims/class-claims-admin.php');
             $this->require_file('notifications/class-cashback-notifications-admin.php');
