@@ -339,10 +339,20 @@ if (!function_exists('wc_price')) {
     }
 }
 
-if (!function_exists('wc_get_logger')) {
-    function wc_get_logger(): object
+if (!interface_exists('WC_Logger_Interface')) {
+    interface WC_Logger_Interface
     {
-        return new class {
+        public function info(string $message, array $context = []): void;
+        public function error(string $message, array $context = []): void;
+        public function warning(string $message, array $context = []): void;
+        public function debug(string $message, array $context = []): void;
+    }
+}
+
+if (!function_exists('wc_get_logger')) {
+    function wc_get_logger(): WC_Logger_Interface
+    {
+        return new class implements WC_Logger_Interface {
             public function info(string $message, array $context = []): void {}
             public function error(string $message, array $context = []): void {}
             public function warning(string $message, array $context = []): void {}

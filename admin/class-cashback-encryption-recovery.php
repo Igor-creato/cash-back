@@ -147,16 +147,103 @@ class Cashback_Encryption_Recovery {
     }
 
     /**
-     * Handler для Action Scheduler: запускает один батч и перепланирует себя,
-     * если ещё остались строки.
+     * Сколько активных заявок на выплату (status='waiting') ещё ждут отмены.
+     * Используется в двухфазном job, чтобы определить завершена ли phase A.
+     */
+    public static function count_waiting_payouts(): int {
+        global $wpdb;
+        $table = $wpdb->prefix . 'cashback_payout_requests';
+        $sql   = "SELECT COUNT(*) FROM `{$table}` WHERE status = 'waiting'";
+        return (int) $wpdb->get_var($sql);
+    }
+
+    /**
+     * Phase A: отменить waiting-заявки батчем.
+     *
+     * Каждая заявка обрабатывается в отдельной транзакции через
+     * Cashback_Payouts_Admin::cancel_payout_with_refund() — используется
+     * существующий защищённый путь (FOR UPDATE + ledger + refunded_at).
+     *
+     * @param int $limit  Максимум заявок за один вызов.
+     * @return int        Число успешно отменённых.
+     */
+    public static function cancel_waiting_payouts_batch( int $limit = 100 ): int {
+        global $wpdb, $payouts_admin;
+
+        $limit = max(1, min(1000, $limit));
+        $table = $wpdb->prefix . 'cashback_payout_requests';
+        $sql   = "SELECT id FROM `{$table}` WHERE status = 'waiting' LIMIT {$limit}";
+        $rows  = $wpdb->get_results($sql);
+
+        if (empty($rows)) {
+            return 0;
+        }
+
+        // В AS-job is_admin() может быть false → admin/payouts.php не подключён при load_dependencies.
+        if (!class_exists('Cashback_Payouts_Admin')) {
+            $payouts_file = plugin_dir_path(__DIR__) . 'admin/payouts.php';
+            if (!file_exists($payouts_file)) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Recovery] admin/payouts.php missing; cannot cancel payouts.');
+                return 0;
+            }
+            require_once $payouts_file;
+        }
+
+        if (!($payouts_admin instanceof Cashback_Payouts_Admin)) {
+            $payouts_admin = new Cashback_Payouts_Admin();
+        }
+
+        $cancelled = 0;
+        foreach ($rows as $row) {
+            $payout_id = (int) ($row->id ?? 0);
+            if ($payout_id <= 0) {
+                continue;
+            }
+            if ($payouts_admin->cancel_payout_with_refund($payout_id, 'encryption_recovery', 0)) {
+                $cancelled++;
+            }
+        }
+
+        return $cancelled;
+    }
+
+    /**
+     * Handler для Action Scheduler — двухфазный:
+     *
+     *   Phase A: отмена waiting-заявок с возвратом pending → available.
+     *   Phase B: обнуление encrypted_details в cashback_user_profile.
+     *   Phase C: обновление fingerprint + audit-log завершения.
+     *
+     * Phase B запускается только после того, как в phase A не осталось
+     * заявок для отмены — это гарантирует, что админ не потеряет ciphertext
+     * payout_account из заявки до того, как заявка будет отменена.
      */
     public static function run_batch_action_handler(): void {
+        // ---- Phase A: cancel waiting payouts ----
+        $waiting_remaining = self::count_waiting_payouts();
+        if ($waiting_remaining > 0) {
+            $cancelled = self::cancel_waiting_payouts_batch(100);
+
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log(sprintf(
+                '[Cashback Recovery] Phase A: cancelled %d waiting payout(s); %d remaining',
+                $cancelled,
+                max(0, $waiting_remaining - $cancelled)
+            ));
+
+            if (function_exists('as_enqueue_async_action')) {
+                as_enqueue_async_action(self::AS_HOOK, array(), self::AS_GROUP);
+            }
+            return;
+        }
+
+        // ---- Phase B: purge profile ciphertexts ----
         $affected = self::run_batch(self::BATCH_SIZE);
 
         // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-        error_log(sprintf('[Cashback Recovery] Purged %d row(s) in current batch', $affected));
+        error_log(sprintf('[Cashback Recovery] Phase B: purged %d profile row(s)', $affected));
 
-        // Проверяем, осталось ли что-то очищать.
         if (self::count_rows_with_ciphertext() > 0) {
             if (function_exists('as_enqueue_async_action')) {
                 as_enqueue_async_action(self::AS_HOOK, array(), self::AS_GROUP);
@@ -164,7 +251,7 @@ class Cashback_Encryption_Recovery {
             return;
         }
 
-        // Очистка завершена. Принимаем текущий ключ как канонический и пишем аудит.
+        // ---- Phase C: finalize — принимаем текущий ключ как канонический ----
         self::update_stored_fingerprint();
 
         if (class_exists('Cashback_Encryption') && method_exists('Cashback_Encryption', 'write_audit_log')) {
