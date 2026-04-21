@@ -19,6 +19,48 @@ use PHPUnit\Framework\Attributes\Group;
 #[Group('option_encryption')]
 class OptionEncryptionHelpersTest extends TestCase
 {
+    /** Предыдущее значение $GLOBALS['wpdb'] — восстанавливается в tearDown. */
+    private mixed $previous_wpdb = null;
+
+    protected function setUp(): void
+    {
+        // Сброс in-process cache статических audit-записей, чтобы тесты не влияли друг на друга.
+        $ref = new \ReflectionProperty(Cashback_Encryption::class, 'reported_decrypt_failures');
+        $ref->setAccessible(true);
+        $ref->setValue(null, array());
+
+        $this->previous_wpdb = $GLOBALS['wpdb'] ?? null;
+    }
+
+    protected function tearDown(): void
+    {
+        if ($this->previous_wpdb === null) {
+            unset($GLOBALS['wpdb']);
+        } else {
+            $GLOBALS['wpdb'] = $this->previous_wpdb;
+        }
+    }
+
+    /**
+     * Установить минимальный $wpdb-мок, собирающий insert() вызовы в audit-лог.
+     */
+    private function installAuditWpdbMock(): object
+    {
+        $wpdb = new class {
+            public string $prefix = 'wp_';
+            /** @var array<int, array{table:string, data:array<string,mixed>}> */
+            public array $inserts = array();
+
+            public function insert(string $table, array $data, array|string|null $format = null): int|false
+            {
+                $this->inserts[] = array( 'table' => $table, 'data' => $data );
+                return 1;
+            }
+        };
+        $GLOBALS['wpdb'] = $wpdb;
+        return $wpdb;
+    }
+
     // ================================================================
     // ТЕСТЫ: encrypt_if_needed()
     // ================================================================
@@ -72,21 +114,81 @@ class OptionEncryptionHelpersTest extends TestCase
         $this->assertSame($plaintext, Cashback_Encryption::decrypt_if_ciphertext($encrypted));
     }
 
-    public function test_decrypt_if_ciphertext_throws_on_tampered_ciphertext(): void
+    public function test_decrypt_if_ciphertext_returns_empty_on_tampered_ciphertext(): void
     {
-        // GCM auth tag должен отклонить искажение
+        // GCM auth tag отклоняет искажение → fail-safe возвращает ''.
+        // Ранее кидал RuntimeException; для wp_option-секретов WSOD на фронте
+        // хуже, чем «фича выключилась», и contract перешёл на fail-safe + audit лог.
+        if (!Cashback_Encryption::is_configured()) {
+            $this->markTestSkipped('Тесту требуется is_configured() === true.');
+        }
+        $this->installAuditWpdbMock();
+
         $encrypted = Cashback_Encryption::encrypt_if_needed('sensitive');
         $tampered  = $encrypted . 'X';
 
-        $this->expectException(\RuntimeException::class);
-        Cashback_Encryption::decrypt_if_ciphertext($tampered);
+        $this->assertSame('', Cashback_Encryption::decrypt_if_ciphertext($tampered));
     }
 
-    public function test_decrypt_if_ciphertext_throws_on_invalid_ciphertext_with_prefix(): void
+    public function test_decrypt_if_ciphertext_returns_empty_on_invalid_ciphertext_with_prefix(): void
     {
-        // Префикс есть, но payload мусорный
-        $this->expectException(\RuntimeException::class);
-        Cashback_Encryption::decrypt_if_ciphertext('ENC:v1:not-base64-!!!');
+        // Префикс есть, но payload мусорный → fail-safe возвращает ''.
+        if (!Cashback_Encryption::is_configured()) {
+            $this->markTestSkipped('Тесту требуется is_configured() === true.');
+        }
+        $this->installAuditWpdbMock();
+
+        $this->assertSame('', Cashback_Encryption::decrypt_if_ciphertext('ENC:v1:not-base64-!!!'));
+    }
+
+    public function test_decrypt_if_ciphertext_returns_empty_when_key_not_configured(): void
+    {
+        // Запускается с bootstrap-no-encryption-key.php.
+        if (Cashback_Encryption::is_configured()) {
+            $this->markTestSkipped('Тест требует !is_configured(); запустите с bootstrap-no-encryption-key.php.');
+        }
+        $this->installAuditWpdbMock();
+
+        $this->assertSame('', Cashback_Encryption::decrypt_if_ciphertext('ENC:v1:anything-goes-here'));
+    }
+
+    public function test_decrypt_if_ciphertext_returns_plaintext_when_not_ciphertext_and_no_key(): void
+    {
+        // Без ключа plaintext (legacy wp_option без префикса) всё равно проходит как есть.
+        if (Cashback_Encryption::is_configured()) {
+            $this->markTestSkipped('Тест требует !is_configured(); запустите с bootstrap-no-encryption-key.php.');
+        }
+
+        $this->assertSame('plain value', Cashback_Encryption::decrypt_if_ciphertext('plain value'));
+        $this->assertSame('', Cashback_Encryption::decrypt_if_ciphertext(''));
+    }
+
+    public function test_decrypt_if_ciphertext_writes_audit_log_on_decrypt_failure(): void
+    {
+        // Первый вызов пишет audit-запись; повторный с тем же значением — нет (in-process cache).
+        if (!Cashback_Encryption::is_configured()) {
+            $this->markTestSkipped('Тесту требуется is_configured() === true.');
+        }
+        $wpdb = $this->installAuditWpdbMock();
+
+        $encrypted = Cashback_Encryption::encrypt_if_needed('captcha-key');
+        $tampered  = $encrypted . 'X';
+
+        $this->assertSame('', Cashback_Encryption::decrypt_if_ciphertext($tampered));
+        $this->assertSame('', Cashback_Encryption::decrypt_if_ciphertext($tampered));
+
+        $audit_inserts = array_values(array_filter(
+            $wpdb->inserts,
+            static fn(array $c): bool => str_contains($c['table'], 'cashback_audit_log')
+                && ( $c['data']['action'] ?? null ) === 'option_decrypt_failed'
+        ));
+
+        $this->assertCount(
+            1,
+            $audit_inserts,
+            'Audit-запись option_decrypt_failed должна писаться один раз на одинаковое значение'
+        );
+        $this->assertSame('cashback_encryption', $audit_inserts[0]['data']['entity_type'] ?? null);
     }
 
     // ================================================================
