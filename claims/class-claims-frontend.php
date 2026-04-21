@@ -496,6 +496,13 @@ class Cashback_Claims_Frontend {
             'comment'     => sanitize_textarea_field(wp_unslash($_POST['comment'] ?? '')),
         );
 
+        // Группа 6 ADR шаг 3a: пробрасываем client-side request_id в idempotency_key — валидация
+        // и нормализация делаются в Cashback_Claims_Manager::create(). Без key поведение не меняется.
+        $request_id = isset($_POST['request_id']) ? sanitize_text_field(wp_unslash($_POST['request_id'])) : '';
+        if ('' !== $request_id) {
+            $data['idempotency_key'] = $request_id;
+        }
+
         if (empty($data['click_id']) || empty($data['order_id']) || $data['order_value'] <= 0 || empty($data['order_date'])) {
             wp_send_json_error(array( 'message' => __('Заполните все обязательные поля.', 'cashback-plugin') ));
         }

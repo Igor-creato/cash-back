@@ -110,6 +110,18 @@ class Cashback_Claims_Manager {
             $insert_format[]                   = '%s';
         }
 
+        // Schema-level idempotency (Группа 6 ADR, шаг 3a). UNIQUE(user_id, idempotency_key) в cashback_claims.
+        // Client шлёт request_id; нормализуем в 32-hex UUID. Если невалидный/пусто — колонка остаётся NULL,
+        // UNIQUE не срабатывает (MySQL: multiple NULL допустимы).
+        $idempotency_key = '';
+        if (isset($data['idempotency_key']) && is_string($data['idempotency_key']) && class_exists('Cashback_Idempotency')) {
+            $idempotency_key = Cashback_Idempotency::normalize_request_id($data['idempotency_key']);
+        }
+        if ($idempotency_key !== '') {
+            $insert_data['idempotency_key'] = $idempotency_key;
+            $insert_format[]                = '%s';
+        }
+
         $wpdb->query('START TRANSACTION');
 
         $inserted = $wpdb->insert(
@@ -119,14 +131,36 @@ class Cashback_Claims_Manager {
         );
 
         if (!$inserted) {
-            $last_error = $wpdb->last_error;
+            $last_error     = $wpdb->last_error;
+            $classification = self::classify_insert_error($last_error);
             $wpdb->query('ROLLBACK');
-            if (strpos($last_error, 'Duplicate entry') !== false && strpos($last_error, 'uk_click_user') !== false) {
+
+            if ('duplicate_click' === $classification) {
                 return array(
 					'success' => false,
 					'error'   => __('Заявка по этому переходу уже подана. Повторная заявка невозможна, дождитесь решения сервиса.', 'cashback-plugin'),
 				);
             }
+
+            // Idempotent replay: клиент отправил тот же request_id — возвращаем существующий claim_id.
+            if ('duplicate_idempotency' === $classification && '' !== $idempotency_key) {
+                $existing_id = self::lookup_existing_claim_by_idempotency($wpdb, $user_id, $idempotency_key);
+                if (null !== $existing_id) {
+                    return array(
+						'success'  => true,
+						'claim_id' => $existing_id,
+						'replay'   => true,
+					);
+                }
+            }
+
+            if ('duplicate_order' === $classification) {
+                return array(
+					'success' => false,
+					'error'   => __('Заявка на этот заказ уже создана.', 'cashback-plugin'),
+				);
+            }
+
             return array(
 				'success' => false,
 				'error'   => __('Не удалось создать заявку. Попробуйте позже.', 'cashback-plugin'),
@@ -563,5 +597,47 @@ class Cashback_Claims_Manager {
         self::log_event($claim_id, $claim, $note, $actor_id, 'admin');
 
         return array( 'success' => true );
+    }
+
+    /**
+     * Распознать какой UNIQUE ключ сработал по $wpdb->last_error.
+     * Используется в create() для различения сценариев Duplicate entry.
+     *
+     * @param string $last_error
+     * @return string 'duplicate_click' | 'duplicate_idempotency' | 'duplicate_order' | 'other'
+     */
+    public static function classify_insert_error( string $last_error ): string {
+        if ('' === $last_error || false === strpos($last_error, 'Duplicate entry')) {
+            return 'other';
+        }
+        if (false !== strpos($last_error, "'uk_click_user'")) {
+            return 'duplicate_click';
+        }
+        if (false !== strpos($last_error, "'uk_user_idempotency'")) {
+            return 'duplicate_idempotency';
+        }
+        if (false !== strpos($last_error, "'uk_merchant_order'")) {
+            return 'duplicate_order';
+        }
+        return 'other';
+    }
+
+    /**
+     * SELECT claim_id по (user_id, idempotency_key) — для idempotent replay в create().
+     * Возвращает null если ничего не найдено.
+     *
+     * @param object $wpdb wpdb или совместимый stub.
+     */
+    public static function lookup_existing_claim_by_idempotency( object $wpdb, int $user_id, string $idempotency_key ): ?int {
+        $table = $wpdb->prefix . 'cashback_claims';
+        $sql   = $wpdb->prepare(
+            'SELECT claim_id FROM %i WHERE user_id = %d AND idempotency_key = %s LIMIT 1',
+            $table,
+            $user_id,
+            $idempotency_key
+        );
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- $sql получен из $wpdb->prepare() выше; lookup для idempotent replay не подлежит кэшированию.
+        $id = $wpdb->get_var($sql);
+        return null !== $id ? (int) $id : null;
     }
 }
