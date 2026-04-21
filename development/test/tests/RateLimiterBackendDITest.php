@@ -35,8 +35,28 @@ final class RateLimiterBackendDITest extends TestCase
         parent::tearDown();
     }
 
-    public function test_unregistered_action_returns_allowed_and_bypasses_backend(): void
+    public function test_unregistered_action_is_denied_by_default_fail_closed(): void
     {
+        // Группа 7 шаг 9: default-policy для unregistered — deny.
+        // Сбрасываем фильтр (bootstrap не гарантирует пустоту между тестами).
+        $GLOBALS['_cb_test_filters'] = array();
+
+        $backend = new Fake_RL_Backend();
+        \Cashback_Rate_Limiter::set_backend($backend);
+
+        $result = \Cashback_Rate_Limiter::check('some_unknown_action', 1, '1.2.3.4');
+
+        $this->assertFalse($result['allowed']);
+        $this->assertSame(0, $result['remaining']);
+        $this->assertGreaterThan(0, $result['retry_after']);
+        $this->assertSame(0, $backend->call_count, 'Unregistered action не должен звать backend.');
+    }
+
+    public function test_unregistered_action_allowed_when_filter_returns_allow(): void
+    {
+        $GLOBALS['_cb_test_filters'] = array();
+        add_filter('cashback_rate_limit_unregistered_policy', static fn(): string => 'allow');
+
         $backend = new Fake_RL_Backend();
         \Cashback_Rate_Limiter::set_backend($backend);
 
@@ -44,8 +64,17 @@ final class RateLimiterBackendDITest extends TestCase
 
         $this->assertTrue($result['allowed']);
         $this->assertSame(999, $result['remaining']);
-        $this->assertSame(0, $result['retry_after']);
-        $this->assertSame(0, $backend->call_count, 'Unregistered action не должен звать backend.');
+    }
+
+    public function test_social_email_prompt_and_social_unlink_are_registered_actions(): void
+    {
+        // Регрессионный тест: эти 2 action'а вызываются в social-auth-router,
+        // но до шага 9 НЕ были в ACTION_TIERS → fail-open. Теперь они registered
+        // на tier=write и проходят через backend-based rate-limit.
+        $this->assertTrue(\Cashback_Rate_Limiter::is_plugin_action('social_email_prompt'));
+        $this->assertTrue(\Cashback_Rate_Limiter::is_plugin_action('social_unlink'));
+        $this->assertSame('write', \Cashback_Rate_Limiter::get_tier('social_email_prompt'));
+        $this->assertSame('write', \Cashback_Rate_Limiter::get_tier('social_unlink'));
     }
 
     public function test_allowed_response_returns_remaining_limit_minus_hits(): void

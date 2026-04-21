@@ -65,6 +65,10 @@ class Cashback_Rate_Limiter {
         'social_start'                              => 'write',
         'social_callback'                           => 'write',
         'social_confirm'                            => 'write',
+        // Группа 7 (шаг 9 ADR): пополнение реестра для закрытия F-9-003
+        // (ранее оба action'а вызывали check() мимо реестра → fail-open).
+        'social_email_prompt'                       => 'write',
+        'social_unlink'                             => 'write',
 
         // --- Read ---
         'get_user_balance'                          => 'read',
@@ -162,11 +166,25 @@ class Cashback_Rate_Limiter {
         $tier = self::get_tier($action);
 
         if ($tier === null) {
+            // Группа 7 (шаг 9 ADR): fail-closed для unregistered actions (iter-9 F-9-003).
+            // Фильтр cashback_rate_limit_unregistered_policy оставлен для экстренного
+            // отката на совместимость: 'deny' (default) | 'allow'. В production-проде
+            // не ожидаем активации, но даёт откат без деплоя при непредвиденных action'ах.
+            $policy = (string) apply_filters('cashback_rate_limit_unregistered_policy', 'deny', $action);
+
+            if ($policy === 'allow') {
+                return array(
+                    'allowed'     => true,
+                    'remaining'   => 999,
+                    'retry_after' => 0,
+                );
+            }
+
             return array(
-				'allowed'     => true,
-				'remaining'   => 999,
-				'retry_after' => 0,
-			);
+                'allowed'     => false,
+                'remaining'   => 0,
+                'retry_after' => self::GREY_TTL,
+            );
         }
 
         // Заблокированный IP (grey score >= блок-порог) — отклоняем до истечения GREY_TTL,
