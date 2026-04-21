@@ -472,6 +472,10 @@ class CashbackPlugin {
         // Утилита проверки статуса пользователя (для блокировки забаненных)
         $this->require_file('includes/class-cashback-user-status.php');
 
+        // Server-side дедуп request_id (Группа 5 ADR) — общий helper для admin-AJAX хендлеров.
+        // Подключается рано: используется в разных AJAX-обработчиках (payouts/transactions/claims).
+        $this->require_file('includes/class-cashback-idempotency.php');
+
         // PHP-фолбэки для логики MySQL-триггеров
         $this->require_file('includes/class-cashback-trigger-fallbacks.php');
 

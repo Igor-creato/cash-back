@@ -265,16 +265,44 @@ if (!function_exists('wp_nonce_field')) {
     }
 }
 
+/**
+ * Stateful in-memory моки transient API + Object Cache API.
+ * Требуются Cashback_Idempotency (Группа 5 ADR) для functional-тестов дедупа
+ * request_id: helper вызывает wp_cache_add/get + set_transient, и в тестах
+ * нужен честный round-trip с учётом TTL.
+ *
+ * Сброс между тестами — через $GLOBALS['_cb_test_transients'] = [] / $GLOBALS['_cb_test_cache'] = [].
+ */
+if (!isset($GLOBALS['_cb_test_transients'])) {
+    $GLOBALS['_cb_test_transients'] = array();
+}
+if (!isset($GLOBALS['_cb_test_cache'])) {
+    $GLOBALS['_cb_test_cache'] = array();
+}
+
 if (!function_exists('get_transient')) {
     function get_transient(string $transient): mixed
     {
-        return false;
+        $store = &$GLOBALS['_cb_test_transients'];
+        if (!array_key_exists($transient, $store)) {
+            return false;
+        }
+        $entry = $store[ $transient ];
+        if ($entry['expires_at'] !== 0 && $entry['expires_at'] < time()) {
+            unset($store[ $transient ]);
+            return false;
+        }
+        return $entry['value'];
     }
 }
 
 if (!function_exists('set_transient')) {
     function set_transient(string $transient, mixed $value, int $expiration = 0): bool
     {
+        $GLOBALS['_cb_test_transients'][ $transient ] = array(
+            'value'      => $value,
+            'expires_at' => $expiration > 0 ? time() + $expiration : 0,
+        );
         return true;
     }
 }
@@ -282,7 +310,74 @@ if (!function_exists('set_transient')) {
 if (!function_exists('delete_transient')) {
     function delete_transient(string $transient): bool
     {
+        if (array_key_exists($transient, $GLOBALS['_cb_test_transients'])) {
+            unset($GLOBALS['_cb_test_transients'][ $transient ]);
+            return true;
+        }
+        return false;
+    }
+}
+
+if (!function_exists('wp_cache_add')) {
+    function wp_cache_add(string $key, mixed $data, string $group = '', int $expire = 0): bool
+    {
+        $store    = &$GLOBALS['_cb_test_cache'];
+        $bucket   = $group !== '' ? $group : 'default';
+        if (isset($store[ $bucket ][ $key ])) {
+            $entry = $store[ $bucket ][ $key ];
+            if ($entry['expires_at'] === 0 || $entry['expires_at'] >= time()) {
+                return false;
+            }
+        }
+        $store[ $bucket ][ $key ] = array(
+            'value'      => $data,
+            'expires_at' => $expire > 0 ? time() + $expire : 0,
+        );
         return true;
+    }
+}
+
+if (!function_exists('wp_cache_get')) {
+    function wp_cache_get(string $key, string $group = '', bool $force = false, ?bool &$found = null): mixed
+    {
+        $store  = &$GLOBALS['_cb_test_cache'];
+        $bucket = $group !== '' ? $group : 'default';
+        if (!isset($store[ $bucket ][ $key ])) {
+            $found = false;
+            return false;
+        }
+        $entry = $store[ $bucket ][ $key ];
+        if ($entry['expires_at'] !== 0 && $entry['expires_at'] < time()) {
+            unset($store[ $bucket ][ $key ]);
+            $found = false;
+            return false;
+        }
+        $found = true;
+        return $entry['value'];
+    }
+}
+
+if (!function_exists('wp_cache_set')) {
+    function wp_cache_set(string $key, mixed $data, string $group = '', int $expire = 0): bool
+    {
+        $bucket = $group !== '' ? $group : 'default';
+        $GLOBALS['_cb_test_cache'][ $bucket ][ $key ] = array(
+            'value'      => $data,
+            'expires_at' => $expire > 0 ? time() + $expire : 0,
+        );
+        return true;
+    }
+}
+
+if (!function_exists('wp_cache_delete')) {
+    function wp_cache_delete(string $key, string $group = ''): bool
+    {
+        $bucket = $group !== '' ? $group : 'default';
+        if (isset($GLOBALS['_cb_test_cache'][ $bucket ][ $key ])) {
+            unset($GLOBALS['_cb_test_cache'][ $bucket ][ $key ]);
+            return true;
+        }
+        return false;
     }
 }
 
