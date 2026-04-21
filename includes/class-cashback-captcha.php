@@ -37,8 +37,8 @@ class Cashback_Captcha {
      * @return bool
      */
     public static function is_configured(): bool {
-        $client_key = get_option('cashback_captcha_client_key', '');
-        $server_key = get_option('cashback_captcha_server_key', '');
+        $client_key = Cashback_Fraud_Settings::get_captcha_client_key();
+        $server_key = Cashback_Fraud_Settings::get_captcha_server_key();
 
         return $client_key !== '' && $server_key !== '';
     }
@@ -109,7 +109,7 @@ class Cashback_Captcha {
             return false;
         }
 
-        $server_key = get_option('cashback_captcha_server_key', '');
+        $server_key = Cashback_Fraud_Settings::get_captcha_server_key();
         if ($server_key === '') {
             // Ключ не настроен — graceful degradation
             return true;
