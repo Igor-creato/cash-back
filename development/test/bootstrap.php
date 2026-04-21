@@ -24,9 +24,25 @@ if (!defined('DB_NAME')) {
     define('DB_NAME', 'test_db');
 }
 
-// Тестовый ключ шифрования (64 hex-символа = 32 байта)
-if (!defined('CB_ENCRYPTION_KEY')) {
+// Тестовый ключ шифрования (64 hex-символа = 32 байта).
+// Отдельный bootstrap-no-encryption-key.php выставляет $GLOBALS['_cb_test_skip_encryption_key']
+// для проверки fail-closed веток, где is_configured() должен вернуть false.
+if (!defined('CB_ENCRYPTION_KEY') && empty($GLOBALS['_cb_test_skip_encryption_key'])) {
     define('CB_ENCRYPTION_KEY', 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2');
+}
+
+// WordPress DB output modes (wp-includes/wp-db.php)
+if (!defined('ARRAY_A')) {
+    define('ARRAY_A', 'ARRAY_A');
+}
+if (!defined('ARRAY_N')) {
+    define('ARRAY_N', 'ARRAY_N');
+}
+if (!defined('OBJECT')) {
+    define('OBJECT', 'OBJECT');
+}
+if (!defined('OBJECT_K')) {
+    define('OBJECT_K', 'OBJECT_K');
 }
 
 // WordPress time constants
@@ -185,14 +201,14 @@ if (!function_exists('esc_attr__')) {
 if (!function_exists('is_user_logged_in')) {
     function is_user_logged_in(): bool
     {
-        return false;
+        return (bool) ($GLOBALS['_cb_test_is_logged_in'] ?? false);
     }
 }
 
 if (!function_exists('get_current_user_id')) {
     function get_current_user_id(): int
     {
-        return 0;
+        return (int) ($GLOBALS['_cb_test_user_id'] ?? 0);
     }
 }
 
@@ -338,6 +354,11 @@ if (!function_exists('wc_get_logger')) {
 if (!function_exists('wp_send_json_success')) {
     function wp_send_json_success(mixed $data = null, int $status_code = 200, int $flags = 0): void
     {
+        $GLOBALS['_cb_test_last_json_response'] = array(
+            'success'     => true,
+            'data'        => $data,
+            'status_code' => $status_code,
+        );
         throw new \RuntimeException('wp_send_json_success: ' . json_encode(['success' => true, 'data' => $data]));
     }
 }
@@ -345,6 +366,11 @@ if (!function_exists('wp_send_json_success')) {
 if (!function_exists('wp_send_json_error')) {
     function wp_send_json_error(mixed $data = null, int $status_code = 200, int $flags = 0): void
     {
+        $GLOBALS['_cb_test_last_json_response'] = array(
+            'success'     => false,
+            'data'        => $data,
+            'status_code' => $status_code,
+        );
         throw new \RuntimeException('wp_send_json_error: ' . json_encode(['success' => false, 'data' => $data]));
     }
 }

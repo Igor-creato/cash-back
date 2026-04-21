@@ -855,14 +855,19 @@ class CashbackPlugin {
     }
 
     /**
-     * Уведомление об отсутствии ключа шифрования
+     * Уведомление об отсутствии ключа шифрования.
+     * Сообщает админу, что сохранение и чтение реквизитов выплат отключены
+     * до восстановления ключа (fail-closed guard). См. ADR Группа 4 (F-1-001).
      */
     public function encryption_key_missing_notice() {
         $key_file = $this->get_encryption_key_path();
         printf(
-            '<div class="notice notice-error"><p><strong>%s:</strong> %s <code>%s</code></p></div>',
-            esc_html__('Cashback Plugin', 'cashback-plugin'),
-            esc_html__('Не удалось создать файл с ключом шифрования. Проверьте права на запись в директорию wp-content. Ожидаемый путь:', 'cashback-plugin'),
+            '<div class="notice notice-error"><p><strong>%s:</strong> %s</p><p>%s</p><p><strong>%s</strong> %s <code>%s</code></p></div>',
+            esc_html__('Cashback Plugin: ключ шифрования не настроен', 'cashback-plugin'),
+            esc_html__('Сохранение и чтение реквизитов выплат пользователей временно отключены.', 'cashback-plugin'),
+            esc_html__('Возможные причины: каталог wp-content/ не доступен для записи, файл ключа удалён или повреждён, либо константа CB_ENCRYPTION_KEY задана некорректно.', 'cashback-plugin'),
+            esc_html__('Внимание:', 'cashback-plugin'),
+            esc_html__('если файл ключа был удалён, ранее зашифрованные реквизиты не могут быть расшифрованы — восстановите исходный файл из резервной копии. Ожидаемый путь:', 'cashback-plugin'),
             esc_html($key_file)
         );
     }
