@@ -333,15 +333,16 @@ class PayoutEncryptionRecoveryTest extends TestCase
 
     public function test_cancel_waiting_payouts_batch_respects_limit(): void
     {
-        // Проверяем, что SELECT ограничен LIMIT.
+        // Проверяем, что SELECT ограничен LIMIT и 50 передан как аргумент prepare.
         Cashback_Encryption_Recovery::cancel_waiting_payouts_batch(50);
 
         $selects = array_filter(
             $this->wpdb->calls,
             static fn(array $c): bool => 'get_results' === $c['method']
-                && preg_match('/LIMIT\s+50/i', (string) $c['args'][0])
+                && preg_match('/\bLIMIT\b/i', (string) $c['args'][0])
+                && preg_match('/\b50\b/', (string) $c['args'][0])
         );
-        $this->assertNotEmpty($selects, 'SELECT должен включать LIMIT 50');
+        $this->assertNotEmpty($selects, 'SELECT должен включать LIMIT с аргументом 50');
     }
 
     // ================================================================

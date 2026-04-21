@@ -450,6 +450,7 @@ class CashbackWithdrawal {
                 );
             } catch (\Throwable $e) {
                 // Аудит-лог не должен ломать основной поток; проглатываем.
+                unset($e);
             }
         }
     }
@@ -1377,8 +1378,8 @@ class CashbackWithdrawal {
         $details_hash      = null;
 
         try {
-            $bank_name  = $bank_required ? $this->get_bank_name($bank_id) : '';
-            $enc_result = Cashback_Encryption::encrypt_details(array(
+            $bank_name         = $bank_required ? $this->get_bank_name($bank_id) : '';
+            $enc_result        = Cashback_Encryption::encrypt_details(array(
                 'account'   => $payout_account,
                 'full_name' => '',
                 'bank'      => $bank_name ?: '',

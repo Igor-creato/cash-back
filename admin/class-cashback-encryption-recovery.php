@@ -119,8 +119,9 @@ class Cashback_Encryption_Recovery {
     public static function count_rows_with_ciphertext(): int {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_user_profile';
-        $sql   = "SELECT COUNT(*) FROM `{$table}` WHERE encrypted_details <> ''";
-        return (int) $wpdb->get_var($sql);
+        return (int) $wpdb->get_var(
+            $wpdb->prepare("SELECT COUNT(*) FROM %i WHERE encrypted_details <> ''", $table)
+        );
     }
 
     /**
@@ -131,18 +132,23 @@ class Cashback_Encryption_Recovery {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_user_profile';
         $limit = max(1, min(5000, $limit));
-        $sql   = "UPDATE `{$table}` SET "
-            . "encrypted_details = '', "
-            . "masked_details = '', "
-            . "details_hash = '', "
-            . "payout_account = '', "
-            . "payout_full_name = '', "
-            . "payout_method_id = 0, "
-            . "bank_id = 0 "
-            . "WHERE encrypted_details <> '' "
-            . "LIMIT {$limit}";
 
-        $affected = $wpdb->query($sql);
+        $affected = $wpdb->query(
+            $wpdb->prepare(
+                'UPDATE %i SET'
+                . " encrypted_details = '',"
+                . " masked_details = '',"
+                . " details_hash = '',"
+                . " payout_account = '',"
+                . " payout_full_name = '',"
+                . ' payout_method_id = 0,'
+                . ' bank_id = 0'
+                . " WHERE encrypted_details <> ''"
+                . ' LIMIT %d',
+                $table,
+                $limit
+            )
+        );
         return is_int($affected) ? $affected : 0;
     }
 
@@ -153,8 +159,9 @@ class Cashback_Encryption_Recovery {
     public static function count_waiting_payouts(): int {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_payout_requests';
-        $sql   = "SELECT COUNT(*) FROM `{$table}` WHERE status = 'waiting'";
-        return (int) $wpdb->get_var($sql);
+        return (int) $wpdb->get_var(
+            $wpdb->prepare("SELECT COUNT(*) FROM %i WHERE status = 'waiting'", $table)
+        );
     }
 
     /**
@@ -172,8 +179,9 @@ class Cashback_Encryption_Recovery {
 
         $limit = max(1, min(1000, $limit));
         $table = $wpdb->prefix . 'cashback_payout_requests';
-        $sql   = "SELECT id FROM `{$table}` WHERE status = 'waiting' LIMIT {$limit}";
-        $rows  = $wpdb->get_results($sql);
+        $rows  = $wpdb->get_results(
+            $wpdb->prepare("SELECT id FROM %i WHERE status = 'waiting' LIMIT %d", $table, $limit)
+        );
 
         if (empty($rows)) {
             return 0;
@@ -190,18 +198,18 @@ class Cashback_Encryption_Recovery {
             require_once $payouts_file;
         }
 
-        if (!($payouts_admin instanceof Cashback_Payouts_Admin)) {
+        if ( ! $payouts_admin instanceof Cashback_Payouts_Admin ) {
             $payouts_admin = new Cashback_Payouts_Admin();
         }
 
         $cancelled = 0;
         foreach ($rows as $row) {
-            $payout_id = (int) ($row->id ?? 0);
+            $payout_id = (int) ( $row->id ?? 0 );
             if ($payout_id <= 0) {
                 continue;
             }
             if ($payouts_admin->cancel_payout_with_refund($payout_id, 'encryption_recovery', 0)) {
-                $cancelled++;
+                ++$cancelled;
             }
         }
 
@@ -265,6 +273,7 @@ class Cashback_Encryption_Recovery {
                 );
             } catch (\Throwable $e) {
                 // Не ломаем основной поток, если аудит-таблица недоступна.
+                unset($e);
             }
         }
     }
@@ -292,12 +301,11 @@ class Cashback_Encryption_Recovery {
             return;
         }
 
-        $url = esc_url(admin_url('options-general.php?page=' . self::ADMIN_PAGE_SLUG));
         printf(
             '<div class="notice notice-error"><p><strong>%s</strong></p><p>%s</p><p><a class="button button-primary" href="%s">%s</a></p></div>',
             esc_html__('Cashback Plugin: обнаружено несовпадение ключа шифрования', 'cashback-plugin'),
             esc_html__('Ключ шифрования был изменён после предыдущей активности плагина. Ранее зашифрованные реквизиты пользователей больше не могут быть расшифрованы. Запустите процедуру восстановления — зашифрованные записи будут безопасно обнулены, пользователям будет предложено ввести новые реквизиты.', 'cashback-plugin'),
-            $url,
+            esc_url(admin_url('options-general.php?page=' . self::ADMIN_PAGE_SLUG)),
             esc_html__('Перейти к восстановлению', 'cashback-plugin')
         );
     }
@@ -318,6 +326,7 @@ class Cashback_Encryption_Recovery {
         }
 
         echo '<p>' . sprintf(
+            /* translators: %d — количество пользователей с нерасшифруемыми реквизитами, ожидающих очистки. */
             esc_html__('Пользователей с зашифрованными реквизитами в очереди на очистку: %d', 'cashback-plugin'),
             (int) $remaining
         ) . '</p>';
@@ -375,6 +384,7 @@ class Cashback_Encryption_Recovery {
                 );
             } catch (\Throwable $e) {
                 // Не ломаем flow, если аудит недоступен.
+                unset($e);
             }
         }
 

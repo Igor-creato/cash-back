@@ -194,7 +194,9 @@ class EncryptionRecoveryFlowTest extends TestCase
                 && preg_match('/UPDATE\b.*\bSET\b/i', (string) $c['args'][0])
         ));
         $this->assertNotEmpty($updates);
-        $this->assertStringContainsString('LIMIT 500', (string) $updates[0]['args'][0]);
+        $sql = (string) $updates[0]['args'][0];
+        $this->assertMatchesRegularExpression('/\bLIMIT\b/i', $sql);
+        $this->assertMatchesRegularExpression('/\b500\b/', $sql);
     }
 
     public function test_count_remaining_rows(): void
