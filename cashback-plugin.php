@@ -153,6 +153,9 @@ class CashbackPlugin {
         register_deactivation_hook(__FILE__, array( $this, 'deactivate' ));
         add_action('plugins_loaded', array( $this, 'init' ));
         add_action('init', array( $this, 'load_textdomain' ));
+        // One-time миграция plaintext-секретов в wp_options → ENC:v1:ciphertext.
+        // Запуск после load_dependencies (prio=10 в init), идемпотентна (guard по флагу).
+        add_action('plugins_loaded', array( 'Cashback_Encryption', 'migrate_plaintext_options' ), 100);
         add_action('before_woocommerce_init', array( $this, 'declare_woocommerce_compatibility' ));
         // Единая пагинация — CSS для админки (используется на всех cashback-* страницах).
         add_action('admin_enqueue_scripts', array( $this, 'enqueue_pagination_admin_assets' ));

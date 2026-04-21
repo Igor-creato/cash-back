@@ -186,6 +186,80 @@ class Cashback_Encryption {
     }
 
     /**
+     * One-time миграция plaintext-секретов в wp_options → ciphertext с префиксом ENC:v1:.
+     *
+     * Запускается на хуке plugins_loaded (prio=100). Идемпотентна:
+     * флаг cashback_options_encrypted_v1='1' + проверка is_option_ciphertext()
+     * на каждом значении защищают от повторного запуска / double-encrypt.
+     *
+     * Без CB_ENCRYPTION_KEY — early return (ничего не шифруем, флаг не ставим;
+     * администратор должен сначала настроить ключ).
+     *
+     * Покрываемые опции:
+     * - cashback_captcha_server_key (статический ключ)
+     * - cashback_epn_refresh_<md5(client_id)> (wildcard через $wpdb)
+     */
+    public static function migrate_plaintext_options(): void {
+        if (!self::is_configured()) {
+            return;
+        }
+        if (get_option('cashback_options_encrypted_v1') === '1') {
+            return;
+        }
+
+        $migrated = 0;
+
+        // 1) Статические ключи.
+        $fixed_keys = array( 'cashback_captcha_server_key' );
+        foreach ($fixed_keys as $option_name) {
+            $current = (string) get_option($option_name, '');
+            if ($current === '' || self::is_option_ciphertext($current)) {
+                continue;
+            }
+            update_option($option_name, self::encrypt_if_needed($current), false);
+            ++$migrated;
+        }
+
+        // 2) Wildcard-ключи через wpdb: все EPN refresh_token (по одному на client_id).
+        global $wpdb;
+        if (isset($wpdb) && is_object($wpdb)) {
+            $options_table = property_exists($wpdb, 'options') ? (string) $wpdb->options : 'wp_options';
+
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name passed via %i; LIKE wildcard через аргумент.
+            $rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- %i для имени таблицы.
+                    "SELECT option_name, option_value FROM %i WHERE option_name LIKE %s AND option_value <> '' AND option_value NOT LIKE %s",
+                    $options_table,
+                    'cashback_epn_refresh_%',
+                    self::OPTION_CIPHERTEXT_PREFIX . '%'
+                )
+            );
+
+            if (is_array($rows)) {
+                foreach ($rows as $row) {
+                    $option_name  = is_object($row) ? (string) ( $row->option_name ?? '' ) : (string) ( $row['option_name'] ?? '' );
+                    $option_value = is_object($row) ? (string) ( $row->option_value ?? '' ) : (string) ( $row['option_value'] ?? '' );
+                    if ($option_name === '' || $option_value === '' || self::is_option_ciphertext($option_value)) {
+                        continue;
+                    }
+                    update_option($option_name, self::encrypt_if_needed($option_value), false);
+                    ++$migrated;
+                }
+            }
+        }
+
+        update_option('cashback_options_encrypted_v1', '1', false);
+        self::write_audit_log(
+            'option_encryption_migration_v1',
+            0,
+            'cashback_encryption',
+            null,
+            array( 'migrated_count' => $migrated )
+        );
+    }
+
+    /**
      * Проверяет, зашифрована ли строка устаревшим форматом v1 (CBC без auth tag).
      *
      * Для строк без префикса версии дополнительно проверяется валидность base64
