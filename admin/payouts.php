@@ -1486,6 +1486,7 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
                     );
                 } catch (\Throwable $e) {
                     // ignore — аудит-таблица недоступна
+                    unset($e);
                 }
             }
 
