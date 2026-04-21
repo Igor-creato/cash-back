@@ -29,6 +29,14 @@ class Cashback_Encryption {
     private const LEGACY_KEY_VERSION = 'v1:';
 
     /**
+     * Префикс-маркер для зашифрованных значений wp_options.
+     * Формат wp_option: "ENC:v1:" . encrypt($plaintext) = "ENC:v1:v2:base64(iv|tag|ct)".
+     * Внешний префикс нужен чтобы отличить «зашифровано helper'ом» от любого
+     * plaintext (который может случайно начинаться с "v2:" и т.п.).
+     */
+    private const OPTION_CIPHERTEXT_PREFIX = 'ENC:v1:';
+
+    /**
      * Проверяет, настроен ли ключ шифрования
      */
     public static function is_configured(): bool {
@@ -134,6 +142,47 @@ class Cashback_Encryption {
         }
 
         return $plaintext;
+    }
+
+    /**
+     * Шифрует значение wp_option, если шифрование настроено и значение не пустое.
+     *
+     * Пустая строка интерпретируется как «не настроено» и возвращается как есть —
+     * шифровать нечего, а пустота в wp_option — валидное состояние.
+     *
+     * При отсутствии ключа (CB_ENCRYPTION_KEY) — graceful fallback, возвращаем plaintext.
+     * Жёсткий fail-closed для секретов в payout_settings — это Группа 4 ADR.
+     */
+    public static function encrypt_if_needed( string $plaintext ): string {
+        if ($plaintext === '') {
+            return '';
+        }
+        if (!self::is_configured()) {
+            return $plaintext;
+        }
+        return self::OPTION_CIPHERTEXT_PREFIX . self::encrypt($plaintext);
+    }
+
+    /**
+     * Расшифровывает значение wp_option, если оно помечено префиксом ENC:v1:.
+     * Иначе возвращает как есть (backward-compat для plaintext-значений до миграции).
+     *
+     * Искажённый ciphertext → RuntimeException (GCM auth tag mismatch) —
+     * fail-loud корректнее, чем тихо вернуть мусор при чтении секрета.
+     */
+    public static function decrypt_if_ciphertext( string $value ): string {
+        if (!self::is_option_ciphertext($value)) {
+            return $value;
+        }
+        return self::decrypt(substr($value, strlen(self::OPTION_CIPHERTEXT_PREFIX)));
+    }
+
+    /**
+     * true, если значение начинается с префикса ENC:v1: (регистр важен).
+     * Используется миграцией и диагностикой для проверки «уже зашифровано».
+     */
+    public static function is_option_ciphertext( string $value ): bool {
+        return strncmp($value, self::OPTION_CIPHERTEXT_PREFIX, strlen(self::OPTION_CIPHERTEXT_PREFIX)) === 0;
     }
 
     /**
