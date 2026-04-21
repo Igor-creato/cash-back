@@ -37,6 +37,16 @@ class Cashback_Encryption {
     private const OPTION_CIPHERTEXT_PREFIX = 'ENC:v1:';
 
     /**
+     * In-process cache: хэши значений, для которых уже записана audit-запись
+     * о сбое fail-safe дешифровки. Защита от спама аудит-лога при множественных
+     * вызовах `decrypt_if_ciphertext()` на одном запросе (например, get_all_bot_settings +
+     * get_captcha_server_key читают тот же wp_option).
+     *
+     * @var array<string,bool>
+     */
+    private static $reported_decrypt_failures = array();
+
+    /**
      * Проверяет, настроен ли ключ шифрования
      */
     public static function is_configured(): bool {
@@ -167,14 +177,67 @@ class Cashback_Encryption {
      * Расшифровывает значение wp_option, если оно помечено префиксом ENC:v1:.
      * Иначе возвращает как есть (backward-compat для plaintext-значений до миграции).
      *
-     * Искажённый ciphertext → RuntimeException (GCM auth tag mismatch) —
-     * fail-loud корректнее, чем тихо вернуть мусор при чтении секрета.
+     * Fail-safe семантика (отличается от прямого decrypt()):
+     *  - Ключ не настроен → возвращаем ''. Лог `option_decrypt_key_missing`.
+     *  - Ключ настроен, но decrypt() бросил (ротация ключа, порча данных) → возвращаем ''.
+     *    Лог `option_decrypt_failed`.
+     *
+     * Причина: helper используется для сервисных секретов в wp_options
+     * (captcha_server_key, EPN refresh_token). Потеря возможности расшифровать
+     * означает «фича временно выключена», а не «сайт упал». Для финансовых
+     * реквизитов пользователя используется decrypt_details() с fail-loud
+     * семантикой под is_configured() guard на callsite.
      */
     public static function decrypt_if_ciphertext( string $value ): string {
         if (!self::is_option_ciphertext($value)) {
             return $value;
         }
-        return self::decrypt(substr($value, strlen(self::OPTION_CIPHERTEXT_PREFIX)));
+
+        $payload = substr($value, strlen(self::OPTION_CIPHERTEXT_PREFIX));
+
+        if (!self::is_configured()) {
+            self::report_decrypt_failure_once($value, 'option_decrypt_key_missing', 'CB_ENCRYPTION_KEY not configured');
+            return '';
+        }
+
+        try {
+            return self::decrypt($payload);
+        } catch (\Throwable $e) {
+            self::report_decrypt_failure_once($value, 'option_decrypt_failed', $e->getMessage());
+            return '';
+        }
+    }
+
+    /**
+     * Пишет audit-запись о сбое дешифровки wp_option один раз за процесс для
+     * данного значения. Защищает лог от спама при множественных вызовах
+     * decrypt_if_ciphertext() на одном запросе.
+     */
+    private static function report_decrypt_failure_once( string $value, string $action, string $reason ): void {
+        $fingerprint = hash('sha256', $action . '|' . $value);
+        if (isset(self::$reported_decrypt_failures[ $fingerprint ])) {
+            return;
+        }
+        self::$reported_decrypt_failures[ $fingerprint ] = true;
+
+        // Audit log insert может бросить, если таблица недоступна (например, в ранних хуках).
+        // Fail-safe — не дать диагностике самой уложить сайт.
+        try {
+            self::write_audit_log(
+                $action,
+                0,
+                'cashback_encryption',
+                null,
+                array(
+                    'reason'       => $reason,
+                    'value_sha256' => hash('sha256', $value),
+                )
+            );
+        } catch (\Throwable $e) {
+            // Диагностика через error_log как последний рубеж.
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- fail-safe fallback когда audit log недоступен.
+            error_log('[cashback] ' . $action . ': ' . $reason);
+        }
     }
 
     /**
