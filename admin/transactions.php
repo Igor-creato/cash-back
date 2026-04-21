@@ -598,20 +598,56 @@ class Cashback_Transactions_Admin {
             return;
         }
 
+        // Server-side дедуп request_id (Группа 5 ADR, F-35-005).
+        // Retry без дедупа мог приводить к дубле audit-лога + путанице (первая
+        // попытка транзакции уже удалила row из unregistered → вторая вернёт
+        // «Транзакция не найдена»).
+        $idem_scope      = 'admin_transaction_transfer_unregistered';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => 'Запрос уже обрабатывается. Повторите через несколько секунд.',
+                ), 409);
+                return;
+            }
+        }
+
         $transaction_id = intval($_POST['transaction_id'] ?? 0);
         if ($transaction_id <= 0) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Некорректный ID транзакции.' ));
             return;
         }
 
         $email = sanitize_email(wp_unslash($_POST['email'] ?? ''));
         if (!is_email($email)) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Некорректный email.' ));
             return;
         }
 
         $wp_user = get_user_by('email', $email);
         if (!$wp_user) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Пользователь с таким email не найден.' ));
             return;
         }
@@ -630,6 +666,9 @@ class Cashback_Transactions_Admin {
 
             if (!$tx) {
                 $wpdb->query('ROLLBACK');
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                }
                 wp_send_json_error(array( 'message' => 'Транзакция не найдена.' ));
                 return;
             }
@@ -659,10 +698,14 @@ class Cashback_Transactions_Admin {
 							)
                         );
                     }
-                    wp_send_json_success(array(
+                    $response_data = array(
                         'message'          => 'Транзакция уже существует в зарегистрированных; запись из незарегистрированных удалена.',
                         'transferred_user' => $email,
-                    ));
+                    );
+                    if ($idem_request_id !== '') {
+                        Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response_data);
+                    }
+                    wp_send_json_success($response_data);
                     return;
                 }
             }
@@ -727,6 +770,9 @@ class Cashback_Transactions_Admin {
                 $wpdb->query('ROLLBACK');
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log(sprintf('[Cashback Transfer] Insert failed for unreg ID %d: %s', $transaction_id, $db_error));
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                }
                 wp_send_json_error(array( 'message' => 'Ошибка при переносе транзакции. Подробности в журнале ошибок.' ));
                 return;
             }
@@ -743,6 +789,9 @@ class Cashback_Transactions_Admin {
 
             if ($delete_result === false) {
                 $wpdb->query('ROLLBACK');
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                }
                 wp_send_json_error(array( 'message' => 'Ошибка при удалении исходной транзакции.' ));
                 return;
             }
@@ -774,14 +823,21 @@ class Cashback_Transactions_Admin {
                 );
             }
 
-            wp_send_json_success(array(
+            $response_data = array(
                 'message'          => sprintf('Транзакция перенесена пользователю %s.', $email),
                 'transferred_user' => $email,
-            ));
+            );
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response_data);
+            }
+            wp_send_json_success($response_data);
         } catch (\Throwable $e) {
             $wpdb->query('ROLLBACK');
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log(sprintf('[Cashback Transfer] Exception for unreg ID %d: %s', $transaction_id, $e->getMessage()));
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Внутренняя ошибка при переносе транзакции.' ));
         }
     }
