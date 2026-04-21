@@ -567,14 +567,44 @@ class Cashback_Affiliate_Admin {
             return;
         }
 
+        // Server-side дедуп request_id (Группа 5 ADR, F-35-006).
+        $idem_scope      = 'admin_affiliate_toggle_module';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => __('Запрос уже обрабатывается. Повторите через несколько секунд.', 'cashback-plugin'),
+                ), 409);
+                return;
+            }
+        }
+
         $enabled = !empty($_POST['enabled']);
         Cashback_Affiliate_DB::set_module_enabled($enabled);
 
-        wp_send_json_success(array(
+        $response_data = array(
             'message' => $enabled
                 ? __('Модуль включён.', 'cashback-plugin')
                 : __('Модуль выключен.', 'cashback-plugin'),
-        ));
+        );
+
+        if ($idem_request_id !== '') {
+            Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response_data);
+        }
+
+        wp_send_json_success($response_data);
     }
 
     /**
@@ -593,6 +623,30 @@ class Cashback_Affiliate_Admin {
             return;
         }
 
+        // Server-side дедуп request_id (Группа 5 ADR, F-35-006).
+        $idem_scope      = 'admin_affiliate_save_settings';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => __('Запрос уже обрабатывается. Повторите через несколько секунд.', 'cashback-plugin'),
+                ), 409);
+                return;
+            }
+        }
+
         if (isset($_POST['cookie_ttl'])) {
             Cashback_Affiliate_DB::set_cookie_ttl_days((int) $_POST['cookie_ttl']);
         }
@@ -602,7 +656,12 @@ class Cashback_Affiliate_Admin {
         // antifraud_enabled: checkbox — если не передан, значит выключен
         Cashback_Affiliate_DB::set_antifraud_enabled(!empty($_POST['antifraud_enabled']));
 
-        wp_send_json_success(array( 'message' => __('Настройки сохранены.', 'cashback-plugin') ));
+        $response_data = array( 'message' => __('Настройки сохранены.', 'cashback-plugin') );
+        if ($idem_request_id !== '') {
+            Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response_data);
+        }
+
+        wp_send_json_success($response_data);
     }
 
     /**
@@ -621,10 +680,35 @@ class Cashback_Affiliate_Admin {
             return;
         }
 
+        // Server-side дедуп request_id (Группа 5 ADR, F-35-006).
+        // Dispatcher-guard: блокируем параллельные retry на уровне входа; sub-операции
+        // (update_partner_rate, toggle_partner_status) идемпотентны на БД-уровне
+        // (UPDATE SET rate=X — повтор даёт то же значение; freeze/unfreeze_affiliate_balance
+        // no-op при совпадающем состоянии). Дубль audit-log'а re-запроса после TTL
+        // приемлем для admin-тира.
+        $idem_scope      = 'admin_affiliate_update_partner';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '' && !Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+            wp_send_json_error(array(
+                'code'    => 'in_progress',
+                'message' => __('Запрос уже обрабатывается. Повторите через несколько секунд.', 'cashback-plugin'),
+            ), 409);
+            return;
+        }
+
         $user_id = absint($_POST['user_id'] ?? 0);
         $action  = sanitize_text_field(wp_unslash($_POST['partner_action'] ?? ''));
 
         if ($user_id < 1) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Неверный ID пользователя.' ));
             return;
         }
@@ -642,6 +726,9 @@ class Cashback_Affiliate_Admin {
                 $this->toggle_partner_status($user_id, true);
                 break;
             default:
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                }
                 wp_send_json_error(array( 'message' => 'Неизвестное действие.' ));
         }
     }
@@ -794,7 +881,36 @@ class Cashback_Affiliate_Admin {
             return;
         }
 
+        // Server-side дедуп request_id (Группа 5 ADR, F-35-006).
+        // Preview-запросы проходят без claim (read-only); apply-запросы защищены.
+        $preview_raw     = !empty($_POST['preview']);
+        $idem_scope      = 'admin_affiliate_bulk_update_commission_rate';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (!$preview_raw && isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => __('Запрос уже обрабатывается. Повторите через несколько секунд.', 'cashback-plugin'),
+                ), 409);
+                return;
+            }
+        }
+
         if (!isset($_POST['old_rate'], $_POST['new_rate'])) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Не указаны параметры.' ));
             return;
         }
@@ -804,6 +920,9 @@ class Cashback_Affiliate_Admin {
         $preview      = !empty($_POST['preview']);
 
         if (!preg_match('/^\d+(\.\d{1,2})?$/', $new_rate) || bccomp($new_rate, '0', 2) < 0 || bccomp($new_rate, '100', 2) > 0) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Новая ставка должна быть числом от 0 до 100.' ));
             return;
         }
@@ -816,6 +935,9 @@ class Cashback_Affiliate_Admin {
 
         if (!$is_all) {
             if (!preg_match('/^\d+(\.\d{1,2})?$/', $old_rate_raw) || bccomp($old_rate_raw, '0', 2) < 0 || bccomp($old_rate_raw, '100', 2) > 0) {
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                }
                 wp_send_json_error(array( 'message' => 'Текущая ставка должна быть числом от 0 до 100 или "all".' ));
                 return;
             }
@@ -854,6 +976,9 @@ class Cashback_Affiliate_Admin {
         }
 
         if ($count === 0) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Не найдено партнёров для обновления.' ));
             return;
         }
@@ -886,12 +1011,18 @@ class Cashback_Affiliate_Admin {
 
             if ($result === false) {
                 $wpdb->query('ROLLBACK');
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                }
                 wp_send_json_error(array( 'message' => 'Ошибка при обновлении базы данных.' ));
                 return;
             }
 
             if ($result === 0) {
                 $wpdb->query('ROLLBACK');
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                }
                 wp_send_json_error(array( 'message' => 'Не найдено партнёров для обновления.' ));
                 return;
             }
@@ -941,15 +1072,24 @@ class Cashback_Affiliate_Admin {
             }
         } catch (Exception $e) {
             $wpdb->query('ROLLBACK');
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Ошибка при обновлении базы данных.' ));
             return;
         }
 
-        wp_send_json_success(array(
+        $response_data = array(
             'updated'  => (int) $result,
             'old_rate' => $old_rate_raw,
             'new_rate' => $new_rate,
-        ));
+        );
+
+        if ($idem_request_id !== '') {
+            Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response_data);
+        }
+
+        wp_send_json_success($response_data);
     }
 
     /* ═══════════════════════════════════════
@@ -965,11 +1105,38 @@ class Cashback_Affiliate_Admin {
             wp_send_json_error(array( 'message' => self::MSG_INVALID_NONCE ));
         }
 
+        // Server-side дедуп request_id (Группа 5 ADR, F-35-006).
+        $idem_scope      = 'admin_affiliate_edit_accrual';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => __('Запрос уже обрабатывается. Повторите через несколько секунд.', 'cashback-plugin'),
+                ), 409);
+                return;
+            }
+        }
+
         global $wpdb;
         $accruals_table = $wpdb->prefix . 'cashback_affiliate_accruals';
 
         $accrual_id = absint($_POST['accrual_id'] ?? 0);
         if (!$accrual_id) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Не указан ID начисления.' ));
         }
 
@@ -982,6 +1149,9 @@ class Cashback_Affiliate_Admin {
         if (isset($_POST['commission_rate'])) {
             $rate = (float) $_POST['commission_rate'];
             if ($rate < 0 || $rate > 100) {
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                }
                 wp_send_json_error(array( 'message' => 'Ставка должна быть от 0 до 100.' ));
             }
             $update_data['commission_rate'] = number_format($rate, 2, '.', '');
@@ -992,6 +1162,9 @@ class Cashback_Affiliate_Admin {
         if (isset($_POST['commission_amount'])) {
             $amount = (float) $_POST['commission_amount'];
             if ($amount < 0) {
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                }
                 wp_send_json_error(array( 'message' => 'Сумма комиссии не может быть отрицательной.' ));
             }
             $update_data['commission_amount'] = number_format($amount, 2, '.', '');
@@ -1012,12 +1185,18 @@ class Cashback_Affiliate_Admin {
 
         if (!$accrual) {
             $wpdb->query('ROLLBACK');
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Начисление не найдено.' ));
         }
 
         // Запрет редактирования финального статуса
         if ($accrual['status'] === 'available') {
             $wpdb->query('ROLLBACK');
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Начисление со статусом «Зачислен на баланс» нельзя редактировать.' ));
         }
 
@@ -1032,6 +1211,9 @@ class Cashback_Affiliate_Admin {
             $allowed             = $allowed_transitions[ $accrual['status'] ] ?? array();
             if (!in_array($new_status, $allowed, true)) {
                 $wpdb->query('ROLLBACK');
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                }
                 wp_send_json_error(array( 'message' => 'Недопустимый переход статуса.' ));
             }
             if ($new_status !== $accrual['status']) {
@@ -1042,6 +1224,9 @@ class Cashback_Affiliate_Admin {
 
         if (empty($update_data)) {
             $wpdb->query('ROLLBACK');
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Нет данных для обновления.' ));
         }
 
@@ -1059,6 +1244,9 @@ class Cashback_Affiliate_Admin {
             if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- debug-only diagnostic.
                 error_log('[Cashback Affiliate] edit_accrual DB error: ' . $db_err);
+            }
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
             }
             wp_send_json_error(array( 'message' => 'Ошибка обновления.' ));
         }
@@ -1080,6 +1268,11 @@ class Cashback_Affiliate_Admin {
             );
         }
 
-        wp_send_json_success(array( 'message' => 'Начисление обновлено.' ));
+        $response_data = array( 'message' => 'Начисление обновлено.' );
+        if ($idem_request_id !== '') {
+            Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response_data);
+        }
+
+        wp_send_json_success($response_data);
     }
 }
