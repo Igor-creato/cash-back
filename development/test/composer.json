@@ -1,0 +1,16 @@
+{
+    "name": "cashback/tests",
+    "description": "PHPUnit tests for Cashback Plugin",
+    "type": "project",
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "CashbackTests\\": "src/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}

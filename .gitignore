@@ -1,0 +1,82 @@
+# Claude settings
+.claude/settings.local.json
+
+# Composer dependencies (в development/)
+/vendor/
+/development/vendor/
+
+# development/ — игнорируется всё, кроме тест-сьюта плагина
+/development/*
+!/development/test/
+# Внутри development/test/ игнорируем только артефакты (vendor, cache, lock)
+/development/test/vendor/
+/development/test/.phpunit.result.cache
+/development/test/composer.lock
+
+/.qwen/
+/context/
+/wp-plugin-tests/
+/obsidian/
+CLAUDE.md
+.gitignore
+# PHPStan
+/.phpstan.cache/
+check.md
+
+
+# Composer lock (composer.json is source-controlled; lock regenerated in CI)
+/composer.lock
+
+# Tooling caches / generated reports
+/.phpcs.cache
+/phpcs-report.xml
+/.phpunit.result.cache
+/.psalm-cache/
+/psalm.xml.dist.cache
+
+# Node modules (if any)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build artifacts
+/build/
+/dist/
+*.zip
+*.zip.sha256
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.kilocodemodes
+
+# Logs
+*.log
+error_log
+debug.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS files
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
+
+# WordPress
+wp-config.php
+.htaccess
+
+# Test directory — теперь управляется через granular rules выше
+/.scannerwork/
+sonar-project.properties
