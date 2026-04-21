@@ -78,6 +78,7 @@ class Mariadb_Plugin {
             $instance->migrate_drop_notification_triggers();
             $instance->migrate_add_transaction_reference_id();
             $instance->migrate_add_frozen_balance_buckets();
+            $instance->migrate_schema_idempotency_v1();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -2316,6 +2317,22 @@ class Mariadb_Plugin {
         }
 
         update_option('cashback_db_version', 2, false);
+    }
+
+    /**
+     * Миграция группы 6 (шаг 2 ADR): schema-level idempotency.
+     * Делегирует в Cashback_Schema_Idempotency_Migration (отдельный класс).
+     * При обнаружении дублей — abort + admin-notice (tools/dedup-rows-*.php).
+     */
+    public function migrate_schema_idempotency_v1(): void {
+        global $wpdb;
+
+        if (!class_exists('Cashback_Schema_Idempotency_Migration')) {
+            require_once __DIR__ . '/includes/class-cashback-schema-idempotency-migration.php';
+        }
+
+        $migration = new Cashback_Schema_Idempotency_Migration($wpdb);
+        $migration->run();
     }
 }
 
