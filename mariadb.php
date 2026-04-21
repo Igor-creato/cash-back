@@ -77,6 +77,7 @@ class Mariadb_Plugin {
             $instance->migrate_rate_history_enum();
             $instance->migrate_drop_notification_triggers();
             $instance->migrate_add_transaction_reference_id();
+            $instance->migrate_add_frozen_balance_buckets();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -316,7 +317,10 @@ class Mariadb_Plugin {
             `available_balance` decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Доступный баланс пользователя',
             `pending_balance`   decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'В ожидании выплаты',
             `paid_balance`      decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Выплачен',
-            `frozen_balance`    decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Заблокирован',
+            `frozen_balance`    decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Заблокирован (legacy = sum of buckets)',
+            `frozen_balance_ban`         decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Доступная часть, замороженная при бане пользователя',
+            `frozen_balance_payout`      decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Часть, удерживаемая под активной заявкой на выплату',
+            `frozen_pending_balance_ban` decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Pending-часть, замороженная при бане (возвращается в pending при разбане)',
             `version` int unsigned NOT NULL DEFAULT 0 COMMENT 'Версия строки для защиты от гонок',
             `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (`user_id`)
@@ -2230,6 +2234,79 @@ class Mariadb_Plugin {
                 }
             }
         }
+    }
+
+    /**
+     * Миграция v2: bucket-split заморозки баланса.
+     *
+     * Добавляет в cashback_user_balance три колонки:
+     *   - frozen_balance_ban         — available-часть, замороженная при бане
+     *   - frozen_balance_payout      — удержание под активной заявкой на выплату
+     *   - frozen_pending_balance_ban — pending-часть, замороженная при бане
+     *
+     * Backfill: существующий frozen_balance трактуется как payout-hold
+     * (ban-заморозка снимается одновременно с разбаном, поэтому длительно
+     * удерживаемая заморозка в большинстве установок — это payout-bucket).
+     *
+     * Версионизация: option cashback_db_version. Миграция идемпотентна —
+     * проверяет наличие колонок через INFORMATION_SCHEMA.
+     */
+    public function migrate_add_frozen_balance_buckets(): void {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cashback_user_balance';
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        if ($current_version >= 2) {
+            return;
+        }
+
+        $table_exists = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $table
+        ));
+        if ($table_exists === 0) {
+            return;
+        }
+
+        $columns = array(
+            'frozen_balance_ban'         => "ADD COLUMN `frozen_balance_ban` decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Доступная часть, замороженная при бане пользователя' AFTER `frozen_balance`",
+            'frozen_balance_payout'      => "ADD COLUMN `frozen_balance_payout` decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Часть, удерживаемая под активной заявкой на выплату' AFTER `frozen_balance_ban`",
+            'frozen_pending_balance_ban' => "ADD COLUMN `frozen_pending_balance_ban` decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Pending-часть, замороженная при бане' AFTER `frozen_balance_payout`",
+        );
+
+        foreach ($columns as $column_name => $alter_clause) {
+            $exists = (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s',
+                $table,
+                $column_name
+            ));
+
+            if ($exists === 0) {
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $alter_clause is a hardcoded DDL fragment from this method (no user input).
+                $wpdb->query($wpdb->prepare("ALTER TABLE %i {$alter_clause}", $table));
+                if ($wpdb->last_error) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                    error_log("[Cashback Migration v2] ADD COLUMN {$column_name}: " . $wpdb->last_error);
+                    return; // Не поднимаем db_version — пусть попробуется снова.
+                }
+            }
+        }
+
+        // Backfill: legacy frozen_balance трактуем как payout-hold.
+        // Безопасно: ban-заморозка снимается триггером на unban, поэтому
+        // ненулевой frozen_balance на момент миграции — почти наверняка payout.
+        $backfill = $wpdb->query($wpdb->prepare(
+            'UPDATE %i SET frozen_balance_payout = frozen_balance WHERE frozen_balance > 0 AND frozen_balance_payout = 0',
+            $table
+        ));
+        if ($backfill === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v2] backfill frozen_balance_payout failed: ' . $wpdb->last_error);
+            return;
+        }
+
+        update_option('cashback_db_version', 2, false);
     }
 }
 
