@@ -115,15 +115,29 @@ class Cashback_Captcha {
             return true;
         }
 
-        $response = wp_remote_get(
-            add_query_arg(
-                array(
-                    'secret' => $server_key,
-                    'token'  => $token,
-                    'ip'     => $ip,
-                ),
-                self::VALIDATE_URL
+        $validate_url = add_query_arg(
+            array(
+                'secret' => $server_key,
+                'token'  => $token,
+                'ip'     => $ip,
             ),
+            self::VALIDATE_URL
+        );
+
+        // SSRF-guard: host SmartCaptcha'и захардкожен и входит в baseline allowlist;
+        // проверка защищает от случаев, когда site-owner подменил allowlist через фильтр.
+        // При deny — graceful degradation (как при других ошибках API ниже).
+        if (class_exists('Cashback_Outbound_HTTP_Guard')) {
+            $guard_check = Cashback_Outbound_HTTP_Guard::validate_url($validate_url);
+            if (is_wp_error($guard_check)) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Bot Protection] SmartCaptcha outbound denied: ' . $guard_check->get_error_message());
+                return true;
+            }
+        }
+
+        $response = wp_remote_get(
+            $validate_url,
             array(
                 'timeout'   => self::API_TIMEOUT,
                 'sslverify' => true,

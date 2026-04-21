@@ -141,9 +141,22 @@ if (!function_exists('add_action')) {
     }
 }
 
+if (!isset($GLOBALS['_cb_test_filters'])) {
+    $GLOBALS['_cb_test_filters'] = array();
+}
+
 if (!function_exists('add_filter')) {
     function add_filter(string $hook, callable $callback, int $priority = 10, int $accepted_args = 1): bool
     {
+        $GLOBALS['_cb_test_filters'][ $hook ][] = array(
+            'cb'       => $callback,
+            'priority' => $priority,
+        );
+        // Стабильная сортировка по priority (меньше = раньше).
+        usort(
+            $GLOBALS['_cb_test_filters'][ $hook ],
+            static fn(array $a, array $b): int => $a['priority'] <=> $b['priority']
+        );
         return true;
     }
 }
@@ -361,6 +374,10 @@ if (!function_exists('do_action')) {
 if (!function_exists('apply_filters')) {
     function apply_filters(string $hook_name, mixed $value, mixed ...$args): mixed
     {
+        $filters = $GLOBALS['_cb_test_filters'][ $hook_name ] ?? array();
+        foreach ($filters as $entry) {
+            $value = call_user_func($entry['cb'], $value, ...$args);
+        }
         return $value;
     }
 }
@@ -369,6 +386,151 @@ if (!function_exists('plugin_basename')) {
     function plugin_basename(string $plugin_file): string
     {
         return basename(dirname($plugin_file)) . '/' . basename($plugin_file);
+    }
+}
+
+// ============================================================
+// HTTP-стабы: WP_Error + wp_remote_* с перехватом вызовов.
+//
+// Тесты управляют ответом через $GLOBALS['_cb_test_http_response'] (массив
+// в формате WP: ['body' => ..., 'response' => ['code' => 200, 'message' => 'OK']]).
+// Каждый вызов wp_remote_get/post пушится в $GLOBALS['_cb_test_http_calls'].
+// Чтобы вернуть WP_Error — положите его в _cb_test_http_response.
+// ============================================================
+
+if (!class_exists('WP_Error')) {
+    class WP_Error
+    {
+        /** @var array<string,string[]> */
+        protected array $errors = array();
+        /** @var array<string,mixed> */
+        protected array $error_data = array();
+
+        public function __construct(string $code = '', string $message = '', mixed $data = null)
+        {
+            if ($code !== '') {
+                $this->errors[ $code ][] = $message;
+                if ($data !== null) {
+                    $this->error_data[ $code ] = $data;
+                }
+            }
+        }
+
+        public function get_error_code(): string
+        {
+            $codes = array_keys($this->errors);
+            return (string) ($codes[0] ?? '');
+        }
+
+        public function get_error_message(string $code = ''): string
+        {
+            if ($code === '') {
+                $code = $this->get_error_code();
+            }
+            $messages = $this->errors[ $code ] ?? array();
+            return (string) ($messages[0] ?? '');
+        }
+
+        public function get_error_data(string $code = ''): mixed
+        {
+            if ($code === '') {
+                $code = $this->get_error_code();
+            }
+            return $this->error_data[ $code ] ?? null;
+        }
+    }
+}
+
+if (!function_exists('is_wp_error')) {
+    function is_wp_error(mixed $thing): bool
+    {
+        return $thing instanceof WP_Error;
+    }
+}
+
+if (!isset($GLOBALS['_cb_test_http_calls'])) {
+    $GLOBALS['_cb_test_http_calls'] = array();
+}
+
+if (!isset($GLOBALS['_cb_test_http_response'])) {
+    $GLOBALS['_cb_test_http_response'] = array(
+        'body'     => '',
+        'response' => array( 'code' => 200, 'message' => 'OK' ),
+        'headers'  => array(),
+    );
+}
+
+if (!function_exists('wp_remote_get')) {
+    function wp_remote_get(string $url, array $args = array()): array|WP_Error
+    {
+        $GLOBALS['_cb_test_http_calls'][] = array(
+            'method' => 'GET',
+            'url'    => $url,
+            'args'   => $args,
+        );
+        return $GLOBALS['_cb_test_http_response'];
+    }
+}
+
+if (!function_exists('wp_remote_post')) {
+    function wp_remote_post(string $url, array $args = array()): array|WP_Error
+    {
+        $GLOBALS['_cb_test_http_calls'][] = array(
+            'method' => 'POST',
+            'url'    => $url,
+            'args'   => $args,
+        );
+        return $GLOBALS['_cb_test_http_response'];
+    }
+}
+
+if (!function_exists('wp_remote_retrieve_body')) {
+    function wp_remote_retrieve_body(array|WP_Error $response): string
+    {
+        if ($response instanceof WP_Error) {
+            return '';
+        }
+        return (string) ($response['body'] ?? '');
+    }
+}
+
+if (!function_exists('wp_remote_retrieve_response_code')) {
+    function wp_remote_retrieve_response_code(array|WP_Error $response): int|string
+    {
+        if ($response instanceof WP_Error) {
+            return '';
+        }
+        return (int) ($response['response']['code'] ?? 0);
+    }
+}
+
+if (!function_exists('add_query_arg')) {
+    function add_query_arg(array $args, string $url): string
+    {
+        $query = http_build_query($args);
+        if ($query === '') {
+            return $url;
+        }
+        $separator = str_contains($url, '?') ? '&' : '?';
+        return $url . $separator . $query;
+    }
+}
+
+if (!function_exists('wp_parse_url')) {
+    function wp_parse_url(string $url, int $component = -1): mixed
+    {
+        if ($component === -1) {
+            return parse_url($url);
+        }
+        return parse_url($url, $component);
+    }
+}
+
+if (!function_exists('sanitize_key')) {
+    function sanitize_key(string $key): string
+    {
+        $key = strtolower($key);
+        return (string) preg_replace('/[^a-z0-9_\-]/', '', $key);
     }
 }
 

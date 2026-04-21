@@ -91,6 +91,11 @@ abstract class Cashback_Network_Adapter_Base implements Cashback_Network_Adapter
      * @return array|\WP_Error
      */
     protected function http_get( string $url, array $headers, int $timeout = 60 ) {
+        $check = Cashback_Outbound_HTTP_Guard::validate_url($url);
+        if (is_wp_error($check)) {
+            return $check;
+        }
+
         $args = array(
             'timeout'            => $timeout,
             'headers'            => $headers,
@@ -120,6 +125,11 @@ abstract class Cashback_Network_Adapter_Base implements Cashback_Network_Adapter
      * @return array|\WP_Error
      */
     protected function http_post( string $url, array $headers, $body, int $timeout = 30 ) {
+        $check = Cashback_Outbound_HTTP_Guard::validate_url($url);
+        if (is_wp_error($check)) {
+            return $check;
+        }
+
         return wp_remote_post($url, array(
             'timeout'            => $timeout,
             'headers'            => $headers,

@@ -457,6 +457,9 @@ class CashbackPlugin {
         // Утилита шифрования (загружаем первой, т.к. используется в других компонентах)
         $this->require_file('includes/class-cashback-encryption.php');
 
+        // SSRF-guard для исходящих HTTP-запросов (использует Cashback_Encryption::write_audit_log)
+        $this->require_file('includes/class-cashback-outbound-http-guard.php');
+
         // Бот-защита: rate limiter + CAPTCHA + guard (загружаем рано, до компонентов с AJAX)
         $this->require_file('includes/class-cashback-rate-limiter.php');
         $this->require_file('includes/class-cashback-captcha.php');
