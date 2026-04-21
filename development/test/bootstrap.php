@@ -415,6 +415,43 @@ if (!function_exists('plugin_basename')) {
     }
 }
 
+// Action Scheduler стабы: запоминают планирование через $GLOBALS['_cb_test_as_scheduled'].
+if (!isset($GLOBALS['_cb_test_as_scheduled'])) {
+    $GLOBALS['_cb_test_as_scheduled'] = false;
+}
+
+if (!function_exists('as_enqueue_async_action')) {
+    function as_enqueue_async_action(string $hook, array $args = array(), string $group = ''): int
+    {
+        $GLOBALS['_cb_test_as_scheduled'] = array(
+            'hook'  => $hook,
+            'args'  => $args,
+            'group' => $group,
+        );
+        return 1;
+    }
+}
+
+if (!function_exists('as_has_scheduled_action')) {
+    function as_has_scheduled_action(string $hook, ?array $args = null, string $group = ''): bool
+    {
+        return false;
+    }
+}
+
+if (!function_exists('as_schedule_single_action')) {
+    function as_schedule_single_action(int $timestamp, string $hook, array $args = array(), string $group = ''): int
+    {
+        $GLOBALS['_cb_test_as_scheduled'] = array(
+            'hook'      => $hook,
+            'args'      => $args,
+            'group'     => $group,
+            'timestamp' => $timestamp,
+        );
+        return 1;
+    }
+}
+
 // ============================================================
 // HTTP-стабы: WP_Error + wp_remote_* с перехватом вызовов.
 //
