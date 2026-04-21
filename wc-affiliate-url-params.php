@@ -1467,45 +1467,37 @@ HTML;
     private function get_click_rate_status( string $ip_address, int $product_id ): string {
         $window = self::RATE_LIMIT_WINDOW_SECONDS;
 
-        // --- Ключ 1: per-product (IP + product_id, без UA) ---
-        $pp_hash = substr(md5($ip_address . '|' . $product_id), 0, 12);
-        $pp_key  = 'cb_pp_' . $pp_hash;
+        // Группа 7 (шаг 6 ADR): атомарный backend заменяет старый get_transient/set_transient
+        // race-паттерн. Каждый scope независим — pp/gl порядковые increment'ы атомарны
+        // на уровне PK(scope_key) в MariaDB.
+        $pp_scope = 'pp_' . substr(sha1($ip_address . '|' . $product_id), 0, 40);
+        $gl_scope = 'gl_' . substr(sha1($ip_address), 0, 40);
 
-        // --- Ключ 2: global (IP only, без UA и product_id) ---
-        $gl_hash = substr(md5($ip_address), 0, 12);
-        $gl_key  = 'cb_gl_' . $gl_hash;
+        if (!class_exists('Cashback_Rate_Limiter')) {
+            require_once __DIR__ . '/includes/class-cashback-rate-limiter.php';
+        }
 
-        // Читаем текущие счётчики
-        $pp_count = (int) get_transient($pp_key);
-        $gl_count = (int) get_transient($gl_key);
+        try {
+            $counter = \Cashback_Rate_Limiter::counter_backend();
+            $pp      = $counter->increment($pp_scope, $window, self::RATE_PER_PRODUCT_BLOCK);
+            $gl      = $counter->increment($gl_scope, $window, self::RATE_GLOBAL_BLOCK);
+        } catch (\Throwable $e) {
+            // Fail-open при ошибке backend'а: click-rate не критический путь,
+            // сохраняем availability редиректа на партнёрскую сеть.
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Rate-limit backend diagnostic (group 7, step 6).
+            error_log('[cashback-affiliate] rate-limit backend error: ' . $e->getMessage());
 
-        // Проверяем блокировку ДО инкремента (не тратим write на заблокированных)
-        if (
-            $pp_count >= self::RATE_PER_PRODUCT_BLOCK ||
-            $gl_count >= self::RATE_GLOBAL_BLOCK
-        ) {
+            return 'normal';
+        }
+
+        $pp_hits = (int) $pp['hits'];
+        $gl_hits = (int) $gl['hits'];
+
+        if ($pp_hits >= self::RATE_PER_PRODUCT_BLOCK || $gl_hits >= self::RATE_GLOBAL_BLOCK) {
             return 'blocked';
         }
 
-        // Инкрементируем
-        $pp_new = $pp_count + 1;
-        $gl_new = $gl_count + 1;
-
-        set_transient($pp_key, $pp_new, $window);
-        set_transient($gl_key, $gl_new, $window);
-
-        // Проверяем после инкремента
-        if (
-            $pp_new >= self::RATE_PER_PRODUCT_BLOCK ||
-            $gl_new >= self::RATE_GLOBAL_BLOCK
-        ) {
-            return 'blocked';
-        }
-
-        if (
-            $pp_new > self::RATE_PER_PRODUCT_SPAM ||
-            $gl_new > self::RATE_GLOBAL_SPAM
-        ) {
+        if ($pp_hits > self::RATE_PER_PRODUCT_SPAM || $gl_hits > self::RATE_GLOBAL_SPAM) {
             return 'spam';
         }
 
