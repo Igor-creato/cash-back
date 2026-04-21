@@ -164,6 +164,9 @@ class Cashback_Trigger_Fallbacks {
 
     /**
      * Замораживает баланс при бане (замена триггера tr_freeze_balance_on_ban).
+     *
+     * Bucket-split (F-11-003): available уходит в frozen_balance_ban, pending —
+     * в frozen_pending_balance_ban, legacy frozen_balance = sum для совместимости.
      * Идемпотентно: если available и pending уже 0, ничего не меняется.
      *
      * @param int $user_id ID пользователя
@@ -174,7 +177,9 @@ class Cashback_Trigger_Fallbacks {
 
         $wpdb->query($wpdb->prepare(
             'UPDATE %i
-             SET frozen_balance = frozen_balance + available_balance + pending_balance,
+             SET frozen_balance_ban         = frozen_balance_ban + available_balance,
+                 frozen_pending_balance_ban = frozen_pending_balance_ban + pending_balance,
+                 frozen_balance             = frozen_balance + available_balance + pending_balance,
                  available_balance = 0,
                  pending_balance = 0,
                  version = version + 1
@@ -186,7 +191,11 @@ class Cashback_Trigger_Fallbacks {
 
     /**
      * Размораживает баланс при разбане (замена триггера tr_unfreeze_balance_on_unban).
-     * Идемпотентно: если frozen уже 0, ничего не меняется.
+     *
+     * Bucket-split (F-11-003): frozen_balance_ban → available, frozen_pending_balance_ban
+     * → pending. Pending возвращается в pending, не в available (фикс legacy-бага
+     * где pending «проскакивал»). frozen_balance_payout не трогается.
+     * Идемпотентно: если оба ban-бакета уже 0, ничего не меняется.
      *
      * @param int $user_id ID пользователя
      */
@@ -196,10 +205,13 @@ class Cashback_Trigger_Fallbacks {
 
         $wpdb->query($wpdb->prepare(
             'UPDATE %i
-             SET available_balance = available_balance + frozen_balance,
-                 frozen_balance = 0,
+             SET available_balance = available_balance + frozen_balance_ban,
+                 pending_balance   = pending_balance + frozen_pending_balance_ban,
+                 frozen_balance    = frozen_balance - frozen_balance_ban - frozen_pending_balance_ban,
+                 frozen_balance_ban         = 0,
+                 frozen_pending_balance_ban = 0,
                  version = version + 1
-             WHERE user_id = %d AND frozen_balance > 0',
+             WHERE user_id = %d AND (frozen_balance_ban > 0 OR frozen_pending_balance_ban > 0)',
             $table,
             $user_id
         ));
