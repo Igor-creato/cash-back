@@ -233,6 +233,60 @@ class Cashback_Fraud_Device_Id {
         );
 
         if ($wpdb->last_error) {
+            // Safety-net (Группа 6 ADR шаг 3c, closes F-6-001): cross-process race — другой
+            // worker мог вставить строку по UNIQUE(user_id, session_date, device_id) между
+            // нашими SELECT FOR UPDATE и INSERT. Распознаём и merge'им в существующий ряд,
+            // сохраняя canonical IP/visitor/first_seen.
+            $classification = self::classify_fraud_device_insert_error($wpdb->last_error);
+            if (
+                'duplicate_user_session' === $classification
+                && $user_id !== null
+                && $user_id > 0
+            ) {
+                $existing = self::find_existing_by_user_session_device($wpdb, $user_id, $device_id, $now);
+                if (null !== $existing) {
+                    $wpdb->last_error = '';
+                    $merge_data       = array(
+                        'last_seen'       => $now,
+                        'user_agent_hash' => $user_agent_hash,
+                    );
+                    $merge_format     = array( '%s', '%s' );
+                    if ($fingerprint_hash !== null) {
+                        $merge_data['fingerprint_hash'] = $fingerprint_hash;
+                        $merge_format[]                 = '%s';
+                    }
+                    if ($components_hash !== null) {
+                        $merge_data['components_hash'] = $components_hash;
+                        $merge_format[]                = '%s';
+                    }
+                    if ($confidence !== null) {
+                        $merge_data['confidence_score'] = $confidence;
+                        $merge_format[]                 = '%f';
+                    }
+                    if ($asn !== null) {
+                        $merge_data['asn'] = $asn;
+                        $merge_format[]    = '%d';
+                    }
+                    if ($connection_type !== null) {
+                        $merge_data['connection_type'] = $connection_type;
+                        $merge_format[]                = '%s';
+                    }
+
+                    $merge_result = $wpdb->update(
+                        $table,
+                        $merge_data,
+                        array( 'id' => $existing ),
+                        $merge_format,
+                        array( '%d' )
+                    );
+
+                    if ($merge_result !== false) {
+                        $wpdb->query('COMMIT');
+                        return $existing;
+                    }
+                }
+            }
+
             $wpdb->query('ROLLBACK');
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Cashback Fraud Device ID: INSERT failed — ' . $wpdb->last_error);
@@ -243,6 +297,47 @@ class Cashback_Fraud_Device_Id {
         $wpdb->query('COMMIT');
 
         return $insert_id > 0 ? $insert_id : false;
+    }
+
+    /**
+     * Распознать какой UNIQUE ключ сработал по $wpdb->last_error (Группа 6 ADR шаг 3c).
+     *
+     * @return string 'duplicate_user_session' | 'other'
+     */
+    public static function classify_fraud_device_insert_error( string $last_error ): string {
+        if ('' === $last_error || false === strpos($last_error, 'Duplicate entry')) {
+            return 'other';
+        }
+        if (false !== strpos($last_error, "'uk_user_session_device'")) {
+            return 'duplicate_user_session';
+        }
+        return 'other';
+    }
+
+    /**
+     * Lookup существующей строки по UNIQUE(user_id, session_date, device_id).
+     * Используется как safety-net в record() при cross-process race.
+     *
+     * @param object $wpdb       wpdb или совместимый stub.
+     * @param string $first_seen Datetime 'YYYY-MM-DD HH:MM:SS' — берётся .session_date = DATE($first_seen).
+     */
+    public static function find_existing_by_user_session_device(
+        object $wpdb,
+        int $user_id,
+        string $device_id,
+        string $first_seen
+    ): ?int {
+        $table = $wpdb->prefix . 'cashback_fraud_device_ids';
+        $sql   = $wpdb->prepare(
+            'SELECT id FROM %i WHERE user_id = %d AND session_date = DATE(%s) AND device_id = %s LIMIT 1',
+            $table,
+            $user_id,
+            $first_seen,
+            $device_id
+        );
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- $sql получен из $wpdb->prepare() выше; lookup для safety-net merge после cross-process race не подлежит кэшированию.
+        $id = $wpdb->get_var($sql);
+        return null !== $id ? (int) $id : null;
     }
 
     /**
