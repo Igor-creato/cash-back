@@ -263,6 +263,15 @@ class Cashback_Rate_Limiter {
         self::$backend = $backend;
     }
 
+    /**
+     * Публичный доступ к атомарному backend'у для non-check() callsite'ов
+     * (wc-affiliate click-rate, rest-api /activate). Все они разделяют один
+     * backend — это даёт единую таблицу счётчиков и единый GC-цикл.
+     */
+    public static function counter_backend(): object {
+        return self::get_backend();
+    }
+
     private static function require_rate_limit_classes(): void {
         if (!interface_exists('Cashback_Rate_Limit_Counter_Interface')) {
             require_once __DIR__ . '/rate-limit/interface-cashback-rate-limit-counter.php';
