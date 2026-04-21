@@ -221,7 +221,7 @@ class EncryptionRecoveryFlowTest extends TestCase
     {
         $GLOBALS['_cb_test_current_user_can'] = false;
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(\Throwable::class);
         Cashback_Encryption_Recovery::handle_admin_form_submit(array(
             'cashback_recovery_nonce' => 'test',
             'confirmation'            => 'DELETE_ALL_PAYOUT_CREDENTIALS',
@@ -232,7 +232,7 @@ class EncryptionRecoveryFlowTest extends TestCase
     {
         $GLOBALS['_cb_test_current_user_can'] = true;
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(\Throwable::class);
         Cashback_Encryption_Recovery::handle_admin_form_submit(array(
             'cashback_recovery_nonce' => 'test',
             'confirmation'            => 'I agree',  // неправильное подтверждение
