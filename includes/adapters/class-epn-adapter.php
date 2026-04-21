@@ -62,7 +62,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
 
         // Пробуем refresh_token (если есть сохранённый)
         $refresh_key   = 'cashback_epn_refresh_' . md5($client_id);
-        $refresh_token = get_option($refresh_key, '');
+        $refresh_token = $this->load_refresh_token($refresh_key);
         if (!empty($refresh_token)) {
             $token = $this->refresh_token($refresh_token, $network_config, $client_id, $cache_key, $refresh_key);
             if ($token) {
@@ -162,7 +162,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
         // Сохраняем refresh_token для обновления без SSID
         $new_refresh = $body['data']['attributes']['refresh_token'] ?? '';
         if (!empty($new_refresh)) {
-            update_option($refresh_key, $new_refresh, false);
+            $this->store_refresh_token($refresh_key, (string) $new_refresh);
         }
 
         // Кешируем access_token (24 часа, с запасом 30 минут)
@@ -212,7 +212,7 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
         // Обновляем refresh_token
         $new_refresh = $body['data']['attributes']['refresh_token'] ?? '';
         if (!empty($new_refresh)) {
-            update_option($refresh_key, $new_refresh, false);
+            $this->store_refresh_token($refresh_key, (string) $new_refresh);
         }
 
         // Кешируем access_token
@@ -220,6 +220,25 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
         $this->token_cache[ $cache_key ] = $token;
 
         return $token;
+    }
+
+    /**
+     * Загрузить EPN refresh_token из wp_options, прозрачно расшифровывая
+     * значения с префиксом ENC:v1:. Plaintext (из старых инсталляций)
+     * читается как есть — backward-compat через decrypt_if_ciphertext().
+     */
+    private function load_refresh_token( string $option_key ): string {
+        $stored = (string) get_option($option_key, '');
+        return Cashback_Encryption::decrypt_if_ciphertext($stored);
+    }
+
+    /**
+     * Сохранить EPN refresh_token в wp_options, шифруя значение при наличии
+     * CB_ENCRYPTION_KEY. autoload=false — токен нужен только при API-вызовах.
+     */
+    private function store_refresh_token( string $option_key, string $refresh_token ): void {
+        $value = Cashback_Encryption::encrypt_if_needed($refresh_token);
+        update_option($option_key, $value, false);
     }
 
     /**
