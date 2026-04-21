@@ -262,10 +262,25 @@
       // Блокируем кнопку
       btn.prop('disabled', true).text('Сохранение...');
 
+      // Группа 5 ADR: генерируем request_id per-submit-клик. При сетевом retry
+      // клиент пошлёт тот же UUID, и сервер вернёт прежний ответ вместо повторного
+      // UPDATE. Сбрасывается при success, чтобы следующий клик получил свежий id.
+      let requestId = btn.data('cb-request-id');
+      if (!requestId) {
+        requestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+          ? crypto.randomUUID()
+          : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+            const r = (Math.random() * 16) | 0;
+            return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+          });
+        btn.data('cb-request-id', requestId);
+      }
+
       const postData = {
         action: 'update_payout_request',
         payout_id: payoutId,
         nonce: cashbackPayoutDetailData.updateNonce,
+        request_id: requestId,
         ...changedData,
       };
 
@@ -302,6 +317,9 @@
           btn.data('original-provider-payout-id', payoutData.provider_payout_id || '');
           btn.data('original-attempts', payoutData.attempts);
           btn.data('original-fail-reason', payoutData.fail_reason || '');
+
+          // Группа 5: сбрасываем request_id — следующий клик получит свежий UUID.
+          btn.removeData('cb-request-id');
         } else {
           showNotice(
             'Ошибка: ' + (response.data.message || 'Неизвестная ошибка'),
