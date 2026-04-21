@@ -879,6 +879,10 @@ class Mariadb_Plugin {
             'tr_prevent_update_failed_payout',
             'tr_banned_user_update_banned_at',
             'tr_webhook_payload_hash',
+            // Пересоздать с bucket-логикой (F-11-003 part 2).
+            'tr_freeze_balance_on_ban',
+            'tr_unfreeze_balance_on_unban',
+            'tr_clear_ban_on_unban',
         );
 
         foreach ($drop_triggers as $trigger_base) {
@@ -1087,12 +1091,14 @@ class Mariadb_Plugin {
             "CREATE TRIGGER IF NOT EXISTS `{$safe_prefix}tr_freeze_balance_on_ban`
             AFTER UPDATE ON `{$safe_prefix}cashback_user_profile`
             FOR EACH ROW
-            --  'Замораживает доступный и pending баланс при бане пользователя'
+            --  'Замораживает доступный и pending баланс при бане (bucket-split: F-11-003)'
             BEGIN
                 IF OLD.status != 'banned' AND NEW.status = 'banned' THEN
                     UPDATE `{$safe_prefix}cashback_user_balance`
                     SET
-                        frozen_balance = frozen_balance + available_balance + pending_balance,
+                        frozen_balance_ban         = frozen_balance_ban + available_balance,
+                        frozen_pending_balance_ban = frozen_pending_balance_ban + pending_balance,
+                        frozen_balance             = frozen_balance + available_balance + pending_balance,
                         available_balance = 0,
                         pending_balance = 0,
                         version = version + 1
@@ -1114,13 +1120,16 @@ class Mariadb_Plugin {
             "CREATE TRIGGER IF NOT EXISTS `{$safe_prefix}tr_unfreeze_balance_on_unban`
             AFTER UPDATE ON `{$safe_prefix}cashback_user_profile`
             FOR EACH ROW
-            --  'Размораживает баланс при разбане пользователя'
+            --  'Размораживает баланс при разбане (bucket-split: pending→pending, F-11-003)'
             BEGIN
                 IF OLD.status = 'banned' AND NEW.status != 'banned' THEN
                     UPDATE `{$safe_prefix}cashback_user_balance`
                     SET
-                        available_balance = available_balance + frozen_balance,
-                        frozen_balance = 0,
+                        available_balance = available_balance + frozen_balance_ban,
+                        pending_balance   = pending_balance + frozen_pending_balance_ban,
+                        frozen_balance    = frozen_balance - frozen_balance_ban - frozen_pending_balance_ban,
+                        frozen_balance_ban         = 0,
+                        frozen_pending_balance_ban = 0,
                         version = version + 1
                     WHERE user_id = NEW.user_id;
                 END IF;

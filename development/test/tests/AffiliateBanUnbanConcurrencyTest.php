@@ -182,10 +182,19 @@ final class AffiliateBanUnbanConcurrencyTest extends TestCase
     {
         $src = $this->read(self::MARIADB_FILE);
 
-        $trigger_start = strpos($src, 'CREATE TRIGGER') !== false
-            ? strpos($src, 'tr_freeze_balance_on_ban')
-            : false;
-        $this->assertIsInt($trigger_start, 'tr_freeze_balance_on_ban должен быть определён в mariadb.php.');
+        // Находим именно CREATE TRIGGER-блок для tr_freeze_balance_on_ban
+        // (первое вхождение имени — в списке DROP TRIGGER).
+        $trigger_start = false;
+        $offset = 0;
+        while (($pos = strpos($src, 'tr_freeze_balance_on_ban', $offset)) !== false) {
+            $window = substr($src, max(0, $pos - 200), 400);
+            if (stripos($window, 'CREATE TRIGGER') !== false) {
+                $trigger_start = $pos;
+                break;
+            }
+            $offset = $pos + 1;
+        }
+        $this->assertIsInt($trigger_start, 'CREATE TRIGGER tr_freeze_balance_on_ban должен быть определён в mariadb.php.');
 
         $trigger_body = substr($src, $trigger_start, 2000);
 
