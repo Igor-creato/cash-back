@@ -426,18 +426,54 @@ class Cashback_Claims_Admin {
             wp_send_json_error(array( 'message' => __('Недостаточно прав.', 'cashback-plugin') ));
         }
 
+        // Server-side дедуп request_id (Группа 5 ADR, F-33-004 partial).
+        // JS уже шлёт request_id через makeRequestId() — здесь замыкаем серверную
+        // половину: retry с тем же id не создаёт дубль admin-комментария.
+        $idem_scope      = 'admin_claim_add_note';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => __('Запрос уже обрабатывается. Повторите через несколько секунд.', 'cashback-plugin'),
+                ), 409);
+                return;
+            }
+        }
+
         $claim_id = absint($_POST['claim_id'] ?? 0);
         $note     = sanitize_textarea_field(wp_unslash($_POST['note'] ?? ''));
 
         if (!$claim_id || empty($note)) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => __('Неверные параметры.', 'cashback-plugin') ));
         }
 
         $result = Cashback_Claims_Manager::add_note($claim_id, $note, get_current_user_id());
 
         if ($result['success']) {
-            wp_send_json_success(array( 'message' => __('Комментарий добавлен.', 'cashback-plugin') ));
+            $response_data = array( 'message' => __('Комментарий добавлен.', 'cashback-plugin') );
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response_data);
+            }
+            wp_send_json_success($response_data);
         } else {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => $result['error'] ));
         }
     }
