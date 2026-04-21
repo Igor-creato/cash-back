@@ -927,6 +927,13 @@ class Cashback_Users_Management_Admin {
             // PHP-фолбэк: разморозка баланса (идемпотентно при наличии триггера)
             Cashback_Trigger_Fallbacks::unfreeze_balance_on_unban($user_id);
 
+            // Re-freeze affiliate-части ПОД ТОЙ ЖЕ TX — до COMMIT.
+            // F-28-001: post-commit вызов давал race-окно, когда разбан
+            // открывал affiliate-средства для вывода до повторной заморозки.
+            if (class_exists('Cashback_Affiliate_Service')) {
+                Cashback_Affiliate_Service::re_freeze_after_unban_atomic($user_id, true);
+            }
+
             // Логируем разбан
             if (class_exists('Cashback_Encryption')) {
                 Cashback_Encryption::write_audit_log(
@@ -941,12 +948,6 @@ class Cashback_Users_Management_Admin {
             // Фиксируем транзакцию если мы ее владельцы
             if (!$in_transaction) {
                 $wpdb->query('COMMIT');
-            }
-
-            // Post-commit: если affiliate отключён, повторно заморозить affiliate-часть
-            // (разбан вернул всё frozen в available, нужно вернуть affiliate frozen)
-            if (class_exists('Cashback_Affiliate_Service')) {
-                Cashback_Affiliate_Service::re_freeze_after_unban($user_id);
             }
 
             return true;
