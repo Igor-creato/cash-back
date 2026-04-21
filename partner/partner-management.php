@@ -530,22 +530,22 @@ class Cashback_Partner_Management_Admin {
             return;
         }
 
-        // Проверяем, существует ли уже партнер с таким slug или name
-        $existing = (int) $wpdb->get_var(
+        // Pre-check по name — не покрыт UNIQUE-ограничением в БД (только slug имеет uniq_slug).
+        // Это бизнес-правило против UI-дублей, не race-safe (TOCTOU окно допустимо на admin-path).
+        $name_exists = (int) $wpdb->get_var(
             $wpdb->prepare(
-                'SELECT COUNT(*) FROM %i WHERE slug = %s OR name = %s',
+                'SELECT COUNT(*) FROM %i WHERE name = %s',
                 $this->table_name,
-                $slug,
                 $name
             )
         );
-
-        if ($existing > 0) {
-            wp_send_json_error(array( 'message' => 'Партнер с таким названием или slug уже существует.' ));
+        if ($name_exists > 0) {
+            wp_send_json_error(array( 'message' => 'Партнер с таким названием уже существует.' ));
             return;
         }
 
-        // Добавляем новую запись в базу данных
+        // Добавляем новую запись. Для slug полагаемся на UNIQUE uniq_slug (см. mariadb.php:186):
+        // check-then-insert убран (Группа 6 ADR, шаг 3b, closes F-26-002) — дубль распознаётся через last_error.
         $result = $wpdb->insert(
             $this->table_name,
             array(
@@ -559,11 +559,32 @@ class Cashback_Partner_Management_Admin {
         );
 
         if ($result === false) {
+            $classification = self::classify_partner_insert_error($wpdb->last_error);
+            if ('duplicate_slug' === $classification) {
+                wp_send_json_error(array( 'message' => 'Партнер с таким slug уже существует.' ));
+                return;
+            }
             wp_send_json_error(array( 'message' => 'Ошибка при добавлении партнера в базе данных.' ));
             return;
         }
 
         wp_send_json_success();
+    }
+
+    /**
+     * Распознать какой UNIQUE ключ сработал по $wpdb->last_error.
+     * Используется в handle_add_partner для различения Duplicate entry на slug.
+     *
+     * @return string 'duplicate_slug' | 'other'
+     */
+    public static function classify_partner_insert_error( string $last_error ): string {
+        if ('' === $last_error || false === strpos($last_error, 'Duplicate entry')) {
+            return 'other';
+        }
+        if (false !== strpos($last_error, "'uniq_slug'")) {
+            return 'duplicate_slug';
+        }
+        return 'other';
     }
 
     /**
