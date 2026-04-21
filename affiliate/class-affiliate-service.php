@@ -456,18 +456,26 @@ class Cashback_Affiliate_Service {
      * Batch-начисление партнёрских комиссий.
      * Вызывается ВНУТРИ process_ready_transactions() под глобальным lock.
      *
-     * @param array  $candidates [{id, user_id, cashback}, ...]
+     * Атомарность (F-22-001, F-22-002):
+     *   - Если $in_transaction=false — метод сам открывает START TRANSACTION /
+     *     COMMIT / ROLLBACK; при внешней TX caller отвечает за границы.
+     *   - FOR UPDATE на cashback_user_balance рефереров берётся в начале TX.
+     *   - Balance-delta аккумулируется ТОЛЬКО для ledger-строк с rows_affected=1
+     *     (ON DUPLICATE KEY UPDATE id=id = дубль → delta не применяется).
+     *
+     * @param array $candidates      [{id, user_id, cashback}, ...]
+     * @param bool  $in_transaction  true = caller уже открыл TX, метод не открывает свою.
      * @return array{inserted: int, amount: string, errors: string[]}
      */
-    public static function process_affiliate_commissions( array $candidates ): array {
+    public static function process_affiliate_commissions( array $candidates, bool $in_transaction = false ): array {
         global $wpdb;
         $prefix = $wpdb->prefix;
 
         $result = array(
-			'inserted' => 0,
-			'amount'   => '0.00',
-			'errors'   => array(),
-		);
+            'inserted' => 0,
+            'amount'   => '0.00',
+            'errors'   => array(),
+        );
 
         if (empty($candidates)) {
             return $result;
@@ -582,10 +590,28 @@ class Cashback_Affiliate_Service {
             return $result;
         }
 
+        $accruals_table = $prefix . 'cashback_affiliate_accruals';
+        $ledger_table   = $prefix . 'cashback_balance_ledger';
+        $balance_table  = $prefix . 'cashback_user_balance';
+
+        $owns_tx = !$in_transaction;
+        if ($owns_tx) {
+            $wpdb->query('START TRANSACTION');
+        }
+
         try {
-            $accruals_table = $prefix . 'cashback_affiliate_accruals';
-            $ledger_table   = $prefix . 'cashback_balance_ledger';
-            $balance_table  = $prefix . 'cashback_user_balance';
+            // Блокируем balance-строки всех рефереров, прежде чем менять ledger/balance.
+            $referrer_ids = array_unique(array_values($referral_map));
+            if (!empty($referrer_ids)) {
+                $lock_placeholders = implode(',', array_fill(0, count($referrer_ids), '%d'));
+                // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $lock_placeholders из array_fill('%d').
+                $wpdb->get_results($wpdb->prepare(
+                    "SELECT user_id FROM %i WHERE user_id IN ({$lock_placeholders}) FOR UPDATE",
+                    $balance_table,
+                    ...$referrer_ids
+                ));
+                // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+            }
 
             // Сначала пробуем UPDATE pending → available (accruals могли быть созданы sync_pending_accruals)
             $updated_count         = 0;
@@ -593,11 +619,9 @@ class Cashback_Affiliate_Service {
             $insert_accrual_args   = array();
 
             foreach ($accrual_values as $idx => $value_tpl) {
-                // Извлекаем аргументы для этой записи (9 полей на запись)
                 $offset = $idx * 9;
-                $tx_id  = $accrual_args[ $offset + 3 ]; // transaction_id — 4й аргумент
+                $tx_id  = $accrual_args[ $offset + 3 ];
 
-                // Пробуем обновить существующую pending-запись
                 $upd = $wpdb->query($wpdb->prepare(
                     "UPDATE %i
                      SET status = 'available',
@@ -607,16 +631,15 @@ class Cashback_Affiliate_Service {
                      WHERE transaction_id = %d AND status IN ('pending','declined')
                      LIMIT 1",
                     $accruals_table,
-                    $accrual_args[ $offset + 4 ], // cashback_amount
-                    $accrual_args[ $offset + 5 ], // commission_rate
-                    $accrual_args[ $offset + 6 ], // commission_amount
+                    $accrual_args[ $offset + 4 ],
+                    $accrual_args[ $offset + 5 ],
+                    $accrual_args[ $offset + 6 ],
                     $tx_id
                 ));
 
                 if ($upd > 0) {
                     ++$updated_count;
                 } else {
-                    // Не было pending-записи — собираем для INSERT
                     $insert_accrual_values[] = $value_tpl;
                     for ($i = 0; $i < 9; $i++) {
                         $insert_accrual_args[] = $accrual_args[ $offset + $i ];
@@ -624,7 +647,6 @@ class Cashback_Affiliate_Service {
                 }
             }
 
-            // INSERT оставшихся (без pending-записи) — идемпотентно
             if (!empty($insert_accrual_values)) {
                 $accrual_sql = implode(', ', $insert_accrual_values);
                 // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $accrual_sql из array_fill-шаблонов.
@@ -648,26 +670,51 @@ class Cashback_Affiliate_Service {
                 }
             }
 
-            // INSERT IGNORE в единый ledger (идемпотентно)
-            $ledger_sql = implode(', ', $ledger_values);
-            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $ledger_sql из array_fill-шаблонов.
-            $ledger_result = $wpdb->query($wpdb->prepare(
-                "INSERT INTO %i
-                     (user_id, type, amount, transaction_id, reference_type, reference_id, idempotency_key)
-                 VALUES {$ledger_sql}
-                 ON DUPLICATE KEY UPDATE id = id",
-                $ledger_table,
-                ...$ledger_args
-            ));
-            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+            // Построчный INSERT ledger с проверкой rows_affected — ключ F-22-001:
+            // только реально вставленные строки (rows_affected=1) дают вклад в balance-delta.
+            // ON DUPLICATE KEY UPDATE id=id = дубль → rows_affected=0 → delta НЕ применяется.
+            $effective_deltas = array();
+            $effective_inserted_count = 0;
+            foreach ($ledger_values as $idx => $row_tpl) {
+                $offset      = $idx * 7;
+                $referrer_id = (int) $ledger_args[ $offset + 0 ];
+                $commission  = $ledger_args[ $offset + 2 ];
 
-            if ($ledger_result === false) {
-                throw new \RuntimeException('Affiliate balance_ledger INSERT failed: ' . $wpdb->last_error);
+                // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $row_tpl из array_fill-шаблонов.
+                $ledger_insert = $wpdb->query($wpdb->prepare(
+                    "INSERT INTO %i
+                         (user_id, type, amount, transaction_id, reference_type, reference_id, idempotency_key)
+                     VALUES {$row_tpl}
+                     ON DUPLICATE KEY UPDATE id = id",
+                    $ledger_table,
+                    $ledger_args[ $offset + 0 ],
+                    $ledger_args[ $offset + 1 ],
+                    $ledger_args[ $offset + 2 ],
+                    $ledger_args[ $offset + 3 ],
+                    $ledger_args[ $offset + 4 ],
+                    $ledger_args[ $offset + 5 ],
+                    $ledger_args[ $offset + 6 ]
+                ));
+                // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+
+                if ($ledger_insert === false) {
+                    throw new \RuntimeException('Affiliate balance_ledger INSERT failed: ' . $wpdb->last_error);
+                }
+
+                $rows_affected = (int) $ledger_insert;
+                if ($rows_affected === 1) {
+                    if (!isset($effective_deltas[ $referrer_id ])) {
+                        $effective_deltas[ $referrer_id ] = '0.00';
+                    }
+                    $effective_deltas[ $referrer_id ] = bcadd($effective_deltas[ $referrer_id ], (string) $commission, 2);
+                    ++$effective_inserted_count;
+                }
+                // rows_affected === 0 → дубль ledger-ключа; balance-delta не применяется.
             }
 
-            // Обновляем balance cache рефереров
-            $total_commission = 0.0;
-            foreach ($balance_deltas as $referrer_id => $delta) {
+            // Обновляем balance рефереров ТОЛЬКО на effective deltas.
+            $total_commission = '0.00';
+            foreach ($effective_deltas as $referrer_id => $delta) {
                 $balance_update = $wpdb->query($wpdb->prepare(
                     'INSERT INTO %i
                          (user_id, available_balance, version)
@@ -677,30 +724,33 @@ class Cashback_Affiliate_Service {
                          version = version + 1',
                     $balance_table,
                     $referrer_id,
-                    number_format($delta, 2, '.', ''),
-                    number_format($delta, 2, '.', '')
+                    $delta,
+                    $delta
                 ));
 
                 if ($balance_update === false) {
-                    $result['errors'][] = "Balance update failed for referrer {$referrer_id}: " . $wpdb->last_error;
+                    throw new \RuntimeException("Balance update failed for referrer {$referrer_id}: " . $wpdb->last_error);
                 }
-                $total_commission += $delta;
+                $total_commission = bcadd($total_commission, $delta, 2);
             }
 
-            $result['inserted']             = count($accrual_values);
-            $result['updated_from_pending'] = $updated_count;
-            $result['amount']               = number_format($total_commission, 2, '.', '');
+            if ($owns_tx) {
+                $wpdb->query('COMMIT');
+            }
 
-            // Уведомление рефереров о начислении партнёрского вознаграждения
-            if (!empty($balance_deltas)) {
+            $result['inserted']             = $effective_inserted_count;
+            $result['updated_from_pending'] = $updated_count;
+            $result['amount']               = $total_commission;
+
+            // Уведомление рефереров — только для реально применённых дельт.
+            if (!empty($effective_deltas)) {
                 $accrual_notifications = array();
-                foreach ($balance_deltas as $ref_id => $delta) {
+                foreach ($effective_deltas as $ref_id => $delta) {
                     $accrual_notifications[ $ref_id ] = array(
-                        'total' => $delta,
+                        'total' => (float) $delta,
                         'count' => 0,
                     );
                 }
-                // Подсчитываем количество начислений на каждого реферера
                 foreach ($candidates as $tx) {
                     $uid = (int) $tx['user_id'];
                     if (isset($referral_map[ $uid ])) {
@@ -713,9 +763,16 @@ class Cashback_Affiliate_Service {
                 do_action('cashback_notification_affiliate_commission', $accrual_notifications);
             }
         } catch (\Throwable $e) {
+            if ($owns_tx) {
+                $wpdb->query('ROLLBACK');
+            }
             $result['errors'][] = $e->getMessage();
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Affiliate] process_affiliate_commissions error: ' . $e->getMessage());
+            // При внешней TX caller обязан сделать ROLLBACK — rethrow для сохранения атомарности.
+            if (!$owns_tx) {
+                throw $e;
+            }
         }
 
         return $result;
