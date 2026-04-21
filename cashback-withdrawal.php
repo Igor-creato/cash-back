@@ -402,19 +402,53 @@ class CashbackWithdrawal {
             return null;
         }
 
-        // Если есть зашифрованные данные — расшифровываем
-        if (!empty($row['encrypted_details']) && class_exists('Cashback_Encryption') && Cashback_Encryption::is_configured()) {
+        // Fail-closed: если есть ciphertext — он ДОЛЖЕН быть расшифрован.
+        // При отсутствии ключа или при сбое decrypt возвращаем null и НЕ
+        // подставляем plaintext-fallback — это могло бы вернуть старые данные,
+        // оставшиеся в колонке payout_account до миграции. См. ADR Группа 4 (F-1-001).
+        if (!empty($row['encrypted_details'])) {
+            if (!class_exists('Cashback_Encryption') || !Cashback_Encryption::is_configured()) {
+                $this->log_encryption_unavailable('get_payout_account', $user_id);
+                return null;
+            }
+
             try {
                 $decrypted = Cashback_Encryption::decrypt_details($row['encrypted_details']);
                 return $decrypted['account'] ?? null;
             } catch (\Exception $e) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Cashback: Failed to decrypt payout account for user ' . $user_id . ': ' . $e->getMessage());
+                return null;
             }
         }
 
-        // Fallback на plaintext
+        // Legacy: для записей до миграции шифрования, где encrypted_details пусто,
+        // возвращаем plaintext payout_account как есть.
         return $row['payout_account'] ?: null;
+    }
+
+    /**
+     * Логирует факт недоступности шифрования при чтении/записи реквизитов.
+     * Пишет в error_log и, если доступен, в аудит-лог шифрования.
+     */
+    private function log_encryption_unavailable( string $scope, int $user_id ): void {
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+        error_log(sprintf(
+            'Cashback: encryption unavailable at %s for user %d (CB_ENCRYPTION_KEY missing or invalid)',
+            $scope,
+            $user_id
+        ));
+
+        if (class_exists('Cashback_Encryption') && method_exists('Cashback_Encryption', 'write_audit_log')) {
+            try {
+                Cashback_Encryption::write_audit_log('encryption_unavailable', array(
+                    'scope'   => $scope,
+                    'user_id' => $user_id,
+                ));
+            } catch (\Throwable $e) {
+                // Аудит-лог не должен ломать основной поток; проглатываем.
+            }
+        }
     }
 
     /**
@@ -1252,6 +1286,23 @@ class CashbackWithdrawal {
             return;
         }
 
+        // Fail-closed encryption guard: без настроенного ключа сохранение реквизитов
+        // отключено полностью — plaintext-PII в БД недопустим. Проверяем ДО валидации
+        // формы, чтобы не тратить ресурсы и не вводить пользователя в заблуждение
+        // сообщениями валидации при фундаментальной недоступности сервиса.
+        // См. ADR Группа 4 (F-1-001).
+        if (!class_exists('Cashback_Encryption') || !Cashback_Encryption::is_configured()) {
+            $this->log_encryption_unavailable('save_payout_settings', $user_id);
+            wp_send_json_error(
+                array(
+                    'message' => __('Шифрование реквизитов не настроено. Пожалуйста, обратитесь к администратору сайта.', 'cashback-plugin'),
+                    'code'    => 'encryption_unavailable',
+                ),
+                503
+            );
+            return;
+        }
+
         // Rate limiting: max 3 settings saves per 24 hours
         $settings_rate_key   = 'cb_settings_rate_' . $user_id;
         $settings_rate_count = (int) get_transient($settings_rate_key);
@@ -1316,26 +1367,25 @@ class CashbackWithdrawal {
             }
         }
 
-        // Шифрование реквизитов
+        // Шифрование реквизитов (ключ гарантированно настроен в guard выше —
+        // см. проверку is_configured() до валидации формы).
         $encrypted_details = null;
         $masked_details    = null;
         $details_hash      = null;
 
-        if (class_exists('Cashback_Encryption') && Cashback_Encryption::is_configured()) {
-            try {
-                $bank_name         = $bank_required ? $this->get_bank_name($bank_id) : '';
-                $enc_result        = Cashback_Encryption::encrypt_details(array(
-                    'account'   => $payout_account,
-                    'full_name' => '',
-                    'bank'      => $bank_name ?: '',
-                ));
-                $encrypted_details = $enc_result['encrypted_details'];
-                $masked_details    = $enc_result['masked_details'];
-                $details_hash      = $enc_result['details_hash'];
-            } catch (\Exception $e) {
-                wp_send_json_error(array( 'message' => __('Ошибка шифрования данных.', 'cashback-plugin') ));
-                return;
-            }
+        try {
+            $bank_name  = $bank_required ? $this->get_bank_name($bank_id) : '';
+            $enc_result = Cashback_Encryption::encrypt_details(array(
+                'account'   => $payout_account,
+                'full_name' => '',
+                'bank'      => $bank_name ?: '',
+            ));
+            $encrypted_details = $enc_result['encrypted_details'];
+            $masked_details    = $enc_result['masked_details'];
+            $details_hash      = $enc_result['details_hash'];
+        } catch (\Exception $e) {
+            wp_send_json_error(array( 'message' => __('Ошибка шифрования данных.', 'cashback-plugin') ));
+            return;
         }
 
         // Обновляем данные пользователя
@@ -1625,6 +1675,17 @@ class CashbackWithdrawal {
         ?string $details_hash = null
     ): bool {
         global $wpdb;
+
+        // Defense-in-depth: если шифрование настроено, но ciphertext не передан —
+        // это программная ошибка вызывающего кода. Отказываем во избежание
+        // случайной записи plaintext PII в БД. См. ADR Группа 4 (F-1-001).
+        if ($encrypted_details === null
+            && class_exists('Cashback_Encryption')
+            && Cashback_Encryption::is_configured()
+        ) {
+            $this->log_encryption_unavailable('update_user_payout_details_missing_ciphertext', $user_id);
+            return false;
+        }
 
         $table_name = $wpdb->prefix . 'cashback_user_profile';
 
