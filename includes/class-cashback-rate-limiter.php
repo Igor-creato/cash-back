@@ -25,6 +25,16 @@ if (!defined('ABSPATH')) {
 class Cashback_Rate_Limiter {
 
     /**
+     * Атомарный backend для инкремента счётчиков (Группа 7 ADR, шаг 5).
+     *
+     * Lazy-инициализируется в get_backend() как SQL counter, обёрнутый в cache-decorator.
+     * В тестах подменяется через set_backend().
+     *
+     * @var Cashback_Rate_Limit_Counter_Interface|null
+     */
+    private static ?object $backend = null;
+
+    /**
      * Конфигурация тиров: [лимит, окно в секундах].
      */
     private const TIERS = array(
@@ -55,6 +65,10 @@ class Cashback_Rate_Limiter {
         'social_start'                              => 'write',
         'social_callback'                           => 'write',
         'social_confirm'                            => 'write',
+        // Группа 7 (шаг 9 ADR): пополнение реестра для закрытия F-9-003
+        // (ранее оба action'а вызывали check() мимо реестра → fail-open).
+        'social_email_prompt'                       => 'write',
+        'social_unlink'                             => 'write',
 
         // --- Read ---
         'get_user_balance'                          => 'read',
@@ -152,11 +166,25 @@ class Cashback_Rate_Limiter {
         $tier = self::get_tier($action);
 
         if ($tier === null) {
+            // Группа 7 (шаг 9 ADR): fail-closed для unregistered actions (iter-9 F-9-003).
+            // Фильтр cashback_rate_limit_unregistered_policy оставлен для экстренного
+            // отката на совместимость: 'deny' (default) | 'allow'. В production-проде
+            // не ожидаем активации, но даёт откат без деплоя при непредвиденных action'ах.
+            $policy = (string) apply_filters('cashback_rate_limit_unregistered_policy', 'deny', $action);
+
+            if ($policy === 'allow') {
+                return array(
+                    'allowed'     => true,
+                    'remaining'   => 999,
+                    'retry_after' => 0,
+                );
+            }
+
             return array(
-				'allowed'     => true,
-				'remaining'   => 999,
-				'retry_after' => 0,
-			);
+                'allowed'     => false,
+                'remaining'   => 0,
+                'retry_after' => self::GREY_TTL,
+            );
         }
 
         // Заблокированный IP (grey score >= блок-порог) — отклоняем до истечения GREY_TTL,
@@ -176,12 +204,27 @@ class Cashback_Rate_Limiter {
             $limit = max(1, (int) floor($limit / 2));
         }
 
-        // Ключ: tier char + hash(action|user_id|ip) — до 45 символов
-        $key = sprintf('cb_rl_%s_%s', $tier[0], substr(md5($action . '|' . $user_id . '|' . $ip), 0, 10));
+        // Группа 7 (шаг 5 ADR): атомарный backend заменяет старый get/set_transient
+        // race-паттерн. scope_key детерминистичен, длина 42 <= 64 (VARCHAR(64) PK).
+        $scope_key = self::make_scope_key($tier, $action, $user_id, $ip);
 
-        $count = (int) get_transient($key);
+        try {
+            $result = self::get_backend()->increment($scope_key, $window, $limit);
+        } catch (\Throwable $e) {
+            // Fail-open при ошибке backend'а: не ломаем availability если БД/cache
+            // недоступны. На уровне миграций это временное состояние (таблица создаётся
+            // автоматически на plugins_loaded prio=115). Диагностика — в error_log.
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Backend failure diagnostic (group 7, step 5).
+            error_log('[cashback-rate-limiter] backend error: ' . $e->getMessage());
 
-        if ($count >= $limit) {
+            return array(
+                'allowed'     => true,
+                'remaining'   => $limit,
+                'retry_after' => 0,
+            );
+        }
+
+        if (! $result['allowed']) {
             // Записываем нарушение для grey scoring
             self::record_violation($ip, 'rate_limit');
 
@@ -192,13 +235,74 @@ class Cashback_Rate_Limiter {
             );
         }
 
-        set_transient($key, $count + 1, $window);
-
         return array(
             'allowed'     => true,
-            'remaining'   => $limit - $count - 1,
+            'remaining'   => max(0, $limit - (int) $result['hits']),
             'retry_after' => 0,
         );
+    }
+
+    /**
+     * Детерминированный ключ для rate-limit counter (Группа 7).
+     *
+     * Формат: `{tier[0]}_{sha1(action|user_id|ip)[0:40]}` → 42 символа ≤ VARCHAR(64) PK лимита.
+     * Префикс tier-buck'а нужен чтобы разные тиры одного action не коллижили
+     * (на практике одно действие всегда одного тира, но defense-in-depth).
+     */
+    private static function make_scope_key( string $tier, string $action, int $user_id, string $ip ): string {
+        return sprintf('%s_%s', $tier[0], substr(sha1($action . '|' . $user_id . '|' . $ip), 0, 40));
+    }
+
+    /**
+     * Lazy-init атомарного backend'а (SQL counter + cache decorator).
+     * Используется set_backend() для тестов.
+     */
+    private static function get_backend(): object {
+        if (self::$backend !== null) {
+            return self::$backend;
+        }
+
+        self::require_rate_limit_classes();
+
+        global $wpdb;
+        $sql  = new \Cashback_Rate_Limit_SQL_Counter(
+            $wpdb,
+            $wpdb->prefix . \Cashback_Rate_Limit_Migration::TABLE_SUFFIX
+        );
+        self::$backend = new \Cashback_Rate_Limit_Cached_Counter($sql);
+
+        return self::$backend;
+    }
+
+    /**
+     * DI-seam для тестов: подменяет backend либо сбрасывает в null для re-init.
+     */
+    public static function set_backend( ?object $backend ): void {
+        self::$backend = $backend;
+    }
+
+    /**
+     * Публичный доступ к атомарному backend'у для non-check() callsite'ов
+     * (wc-affiliate click-rate, rest-api /activate). Все они разделяют один
+     * backend — это даёт единую таблицу счётчиков и единый GC-цикл.
+     */
+    public static function counter_backend(): object {
+        return self::get_backend();
+    }
+
+    private static function require_rate_limit_classes(): void {
+        if (!interface_exists('Cashback_Rate_Limit_Counter_Interface')) {
+            require_once __DIR__ . '/rate-limit/interface-cashback-rate-limit-counter.php';
+        }
+        if (!class_exists('Cashback_Rate_Limit_SQL_Counter')) {
+            require_once __DIR__ . '/rate-limit/class-cashback-rate-limit-sql-counter.php';
+        }
+        if (!class_exists('Cashback_Rate_Limit_Cached_Counter')) {
+            require_once __DIR__ . '/rate-limit/class-cashback-rate-limit-cached-counter.php';
+        }
+        if (!class_exists('Cashback_Rate_Limit_Migration')) {
+            require_once __DIR__ . '/class-cashback-rate-limit-migration.php';
+        }
     }
 
     /**
