@@ -746,6 +746,30 @@ class Cashback_Partner_Management_Admin {
             return;
         }
 
+        // Server-side дедуп request_id (Группа 5 ADR, F-35-006).
+        $idem_scope      = 'admin_partner_param_delete';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => 'Запрос уже обрабатывается. Повторите через несколько секунд.',
+                ), 409);
+                return;
+            }
+        }
+
         global $wpdb;
 
         $param_id = isset($_POST['param_id']) ? intval($_POST['param_id']) : 0;
@@ -753,11 +777,19 @@ class Cashback_Partner_Management_Admin {
         $result = $wpdb->delete($this->params_table, array( 'id' => $param_id ), array( '%d' ));
 
         if ($result === false) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Ошибка при удалении параметра.' ));
             return;
         }
 
-        wp_send_json_success(array( 'message' => 'Параметр удален.' ));
+        $response_data = array( 'message' => 'Параметр удален.' );
+        if ($idem_request_id !== '') {
+            Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response_data);
+        }
+
+        wp_send_json_success($response_data);
     }
 
     /**
@@ -848,6 +880,30 @@ class Cashback_Partner_Management_Admin {
             return;
         }
 
+        // Server-side дедуп request_id (Группа 5 ADR, F-35-006).
+        $idem_scope      = 'admin_partner_param_update';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => 'Запрос уже обрабатывается. Повторите через несколько секунд.',
+                ), 409);
+                return;
+            }
+        }
+
         global $wpdb;
 
         $param_id   = isset($_POST['param_id']) ? intval($_POST['param_id']) : 0;
@@ -855,6 +911,9 @@ class Cashback_Partner_Management_Admin {
         $param_type = isset($_POST['param_type']) && is_string($_POST['param_type']) ? sanitize_text_field(wp_unslash($_POST['param_type'])) : '';
 
         if (empty($param_name)) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Название параметра обязательно.' ));
             return;
         }
@@ -871,14 +930,23 @@ class Cashback_Partner_Management_Admin {
         );
 
         if ($result === false) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => 'Ошибка при обновлении параметра.' ));
             return;
         }
 
-        wp_send_json_success(array(
+        $response_data = array(
             'param_name' => $param_name,
             'param_type' => $param_type,
-        ));
+        );
+
+        if ($idem_request_id !== '') {
+            Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response_data);
+        }
+
+        wp_send_json_success($response_data);
     }
 }
 
