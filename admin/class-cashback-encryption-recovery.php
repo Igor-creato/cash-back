@@ -33,6 +33,11 @@ class Cashback_Encryption_Recovery {
     public const BATCH_SIZE         = 500;
     public const NONCE_ACTION       = 'cashback_encryption_recovery';
     public const CONFIRMATION_WORD  = 'DELETE_ALL_PAYOUT_CREDENTIALS';
+    /**
+     * Максимальное суммарное количество строк (ciphertext + waiting payouts),
+     * при котором разрешён синхронный прогон. Больше — обязательно Action Scheduler.
+     */
+    public const SYNC_RUN_LIMIT     = 500;
 
     /**
      * Регистрация хуков. Вызывается из cashback-plugin.php при загрузке admin-слоя.
@@ -278,6 +283,49 @@ class Cashback_Encryption_Recovery {
         }
     }
 
+    /**
+     * Синхронное выполнение всех трёх фаз без Action Scheduler.
+     *
+     * Используется на малых инсталляциях (< ~500 строк) и там, где
+     * WP-Cron отключён — админ не должен ждать тика, чтобы увидеть,
+     * что очистка прошла. На больших объёмах вызывать не стоит —
+     * max_execution_time отвалится.
+     */
+    public static function run_synchronously(): void {
+        // Phase A: крутимся, пока есть waiting-заявки.
+        $safety = 200;
+        while (self::count_waiting_payouts() > 0 && $safety-- > 0) {
+            if (self::cancel_waiting_payouts_batch(100) === 0) {
+                break;
+            }
+        }
+
+        // Phase B: крутимся, пока есть ciphertext.
+        $safety = 200;
+        while (self::count_rows_with_ciphertext() > 0 && $safety-- > 0) {
+            if (self::run_batch(self::BATCH_SIZE) === 0) {
+                break;
+            }
+        }
+
+        // Phase C: финализация.
+        self::update_stored_fingerprint();
+
+        if (class_exists('Cashback_Encryption') && method_exists('Cashback_Encryption', 'write_audit_log')) {
+            try {
+                Cashback_Encryption::write_audit_log(
+                    'encryption_recovery_completed',
+                    (int) get_current_user_id(),
+                    'encryption',
+                    null,
+                    array( 'sync' => true )
+                );
+            } catch (\Throwable $e) {
+                unset($e);
+            }
+        }
+    }
+
     // ================================================================
     // Admin page
     // ================================================================
@@ -327,13 +375,58 @@ class Cashback_Encryption_Recovery {
 
         $remaining = self::count_rows_with_ciphertext();
         $mismatch  = self::is_key_mismatch();
+        $as_queued = self::is_batch_queued();
+
+        $flag_scheduled           = isset($_GET['scheduled']) && '1' === $_GET['scheduled'];
+        $flag_completed           = isset($_GET['completed']) && '1' === $_GET['completed'];
+        $flag_confirmation_failed = isset($_GET['confirmation_failed']) && '1' === $_GET['confirmation_failed'];
 
         echo '<div class="wrap">';
         echo '<h1>' . esc_html__('Восстановление шифрования Cashback', 'cashback-plugin') . '</h1>';
 
+        // ---- Баннеры по результату прошлого submit'а ----
+        if ($flag_confirmation_failed) {
+            echo '<div class="notice notice-error is-dismissible"><p>' .
+                esc_html__('Неверное слово-подтверждение. Введите его буква в букву и попробуйте ещё раз.', 'cashback-plugin') .
+                '</p></div>';
+        }
+
+        if ($flag_completed && 0 === $remaining && !$mismatch) {
+            echo '<div class="notice notice-success is-dismissible"><p>' .
+                esc_html__('Очистка завершена. Fingerprint обновлён, предупреждение снято.', 'cashback-plugin') .
+                '</p></div>';
+        }
+
+        if ($flag_scheduled) {
+            if ($as_queued) {
+                echo '<div class="notice notice-info is-dismissible"><p>' .
+                    esc_html__('Задача очистки поставлена в очередь Action Scheduler. Она обработается на ближайшем тике WP-Cron. Обновите страницу через минуту — если warning всё ещё виден, проверьте что WP-Cron активен.', 'cashback-plugin') .
+                    '</p></div>';
+            } elseif (0 === $remaining && !$mismatch) {
+                echo '<div class="notice notice-success is-dismissible"><p>' .
+                    esc_html__('Очистка уже завершена. Fingerprint обновлён.', 'cashback-plugin') .
+                    '</p></div>';
+            } else {
+                echo '<div class="notice notice-warning is-dismissible"><p>' .
+                    esc_html__('Задача больше не висит в очереди, но данные ещё не вычищены. Возможно, WP-Cron не запускался либо job завершился с ошибкой — проверьте PHP error_log.', 'cashback-plugin') .
+                    '</p></div>';
+            }
+        }
+
+        // ---- Текущее состояние (inline error, если mismatch) ----
         if ($mismatch) {
             echo '<div class="notice notice-error inline"><p>' . esc_html__('Обнаружено несовпадение fingerprint ключа. Ранее зашифрованные данные не могут быть расшифрованы текущим ключом.', 'cashback-plugin') . '</p></div>';
         }
+
+        // ---- Inline-статус AS-job'а (Fix 2) ----
+        if ($as_queued) {
+            echo '<div class="notice notice-info inline"><p>' .
+                esc_html__('В очереди Action Scheduler уже есть задача очистки — она ожидает запуска WP-Cron. Повторный запуск не нужен.', 'cashback-plugin') .
+                '</p></div>';
+        }
+
+        // ---- Диагностика (Fix 5) ----
+        self::render_diagnostics_block();
 
         echo '<p>' . sprintf(
             /* translators: %d — количество пользователей с нерасшифруемыми реквизитами, ожидающих очистки. */
@@ -349,30 +442,105 @@ class Cashback_Encryption_Recovery {
         wp_nonce_field(self::NONCE_ACTION);
         echo '<p><label>' . esc_html__('Введите слово-подтверждение:', 'cashback-plugin') . ' <code>' . esc_html(self::CONFIRMATION_WORD) . '</code></label><br />';
         echo '<input type="text" name="confirmation" value="" style="width:360px;" autocomplete="off" /></p>';
+
+        // Sync-режим доступен только на малых инсталляциях — иначе max_execution_time.
+        $sync_allowed  = ($remaining + self::count_waiting_payouts()) <= self::SYNC_RUN_LIMIT;
+        $sync_disabled = $sync_allowed ? '' : ' disabled';
+        echo '<p><label><input type="checkbox" name="run_sync" value="1"' . esc_attr($sync_disabled) . ' /> ';
+        echo esc_html(sprintf(
+            /* translators: %d — максимальное число строк для sync-режима. */
+            __('Выполнить сейчас синхронно (без Action Scheduler/WP-Cron). Доступно только при ≤ %d строк суммарно.', 'cashback-plugin'),
+            self::SYNC_RUN_LIMIT
+        ));
+        echo '</label></p>';
+
         submit_button(esc_html__('Запустить очистку', 'cashback-plugin'), 'primary delete');
         echo '</form>';
         echo '</div>';
     }
 
     /**
+     * Возвращает true, если задача очистки уже висит в очереди Action Scheduler.
+     * При отсутствии AS возвращает false (тогда нельзя сказать наверняка,
+     * но и очередь сама по себе отсутствует).
+     */
+    public static function is_batch_queued(): bool {
+        if (!function_exists('as_has_scheduled_action')) {
+            return false;
+        }
+        return (bool) as_has_scheduled_action(self::AS_HOOK, null, self::AS_GROUP);
+    }
+
+    /**
+     * Диагностический блок (Fix 5): первые 8 символов текущего и сохранённого
+     * fingerprint + состояние очереди. Только для админов, только на странице
+     * recovery. Полный fingerprint наружу не уходит.
+     */
+    private static function render_diagnostics_block(): void {
+        $current = self::get_current_fingerprint();
+        $stored  = self::get_stored_fingerprint();
+
+        $current_short = '' !== $current ? substr($current, 0, 8) : '—';
+        $stored_short  = '' !== $stored ? substr($stored, 0, 8) : '—';
+        $match         = ('' !== $current && '' !== $stored && hash_equals($stored, $current)) ? 'match' : 'mismatch';
+        $queue_state   = self::is_batch_queued()
+            ? __('в очереди', 'cashback-plugin')
+            : __('пусто', 'cashback-plugin');
+
+        echo '<div style="background:#f6f7f7;border-left:4px solid #72aee6;padding:8px 12px;margin:12px 0;font-family:monospace;">';
+        echo '<strong>' . esc_html__('Диагностика', 'cashback-plugin') . ':</strong><br />';
+        echo esc_html__('Fingerprint текущего ключа', 'cashback-plugin') . ': <code>' . esc_html($current_short) . '…</code><br />';
+        echo esc_html__('Fingerprint сохранённый', 'cashback-plugin') . ': <code>' . esc_html($stored_short) . '…</code> (' . esc_html($match) . ')<br />';
+        echo esc_html__('Очередь Action Scheduler', 'cashback-plugin') . ': ' . esc_html($queue_state);
+        echo '</div>';
+    }
+
+    /**
      * Обработчик admin-post. Делегирует в handle_admin_form_submit для тестируемости.
+     *
+     * Fix 3: если слово подтверждения введено неверно, редиректим на ту же страницу
+     * с `&confirmation_failed=1` вместо `wp_die()` — админ не теряет контекст.
+     * Fix 4: если чекбокс run_sync установлен и объём < SYNC_RUN_LIMIT —
+     * выполняем синхронно и редиректим на `&completed=1`.
      */
     public static function handle_admin_post(): void {
         check_admin_referer(self::NONCE_ACTION);
 
-        self::handle_admin_form_submit($_POST);
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Недостаточно прав.', 'cashback-plugin'));
+        }
 
-        wp_safe_redirect(admin_url('options-general.php?page=' . self::ADMIN_PAGE_SLUG . '&scheduled=1'));
+        $confirmation = isset($_POST['confirmation']) ? (string) wp_unslash($_POST['confirmation']) : '';
+        if (!hash_equals(self::CONFIRMATION_WORD, $confirmation)) {
+            wp_safe_redirect(admin_url('options-general.php?page=' . self::ADMIN_PAGE_SLUG . '&confirmation_failed=1'));
+            exit;
+        }
+
+        $run_sync = !empty($_POST['run_sync']);
+        // Жёсткий guard от больших объёмов в sync-режиме.
+        if ($run_sync) {
+            $total = self::count_rows_with_ciphertext() + self::count_waiting_payouts();
+            if ($total > self::SYNC_RUN_LIMIT) {
+                $run_sync = false;
+            }
+        }
+
+        self::handle_admin_form_submit($_POST, $run_sync);
+
+        $redirect_flag = $run_sync ? '&completed=1' : '&scheduled=1';
+        wp_safe_redirect(admin_url('options-general.php?page=' . self::ADMIN_PAGE_SLUG . $redirect_flag));
         exit;
     }
 
     /**
-     * Валидация формы + планирование AS-job. Бросает RuntimeException на отказ
-     * (через wp_die), чтобы тесты могли перехватить.
+     * Валидация формы + планирование AS-job (или синхронный прогон при $run_sync).
+     * Бросает Throwable на отказ по capability/confirmation (через wp_die), чтобы
+     * тесты могли перехватить. Snake-path контролируется `handle_admin_post()`.
      *
      * @param array<string,mixed> $post
+     * @param bool                $run_sync  true → выполнить синхронно без AS (см. SYNC_RUN_LIMIT).
      */
-    public static function handle_admin_form_submit( array $post ): void {
+    public static function handle_admin_form_submit( array $post, bool $run_sync = false ): void {
         if (!current_user_can('manage_options')) {
             wp_die(esc_html__('Недостаточно прав.', 'cashback-plugin'));
         }
@@ -390,12 +558,21 @@ class Cashback_Encryption_Recovery {
                     (int) get_current_user_id(),
                     'encryption',
                     null,
-                    array( 'rows_queued' => self::count_rows_with_ciphertext() )
+                    array(
+                        'rows_queued' => self::count_rows_with_ciphertext(),
+                        'sync'        => $run_sync,
+                    )
                 );
             } catch (\Throwable $e) {
                 // Не ломаем flow, если аудит недоступен.
                 unset($e);
             }
+        }
+
+        if ($run_sync) {
+            // Синхронный прогон: все три фазы в текущем request'е.
+            self::run_synchronously();
+            return;
         }
 
         // Ставим первый батч в очередь AS.

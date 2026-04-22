@@ -259,4 +259,81 @@ class EncryptionRecoveryFlowTest extends TestCase
             'Action Scheduler job должен быть запланирован после валидной формы'
         );
     }
+
+    // ================================================================
+    // Sync-режим (Fix 4): run_synchronously + form_submit(run_sync=true)
+    // ================================================================
+
+    public function test_run_synchronously_updates_fingerprint_when_no_rows(): void
+    {
+        update_option('cashback_encryption_key_fingerprint', str_repeat('0', 64));
+        $this->assertTrue(Cashback_Encryption_Recovery::is_key_mismatch(), 'pre-condition: mismatch');
+
+        // next_var=0 → waiting payouts=0, ciphertext rows=0 → все фазы пролетают сразу.
+        $this->wpdb->next_var = 0;
+
+        Cashback_Encryption_Recovery::run_synchronously();
+
+        $this->assertSame(
+            Cashback_Encryption_Recovery::get_current_fingerprint(),
+            get_option('cashback_encryption_key_fingerprint', ''),
+            'run_synchronously должен обновить stored fingerprint'
+        );
+        $this->assertFalse(
+            Cashback_Encryption_Recovery::is_key_mismatch(),
+            'после sync-прогона mismatch должен быть снят'
+        );
+    }
+
+    public function test_form_submit_with_run_sync_skips_action_scheduler(): void
+    {
+        $GLOBALS['_cb_test_current_user_can'] = true;
+        $GLOBALS['_cb_test_as_scheduled']     = false;
+        $this->wpdb->next_var                 = 0;  // ничего не надо чистить
+
+        update_option('cashback_encryption_key_fingerprint', str_repeat('f', 64));
+
+        Cashback_Encryption_Recovery::handle_admin_form_submit(
+            array(
+                'cashback_recovery_nonce' => 'test',
+                'confirmation'            => 'DELETE_ALL_PAYOUT_CREDENTIALS',
+            ),
+            true  // $run_sync
+        );
+
+        $this->assertFalse(
+            (bool) ($GLOBALS['_cb_test_as_scheduled'] ?? false),
+            'В sync-режиме AS-job не должен планироваться'
+        );
+        $this->assertSame(
+            Cashback_Encryption_Recovery::get_current_fingerprint(),
+            get_option('cashback_encryption_key_fingerprint', ''),
+            'После sync form_submit fingerprint должен быть обновлён'
+        );
+    }
+
+    public function test_form_submit_without_run_sync_still_schedules_as(): void
+    {
+        $GLOBALS['_cb_test_current_user_can'] = true;
+        $GLOBALS['_cb_test_as_scheduled']     = false;
+        $this->wpdb->next_var                 = 0;
+
+        Cashback_Encryption_Recovery::handle_admin_form_submit(
+            array(
+                'cashback_recovery_nonce' => 'test',
+                'confirmation'            => 'DELETE_ALL_PAYOUT_CREDENTIALS',
+            )
+            // $run_sync = false по умолчанию
+        );
+
+        $scheduled = $GLOBALS['_cb_test_as_scheduled'] ?? false;
+        $this->assertIsArray($scheduled, 'AS-job должен быть запланирован в async-режиме');
+        $this->assertSame(Cashback_Encryption_Recovery::AS_HOOK, $scheduled['hook'] ?? null);
+    }
+
+    public function test_is_batch_queued_reflects_as_state(): void
+    {
+        // Stub as_has_scheduled_action возвращает false в bootstrap → ожидаем false.
+        $this->assertFalse(Cashback_Encryption_Recovery::is_batch_queued());
+    }
 }

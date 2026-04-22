@@ -47,6 +47,9 @@ class Cashback_Notifications {
         // Начисление кэшбэка на баланс
         add_action('cashback_notification_balance_credited', array( $this, 'on_balance_credited' ), 10, 1);
 
+        // Отмена заявки на выплату с возвратом средств на available_balance
+        add_action('cashback_notification_payout_refunded', array( $this, 'on_payout_refunded' ), 10, 4);
+
         // Регистрация пользователя
         add_action('cashback_notification_user_registered', array( $this, 'on_user_registered' ), 10, 1);
 
@@ -339,6 +342,88 @@ class Cashback_Notifications {
                 $user_id
             );
         }
+    }
+
+    // =====================================================================
+    // Возврат средств по отменённой заявке на выплату
+    // =====================================================================
+
+    /**
+     * Заявка на выплату отменена, pending → available.
+     *
+     * Триггерится из двух точек в admin/payouts.php:
+     *   - `cancel_payout_with_refund()` (encryption recovery + AJAX-возврат);
+     *   - `update_payout_status()` при переходе waiting/processing/needs_retry → failed.
+     *
+     * @param int    $payout_id  ID заявки
+     * @param int    $user_id    ID пользователя
+     * @param string $amount     Сумма, возвращённая на баланс (строка с двумя знаками после запятой)
+     * @param string $reason     Машинный код причины (encryption_recovery / manual_encryption_recovery / admin_cancel / произвольный fail_reason)
+     */
+    public function on_payout_refunded( int $payout_id, int $user_id, string $amount, string $reason ): void {
+        if ($user_id <= 0 || $payout_id <= 0) {
+            return;
+        }
+
+        $user = get_user_by('id', $user_id);
+        if (!$user) {
+            return;
+        }
+
+        $amount_formatted = number_format((float) $amount, 2, ',', ' ');
+
+        // Человекочитаемая причина.
+        $reason_text = $this->format_refund_reason($reason);
+
+        $subject = sprintf(
+            /* translators: %d: ID заявки на выплату. */
+            __('Заявка на выплату №%d отменена — средства возвращены на баланс', 'cashback-plugin'),
+            $payout_id
+        );
+
+        $message = sprintf(
+            /* translators: %1$s: имя пользователя, %2$d: ID заявки, %3$s: сумма, %4$s: причина отмены, %5$s: URL личного кабинета. */
+            __('Здравствуйте, %1$s!
+
+Ваша заявка на выплату №%2$d отменена.
+
+Сумма %3$s ₽ возвращена на ваш доступный баланс — вы можете создать новую заявку на выплату в личном кабинете.
+
+Причина отмены: %4$s
+
+Личный кабинет: %5$s', 'cashback-plugin'),
+            $user->display_name,
+            $payout_id,
+            $amount_formatted,
+            $reason_text,
+            function_exists('wc_get_account_endpoint_url') ? wc_get_account_endpoint_url('cashback-withdrawal') : ''
+        );
+
+        Cashback_Email_Sender::get_instance()->send(
+            $user->user_email,
+            $subject,
+            $message,
+            'payout_refunded',
+            $user_id
+        );
+    }
+
+    /**
+     * Преобразует машинный код reason в текст для пользователя.
+     */
+    private function format_refund_reason( string $reason ): string {
+        $reason = trim($reason);
+
+        if ($reason === 'encryption_recovery' || $reason === 'manual_encryption_recovery') {
+            return __('технические работы с системой безопасности. Чтобы ваша заявка не потерялась, мы её отменили и вернули средства на доступный баланс. При подаче новой заявки, пожалуйста, обновите реквизиты для выплаты', 'cashback-plugin');
+        }
+
+        if ($reason === '' || $reason === 'admin_cancel') {
+            return __('отменено администратором', 'cashback-plugin');
+        }
+
+        // Произвольный fail_reason из admin UI — показываем как есть (sanitize_text_field уже прошёл на вставке).
+        return $reason;
     }
 
     // =====================================================================

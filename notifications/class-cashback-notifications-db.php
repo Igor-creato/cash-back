@@ -213,6 +213,7 @@ class Cashback_Notifications_DB {
             'claim_status'            => __('Изменение статуса заявки', 'cashback-plugin'),
             'affiliate_referral'      => __('Регистрация нового реферала', 'cashback-plugin'),
             'affiliate_commission'    => __('Начисление партнёрского вознаграждения', 'cashback-plugin'),
+            'payout_refunded'         => __('Отмена заявки на выплату и возврат средств на баланс', 'cashback-plugin'),
             'broadcast'               => __('Массовые рассылки от администрации', 'cashback-plugin'),
             'social_confirm_link'     => __('Подтверждение привязки соцсети (обязательно)', 'cashback-plugin'),
             'social_verify_email'     => __('Подтверждение email при регистрации через соцсеть (обязательно)', 'cashback-plugin'),
