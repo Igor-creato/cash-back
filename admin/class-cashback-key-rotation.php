@@ -2556,10 +2556,13 @@ class Cashback_Key_Rotation {
     // ================================================================
 
     public static function register_admin_page(): void {
+        // Единый пункт меню «Управление ключами шифрования» открывает вкладку
+        // «Ротация ключа»; Cashback_Encryption_Recovery регистрирует свою страницу
+        // тем же parent'ом, но скрывает её из сайдбара — она доступна только по вкладке.
         $hook = add_submenu_page(
             self::PARENT_MENU_SLUG,
-            esc_html__('Ротация ключа шифрования', 'cashback-plugin'),
-            esc_html__('Ротация ключа', 'cashback-plugin'),
+            esc_html__('Управление ключами шифрования', 'cashback-plugin'),
+            esc_html__('Управление ключами шифрования', 'cashback-plugin'),
             'manage_options',
             self::ADMIN_PAGE_SLUG,
             array( __CLASS__, 'render_admin_page' )

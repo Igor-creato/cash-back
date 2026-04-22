@@ -337,17 +337,21 @@ class Cashback_Encryption_Recovery {
     public static function register_admin_page(): void {
         // Регистрируем под тем же parent, что и Cashback_Key_Rotation (cashback-overview),
         // чтобы обе страницы жили в одном разделе и могли переключаться вкладками.
+        // В сайдбаре показан только один пункт «Управление ключами шифрования» (ротация);
+        // эта страница скрывается из меню через remove_submenu_page, но URL и вкладка
+        // продолжают работать.
         $parent_slug = class_exists('Cashback_Key_Rotation')
             ? Cashback_Key_Rotation::PARENT_MENU_SLUG
             : 'cashback-overview';
         add_submenu_page(
             $parent_slug,
             __('Восстановление шифрования Cashback', 'cashback-plugin'),
-            __('Восстановление', 'cashback-plugin'),
+            __('Восстановление шифрования', 'cashback-plugin'),
             'manage_options',
             self::ADMIN_PAGE_SLUG,
             array( __CLASS__, 'render_admin_page' )
         );
+        remove_submenu_page($parent_slug, self::ADMIN_PAGE_SLUG);
     }
 
     /**
