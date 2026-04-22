@@ -816,9 +816,6 @@ class Cashback_Key_Rotation {
      * Роутер per-phase updater'ов. Каждый возвращает
      *   ['processed' => int, 'failed' => int, 'next_cursor' => int, 'has_more' => bool].
      *
-     * 3.5a реализовал wp_options-фазы (captcha/epn/social). DB-таблицы остаются
-     * под фильтр-fallback и будут реализованы в 3.5b.
-     *
      * @return array{processed:int,failed:int,next_cursor:int,has_more:bool}
      */
     public static function run_phase_batch( string $phase, int $cursor, int $batch_size ): array {
@@ -833,8 +830,6 @@ class Cashback_Key_Rotation {
             return $default;
         }
 
-        // Диспатчим на реализованные фазы (3.5a: wp_options). Оставшиеся фазы (3.5b)
-        // пока идут через фильтр-fallback — для тестов и кастомного расширения.
         switch ($phase) {
             case 'options_captcha':
                 $result = self::run_phase_options_captcha();
@@ -845,16 +840,36 @@ class Cashback_Key_Rotation {
             case 'options_social':
                 $result = self::run_phase_options_social($cursor);
                 break;
+            case 'affiliate_networks':
+                $result = self::run_phase_affiliate_networks($cursor, $batch_size);
+                break;
+            case 'social_tokens':
+                $result = self::run_phase_social_tokens($cursor, $batch_size);
+                break;
+            case 'social_pending':
+                $result = self::run_phase_social_pending($cursor, $batch_size);
+                break;
+            case 'payout_requests':
+                $result = self::run_phase_payout_requests($cursor, $batch_size);
+                break;
+            case 'user_profile':
+                $result = self::run_phase_user_profile($cursor, $batch_size);
+                break;
             default:
-                $result = apply_filters(
-                    'cashback_key_rotation_phase_batch_result',
-                    $default,
-                    $phase,
-                    $cursor,
-                    $batch_size
-                );
+                $result = $default;
                 break;
         }
+
+        // Фильтр поверх результата: тесты и кастомные расширения могут инжектить/переписывать
+        // результат конкретной фазы без правки класса. Стандартные callback'и не регистрируются,
+        // поэтому в prod это no-op.
+        $result = apply_filters(
+            'cashback_key_rotation_phase_batch_result',
+            $result,
+            $phase,
+            $cursor,
+            $batch_size
+        );
 
         if (!is_array($result)) {
             return $default;
@@ -976,6 +991,284 @@ class Cashback_Key_Rotation {
             'next_cursor' => $next_cursor,
             'has_more'    => $next_cursor < count($providers),
         );
+    }
+
+    // ================================================================
+    // Per-phase updaters: таблицы (3.5b)
+    // ================================================================
+
+    /**
+     * @return array{processed:int,failed:int,next_cursor:int,has_more:bool}
+     */
+    private static function run_phase_affiliate_networks( int $cursor, int $batch_size ): array {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return array(
+				'processed'   => 0,
+				'failed'      => 0,
+				'next_cursor' => $cursor,
+				'has_more'    => false,
+			);
+        }
+        return self::rotate_table_enc_column(
+            array(
+                'table'       => $wpdb->prefix . 'cashback_affiliate_networks',
+                'pk'          => 'id',
+                'enc'         => 'api_credentials',
+                'cursor'      => $cursor,
+                'batch_size'  => $batch_size,
+                'audit_phase' => 'affiliate_networks',
+            )
+        );
+    }
+
+    /**
+     * @return array{processed:int,failed:int,next_cursor:int,has_more:bool}
+     */
+    private static function run_phase_social_tokens( int $cursor, int $batch_size ): array {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return array(
+				'processed'   => 0,
+				'failed'      => 0,
+				'next_cursor' => $cursor,
+				'has_more'    => false,
+			);
+        }
+        return self::rotate_table_enc_column(
+            array(
+                'table'       => $wpdb->prefix . 'cashback_social_tokens',
+                'pk'          => 'id',
+                'enc'         => 'refresh_token_encrypted',
+                'cursor'      => $cursor,
+                'batch_size'  => $batch_size,
+                'audit_phase' => 'social_tokens',
+            )
+        );
+    }
+
+    /**
+     * Pending-записи: только активные (не потреблённые и не истёкшие).
+     * Потреблённые/expired будут удалены Cashback_Social_Auth_DB::cleanup_expired_pending().
+     *
+     * @return array{processed:int,failed:int,next_cursor:int,has_more:bool}
+     */
+    private static function run_phase_social_pending( int $cursor, int $batch_size ): array {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return array(
+				'processed'   => 0,
+				'failed'      => 0,
+				'next_cursor' => $cursor,
+				'has_more'    => false,
+			);
+        }
+        return self::rotate_table_enc_column(
+            array(
+                'table'            => $wpdb->prefix . 'cashback_social_pending',
+                'pk'               => 'id',
+                'enc'              => 'payload_json',
+                'cursor'           => $cursor,
+                'batch_size'       => $batch_size,
+                'audit_phase'      => 'social_pending',
+                'extra_where'      => 'consumed_at IS NULL AND expires_at >= %s',
+                'extra_where_args' => array( gmdate('Y-m-d H:i:s') ),
+            )
+        );
+    }
+
+    /**
+     * @return array{processed:int,failed:int,next_cursor:int,has_more:bool}
+     */
+    private static function run_phase_payout_requests( int $cursor, int $batch_size ): array {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return array(
+				'processed'   => 0,
+				'failed'      => 0,
+				'next_cursor' => $cursor,
+				'has_more'    => false,
+			);
+        }
+        return self::rotate_table_enc_column(
+            array(
+                'table'       => $wpdb->prefix . 'cashback_payout_requests',
+                'pk'          => 'id',
+                'enc'         => 'encrypted_details',
+                'cursor'      => $cursor,
+                'batch_size'  => $batch_size,
+                'audit_phase' => 'payout_requests',
+            )
+        );
+    }
+
+    /**
+     * @return array{processed:int,failed:int,next_cursor:int,has_more:bool}
+     */
+    private static function run_phase_user_profile( int $cursor, int $batch_size ): array {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return array(
+				'processed'   => 0,
+				'failed'      => 0,
+				'next_cursor' => $cursor,
+				'has_more'    => false,
+			);
+        }
+        // PK = user_id (не id). Только encrypted_details ротируем;
+        // masked_details/details_hash вычислены из plaintext и не зависят от ключа.
+        return self::rotate_table_enc_column(
+            array(
+                'table'       => $wpdb->prefix . 'cashback_user_profile',
+                'pk'          => 'user_id',
+                'enc'         => 'encrypted_details',
+                'cursor'      => $cursor,
+                'batch_size'  => $batch_size,
+                'audit_phase' => 'user_profile',
+            )
+        );
+    }
+
+    // ================================================================
+    // Generic helper для table-updater'ов
+    // ================================================================
+
+    /**
+     * Ротирует один батч encrypted-столбца в таблице.
+     *
+     * Стратегия: SELECT PKs без лока → для каждой pk отдельная транзакция
+     * (START TRANSACTION + SELECT <enc> WHERE <pk>=:id FOR UPDATE + UPDATE + COMMIT).
+     * Per-row lock минимизирует время удержания блокировки при параллельных user-save'ах.
+     *
+     * @param array{
+     *   table:string, pk:string, enc:string, cursor:int, batch_size:int, audit_phase:string,
+     *   extra_where?:string, extra_where_args?:array<int,mixed>
+     * } $args
+     * @return array{processed:int,failed:int,next_cursor:int,has_more:bool}
+     */
+    private static function rotate_table_enc_column( array $args ): array {
+        global $wpdb;
+
+        $table       = (string) $args['table'];
+        $pk          = (string) $args['pk'];
+        $enc         = (string) $args['enc'];
+        $cursor      = (int) $args['cursor'];
+        $batch_size  = max(1, (int) $args['batch_size']);
+        $audit_phase = (string) $args['audit_phase'];
+        $extra_where = isset($args['extra_where']) ? (string) $args['extra_where'] : '';
+        $extra_args  = isset($args['extra_where_args']) && is_array($args['extra_where_args']) ? $args['extra_where_args'] : array();
+
+        // Белый список имён столбцов — pk/enc должны соответствовать простым идентификаторам
+        // (предотвращаем SQL-инъекцию при интерполяции).
+        if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $pk) || !preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $enc)) {
+            throw new \InvalidArgumentException('Invalid column identifier in rotate_table_enc_column.');
+        }
+
+        // --- Шаг 1: SELECT батч PKs (без лока) ---
+        $base_where   = "{$enc} IS NOT NULL AND {$enc} <> '' AND {$pk} > %d";
+        $where_sql    = $extra_where !== '' ? "{$base_where} AND ({$extra_where})" : $base_where;
+        $prepare_args = array_merge(array( $table, $cursor ), $extra_args, array( $batch_size ));
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- pk/enc whitelisted via regex; table via %i; placeholders собираются из extra_where динамически.
+        $pks = $wpdb->get_col(
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- pk/enc whitelisted; spread-args из extra_args.
+            $wpdb->prepare(
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- pk/enc whitelisted; table via %i; spread-args.
+                "SELECT {$pk} FROM %i WHERE {$where_sql} ORDER BY {$pk} LIMIT %d",
+                ...$prepare_args
+            )
+        );
+
+        if (!is_array($pks) || count($pks) === 0) {
+            return array(
+				'processed'   => 0,
+				'failed'      => 0,
+				'next_cursor' => $cursor,
+				'has_more'    => false,
+			);
+        }
+
+        $processed   = 0;
+        $failed      = 0;
+        $next_cursor = $cursor;
+
+        // --- Шаг 2: per-row транзакция с FOR UPDATE + rotate + UPDATE ---
+        foreach ($pks as $pk_value) {
+            $pk_int      = (int) $pk_value;
+            $next_cursor = max($next_cursor, $pk_int);
+
+            $single     = self::rotate_table_row($table, $pk, $enc, $pk_int, $audit_phase);
+            $processed += $single['processed'];
+            $failed    += $single['failed'];
+        }
+
+        return array(
+            'processed'   => $processed,
+            'failed'      => $failed,
+            'next_cursor' => $next_cursor,
+            'has_more'    => count($pks) >= $batch_size,
+        );
+    }
+
+    /**
+     * Ротирует одну строку таблицы в отдельной транзакции с FOR UPDATE.
+     *
+     * @return array{processed:int,failed:int}
+     */
+    private static function rotate_table_row( string $table, string $pk, string $enc, int $pk_value, string $audit_phase ): array {
+        global $wpdb;
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Row-level lock transaction.
+        $wpdb->query('START TRANSACTION');
+        try {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- pk/enc whitelisted.
+            $ciphertext = $wpdb->get_var(
+                $wpdb->prepare(
+                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- pk/enc whitelisted; table via %i.
+                    "SELECT {$enc} FROM %i WHERE {$pk} = %d FOR UPDATE",
+                    $table,
+                    $pk_value
+                )
+            );
+
+            if ($ciphertext === null || $ciphertext === '') {
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Commit empty (no changes).
+                $wpdb->query('COMMIT');
+                return array(
+					'processed' => 0,
+					'failed'    => 0,
+				);
+            }
+
+            $rotated = Cashback_Encryption::rotate_value((string) $ciphertext);
+
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Update locked row.
+            $updated = $wpdb->update(
+                $table,
+                array( $enc => $rotated ),
+                array( $pk => $pk_value ),
+                array( '%s' ),
+                array( '%d' )
+            );
+            if ($updated === false) {
+                throw new \RuntimeException('UPDATE failed on ' . $table . '.' . $pk . '=' . $pk_value);
+            }
+
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Commit.
+            $wpdb->query('COMMIT');
+            return array(
+				'processed' => 1,
+				'failed'    => 0,
+			);
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Rollback on error.
+            $wpdb->query('ROLLBACK');
+            self::record_item_failure($audit_phase, (string) $pk_value, $e->getMessage());
+            return array(
+				'processed' => 0,
+				'failed'    => 1,
+			);
+        }
     }
 
     // ================================================================
