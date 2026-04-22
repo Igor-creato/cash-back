@@ -184,7 +184,7 @@ $render_form = static function ( string $action_slug, string $label, string $but
                 </p>
             <?php else : ?>
                 <p>
-                    <?php esc_html_e('Идёт перешифровка данных. Страница автоматически обновляется каждые 3 секунды.', 'cashback-plugin'); ?>
+                    <?php esc_html_e('Идёт перешифровка данных. Счётчики прогресса обновляются в фоне каждые 3 секунды; при смене состояния страница перезагрузится автоматически.', 'cashback-plugin'); ?>
                 </p>
             <?php endif; ?>
 
