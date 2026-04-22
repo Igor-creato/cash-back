@@ -171,6 +171,13 @@ class EncryptionRecoveryFlowTest extends TestCase
         $this->assertStringContainsString("details_hash = ''", $sql);
         $this->assertStringContainsString("payout_account = ''", $sql);
         $this->assertStringContainsString('LIMIT', $sql);
+
+        // FK-safe: payout_method_id / bank_id — FK c ON DELETE SET NULL → должен быть NULL,
+        // присваивание 0 ломает constraint и даёт "foreign key constraint fails".
+        $this->assertStringContainsString('payout_method_id = NULL', $sql);
+        $this->assertStringContainsString('bank_id = NULL', $sql);
+        $this->assertStringNotContainsString('payout_method_id = 0', $sql);
+        $this->assertStringNotContainsString('bank_id = 0', $sql);
     }
 
     public function test_batch_purge_is_idempotent_when_no_rows_left(): void

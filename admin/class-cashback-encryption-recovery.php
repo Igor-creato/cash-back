@@ -138,6 +138,10 @@ class Cashback_Encryption_Recovery {
         $table = $wpdb->prefix . 'cashback_user_profile';
         $limit = max(1, min(5000, $limit));
 
+        // NB: payout_method_id и bank_id — FK на wp_cashback_payout_methods / wp_cashback_banks
+        // с ON DELETE SET NULL. Присваивать 0 нельзя (в родительских таблицах такой id не существует →
+        // InnoDB отклоняет UPDATE с foreign key constraint fails). Используем NULL —
+        // колонки nullable (bigint unsigned DEFAULT NULL).
         $affected = $wpdb->query(
             $wpdb->prepare(
                 'UPDATE %i SET'
@@ -146,8 +150,8 @@ class Cashback_Encryption_Recovery {
                 . " details_hash = '',"
                 . " payout_account = '',"
                 . " payout_full_name = '',"
-                . ' payout_method_id = 0,'
-                . ' bank_id = 0'
+                . ' payout_method_id = NULL,'
+                . ' bank_id = NULL'
                 . " WHERE encrypted_details <> ''"
                 . ' LIMIT %d',
                 $table,
