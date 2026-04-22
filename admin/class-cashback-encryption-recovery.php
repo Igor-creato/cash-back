@@ -46,6 +46,7 @@ class Cashback_Encryption_Recovery {
         add_action('admin_init', array( __CLASS__, 'record_fingerprint_if_missing' ));
         add_action('admin_notices', array( __CLASS__, 'maybe_render_mismatch_notice' ));
         add_action('admin_menu', array( __CLASS__, 'register_admin_page' ));
+        add_action('admin_head', array( __CLASS__, 'hide_submenu_css' ));
         add_action('admin_post_cashback_encryption_recovery', array( __CLASS__, 'handle_admin_post' ));
         add_action(self::AS_HOOK, array( __CLASS__, 'run_batch_action_handler' ));
     }
@@ -338,8 +339,8 @@ class Cashback_Encryption_Recovery {
         // Регистрируем под тем же parent, что и Cashback_Key_Rotation (cashback-overview),
         // чтобы обе страницы жили в одном разделе и могли переключаться вкладками.
         // В сайдбаре показан только один пункт «Управление ключами шифрования» (ротация);
-        // эта страница скрывается из меню через remove_submenu_page, но URL и вкладка
-        // продолжают работать.
+        // эту страницу прячем из меню через CSS (см. hide_submenu_css()) — удаление
+        // из $submenu ломает access-check в user_can_access_admin_page.
         $parent_slug = class_exists('Cashback_Key_Rotation')
             ? Cashback_Key_Rotation::PARENT_MENU_SLUG
             : 'cashback-overview';
@@ -351,7 +352,22 @@ class Cashback_Encryption_Recovery {
             self::ADMIN_PAGE_SLUG,
             array( __CLASS__, 'render_admin_page' )
         );
-        remove_submenu_page($parent_slug, self::ADMIN_PAGE_SLUG);
+    }
+
+    /**
+     * Прячет подпункт «Восстановление шифрования» из сайдбара через CSS.
+     * URL остаётся рабочим, доступ разрешён — на страницу попадаем только через
+     * вкладку в Cashback_Key_Rotation или admin notice.
+     *
+     * CSS-подход выбран намеренно: `remove_submenu_page()` удаляет запись из
+     * глобального `$submenu`, а `user_can_access_admin_page()` по ней вычисляет
+     * parent → access denied → wp_die.
+     */
+    public static function hide_submenu_css(): void {
+        if (!is_admin()) {
+            return;
+        }
+        echo '<style>#adminmenu a[href$="page=' . esc_attr(self::ADMIN_PAGE_SLUG) . '"]{display:none!important;}</style>';
     }
 
     /**
