@@ -606,6 +606,22 @@ if (!function_exists('as_schedule_single_action')) {
     }
 }
 
+if (!isset($GLOBALS['_cb_test_as_unscheduled'])) {
+    $GLOBALS['_cb_test_as_unscheduled'] = array();
+}
+
+if (!function_exists('as_unschedule_all_actions')) {
+    function as_unschedule_all_actions(string $hook, array $args = array(), string $group = ''): int
+    {
+        $GLOBALS['_cb_test_as_unscheduled'][] = array(
+            'hook'  => $hook,
+            'args'  => $args,
+            'group' => $group,
+        );
+        return 1;
+    }
+}
+
 // ============================================================
 // HTTP-стабы: WP_Error + wp_remote_* с перехватом вызовов.
 //
