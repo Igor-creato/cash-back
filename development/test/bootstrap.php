@@ -24,11 +24,27 @@ if (!defined('DB_NAME')) {
     define('DB_NAME', 'test_db');
 }
 
+// WP_CONTENT_DIR: тесты не пишут реальные файлы в wp-content; для file-path-зависимых
+// тестов (Cashback_Key_Rotation) переопределяется через фильтры per-test в setUp.
+if (!defined('WP_CONTENT_DIR')) {
+    define('WP_CONTENT_DIR', sys_get_temp_dir());
+}
+
 // Тестовый ключ шифрования (64 hex-символа = 32 байта).
 // Отдельный bootstrap-no-encryption-key.php выставляет $GLOBALS['_cb_test_skip_encryption_key']
 // для проверки fail-closed веток, где is_configured() должен вернуть false.
 if (!defined('CB_ENCRYPTION_KEY') && empty($GLOBALS['_cb_test_skip_encryption_key'])) {
     define('CB_ENCRYPTION_KEY', 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2');
+}
+
+// Вторичные ключи для покрытия dual-key ротации в EncryptionTest.
+// Их определение не меняет поведение существующих тестов: get_write_key_role()
+// возвращает 'primary' пока state ротации не стал migrating/migrated (он пустой по умолчанию).
+if (!defined('CB_ENCRYPTION_KEY_NEW') && empty($GLOBALS['_cb_test_skip_encryption_key'])) {
+    define('CB_ENCRYPTION_KEY_NEW', 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef');
+}
+if (!defined('CB_ENCRYPTION_KEY_PREVIOUS') && empty($GLOBALS['_cb_test_skip_encryption_key'])) {
+    define('CB_ENCRYPTION_KEY_PREVIOUS', 'cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe');
 }
 
 // WordPress DB output modes (wp-includes/wp-db.php)
@@ -792,6 +808,9 @@ $plugin_root = dirname(__DIR__, 2);
 
 // Шифрование
 require_once $plugin_root . '/includes/class-cashback-encryption.php';
+
+// Ротация ключа шифрования (admin)
+require_once $plugin_root . '/admin/class-cashback-key-rotation.php';
 
 // PHP-фолбэки триггеров
 require_once $plugin_root . '/includes/class-cashback-trigger-fallbacks.php';

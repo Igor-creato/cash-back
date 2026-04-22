@@ -14,6 +14,15 @@ if (!defined('ABSPATH')) {
  *
  * Ключ хранится в wp-config.php как CB_ENCRYPTION_KEY (64 hex-символа).
  * IV уникален для каждой записи (12 байт для GCM, 16 байт для CBC).
+ *
+ * Dual-key ротация: во время ротации класс поддерживает до трёх ключей:
+ *  - primary  (CB_ENCRYPTION_KEY) — основной ключ.
+ *  - new      (CB_ENCRYPTION_KEY_NEW) — staging-ключ в фазах ротации, становится write-key
+ *             при state ∈ {migrating, migrated}.
+ *  - previous (CB_ENCRYPTION_KEY_PREVIOUS) — предыдущий ключ в окне отката после finalize.
+ *
+ * encrypt() всегда использует write-key (get_write_key_role). decrypt() делает trial-decrypt
+ * по всем активным ролям. См. Cashback_Key_Rotation.
  */
 class Cashback_Encryption {
 
@@ -37,6 +46,29 @@ class Cashback_Encryption {
     private const OPTION_CIPHERTEXT_PREFIX = 'ENC:v1:';
 
     /**
+     * Роли ключей в dual-key ротации.
+     * - primary  — основной ключ, загружается из CB_ENCRYPTION_KEY. По умолчанию используется и для read, и для write.
+     * - new      — staging-ключ во время ротации (CB_ENCRYPTION_KEY_NEW). Write-ключ в фазах migrating/migrated.
+     * - previous — предыдущий ключ в окне отката (CB_ENCRYPTION_KEY_PREVIOUS). Read-only fallback.
+     */
+    public const KEY_ROLE_PRIMARY  = 'primary';
+    public const KEY_ROLE_NEW      = 'new';
+    public const KEY_ROLE_PREVIOUS = 'previous';
+
+    /** Имена констант ключей для каждой роли. */
+    private const KEY_CONSTANTS = array(
+        self::KEY_ROLE_PRIMARY  => 'CB_ENCRYPTION_KEY',
+        self::KEY_ROLE_NEW      => 'CB_ENCRYPTION_KEY_NEW',
+        self::KEY_ROLE_PREVIOUS => 'CB_ENCRYPTION_KEY_PREVIOUS',
+    );
+
+    /** Соль HMAC для fingerprint — та же, что у Cashback_Encryption_Recovery. */
+    private const FINGERPRINT_SALT = 'cashback_fingerprint_v1';
+
+    /** wp_option с состоянием ротации — см. Cashback_Key_Rotation::STATE_OPTION. */
+    private const ROTATION_STATE_OPTION = 'cashback_key_rotation_state';
+
+    /**
      * In-process cache: хэши значений, для которых уже записана audit-запись
      * о сбое fail-safe дешифровки. Защита от спама аудит-лога при множественных
      * вызовах `decrypt_if_ciphertext()` на одном запросе (например, get_all_bot_settings +
@@ -56,25 +88,123 @@ class Cashback_Encryption {
     }
 
     /**
-     * Возвращает бинарный ключ из hex-константы
+     * Проверяет, валиден ли ключ конкретной роли (64 hex-символа).
+     * Роль primary валидна через is_configured(); роли new/previous — через соответствующие константы.
      */
-    private static function get_key(): string {
-        if (!self::is_configured()) {
-            throw new \RuntimeException('CB_ENCRYPTION_KEY is not configured or invalid (expected 64 hex characters).');
+    public static function is_key_role_configured( string $role ): bool {
+        $constant = self::KEY_CONSTANTS[ $role ] ?? null;
+        if ($constant === null) {
+            return false;
         }
-        $key = hex2bin(CB_ENCRYPTION_KEY);
-        if ($key === false || strlen($key) !== 32) {
-            throw new \RuntimeException('CB_ENCRYPTION_KEY contains invalid hex characters.');
+        if (!defined($constant)) {
+            return false;
         }
-        return $key;
+        $hex = (string) constant($constant);
+        return strlen($hex) === 64 && ctype_xdigit($hex);
+    }
+
+    /**
+     * Возвращает бинарный ключ указанной роли. Бросает исключение, если роль не настроена.
+     */
+    private static function get_key_binary( string $role ): string {
+        if (!self::is_key_role_configured($role)) {
+            $constant = (string) ( self::KEY_CONSTANTS[ $role ] ?? '(unknown)' );
+            throw new \RuntimeException(esc_html($constant . ' is not configured or invalid (expected 64 hex characters).'));
+        }
+        $hex    = (string) constant(self::KEY_CONSTANTS[ $role ]);
+        $binary = hex2bin($hex);
+        if ($binary === false || strlen($binary) !== 32) {
+            throw new \RuntimeException(esc_html(self::KEY_CONSTANTS[ $role ] . ' contains invalid hex characters.'));
+        }
+        return $binary;
+    }
+
+    /**
+     * Возвращает ассоциативный массив [role => binary_key] для всех сконфигурированных ролей.
+     * Порядок ключей при trial-decrypt: primary (базовое чтение), new (во время ротации),
+     * previous (окно отката). Write-key добавляется отдельно в decrypt().
+     *
+     * @return array<string,string>
+     */
+    public static function get_active_keys(): array {
+        $keys = array();
+        foreach (array( self::KEY_ROLE_PRIMARY, self::KEY_ROLE_NEW, self::KEY_ROLE_PREVIOUS ) as $role) {
+            if (self::is_key_role_configured($role)) {
+                $keys[ $role ] = self::get_key_binary($role);
+            }
+        }
+        return $keys;
+    }
+
+    /**
+     * Возвращает роль ключа, которым нужно шифровать новые/обновляемые значения.
+     *
+     * Правило: если сконфигурирован CB_ENCRYPTION_KEY_NEW И state ротации ∈ {migrating, migrated},
+     * то write-key = NEW. Иначе — PRIMARY.
+     *
+     * Fallback на PRIMARY безопасен: если процесс стартовал до создания .new.php и CB_ENCRYPTION_KEY_NEW
+     * не определена — пользовательские данные уйдут в БД OLD-шифртекстом, но row-lock + sanity-pass
+     * в Cashback_Key_Rotation гарантируют, что batch либо обработает их до state=migrated, либо
+     * подчистит sanity-проходом. См. план, секция «Конкурентная запись».
+     */
+    public static function get_write_key_role(): string {
+        if (!self::is_key_role_configured(self::KEY_ROLE_NEW)) {
+            return self::KEY_ROLE_PRIMARY;
+        }
+        $state = self::read_rotation_state();
+        if ($state === 'migrating' || $state === 'migrated') {
+            return self::KEY_ROLE_NEW;
+        }
+        return self::KEY_ROLE_PRIMARY;
+    }
+
+    /**
+     * Прямое чтение state-поля из wp_option ротации. Пустая строка, если ротация не инициализирована.
+     */
+    private static function read_rotation_state(): string {
+        $raw = get_option(self::ROTATION_STATE_OPTION, '');
+        if (is_array($raw)) {
+            return isset($raw['state']) ? (string) $raw['state'] : '';
+        }
+        if (is_string($raw) && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded) && isset($decoded['state'])) {
+                return (string) $decoded['state'];
+            }
+        }
+        return '';
+    }
+
+    /**
+     * HMAC-SHA256 fingerprint ключа указанной роли (не раскрывает сам ключ).
+     * Используется для отображения в UI и детекции смены ключа. Пустая строка, если роль не настроена.
+     */
+    public static function get_fingerprint( string $role = self::KEY_ROLE_PRIMARY ): string {
+        if (!self::is_key_role_configured($role)) {
+            return '';
+        }
+        $hex = (string) constant(self::KEY_CONSTANTS[ $role ]);
+        return hash_hmac('sha256', $hex, self::FINGERPRINT_SALT);
     }
 
     /**
      * Шифрует строку AES-256-GCM (authenticated encryption).
      * Результат: "v2:" . base64(iv . tag . ciphertext)
+     *
+     * Во время ротации (state=migrating/migrated и определён CB_ENCRYPTION_KEY_NEW) использует NEW-ключ,
+     * иначе — PRIMARY. Это гарантирует: новые пользовательские записи во время ротации сразу идут
+     * NEW-ключом, batch-job'у не нужно их переобрабатывать.
      */
     public static function encrypt( string $plaintext ): string {
-        $key        = self::get_key();
+        return self::encrypt_with_role($plaintext, self::get_write_key_role());
+    }
+
+    /**
+     * Шифрует строку ключом конкретной роли. Нужен ротатору (Cashback_Key_Rotation) и тестам.
+     * Публичный для покрытия sanity-pass и rollback-путей.
+     */
+    public static function encrypt_with_role( string $plaintext, string $role ): string {
+        $key        = self::get_key_binary($role);
         $iv         = random_bytes(self::GCM_IV_LENGTH);
         $tag        = '';
         $ciphertext = openssl_encrypt($plaintext, self::CIPHER_GCM, $key, OPENSSL_RAW_DATA, $iv, $tag, '', self::GCM_TAG_LENGTH);
@@ -91,13 +221,32 @@ class Cashback_Encryption {
      *  - "v2:base64(iv . tag . ciphertext)" — AES-256-GCM (authenticated)
      *  - "v1:base64(iv . ciphertext)" — AES-256-CBC (legacy)
      *  - "base64(iv . ciphertext)" — legacy без префикса
+     *
+     * Во время dual-key ротации пытается расшифровать всеми активными ключами
+     * в порядке: write-key → primary → new → previous. Если все не подошли —
+     * RuntimeException с числом перепробованных ключей.
+     *
+     * Для v2 (GCM) trial-decrypt надёжен: auth tag гарантированно не совпадёт на чужом ключе.
+     * Для v1 (CBC) auth tag отсутствует → openssl_decrypt может иногда вернуть «мусорную» строку,
+     * но это приемлемый риск для legacy-хвоста; новые шифрования все v2.
      */
     public static function decrypt( string $encrypted ): string {
-        $key = self::get_key();
+        $keys = self::get_keys_in_read_order();
+
+        if (empty($keys)) {
+            throw new \RuntimeException('No encryption keys configured for decrypt.');
+        }
 
         // v2: AES-256-GCM (authenticated)
         if (strpos($encrypted, self::KEY_VERSION) === 0) {
-            return self::decrypt_gcm(substr($encrypted, strlen(self::KEY_VERSION)), $key);
+            $payload = substr($encrypted, strlen(self::KEY_VERSION));
+            foreach ($keys as $role => $key) {
+                $plaintext = self::try_decrypt_gcm($payload, $key);
+                if ($plaintext !== null) {
+                    return $plaintext;
+                }
+            }
+            throw new \RuntimeException('Decryption failed: tag mismatch on ' . count($keys) . ' active key(s).');
         }
 
         // v1: AES-256-CBC (legacy) или без префикса
@@ -106,19 +255,76 @@ class Cashback_Encryption {
             $payload = substr($encrypted, strlen(self::LEGACY_KEY_VERSION));
         }
 
-        return self::decrypt_cbc($payload, $key);
+        foreach ($keys as $role => $key) {
+            $plaintext = self::try_decrypt_cbc($payload, $key);
+            if ($plaintext !== null) {
+                return $plaintext;
+            }
+        }
+        throw new \RuntimeException('Decryption failed: invalid data on ' . count($keys) . ' active key(s).');
     }
 
     /**
-     * Расшифровка AES-256-GCM: base64(iv[12] . tag[16] . ciphertext)
+     * Пытается расшифровать ciphertext только указанной ролью. Возвращает plaintext или null.
+     * Используется sanity-pass ротатором для проверки «зашифровано ли NEW ключом».
      */
-    private static function decrypt_gcm( string $encoded, string $key ): string {
-        $data = base64_decode($encoded, true);
-        // Минимум: 12 байт IV + 16 байт auth tag. Ciphertext может быть пустым (пустая строка).
-        $min_length = self::GCM_IV_LENGTH + self::GCM_TAG_LENGTH;
+    public static function try_decrypt_with_role( string $encrypted, string $role ): ?string {
+        if (!self::is_key_role_configured($role)) {
+            return null;
+        }
+        $key = self::get_key_binary($role);
 
-        if ($data === false || strlen($data) < $min_length) {
-            throw new \RuntimeException('Decryption failed: invalid data.');
+        if (strpos($encrypted, self::KEY_VERSION) === 0) {
+            return self::try_decrypt_gcm(substr($encrypted, strlen(self::KEY_VERSION)), $key);
+        }
+
+        $payload = $encrypted;
+        if (strpos($encrypted, self::LEGACY_KEY_VERSION) === 0) {
+            $payload = substr($encrypted, strlen(self::LEGACY_KEY_VERSION));
+        }
+        return self::try_decrypt_cbc($payload, $key);
+    }
+
+    /**
+     * Перешифровывает ciphertext текущим write-key'ом (decrypt старым, encrypt новым).
+     * Основной инструмент batch-job'а ротации. Если расшифровать не удалось — RuntimeException.
+     */
+    public static function rotate_value( string $encrypted ): string {
+        $plaintext = self::decrypt($encrypted);
+        return self::encrypt($plaintext);
+    }
+
+    /**
+     * Возвращает ключи в порядке пробования для trial-decrypt: write → primary → new → previous.
+     * Дубликаты исключаются (обычный случай: write_role == primary).
+     *
+     * @return array<string,string>
+     */
+    private static function get_keys_in_read_order(): array {
+        $ordered = array();
+        $write   = self::get_write_key_role();
+
+        foreach (array( $write, self::KEY_ROLE_PRIMARY, self::KEY_ROLE_NEW, self::KEY_ROLE_PREVIOUS ) as $role) {
+            if (isset($ordered[ $role ])) {
+                continue;
+            }
+            if (!self::is_key_role_configured($role)) {
+                continue;
+            }
+            $ordered[ $role ] = self::get_key_binary($role);
+        }
+        return $ordered;
+    }
+
+    /**
+     * AES-256-GCM decrypt. Возвращает plaintext или null при несовпадении auth tag / битых данных.
+     */
+    private static function try_decrypt_gcm( string $encoded, string $key ): ?string {
+        $data = base64_decode($encoded, true);
+        $min  = self::GCM_IV_LENGTH + self::GCM_TAG_LENGTH;
+
+        if ($data === false || strlen($data) < $min) {
+            return null;
         }
 
         $iv         = substr($data, 0, self::GCM_IV_LENGTH);
@@ -126,32 +332,26 @@ class Cashback_Encryption {
         $ciphertext = substr($data, self::GCM_IV_LENGTH + self::GCM_TAG_LENGTH);
         $plaintext  = openssl_decrypt($ciphertext, self::CIPHER_GCM, $key, OPENSSL_RAW_DATA, $iv, $tag);
 
-        if ($plaintext === false) {
-            throw new \RuntimeException('Decryption failed: invalid data.');
-        }
-
-        return $plaintext;
+        return $plaintext === false ? null : $plaintext;
     }
 
     /**
-     * Расшифровка AES-256-CBC (legacy): base64(iv[16] . ciphertext)
+     * AES-256-CBC decrypt (legacy). Возвращает plaintext или null при битом padding.
+     * Внимание: CBC без auth tag — на чужом ключе иногда может вернуть «мусорный» plaintext,
+     * это приемлемо для legacy-данных; новые шифрования все v2 (GCM).
      */
-    private static function decrypt_cbc( string $encoded, string $key ): string {
+    private static function try_decrypt_cbc( string $encoded, string $key ): ?string {
         $data = base64_decode($encoded, true);
 
         if ($data === false || strlen($data) < self::CBC_IV_LENGTH + 1) {
-            throw new \RuntimeException('Decryption failed: invalid data.');
+            return null;
         }
 
         $iv         = substr($data, 0, self::CBC_IV_LENGTH);
         $ciphertext = substr($data, self::CBC_IV_LENGTH);
         $plaintext  = openssl_decrypt($ciphertext, self::CIPHER_CBC, $key, OPENSSL_RAW_DATA, $iv);
 
-        if ($plaintext === false) {
-            throw new \RuntimeException('Decryption failed: invalid data.');
-        }
-
-        return $plaintext;
+        return $plaintext === false ? null : $plaintext;
     }
 
     /**
@@ -517,6 +717,11 @@ class Cashback_Encryption {
      */
     public static function write_audit_log( string $action, int $actor_id, ?string $entity_type = null, ?int $entity_id = null, ?array $extra_details = null ): void {
         global $wpdb;
+
+        if (!is_object($wpdb)) {
+            // wpdb ещё не инициализирован (ранний хук / тест без БД). Audit некритичен — тихо выходим.
+            return;
+        }
 
         $table = $wpdb->prefix . 'cashback_audit_log';
 
