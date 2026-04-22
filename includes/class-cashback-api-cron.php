@@ -84,39 +84,63 @@ class Cashback_API_Cron {
             return;
         }
 
+        // Единый run_id на все 5 этапов — для checkpoint-истории (Group 8 Step 3, F-8-005).
+        $run_id = Cashback_Cron_State::begin_run();
+
         try {
-            $client  = Cashback_API_Client::get_instance();
-            $results = $client->background_sync();
+            $client = Cashback_API_Client::get_instance();
 
-            $elapsed_sync = round(microtime(true) - $start, 2);
+            // ─── Этап 1: background_sync (pull API + sync_update_local + decline_stale) ───
+            $results  = array();
+            $stage_id = Cashback_Cron_State::begin_stage($run_id, 'background_sync');
+            try {
+                $results = $client->background_sync();
 
-            foreach ($results as $network => $result) {
-                if ($result['success']) {
-                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                    error_log(sprintf(
-                        'Cashback API Cron [%s]: total=%d, updated=%d, inserted=%d, skipped=%d, not_found=%d, insert_errors=%d, declined_stale=%d (%.2fs)',
-                        $network,
-                        $result['total'],
-                        $result['updated'],
-                        $result['inserted'] ?? 0,
-                        $result['skipped'],
-                        $result['not_found'],
-                        $result['insert_errors'] ?? 0,
-                        $result['declined_stale'] ?? 0,
-                        $elapsed_sync
-                    ));
-                } else {
-                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                    error_log(sprintf(
-                        'Cashback API Cron [%s]: FAILED — %s',
-                        $network,
-                        $result['error'] ?? 'Unknown error'
-                    ));
+                $elapsed_sync = round(microtime(true) - $start, 2);
+
+                foreach ($results as $network => $result) {
+                    if ($result['success']) {
+                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                        error_log(sprintf(
+                            'Cashback API Cron [%s]: total=%d, updated=%d, inserted=%d, skipped=%d, not_found=%d, insert_errors=%d, declined_stale=%d (%.2fs)',
+                            $network,
+                            $result['total'],
+                            $result['updated'],
+                            $result['inserted'] ?? 0,
+                            $result['skipped'],
+                            $result['not_found'],
+                            $result['insert_errors'] ?? 0,
+                            $result['declined_stale'] ?? 0,
+                            $elapsed_sync
+                        ));
+                    } else {
+                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                        error_log(sprintf(
+                            'Cashback API Cron [%s]: FAILED — %s',
+                            $network,
+                            $result['error'] ?? 'Unknown error'
+                        ));
+                    }
                 }
+
+                Cashback_Cron_State::finish_stage(
+                    $stage_id,
+                    'success',
+                    array(
+                        'networks'    => array_keys($results),
+                        'elapsed_sec' => $elapsed_sync,
+                        'summary'     => $results,
+                    )
+                );
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('Cashback API Cron: background_sync exception — ' . $e->getMessage());
+                Cashback_Cron_State::finish_stage($stage_id, 'failed', array(), $e->getMessage());
             }
 
-            // Автоматический перенос незарегистрированных транзакций к реальным пользователям
+            // ─── Этап 2: auto_transfer — перенос unregistered→registered ───
             $transfer_result = null;
+            $stage_id        = Cashback_Cron_State::begin_stage($run_id, 'auto_transfer');
             try {
                 $transfer_result = $client->auto_transfer_unregistered(50);
                 if ($transfer_result['transferred'] > 0 || $transfer_result['errors'] > 0) {
@@ -129,15 +153,20 @@ class Cashback_API_Cron {
                         $transfer_result['checked']
                     ));
                 }
-            } catch (Exception $e) {
+                Cashback_Cron_State::finish_stage(
+                    $stage_id,
+                    'success',
+                    is_array($transfer_result) ? $transfer_result : array()
+                );
+            } catch (\Throwable $e) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Cashback API Cron: auto_transfer exception — ' . $e->getMessage());
+                Cashback_Cron_State::finish_stage($stage_id, 'failed', array(), $e->getMessage());
             }
 
-            // ═══ АТОМАРНОЕ НАЧИСЛЕНИЕ (ВНУТРИ LOCK) ═══
-            // Начисление НЕРАЗРЫВНО с sync — одна операция.
-            // process_ready_transactions проверяет наличие lock.
+            // ─── Этап 3: process_ready — АТОМАРНОЕ НАЧИСЛЕНИЕ (ВНУТРИ LOCK) ───
             $accrual_result = null;
+            $stage_id       = Cashback_Cron_State::begin_stage($run_id, 'process_ready');
             try {
                 $accrual_result = Mariadb_Plugin::process_ready_transactions();
                 if (!empty($accrual_result['errors'])) {
@@ -151,12 +180,20 @@ class Cashback_API_Cron {
                         $accrual_result['ledger_inserted']
                     ));
                 }
-            } catch (Exception $e) {
+                Cashback_Cron_State::finish_stage(
+                    $stage_id,
+                    empty($accrual_result['errors']) ? 'success' : 'failed',
+                    is_array($accrual_result) ? $accrual_result : array(),
+                    ! empty($accrual_result['errors']) ? implode('; ', (array) $accrual_result['errors']) : ''
+                );
+            } catch (\Throwable $e) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Cashback API Cron: process_ready_transactions exception — ' . $e->getMessage());
+                Cashback_Cron_State::finish_stage($stage_id, 'failed', array(), $e->getMessage());
             }
 
-            // Синхронизация pending-начислений партнёрской программы
+            // ─── Этап 4: affiliate_pending — синхронизация pending-начислений ───
+            $stage_id = Cashback_Cron_State::begin_stage($run_id, 'affiliate_pending');
             if (class_exists('Cashback_Affiliate_DB')
                 && Cashback_Affiliate_DB::is_module_enabled()
                 && class_exists('Cashback_Affiliate_Service')
@@ -171,14 +208,27 @@ class Cashback_API_Cron {
                             $aff_pending['updated']
                         ));
                     }
-                } catch (Exception $e) {
+                    Cashback_Cron_State::finish_stage(
+                        $stage_id,
+                        'success',
+                        is_array($aff_pending) ? $aff_pending : array()
+                    );
+                } catch (\Throwable $e) {
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log('Cashback API Cron: affiliate pending sync exception — ' . $e->getMessage());
+                    Cashback_Cron_State::finish_stage($stage_id, 'failed', array(), $e->getMessage());
                 }
+            } else {
+                Cashback_Cron_State::finish_stage(
+                    $stage_id,
+                    'success',
+                    array( 'skipped' => 'affiliate module disabled or unavailable' )
+                );
             }
 
-            // Проверка статусов кампаний и авто-деактивация/реактивация магазинов
+            // ─── Этап 5: check_campaigns — статусы кампаний + deactivate/reactivate ───
             $campaign_results = null;
+            $stage_id         = Cashback_Cron_State::begin_stage($run_id, 'check_campaigns');
             try {
                 $campaign_results = $client->check_campaign_statuses();
 
@@ -204,9 +254,15 @@ class Cashback_API_Cron {
                         ));
                     }
                 }
-            } catch (Exception $e) {
+                Cashback_Cron_State::finish_stage(
+                    $stage_id,
+                    'success',
+                    is_array($campaign_results) ? array( 'per_network' => $campaign_results ) : array()
+                );
+            } catch (\Throwable $e) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('Cashback API Cron: campaign check exception — ' . $e->getMessage());
+                Cashback_Cron_State::finish_stage($stage_id, 'failed', array(), $e->getMessage());
             }
 
             $elapsed = round(microtime(true) - $start, 2);
@@ -215,6 +271,7 @@ class Cashback_API_Cron {
             update_option('cashback_last_sync_result', array(
                 'timestamp'        => current_time('mysql'),
                 'elapsed'          => $elapsed,
+                'run_id'           => $run_id,
                 'results'          => $results,
                 'auto_transferred' => $transfer_result,
                 'accrual'          => $accrual_result,

@@ -163,6 +163,9 @@ class CashbackPlugin {
         // Миграция группы 7 (шаг 3 ADR): создание таблицы cashback_rate_limit_counters
         // для атомарного INSERT ... ON DUPLICATE KEY UPDATE (SQL rate-limit backend).
         add_action('plugins_loaded', array( 'CashbackPlugin', 'migrate_rate_limit_v1' ), 115);
+        // Миграция группы 8 (шаг 3 ADR): создание таблицы cashback_cron_state
+        // для checkpoint-истории прогонов cashback_api_sync cron.
+        add_action('plugins_loaded', array( 'Cashback_Cron_State', 'migrate_v1' ), 118);
         // GC группы 7 (шаг 10 ADR): hourly очистка expired rate-limit counters.
         add_action('cashback_rate_limit_gc_cron', array( 'CashbackPlugin', 'rate_limit_gc_cron_handler' ));
         add_action('before_woocommerce_init', array( $this, 'declare_woocommerce_compatibility' ));
@@ -546,6 +549,9 @@ class CashbackPlugin {
         // Единая пагинация (используется и в админке, и во фронтенде)
         $this->require_file('includes/class-cashback-pagination.php');
 
+        // Checkpoint-хранилище cron-прогонов (Group 8 Step 3, F-8-005)
+        $this->require_file('includes/class-cashback-cron-state.php');
+
         // API клиент и cron (синхронизация работает через WP Cron)
         $this->require_file('includes/class-cashback-api-client.php');
         $this->require_file('includes/class-cashback-api-cron.php');
@@ -594,6 +600,7 @@ class CashbackPlugin {
             $this->require_file('admin/transactions.php');
             $this->require_file('admin/statistics.php');
             $this->require_file('admin/rate-history.php');
+            $this->require_file('admin/cron-history.php');
             $this->require_file('partner/partner-management.php');
             $this->require_file('support/admin-support.php');
             $this->require_file('antifraud/class-fraud-admin.php');
