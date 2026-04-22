@@ -546,6 +546,29 @@ if (!function_exists('plugin_basename')) {
     }
 }
 
+if (!function_exists('maybe_serialize')) {
+    function maybe_serialize(mixed $data): mixed
+    {
+        if (is_array($data) || is_object($data)) {
+            return serialize($data);
+        }
+        return $data;
+    }
+}
+
+if (!function_exists('maybe_unserialize')) {
+    function maybe_unserialize(mixed $data): mixed
+    {
+        if (is_string($data) && $data !== '') {
+            $result = @unserialize($data, array( 'allowed_classes' => false )); // phpcs:ignore
+            if ($result !== false || $data === 'b:0;') {
+                return $result;
+            }
+        }
+        return $data;
+    }
+}
+
 // Action Scheduler стабы: запоминают планирование через $GLOBALS['_cb_test_as_scheduled'].
 if (!isset($GLOBALS['_cb_test_as_scheduled'])) {
     $GLOBALS['_cb_test_as_scheduled'] = false;

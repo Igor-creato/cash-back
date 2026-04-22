@@ -816,42 +816,361 @@ class Cashback_Key_Rotation {
      * Роутер per-phase updater'ов. Каждый возвращает
      *   ['processed' => int, 'failed' => int, 'next_cursor' => int, 'has_more' => bool].
      *
-     * Реализации всех фаз — в шаге 3.5 плана. Текущие stub'ы возвращают no-op,
-     * что позволяет диспетчеру корректно продвигать состояние вперёд в тестах.
+     * 3.5a реализовал wp_options-фазы (captcha/epn/social). DB-таблицы остаются
+     * под фильтр-fallback и будут реализованы в 3.5b.
      *
      * @return array{processed:int,failed:int,next_cursor:int,has_more:bool}
      */
     public static function run_phase_batch( string $phase, int $cursor, int $batch_size ): array {
         $default = array(
-			'processed'   => 0,
-			'failed'      => 0,
-			'next_cursor' => (int) $cursor,
-			'has_more'    => false,
-		);
+            'processed'   => 0,
+            'failed'      => 0,
+            'next_cursor' => (int) $cursor,
+            'has_more'    => false,
+        );
 
         if (!in_array($phase, self::PHASES, true)) {
             return $default;
         }
 
-        // Stub: реальные updater'ы per-phase добавятся в шаге 3.5.
-        // Фильтр позволяет инжектить тестовые результаты и при необходимости
-        // расширять поведение без правки класса.
-        $result = apply_filters(
-            'cashback_key_rotation_phase_batch_result',
-            $default,
-            $phase,
-            $cursor,
-            $batch_size
-        );
+        // Диспатчим на реализованные фазы (3.5a: wp_options). Оставшиеся фазы (3.5b)
+        // пока идут через фильтр-fallback — для тестов и кастомного расширения.
+        switch ($phase) {
+            case 'options_captcha':
+                $result = self::run_phase_options_captcha();
+                break;
+            case 'options_epn':
+                $result = self::run_phase_options_epn($cursor, $batch_size);
+                break;
+            case 'options_social':
+                $result = self::run_phase_options_social($cursor);
+                break;
+            default:
+                $result = apply_filters(
+                    'cashback_key_rotation_phase_batch_result',
+                    $default,
+                    $phase,
+                    $cursor,
+                    $batch_size
+                );
+                break;
+        }
+
         if (!is_array($result)) {
             return $default;
         }
         return array(
-            'processed'   => isset($result['processed'])   ? max(0, (int) $result['processed'])                : 0,
-            'failed'      => isset($result['failed'])      ? max(0, (int) $result['failed'])                   : 0,
-            'next_cursor' => isset($result['next_cursor']) ? max(0, (int) $result['next_cursor'])              : (int) $cursor,
-            'has_more'    => isset($result['has_more'])    ? (bool) $result['has_more']                        : false,
+            'processed'   => isset($result['processed'])   ? max(0, (int) $result['processed'])   : 0,
+            'failed'      => isset($result['failed'])      ? max(0, (int) $result['failed'])      : 0,
+            'next_cursor' => isset($result['next_cursor']) ? max(0, (int) $result['next_cursor']) : (int) $cursor,
+            'has_more'    => isset($result['has_more'])    ? (bool) $result['has_more']           : false,
         );
+    }
+
+    // ================================================================
+    // Per-phase updaters: wp_options (3.5a)
+    // ================================================================
+
+    /**
+     * Ротация `cashback_captcha_server_key`: одна опция, один батч, has_more=false.
+     * Транзакция + SELECT ... FOR UPDATE на option_name защищает от TOCTOU с admin-save.
+     *
+     * @return array{processed:int,failed:int,next_cursor:int,has_more:bool}
+     */
+    private static function run_phase_options_captcha(): array {
+        $result = self::rotate_single_option('cashback_captcha_server_key', 'options_captcha');
+        return array(
+            'processed'   => $result['processed'],
+            'failed'      => $result['failed'],
+            'next_cursor' => 0,
+            'has_more'    => false,
+        );
+    }
+
+    /**
+     * Ротация EPN refresh-токенов (`cashback_epn_refresh_<md5(client_id)>`).
+     * Cursor по option_id — один батч обрабатывает до $batch_size строк.
+     *
+     * @return array{processed:int,failed:int,next_cursor:int,has_more:bool}
+     */
+    private static function run_phase_options_epn( int $cursor, int $batch_size ): array {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return array(
+                'processed'   => 0,
+                'failed'      => 0,
+                'next_cursor' => $cursor,
+                'has_more'    => false,
+            );
+        }
+        $options_table = property_exists($wpdb, 'options') ? (string) $wpdb->options : 'wp_options';
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Paginate EPN refresh tokens for rotation.
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                'SELECT option_id, option_name FROM %i WHERE option_name LIKE %s AND option_value <> \'\' AND option_id > %d ORDER BY option_id LIMIT %d',
+                $options_table,
+                'cashback_epn_refresh_%',
+                $cursor,
+                $batch_size
+            )
+        );
+
+        if (!is_array($rows) || count($rows) === 0) {
+            return array(
+                'processed'   => 0,
+                'failed'      => 0,
+                'next_cursor' => $cursor,
+                'has_more'    => false,
+            );
+        }
+
+        $processed   = 0;
+        $failed      = 0;
+        $next_cursor = $cursor;
+        foreach ($rows as $row) {
+            $option_id   = (int) ( is_object($row) ? ( $row->option_id ?? 0 ) : ( $row['option_id'] ?? 0 ) );
+            $option_name = (string) ( is_object($row) ? ( $row->option_name ?? '' ) : ( $row['option_name'] ?? '' ) );
+            if ($option_id <= 0 || $option_name === '') {
+                continue;
+            }
+            $next_cursor = max($next_cursor, $option_id);
+
+            $result     = self::rotate_single_option($option_name, 'options_epn');
+            $processed += $result['processed'];
+            $failed    += $result['failed'];
+        }
+
+        return array(
+            'processed'   => $processed,
+            'failed'      => $failed,
+            'next_cursor' => $next_cursor,
+            'has_more'    => count($rows) >= $batch_size,
+        );
+    }
+
+    /**
+     * Ротация `cashback_social_provider_{yandex,vkid}`: два wp_option с serialize-массивом,
+     * где ротируется только `client_secret_encrypted`. Cursor 0 → yandex, 1 → vkid, 2 → готово.
+     *
+     * @return array{processed:int,failed:int,next_cursor:int,has_more:bool}
+     */
+    private static function run_phase_options_social( int $cursor ): array {
+        $providers = array( 'cashback_social_provider_yandex', 'cashback_social_provider_vkid' );
+        if ($cursor < 0 || $cursor >= count($providers)) {
+            return array(
+                'processed'   => 0,
+                'failed'      => 0,
+                'next_cursor' => $cursor,
+                'has_more'    => false,
+            );
+        }
+
+        $option_name = $providers[ $cursor ];
+        $result      = self::rotate_social_provider_option($option_name);
+        $next_cursor = $cursor + 1;
+
+        return array(
+            'processed'   => $result['processed'],
+            'failed'      => $result['failed'],
+            'next_cursor' => $next_cursor,
+            'has_more'    => $next_cursor < count($providers),
+        );
+    }
+
+    // ================================================================
+    // Helpers для wp_options-updater'ов
+    // ================================================================
+
+    /**
+     * Rotates a single wp_option value that uses ENC:v1:-prefix (captcha, EPN).
+     * Wraps SELECT ... FOR UPDATE + UPDATE + wp_cache_delete in a transaction.
+     * Не-ciphertext значения (plaintext до миграции options_encrypted_v1) пропускаются.
+     *
+     * @return array{processed:int,failed:int}
+     */
+    private static function rotate_single_option( string $option_name, string $audit_phase ): array {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return array(
+				'processed' => 0,
+				'failed'    => 0,
+			);
+        }
+        $options_table = property_exists($wpdb, 'options') ? (string) $wpdb->options : 'wp_options';
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Transaction begin for row-lock.
+        $wpdb->query('START TRANSACTION');
+        try {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- SELECT FOR UPDATE inside transaction.
+            $raw = $wpdb->get_var(
+                $wpdb->prepare(
+                    'SELECT option_value FROM %i WHERE option_name = %s FOR UPDATE',
+                    $options_table,
+                    $option_name
+                )
+            );
+
+            if ($raw === null || $raw === '' || !Cashback_Encryption::is_option_ciphertext((string) $raw)) {
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Close transaction without changes.
+                $wpdb->query('COMMIT');
+                return array(
+					'processed' => 0,
+					'failed'    => 0,
+				);
+            }
+
+            $rotated = Cashback_Encryption::rotate_option_ciphertext((string) $raw);
+
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Update locked row inside transaction.
+            $updated = $wpdb->update(
+                $options_table,
+                array( 'option_value' => $rotated ),
+                array( 'option_name' => $option_name ),
+                array( '%s' ),
+                array( '%s' )
+            );
+            if ($updated === false) {
+                throw new \RuntimeException('UPDATE failed for option ' . $option_name);
+            }
+
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Commit transaction.
+            $wpdb->query('COMMIT');
+
+            if (function_exists('wp_cache_delete')) {
+                wp_cache_delete($option_name, 'options');
+            }
+
+            return array(
+				'processed' => 1,
+				'failed'    => 0,
+			);
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Rollback on error.
+            $wpdb->query('ROLLBACK');
+            self::record_item_failure($audit_phase, $option_name, $e->getMessage());
+            return array(
+				'processed' => 0,
+				'failed'    => 1,
+			);
+        }
+    }
+
+    /**
+     * Ротация JSON-массива в wp_option `cashback_social_provider_*`: field
+     * `client_secret_encrypted` содержит raw v2:/v1:-ciphertext без ENC:v1: префикса
+     * (см. class-cashback-social-admin.php::sanitize_provider_settings).
+     *
+     * @return array{processed:int,failed:int}
+     */
+    private static function rotate_social_provider_option( string $option_name ): array {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return array(
+				'processed' => 0,
+				'failed'    => 0,
+			);
+        }
+        $options_table = property_exists($wpdb, 'options') ? (string) $wpdb->options : 'wp_options';
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Transaction begin.
+        $wpdb->query('START TRANSACTION');
+        try {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Lock row before modify.
+            $raw = $wpdb->get_var(
+                $wpdb->prepare(
+                    'SELECT option_value FROM %i WHERE option_name = %s FOR UPDATE',
+                    $options_table,
+                    $option_name
+                )
+            );
+
+            if ($raw === null || $raw === '') {
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Nothing to update.
+                $wpdb->query('COMMIT');
+                return array(
+					'processed' => 0,
+					'failed'    => 0,
+				);
+            }
+
+            $value = maybe_unserialize((string) $raw);
+            if (!is_array($value)) {
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Not an array payload; skip.
+                $wpdb->query('COMMIT');
+                return array(
+					'processed' => 0,
+					'failed'    => 0,
+				);
+            }
+
+            $secret = isset($value['client_secret_encrypted']) ? (string) $value['client_secret_encrypted'] : '';
+            if ($secret === '' || ( strpos($secret, 'v2:') !== 0 && strpos($secret, 'v1:') !== 0 )) {
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Nothing encrypted here.
+                $wpdb->query('COMMIT');
+                return array(
+					'processed' => 0,
+					'failed'    => 0,
+				);
+            }
+
+            $value['client_secret_encrypted'] = Cashback_Encryption::rotate_value($secret);
+            $new_raw                          = maybe_serialize($value);
+
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Update inside transaction.
+            $updated = $wpdb->update(
+                $options_table,
+                array( 'option_value' => $new_raw ),
+                array( 'option_name' => $option_name ),
+                array( '%s' ),
+                array( '%s' )
+            );
+            if ($updated === false) {
+                throw new \RuntimeException('UPDATE failed for social provider ' . $option_name);
+            }
+
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Commit.
+            $wpdb->query('COMMIT');
+
+            if (function_exists('wp_cache_delete')) {
+                wp_cache_delete($option_name, 'options');
+            }
+
+            return array(
+				'processed' => 1,
+				'failed'    => 0,
+			);
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Rollback on error.
+            $wpdb->query('ROLLBACK');
+            self::record_item_failure('options_social', $option_name, $e->getMessage());
+            return array(
+				'processed' => 0,
+				'failed'    => 1,
+			);
+        }
+    }
+
+    /**
+     * Audit-запись `key_rotation_item_failed` для одной записи. Fail-safe: swallow
+     * ошибки аудита, чтобы диагностика сама не уронила батч.
+     */
+    private static function record_item_failure( string $phase, string $entity_id, string $reason ): void {
+        try {
+            Cashback_Encryption::write_audit_log(
+                'key_rotation_item_failed',
+                0,
+                'key_rotation',
+                null,
+                array(
+                    'phase'     => $phase,
+                    'entity_id' => $entity_id,
+                    'reason'    => $reason,
+                )
+            );
+        } catch (\Throwable $e) {
+            unset($e);
+        }
     }
 
     /**
