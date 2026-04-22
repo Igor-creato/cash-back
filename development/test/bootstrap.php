@@ -524,8 +524,17 @@ if (!function_exists('number_format_i18n')) {
     }
 }
 
+if (!isset($GLOBALS['_cb_test_actions_fired'])) {
+    $GLOBALS['_cb_test_actions_fired'] = array();
+}
 if (!function_exists('do_action')) {
-    function do_action(string $hook_name, mixed ...$arg): void {}
+    function do_action(string $hook_name, mixed ...$arg): void
+    {
+        $GLOBALS['_cb_test_actions_fired'][] = array(
+            'hook' => $hook_name,
+            'args' => $arg,
+        );
+    }
 }
 
 if (!function_exists('apply_filters')) {

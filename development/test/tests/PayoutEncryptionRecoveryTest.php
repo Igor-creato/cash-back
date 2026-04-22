@@ -375,4 +375,98 @@ class PayoutEncryptionRecoveryTest extends TestCase
         // AS job должен быть перепланирован.
         $this->assertNotFalse($GLOBALS['_cb_test_as_scheduled'], 'Ожидаем перепланирование AS-job');
     }
+
+    // ================================================================
+    // do_action cashback_notification_payout_refunded
+    // ================================================================
+
+    public function test_cancel_payout_with_refund_fires_notification_action(): void
+    {
+        $this->setPayoutRow(array( 'status' => 'waiting', 'total_amount' => '500.00' ));
+        $this->setBalanceRow('500.00');
+        $GLOBALS['_cb_test_actions_fired'] = array();
+
+        $admin = $this->adminInstance();
+        $ok    = $admin->cancel_payout_with_refund(42, 'encryption_recovery', 1);
+
+        $this->assertTrue($ok);
+
+        $refund_actions = array_filter(
+            $GLOBALS['_cb_test_actions_fired'],
+            static fn(array $a): bool => 'cashback_notification_payout_refunded' === $a['hook']
+        );
+        $this->assertCount(
+            1,
+            $refund_actions,
+            'Ожидаем ровно один do_action cashback_notification_payout_refunded'
+        );
+
+        $action = array_values($refund_actions)[0];
+        $this->assertSame(42, $action['args'][0], 'payout_id должен быть передан первым аргументом');
+        $this->assertSame(777, $action['args'][1], 'user_id должен быть передан из locked payout row');
+        $this->assertSame('500.00', $action['args'][2], 'amount должен быть передан как string');
+        $this->assertSame('encryption_recovery', $action['args'][3], 'reason должен быть передан без изменений');
+    }
+
+    public function test_cancel_payout_with_refund_does_not_fire_notification_when_already_refunded(): void
+    {
+        // refunded_at уже заполнен → идемпотентный путь, никаких побочных эффектов.
+        $this->setPayoutRow(array(
+            'status'      => 'waiting',
+            'refunded_at' => '2026-04-21 12:00:00',
+        ));
+        $GLOBALS['_cb_test_actions_fired'] = array();
+
+        $admin = $this->adminInstance();
+        $admin->cancel_payout_with_refund(42, 'encryption_recovery', 1);
+
+        $refund_actions = array_filter(
+            $GLOBALS['_cb_test_actions_fired'],
+            static fn(array $a): bool => 'cashback_notification_payout_refunded' === $a['hook']
+        );
+        $this->assertEmpty(
+            $refund_actions,
+            'При идемпотентном повторе notification не должен пере-отправляться'
+        );
+    }
+
+    public function test_cancel_payout_with_refund_does_not_fire_notification_on_final_status(): void
+    {
+        $this->setPayoutRow(array( 'status' => 'paid' ));
+        $GLOBALS['_cb_test_actions_fired'] = array();
+
+        $admin = $this->adminInstance();
+        $ok    = $admin->cancel_payout_with_refund(42, 'admin_cancel', 1);
+
+        $this->assertFalse($ok);
+        $refund_actions = array_filter(
+            $GLOBALS['_cb_test_actions_fired'],
+            static fn(array $a): bool => 'cashback_notification_payout_refunded' === $a['hook']
+        );
+        $this->assertEmpty(
+            $refund_actions,
+            'Для финальных статусов notification не должен срабатывать'
+        );
+    }
+
+    public function test_cancel_payout_with_refund_passes_manual_reason_through(): void
+    {
+        $this->setPayoutRow(array( 'status' => 'waiting' ));
+        $this->setBalanceRow('500.00');
+        $GLOBALS['_cb_test_actions_fired'] = array();
+
+        $admin = $this->adminInstance();
+        $admin->cancel_payout_with_refund(42, 'manual_encryption_recovery', 1);
+
+        $refund_actions = array_values(array_filter(
+            $GLOBALS['_cb_test_actions_fired'],
+            static fn(array $a): bool => 'cashback_notification_payout_refunded' === $a['hook']
+        ));
+        $this->assertNotEmpty($refund_actions);
+        $this->assertSame(
+            'manual_encryption_recovery',
+            $refund_actions[0]['args'][3],
+            'Код причины должен дойти до listener без изменений'
+        );
+    }
 }
