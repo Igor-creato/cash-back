@@ -295,6 +295,19 @@ class Cashback_Encryption {
     }
 
     /**
+     * Перешифровывает значение wp_option с ENC:v1:-префиксом (captcha/EPN/social-provider).
+     * Не-ciphertext значения возвращаются как есть (noop — означает, что опция ещё не зашифрована).
+     */
+    public static function rotate_option_ciphertext( string $value ): string {
+        if (!self::is_option_ciphertext($value)) {
+            return $value;
+        }
+        $inner     = substr($value, strlen(self::OPTION_CIPHERTEXT_PREFIX));
+        $plaintext = self::decrypt($inner);
+        return self::OPTION_CIPHERTEXT_PREFIX . self::encrypt($plaintext);
+    }
+
+    /**
      * Возвращает ключи в порядке пробования для trial-decrypt: write → primary → new → previous.
      * Дубликаты исключаются (обычный случай: write_role == primary).
      *

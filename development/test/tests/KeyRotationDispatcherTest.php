@@ -109,10 +109,13 @@ class KeyRotationDispatcherTest extends TestCase
 
     public function test_dispatcher_runs_all_phases_to_migrated(): void
     {
-        // Прогоняем n вызовов — ровно столько, сколько фаз.
+        // Прогоняем всю state-машину без wpdb (updater'ы options_* — no-op,
+        // DB-фазы проваливаются через фильтр-fallback в default).
+        // options_social делает 2 батча (yandex, vkid), остальные по 1 → всего PHASES+1.
         $this->set_migrating_state(Cashback_Key_Rotation::PHASES[0]);
 
-        $max_iterations = count(Cashback_Key_Rotation::PHASES) + 2; // запас
+        $expected       = count(Cashback_Key_Rotation::PHASES) + 1; // +1 за социальные провайдеры
+        $max_iterations = $expected + 2;
         $iterations     = 0;
         while (Cashback_Key_Rotation::get_state()['state'] === 'migrating' && $iterations < $max_iterations) {
             Cashback_Key_Rotation::run_migrate_batch();
@@ -121,8 +124,8 @@ class KeyRotationDispatcherTest extends TestCase
 
         $state = Cashback_Key_Rotation::get_state();
         $this->assertSame('migrated', $state['state']);
-        $this->assertSame(count(Cashback_Key_Rotation::PHASES), $iterations);
-        $this->assertSame(count(Cashback_Key_Rotation::PHASES), $state['total_batches']);
+        $this->assertSame($expected, $iterations);
+        $this->assertSame($expected, $state['total_batches']);
     }
 
     // ================================================================
