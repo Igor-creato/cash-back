@@ -151,7 +151,8 @@ class Cashback_Key_Rotation {
      *   current_phase:?string, last_error:?string, total_batches:int,
      *   sanity_active:bool, sanity_iteration:int,
      *   sanity_current_phase:?string, sanity_cursor:int,
-     *   sanity_iteration_reencrypted:int, sanity_unresolved:int
+     *   sanity_iteration_reencrypted:int, sanity_unresolved:int,
+     *   sanity_direction:string
      * }
      */
     public static function get_state(): array {
@@ -189,7 +190,8 @@ class Cashback_Key_Rotation {
      *   current_phase:?string, last_error:?string, total_batches:int,
      *   sanity_active:bool, sanity_iteration:int,
      *   sanity_current_phase:?string, sanity_cursor:int,
-     *   sanity_iteration_reencrypted:int, sanity_unresolved:int
+     *   sanity_iteration_reencrypted:int, sanity_unresolved:int,
+     *   sanity_direction:string
      * }
      */
     private static function normalize_state( array $state ): array {
@@ -246,6 +248,10 @@ class Cashback_Key_Rotation {
             'sanity_cursor'                => isset($state['sanity_cursor']) ? max(0, (int) $state['sanity_cursor']) : 0,
             'sanity_iteration_reencrypted' => isset($state['sanity_iteration_reencrypted']) ? max(0, (int) $state['sanity_iteration_reencrypted']) : 0,
             'sanity_unresolved'            => isset($state['sanity_unresolved']) ? max(0, (int) $state['sanity_unresolved']) : 0,
+            // Направление sanity: 'forward' — target-ключ NEW (после migrate);
+            // 'reverse' — target-ключ PRIMARY (после rollback swap). Определяет,
+            // какая роль используется в try_decrypt_with_role() для обнаружения «не ротированных» записей.
+            'sanity_direction'             => ( isset($state['sanity_direction']) && $state['sanity_direction'] === 'reverse' ) ? 'reverse' : 'forward',
         );
     }
 
@@ -257,7 +263,8 @@ class Cashback_Key_Rotation {
      *   current_phase:?string, last_error:?string, total_batches:int,
      *   sanity_active:bool, sanity_iteration:int,
      *   sanity_current_phase:?string, sanity_cursor:int,
-     *   sanity_iteration_reencrypted:int, sanity_unresolved:int
+     *   sanity_iteration_reencrypted:int, sanity_unresolved:int,
+     *   sanity_direction:string
      * }
      */
     public static function new_idle_state(): array {
@@ -285,6 +292,7 @@ class Cashback_Key_Rotation {
             'sanity_cursor'                => 0,
             'sanity_iteration_reencrypted' => 0,
             'sanity_unresolved'            => 0,
+            'sanity_direction'             => 'forward',
         );
     }
 
@@ -925,7 +933,11 @@ class Cashback_Key_Rotation {
         }
         check_admin_referer(self::NONCE_ROLLBACK);
 
-        self::redirect_with_flash('error', 'rollback ещё не реализован (шаг 3.5 плана).');
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- check_admin_referer выше.
+        $confirmation = isset($_POST['confirmation']) ? sanitize_text_field(wp_unslash((string) $_POST['confirmation'])) : '';
+
+        $result = self::start_rollback($confirmation);
+        self::redirect_with_flash($result['ok'] ? 'notice' : 'error', $result['message']);
     }
 
     public static function handle_abort(): void {
@@ -1064,7 +1076,255 @@ class Cashback_Key_Rotation {
         // Sanity-pass ещё держит state=migrating до окончательного перехода в migrated
         // (чтобы encrypt() продолжал использовать NEW write-key для любых
         // пользовательских записей, которые могут прийти между фазами и sanity).
-        self::start_sanity_pass($state);
+        self::start_sanity_pass($state, 'forward');
+    }
+
+    // ================================================================
+    // Rollback (3.8): обратная симметрия migrate внутри 7-дневного окна отката.
+    // ================================================================
+
+    /**
+     * Запускает откат ротации: swap-ит файлы назад (previous → primary, primary → new.php),
+     * state → rolling_back, progress обнуляется, ставит первый AS_HOOK_ROLLBACK batch.
+     *
+     * @return array{ok:bool,message:string}
+     */
+    public static function start_rollback( string $confirmation ): array {
+        $state = self::get_state();
+        if ($state['state'] !== self::STATE_COMPLETED) {
+            return array(
+                'ok'      => false,
+                'message' => 'Нельзя откатить: state=' . $state['state'] . ' (ожидается completed).',
+            );
+        }
+
+        if (!hash_equals(self::CONFIRMATION_ROLLBACK, $confirmation)) {
+            return array(
+                'ok'      => false,
+                'message' => 'Неверное слово-подтверждение. Ожидается: ' . self::CONFIRMATION_ROLLBACK,
+            );
+        }
+
+        $cleanup_at = (int) get_option(self::CLEANUP_DEADLINE_OPTION, 0);
+        if ($cleanup_at > 0 && time() >= $cleanup_at) {
+            return array(
+                'ok'      => false,
+                'message' => 'Окно отката истекло. Старый ключ будет удалён при ближайшем cron-цикле.',
+            );
+        }
+
+        $primary_path  = self::get_primary_key_path();
+        $new_path      = self::get_new_key_path();
+        $previous_path = self::get_previous_key_path();
+
+        if (!file_exists($primary_path) || !file_exists($previous_path)) {
+            return array(
+                'ok'      => false,
+                'message' => 'Файлы ключей для отката отсутствуют (требуется primary + previous).',
+            );
+        }
+        if (file_exists($new_path)) {
+            return array(
+                'ok'      => false,
+                'message' => 'Staging-файл .new.php уже существует — rollback невозможен.',
+            );
+        }
+
+        // После finalize: primary=NEW, previous=OLD. После rollback swap'а должно быть:
+        // primary=OLD (возвращаемся к прежнему ключу), new.php=NEW (перешифровка батчем обратно на OLD).
+        $new_hex_in_primary  = self::extract_hex_from_key_file($primary_path, 'CB_ENCRYPTION_KEY');
+        $old_hex_in_previous = self::extract_hex_from_key_file($previous_path, 'CB_ENCRYPTION_KEY_PREVIOUS');
+        if (strlen($new_hex_in_primary) !== 64 || strlen($old_hex_in_previous) !== 64) {
+            return array(
+                'ok'      => false,
+                'message' => 'Не удалось прочитать hex из key-файлов для отката.',
+            );
+        }
+
+        try {
+            // 1. Пишем .new.php с NEW-hex (const CB_ENCRYPTION_KEY_NEW) — чтобы батч мог читать новое.
+            self::atomic_write_key_file($new_path, 'CB_ENCRYPTION_KEY_NEW', $new_hex_in_primary);
+
+            // 2. Перезаписываем .cashback-encryption-key.php OLD-hex'ом (const CB_ENCRYPTION_KEY).
+            self::atomic_write_key_file($primary_path, 'CB_ENCRYPTION_KEY', $old_hex_in_previous);
+
+            // 3. Удаляем .previous.php (его содержимое перенесено в primary).
+            if (file_exists($previous_path)) {
+                // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- idempotent cleanup.
+                @unlink($previous_path);
+            }
+        } catch (\Throwable $e) {
+            return array(
+                'ok'      => false,
+                'message' => 'Ошибка файловых операций при rollback swap: ' . $e->getMessage(),
+            );
+        }
+
+        // Обновляем fingerprint обратно на OLD-hex.
+        $old_fingerprint = hash_hmac('sha256', $old_hex_in_previous, 'cashback_fingerprint_v1');
+        update_option('cashback_encryption_key_fingerprint', $old_fingerprint, false);
+
+        // Отменяем scheduled cleanup previous-файла (файла больше нет).
+        delete_option(self::CLEANUP_DEADLINE_OPTION);
+        if (function_exists('as_unschedule_all_actions')) {
+            as_unschedule_all_actions(self::AS_HOOK_CLEANUP, array(), self::AS_GROUP);
+        }
+
+        // Reset progress для rollback-прогона. Totals считаются заново в batch'е.
+        // rolling_back + get_write_key_role() → PRIMARY (теперь OLD). Пользовательские
+        // write'ы с этого момента идут OLD-ключом.
+        $days_since_finalize = 0;
+        if (!empty($state['finalized_at'])) {
+            $finalized = strtotime((string) $state['finalized_at']);
+            if ($finalized !== false) {
+                $days_since_finalize = max(0, (int) floor(( time() - $finalized ) / 86400));
+            }
+        }
+
+        $next                  = self::new_idle_state();
+        $next['state']         = self::STATE_ROLLING_BACK;
+        $next['started_at']    = current_time('mysql');
+        $next['initiator_id']  = (int) ( function_exists('get_current_user_id') ? get_current_user_id() : 0 );
+        $next['current_phase'] = self::PHASES[0];
+        // Считаем totals: после finalize все записи зашифрованы NEW-ключом, теперь
+        // NEW хранится в CB_ENCRYPTION_KEY_NEW; count_* идёт по тем же критериям.
+        foreach (self::PHASES as $phase) {
+            $next['progress'][ $phase ]['total'] = self::count_phase($phase);
+        }
+        self::save_state($next);
+
+        if (function_exists('as_enqueue_async_action')) {
+            as_enqueue_async_action(self::AS_HOOK_ROLLBACK, array(), self::AS_GROUP);
+        }
+
+        try {
+            Cashback_Encryption::write_audit_log(
+                'key_rotation_rollback_started',
+                $next['initiator_id'],
+                'key_rotation',
+                null,
+                array( 'days_since_finalize' => $days_since_finalize )
+            );
+        } catch (\Throwable $e) {
+            unset($e);
+        }
+
+        return array(
+            'ok'      => true,
+            'message' => 'Откат запущен. Фоновая перешифровка обратно на старый ключ стартовала.',
+        );
+    }
+
+    /**
+     * Handler AS_HOOK_ROLLBACK: батч перешифровки обратно на PRIMARY (OLD).
+     * Почти полная копия run_migrate_batch с state-guard='rolling_back' и
+     * финальной sanity с direction='reverse', которая заканчивается state=idle.
+     */
+    public static function run_rollback_batch(): void {
+        $state = self::get_state();
+
+        if ($state['state'] !== self::STATE_ROLLING_BACK) {
+            return;
+        }
+
+        $phase = $state['current_phase'];
+        if ($phase === null || !in_array($phase, self::PHASES, true)) {
+            $state['current_phase'] = self::PHASES[0];
+            self::save_state($state);
+            self::reschedule_rollback();
+            return;
+        }
+
+        $cursor      = (int) ( $state['progress'][ $phase ]['cursor'] ?? 0 );
+        $batch_size  = self::batch_size_for_phase($phase);
+        $phase_index = (int) array_search($phase, self::PHASES, true);
+
+        try {
+            $result = self::run_phase_batch($phase, $cursor, $batch_size);
+        } catch (\Throwable $e) {
+            $state['last_error'] = $e->getMessage();
+            self::save_state($state);
+            try {
+                Cashback_Encryption::write_audit_log(
+                    'key_rotation_rollback_batch_failed',
+                    0,
+                    'key_rotation',
+                    null,
+                    array(
+						'phase' => $phase,
+						'error' => $e->getMessage(),
+					)
+                );
+            } catch (\Throwable $inner) {
+                unset($inner);
+            }
+            return;
+        }
+
+        $state['progress'][ $phase ]['done']   += max(0, (int) ( $result['processed'] ?? 0 ));
+        $state['progress'][ $phase ]['failed'] += max(0, (int) ( $result['failed'] ?? 0 ));
+        $state['progress'][ $phase ]['cursor']  = max(0, (int) ( $result['next_cursor'] ?? $cursor ));
+        ++$state['total_batches'];
+
+        if (( $state['total_batches'] % 10 ) === 0) {
+            try {
+                Cashback_Encryption::write_audit_log(
+                    'key_rotation_rollback_batch_completed',
+                    0,
+                    'key_rotation',
+                    null,
+                    array(
+                        'phase'            => $phase,
+                        'processed_so_far' => $state['progress'][ $phase ]['done'],
+                        'total'            => $state['progress'][ $phase ]['total'],
+                        'batches'          => $state['total_batches'],
+                    )
+                );
+            } catch (\Throwable $e) {
+                unset($e);
+            }
+        }
+
+        if (!empty($result['has_more'])) {
+            self::save_state($state);
+            self::reschedule_rollback();
+            return;
+        }
+
+        try {
+            Cashback_Encryption::write_audit_log(
+                'key_rotation_rollback_phase_completed',
+                0,
+                'key_rotation',
+                null,
+                array(
+                    'phase'           => $phase,
+                    'total_in_phase'  => $state['progress'][ $phase ]['total'],
+                    'done_in_phase'   => $state['progress'][ $phase ]['done'],
+                    'failed_in_phase' => $state['progress'][ $phase ]['failed'],
+                )
+            );
+        } catch (\Throwable $e) {
+            unset($e);
+        }
+
+        $next_index = $phase_index + 1;
+        if ($next_index < count(self::PHASES)) {
+            $state['current_phase'] = self::PHASES[ $next_index ];
+            self::save_state($state);
+            self::reschedule_rollback();
+            return;
+        }
+
+        // Все rollback-фазы пройдены → reverse-sanity-pass. Он в финале
+        // переведёт state в idle (см. finalize_sanity_iteration с direction=reverse).
+        self::start_sanity_pass($state, 'reverse');
+    }
+
+    private static function reschedule_rollback(): void {
+        if (function_exists('as_enqueue_async_action')) {
+            as_enqueue_async_action(self::AS_HOOK_ROLLBACK, array(), self::AS_GROUP);
+        }
     }
 
     // ================================================================
@@ -1079,7 +1339,7 @@ class Cashback_Key_Rotation {
      *
      * @param array<string,mixed> $state
      */
-    private static function start_sanity_pass( array $state ): void {
+    private static function start_sanity_pass( array $state, string $direction = 'forward' ): void {
         $state['current_phase']                = null;
         $state['sanity_active']                = true;
         $state['sanity_iteration']             = 1;
@@ -1087,6 +1347,7 @@ class Cashback_Key_Rotation {
         $state['sanity_cursor']                = 0;
         $state['sanity_iteration_reencrypted'] = 0;
         $state['sanity_unresolved']            = 0;
+        $state['sanity_direction']             = ( $direction === 'reverse' ) ? 'reverse' : 'forward';
         self::save_state($state);
 
         try {
@@ -1095,7 +1356,10 @@ class Cashback_Key_Rotation {
                 0,
                 'key_rotation',
                 null,
-                array( 'iteration' => 1 )
+                array(
+                    'iteration' => 1,
+                    'direction' => $state['sanity_direction'],
+                )
             );
         } catch (\Throwable $e) {
             unset($e);
@@ -1133,7 +1397,7 @@ class Cashback_Key_Rotation {
         }
 
         try {
-            $result = self::run_sanity_phase_batch($phase, (int) $state['sanity_cursor']);
+            $result = self::run_sanity_phase_batch($phase, (int) $state['sanity_cursor'], (string) $state['sanity_direction']);
         } catch (\Throwable $e) {
             $state['last_error'] = $e->getMessage();
             self::save_state($state);
@@ -1186,7 +1450,7 @@ class Cashback_Key_Rotation {
      *
      * @return array{reencrypted:int,next_cursor:int,has_more:bool}
      */
-    private static function run_sanity_phase_batch( string $phase, int $cursor ): array {
+    private static function run_sanity_phase_batch( string $phase, int $cursor, string $direction = 'forward' ): array {
         global $wpdb;
         if (!is_object($wpdb)) {
             return array(
@@ -1249,8 +1513,13 @@ class Cashback_Key_Rotation {
                 continue;
             }
 
-            // Если расшифровывается NEW — значит уже ротировано, пропускаем.
-            $plaintext = Cashback_Encryption::try_decrypt_with_role($ciphertext, Cashback_Encryption::KEY_ROLE_NEW);
+            // Target-ключ зависит от направления:
+            //  - forward (после migrate): NEW ключ — всё должно расшифровываться им.
+            //  - reverse (после rollback swap): PRIMARY ключ — он теперь OLD.
+            $target_role = ( $direction === 'reverse' )
+                ? Cashback_Encryption::KEY_ROLE_PRIMARY
+                : Cashback_Encryption::KEY_ROLE_NEW;
+            $plaintext   = Cashback_Encryption::try_decrypt_with_role($ciphertext, $target_role);
             if ($plaintext !== null) {
                 continue;
             }
@@ -1377,12 +1646,51 @@ class Cashback_Key_Rotation {
             unset($e);
         }
 
-        // Деактивируем sanity и переводим state в migrated.
+        $direction = (string) $state['sanity_direction'];
+
+        // Деактивируем sanity.
         $state['sanity_active']                = false;
         $state['sanity_current_phase']         = null;
         $state['sanity_unresolved']            = $unresolved;
         $state['sanity_iteration_reencrypted'] = 0;
-        $state['state']                        = self::STATE_MIGRATED;
+
+        if ($direction === 'reverse') {
+            // После rollback-sanity: .new.php больше не нужен (содержит NEW-ключ,
+            // от которого мы отказались). Cleanup расписания previous-файла тоже
+            // неактуален — previous-файла уже нет.
+            $new_path = self::get_new_key_path();
+            if (file_exists($new_path)) {
+                // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- idempotent file cleanup.
+                @unlink($new_path);
+            }
+            delete_option(self::CLEANUP_DEADLINE_OPTION);
+            if (function_exists('as_unschedule_all_actions')) {
+                as_unschedule_all_actions(self::AS_HOOK_CLEANUP, array(), self::AS_GROUP);
+            }
+
+            try {
+                Cashback_Encryption::write_audit_log(
+                    'key_rotation_rolled_back',
+                    (int) $state['initiator_id'],
+                    'key_rotation',
+                    null,
+                    array(
+                        'iterations'        => $iteration,
+                        'sanity_unresolved' => $unresolved,
+                    )
+                );
+            } catch (\Throwable $e) {
+                unset($e);
+            }
+
+            // Rollback завершён — возвращаемся в idle (как будто ротации не было).
+            // Сбрасываем progress и прочие поля через new_idle_state.
+            self::save_state(self::new_idle_state());
+            return;
+        }
+
+        // Forward sanity (после migrate): финальный state=migrated.
+        $state['state'] = self::STATE_MIGRATED;
         self::save_state($state);
     }
 
@@ -2076,12 +2384,8 @@ class Cashback_Key_Rotation {
         }
     }
 
-    public static function run_rollback_batch(): void {
-        // TODO: шаг 3.5 плана — обратная перешифровка.
-    }
-
     public static function cleanup_previous_key(): void {
-        // TODO: шаг 3.6 плана — удаление .previous.php после окна отката.
+        // TODO: шаг 3.9 плана — удаление .previous.php после окна отката.
     }
 
     // ================================================================
