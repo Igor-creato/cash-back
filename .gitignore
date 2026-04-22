@@ -13,6 +13,7 @@
 /development/test/.phpunit.result.cache
 /development/test/composer.lock
 
+
 /.qwen/
 /context/
 /wp-plugin-tests/
@@ -22,7 +23,9 @@ CLAUDE.md
 # PHPStan
 /.phpstan.cache/
 check.md
-
+/.playwright-mcp/
+/plans/
+*.png
 
 # Composer lock (composer.json is source-controlled; lock regenerated in CI)
 /composer.lock
