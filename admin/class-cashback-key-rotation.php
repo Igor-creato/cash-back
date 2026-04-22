@@ -2497,14 +2497,47 @@ class Cashback_Key_Rotation {
     // AJAX status (заглушка — UI polling)
     // ================================================================
 
+    /**
+     * AJAX-статус для UI polling'а. Возвращает текущий state + fingerprint'ы +
+     * cleanup_at + consumable flash-сообщение.
+     *
+     * Rate-limit на этот эндпоинт настраивается в Cashback_Rate_Limiter
+     * (action=cashback_rotation_status, тир=admin).
+     */
     public static function ajax_status(): void {
         if (!current_user_can('manage_options')) {
             wp_send_json_error(array( 'message' => 'Forbidden' ), 403);
+            return;
         }
         check_ajax_referer(self::NONCE_STATUS);
 
+        if (class_exists('Cashback_Rate_Limiter') && method_exists('Cashback_Rate_Limiter', 'check')) {
+            $ip = method_exists('Cashback_Encryption', 'get_client_ip') ? Cashback_Encryption::get_client_ip() : '0.0.0.0';
+            $rl = Cashback_Rate_Limiter::check('cashback_rotation_status', (int) get_current_user_id(), $ip);
+            if (isset($rl['allowed']) && !$rl['allowed']) {
+                wp_send_json_error(array(
+                    'message'     => 'Too many requests',
+                    'retry_after' => isset($rl['retry_after']) ? (int) $rl['retry_after'] : 0,
+                ), 429);
+                return;
+            }
+        }
+
+        $cleanup_at = (int) get_option(self::CLEANUP_DEADLINE_OPTION, 0);
+        $now        = time();
+        $flash      = self::consume_flash();
+
         wp_send_json_success(array(
-            'state' => self::get_state(),
+            'state'                        => self::get_state(),
+            'fingerprints'                 => array(
+                'primary'  => Cashback_Encryption::get_fingerprint(Cashback_Encryption::KEY_ROLE_PRIMARY),
+                'new'      => Cashback_Encryption::get_fingerprint(Cashback_Encryption::KEY_ROLE_NEW),
+                'previous' => Cashback_Encryption::get_fingerprint(Cashback_Encryption::KEY_ROLE_PREVIOUS),
+            ),
+            'cleanup_at'                   => $cleanup_at,
+            'now'                          => $now,
+            'rollback_window_seconds_left' => $cleanup_at > 0 ? max(0, $cleanup_at - $now) : 0,
+            'flash'                        => $flash,
         ));
     }
 
