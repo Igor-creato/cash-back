@@ -28,6 +28,15 @@ class Cashback_Key_Rotation {
     public const STATE_OPTION            = 'cashback_key_rotation_state';
     public const CLEANUP_DEADLINE_OPTION = 'cashback_key_rotation_cleanup_at';
 
+    /**
+     * Фактический hook_suffix admin-страницы, возвращённый add_submenu_page().
+     * WP генерирует его как `sanitize_title(<parent menu title>) . '_page_' . <slug>`,
+     * т.е. для кириллического меню «Кэшбэк» → `keshbek_page_cashback-key-rotation`,
+     * а не `cashback-overview_page_...`. Сохраняем возврат, чтобы enqueue_admin_assets
+     * сравнивал с ним напрямую и JS polling реально подключался.
+     */
+    private static ?string $admin_hook_suffix = null;
+
     public const AS_HOOK_MIGRATE  = 'cashback_key_rotation_migrate_batch';
     public const AS_HOOK_SANITY   = 'cashback_key_rotation_sanity_batch';
     public const AS_HOOK_ROLLBACK = 'cashback_key_rotation_rollback_batch';
@@ -2547,7 +2556,7 @@ class Cashback_Key_Rotation {
     // ================================================================
 
     public static function register_admin_page(): void {
-        add_submenu_page(
+        $hook = add_submenu_page(
             self::PARENT_MENU_SLUG,
             esc_html__('Ротация ключа шифрования', 'cashback-plugin'),
             esc_html__('Ротация ключа', 'cashback-plugin'),
@@ -2555,6 +2564,9 @@ class Cashback_Key_Rotation {
             self::ADMIN_PAGE_SLUG,
             array( __CLASS__, 'render_admin_page' )
         );
+        if (is_string($hook) && $hook !== '') {
+            self::$admin_hook_suffix = $hook;
+        }
     }
 
     /**
@@ -2563,9 +2575,7 @@ class Cashback_Key_Rotation {
      * @param string $hook_suffix Имя хука текущей admin-страницы.
      */
     public static function enqueue_admin_assets( $hook_suffix ): void {
-        // add_submenu_page возвращает hook вида `<parent-slug>_page_<slug>`.
-        $expected = self::PARENT_MENU_SLUG . '_page_' . self::ADMIN_PAGE_SLUG;
-        if ($hook_suffix !== $expected) {
+        if (self::$admin_hook_suffix === null || $hook_suffix !== self::$admin_hook_suffix) {
             return;
         }
 
