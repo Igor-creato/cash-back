@@ -346,12 +346,91 @@ class Cashback_Fraud_Settings {
                 continue;
             }
 
-            $type      = $validation[ $short_key ] ?? 'string';
+            $type = $validation[ $short_key ] ?? 'string';
+
+            // 'secret' идёт через атомарный путь с row-lock'ом на wp_options:
+            // SELECT FOR UPDATE → encrypt → UPDATE → COMMIT. Закрывает TOCTOU-race
+            // с batch-job'ом ротации (фаза options_captcha).
+            if ($type === 'secret') {
+                $plaintext = sanitize_text_field((string) $value);
+                self::update_encrypted_option_atomic($full_key, $plaintext);
+                continue;
+            }
+
             $sanitized = self::sanitize_value($value, $type);
 
             if ($sanitized !== null) {
                 update_option($full_key, $sanitized);
             }
+        }
+    }
+
+    /**
+     * Атомарно обновляет зашифрованный wp_option под удержанием row-lock'а:
+     * START TRANSACTION → SELECT ... FOR UPDATE → encrypt → UPDATE → COMMIT → cache_delete.
+     *
+     * Закрывает TOCTOU-race с batch-job'ом ротации ключа (фаза options_captcha):
+     * write-key для encrypt() выбирается под удержанием lock'а, batch не может
+     * одновременно перешифровать эту же опцию.
+     *
+     * Если $wpdb недоступен (тестовый bootstrap без DB) — fallback на update_option,
+     * чтобы не ломать unit-тесты с in-memory option-стабом.
+     */
+    private static function update_encrypted_option_atomic( string $option_name, string $plaintext ): void {
+        global $wpdb;
+
+        if (!is_object($wpdb) || !method_exists($wpdb, 'get_var')) {
+            // Test-friendly fallback: просто шифруем и пишем через update_option.
+            update_option($option_name, Cashback_Encryption::encrypt_if_needed($plaintext));
+            return;
+        }
+
+        $options_table = property_exists($wpdb, 'options') ? (string) $wpdb->options : 'wp_options';
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Row-lock TX begin.
+        $wpdb->query('START TRANSACTION');
+        try {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- SELECT FOR UPDATE inside TX.
+            $existing = $wpdb->get_var(
+                $wpdb->prepare(
+                    'SELECT option_value FROM %i WHERE option_name = %s FOR UPDATE',
+                    $options_table,
+                    $option_name
+                )
+            );
+
+            // Encrypt происходит ПОД row-lock'ом: write-key выбирается по актуальному
+            // состоянию ротации, batch не может одновременно перешифровать эту опцию.
+            $ciphertext = Cashback_Encryption::encrypt_if_needed($plaintext);
+
+            if ($existing === null) {
+                // Опция не существует — выходим из TX и используем стандартный update_option,
+                // который корректно проставит autoload и зарегистрирует в alloptions cache.
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Commit empty.
+                $wpdb->query('COMMIT');
+                update_option($option_name, $ciphertext);
+                return;
+            }
+
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- UPDATE locked row.
+            $wpdb->update(
+                $options_table,
+                array( 'option_value' => $ciphertext ),
+                array( 'option_name' => $option_name ),
+                array( '%s' ),
+                array( '%s' )
+            );
+
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Commit.
+            $wpdb->query('COMMIT');
+
+            wp_cache_delete($option_name, 'options');
+            wp_cache_delete('alloptions', 'options');
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Rollback on error.
+            $wpdb->query('ROLLBACK');
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Diagnostic logging.
+            error_log('[Cashback Fraud Settings] Failed to update encrypted option ' . $option_name . ': ' . $e->getMessage());
         }
     }
 
