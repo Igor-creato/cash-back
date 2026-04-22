@@ -99,6 +99,8 @@ class Cashback_Rate_Limiter {
         'update_user_profile'                       => 'admin',
         'get_user_profile'                          => 'admin',
         'bulk_update_cashback_rate'                 => 'admin',
+        // Key rotation admin UI polling (шаг 3.10): AJAX-пуллер раз в 3 сек.
+        'cashback_rotation_status'                  => 'admin',
         'update_transaction'                        => 'admin',
         'get_transaction'                           => 'admin',
         'transfer_unregistered_transaction'         => 'admin',

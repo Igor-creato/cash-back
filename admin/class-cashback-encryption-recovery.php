@@ -301,6 +301,16 @@ class Cashback_Encryption_Recovery {
             return;
         }
 
+        // Во время легальной ротации ключа (migrating/rolling_back/completed)
+        // fingerprint намеренно не совпадает — это не mismatch, а ожидаемое состояние.
+        // Не рисуем notice, чтобы не сбивать админа кнопкой "Запустите восстановление".
+        if (class_exists('Cashback_Key_Rotation')) {
+            $rotation_state = Cashback_Key_Rotation::current_state_name();
+            if (in_array($rotation_state, array( 'migrating', 'migrated', 'rolling_back', 'completed' ), true)) {
+                return;
+            }
+        }
+
         printf(
             '<div class="notice notice-error"><p><strong>%s</strong></p><p>%s</p><p><a class="button button-primary" href="%s">%s</a></p></div>',
             esc_html__('Cashback Plugin: обнаружено несовпадение ключа шифрования', 'cashback-plugin'),

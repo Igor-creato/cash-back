@@ -55,7 +55,7 @@ class Cashback_Users_Management_Admin {
             'cashback-admin-users-css',
             plugins_url('../assets/css/admin.css', __FILE__),
             array(),
-            '1.0.1'
+            '1.2.0'
         );
 
         wp_enqueue_script(

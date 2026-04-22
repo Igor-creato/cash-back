@@ -1047,10 +1047,21 @@ class CashbackWithdrawal {
             $insert_formats = array( '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s' );
 
             if ($has_encrypted) {
-                $insert_data['encrypted_details'] = $encryption_data['encrypted_details'];
-                $insert_data['masked_details']    = $encryption_data['masked_details'];
-                $insert_formats[]                 = '%s';
-                $insert_formats[]                 = '%s';
+                // Нормализуем ciphertext к текущему write-key под удержанием row-lock'а
+                // на user_profile (FOR UPDATE выше, при чтении status). Закрывает TOCTOU-race
+                // с batch-job'ом ротации: вновь созданная заявка пишется ciphertext'ом,
+                // зашифрованным актуальным write-key'ом, без необходимости повторной обработки
+                // batch'ем или sanity-pass'ом. rotate_value() = trial-decrypt → encrypt(write-key).
+                try {
+                    $insert_data['encrypted_details'] = Cashback_Encryption::rotate_value(
+                        (string) $encryption_data['encrypted_details']
+                    );
+                } catch (\Throwable $rot_e) {
+                    throw new \Exception('encrypted_details_rotation_failed: ' . $rot_e->getMessage());
+                }
+                $insert_data['masked_details'] = $encryption_data['masked_details'];
+                $insert_formats[]              = '%s';
+                $insert_formats[]              = '%s';
             }
 
             $inserted           = false;
@@ -1371,36 +1382,18 @@ class CashbackWithdrawal {
             }
         }
 
-        // Шифрование реквизитов (ключ гарантированно настроен в guard выше —
-        // см. проверку is_configured() до валидации формы).
-        $encrypted_details = null;
-        $masked_details    = null;
-        $details_hash      = null;
+        // Шифрование выполняется внутри update_user_payout_details после SELECT ... FOR UPDATE,
+        // чтобы исключить TOCTOU-гонку с batch-job'ом ротации ключа: при dual-key режиме
+        // write-key выбирается в момент удержания row-lock'а, а не до него. Fail-closed guard
+        // на is_configured() проверен выше; сам encrypt() внутри TX использует get_write_key_role().
+        $bank_name = $bank_required ? $this->get_bank_name($bank_id) : '';
 
-        try {
-            $bank_name         = $bank_required ? $this->get_bank_name($bank_id) : '';
-            $enc_result        = Cashback_Encryption::encrypt_details(array(
-                'account'   => $payout_account,
-                'full_name' => '',
-                'bank'      => $bank_name ?: '',
-            ));
-            $encrypted_details = $enc_result['encrypted_details'];
-            $masked_details    = $enc_result['masked_details'];
-            $details_hash      = $enc_result['details_hash'];
-        } catch (\Exception $e) {
-            wp_send_json_error(array( 'message' => __('Ошибка шифрования данных.', 'cashback-plugin') ));
-            return;
-        }
-
-        // Обновляем данные пользователя
         $result = $this->update_user_payout_details(
             $user_id,
             $payout_method_id,
             $payout_account,
             $bank_id,
-            $encrypted_details,
-            $masked_details,
-            $details_hash
+            $bank_name ?: ''
         );
 
         if ($result) {
@@ -1660,13 +1653,16 @@ class CashbackWithdrawal {
     /**
      * Update user payout details
      *
-     * @param int $user_id
-     * @param int $payout_method_id
-     * @param string $payout_account
-     * @param int $bank_id
-     * @param string|null $encrypted_details
-     * @param string|null $masked_details
-     * @param string|null $details_hash
+     * Encrypt и UPDATE/INSERT происходят внутри одной транзакции с SELECT ... FOR UPDATE.
+     * Это закрывает TOCTOU-race с batch-job'ом ротации ключа: write-key для encrypt()
+     * выбирается под удержанием row-lock'а, а batch не может одновременно перешифровать
+     * эту же запись.
+     *
+     * @param int    $user_id
+     * @param int    $payout_method_id
+     * @param string $payout_account     Plaintext номер счёта (зашифровывается внутри TX).
+     * @param int    $bank_id
+     * @param string $bank_name_plain    Plaintext название банка для encrypt_details.
      * @return bool
      */
     private function update_user_payout_details(
@@ -1674,29 +1670,19 @@ class CashbackWithdrawal {
         int $payout_method_id,
         string $payout_account,
         int $bank_id,
-        ?string $encrypted_details = null,
-        ?string $masked_details = null,
-        ?string $details_hash = null
+        string $bank_name_plain = ''
     ): bool {
         global $wpdb;
 
-        // Defense-in-depth: если шифрование настроено, но ciphertext не передан —
-        // это программная ошибка вызывающего кода. Отказываем во избежание
-        // случайной записи plaintext PII в БД. См. ADR Группа 4 (F-1-001).
-        if ($encrypted_details === null
-            && class_exists('Cashback_Encryption')
-            && Cashback_Encryption::is_configured()
-        ) {
-            $this->log_encryption_unavailable('update_user_payout_details_missing_ciphertext', $user_id);
-            return false;
-        }
+        $table_name        = $wpdb->prefix . 'cashback_user_profile';
+        $encryption_active = class_exists('Cashback_Encryption') && Cashback_Encryption::is_configured();
 
-        $table_name = $wpdb->prefix . 'cashback_user_profile';
-
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Row-lock transaction begin.
         $wpdb->query('START TRANSACTION');
 
         try {
             // Проверяем, существует ли запись профиля для пользователя (с блокировкой строки)
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- SELECT FOR UPDATE inside row-lock TX.
             $existing_record = $wpdb->get_var(
                 $wpdb->prepare(
                     'SELECT user_id FROM %i WHERE user_id = %d FOR UPDATE',
@@ -1716,16 +1702,29 @@ class CashbackWithdrawal {
                 $formats[]       = '%d';
             }
 
-            // Если шифрование настроено — сохраняем только зашифрованные данные, plaintext очищаем
-            if ($encrypted_details !== null) {
-                $data['encrypted_details'] = $encrypted_details;
-                $data['masked_details']    = $masked_details;
-                $data['details_hash']      = $details_hash;
+            // Если шифрование настроено — encrypt происходит здесь, под удержанием row-lock'а.
+            // Это гарантирует, что write-key выбран по актуальному состоянию ротации, а не до lock'а.
+            if ($encryption_active) {
+                try {
+                    $enc_result = Cashback_Encryption::encrypt_details(array(
+                        'account'   => $payout_account,
+                        'full_name' => '',
+                        'bank'      => $bank_name_plain,
+                    ));
+                } catch (\Throwable $enc_e) {
+                    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Rollback on encrypt failure.
+                    $wpdb->query('ROLLBACK');
+                    return false;
+                }
+
+                $data['encrypted_details'] = $enc_result['encrypted_details'];
+                $data['masked_details']    = $enc_result['masked_details'];
+                $data['details_hash']      = $enc_result['details_hash'];
                 $data['payout_account']    = '';
                 $data['payout_full_name']  = '';
                 $formats                   = array_merge($formats, array( '%s', '%s', '%s', '%s', '%s' ));
             } else {
-                // Fallback: если шифрование не настроено, сохраняем plaintext
+                // Fallback: если шифрование не настроено, сохраняем plaintext.
                 $data['payout_account'] = $payout_account;
                 $formats[]              = '%s';
             }
