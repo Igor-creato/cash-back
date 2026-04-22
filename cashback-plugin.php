@@ -476,6 +476,11 @@ class CashbackPlugin {
         // Загружается всегда (не только в админке), чтобы AS-хендлер был доступен при обработке cron-очереди.
         $this->require_file('admin/class-cashback-encryption-recovery.php');
 
+        // Ротация ключа шифрования (dual-key online): admin-страница + AS hooks
+        // (migrate/sanity/rollback/cleanup). Загружается всегда — AS-хендлеры должны
+        // быть доступны в cron-контексте независимо от is_admin().
+        $this->require_file('admin/class-cashback-key-rotation.php');
+
         // SSRF-guard для исходящих HTTP-запросов (использует Cashback_Encryption::write_audit_log)
         $this->require_file('includes/class-cashback-outbound-http-guard.php');
 
@@ -674,6 +679,12 @@ class CashbackPlugin {
         // (срабатывают только в админке) и AS-hook (срабатывает в WP-cron).
         if (class_exists('Cashback_Encryption_Recovery')) {
             Cashback_Encryption_Recovery::init();
+        }
+
+        // Ротация ключа шифрования (online dual-key): submenu в админке +
+        // admin_post_* хендлеры + AS-hooks (migrate/sanity/rollback/cleanup).
+        if (class_exists('Cashback_Key_Rotation')) {
+            Cashback_Key_Rotation::init();
         }
 
         // Инициализация Mariadb_Plugin (регистрирует user_register хук)
