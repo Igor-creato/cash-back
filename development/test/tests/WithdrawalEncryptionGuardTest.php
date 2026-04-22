@@ -14,7 +14,8 @@ use PHPUnit\Framework\Attributes\Group;
  * - get_payout_account(): при !is_configured() + ciphertext → null (НЕ plaintext).
  * - get_payout_account(): legacy row без ciphertext → plaintext возвращается.
  * - get_payout_account(): битый ciphertext при настроенном ключе → null.
- * - update_user_payout_details(): defense-in-depth при encrypted_details=null + is_configured → false.
+ * - update_user_payout_details(): encrypt происходит ВНУТРИ TX после SELECT FOR UPDATE,
+ *   plaintext PII никогда не пишется в payout_account/payout_full_name при is_configured.
  *
  * Запуск:
  *   Happy-path:  ./vendor/bin/phpunit tests/WithdrawalEncryptionGuardTest.php
@@ -173,22 +174,16 @@ class WithdrawalEncryptionGuardTest extends TestCase
         $method = $refl->getMethod('update_user_payout_details');
         $method->setAccessible(true);
 
-        // Готовим валидный ciphertext через реальный encrypt_details.
-        $enc = Cashback_Encryption::encrypt_details(array(
-            'account'   => '41001234567890',
-            'full_name' => '',
-            'bank'      => 'Тинькофф',
-        ));
-
+        // Передаём plaintext: encrypt теперь происходит ВНУТРИ update_user_payout_details
+        // под удержанием row-lock'а (SELECT ... FOR UPDATE), чтобы исключить TOCTOU-race
+        // с batch-job'ом ротации ключа.
         $result = $method->invoke(
             $withdrawal,
             123,
             1,
             '41001234567890',
             0,
-            $enc['encrypted_details'],
-            $enc['masked_details'],
-            $enc['details_hash']
+            'Тинькофф'
         );
 
         $this->assertTrue($result, 'update_user_payout_details должен вернуть true при успешной записи');
@@ -202,41 +197,68 @@ class WithdrawalEncryptionGuardTest extends TestCase
 
         $data = $writes[0]['args'][1];
         $this->assertArrayHasKey('encrypted_details', $data);
-        $this->assertNotEmpty($data['encrypted_details']);
+        $this->assertNotEmpty($data['encrypted_details'], 'encrypt должен произойти внутри TX');
         $this->assertSame('', $data['payout_account'], 'payout_account должен быть очищен');
         $this->assertSame('', $data['payout_full_name'], 'payout_full_name должен быть очищен');
+
+        // Проверяем порядок: START TRANSACTION → SELECT FOR UPDATE → INSERT/UPDATE → COMMIT.
+        $sequence       = array_map(static fn(array $c): string => $c['method'], $this->wpdb->calls);
+        $tx_start_index = array_search('query', $sequence, true);
+        $this->assertNotFalse($tx_start_index, 'Должен быть вызов query() для START TRANSACTION');
+
+        $for_update_index = null;
+        foreach ($this->wpdb->calls as $idx => $c) {
+            if ($c['method'] === 'get_var' && str_contains((string) ( $c['args'][0] ?? '' ), 'FOR UPDATE')) {
+                $for_update_index = $idx;
+                break;
+            }
+        }
+        $this->assertNotNull($for_update_index, 'SELECT ... FOR UPDATE должен быть вызван');
+
+        $write_index = null;
+        foreach ($this->wpdb->calls as $idx => $c) {
+            if (in_array($c['method'], ['insert', 'update'], true)) {
+                $write_index = $idx;
+                break;
+            }
+        }
+        $this->assertNotNull($write_index);
+        $this->assertGreaterThan($for_update_index, $write_index, 'INSERT/UPDATE должен быть после FOR UPDATE');
     }
 
     // ================================================================
-    // Defense-in-depth: update_user_payout_details блокирует plaintext-путь,
-    // если ключ настроен, но ciphertext не передан (программная ошибка).
+    // При is_configured() === true update_user_payout_details обязан зашифровать
+    // plaintext внутри TX и НЕ записывать его в payout_account/payout_full_name.
+    // (defense-in-depth: сам факт записи plaintext-PII в эти колонки = баг).
     // ================================================================
 
-    public function test_update_user_payout_details_defense_in_depth_blocks_plaintext_when_key_present(): void
+    public function test_update_user_payout_details_never_writes_plaintext_pii_when_key_present(): void
     {
         if (!Cashback_Encryption::is_configured()) {
             $this->markTestSkipped('Тест требует is_configured() === true.');
         }
 
+        $this->wpdb->next_var = null;
+
         $withdrawal = (new \ReflectionClass(CashbackWithdrawal::class))->newInstanceWithoutConstructor();
-        $refl  = new \ReflectionClass($withdrawal);
-        $method = $refl->getMethod('update_user_payout_details');
+        $refl       = new \ReflectionClass($withdrawal);
+        $method     = $refl->getMethod('update_user_payout_details');
         $method->setAccessible(true);
 
-        $result = $method->invoke($withdrawal, 123, 1, '41001234567890', 0, null, null, null);
+        $result = $method->invoke($withdrawal, 123, 1, '41001234567890', 0, '');
+        $this->assertTrue($result);
 
-        $this->assertFalse(
-            $result,
-            'При настроенном шифровании и отсутствии ciphertext метод должен отказать (defense-in-depth)'
-        );
-
-        $profile_writes = array_filter(
+        $writes = array_values(array_filter(
             $this->wpdb->calls,
             static fn(array $c): bool => in_array($c['method'], ['insert', 'update'], true)
-                && isset($c['args'][0])
-                && str_contains((string) $c['args'][0], 'cashback_user_profile')
-        );
-        $this->assertEmpty($profile_writes, 'Таблица cashback_user_profile не должна быть тронута');
+        ));
+        $this->assertNotEmpty($writes);
+        $data = $writes[0]['args'][1];
+
+        $this->assertArrayHasKey('encrypted_details', $data, 'encrypt должен быть выполнен внутри TX');
+        $this->assertNotEmpty($data['encrypted_details']);
+        $this->assertSame('', $data['payout_account'], 'plaintext PII не должен попадать в payout_account');
+        $this->assertSame('', $data['payout_full_name'], 'plaintext PII не должен попадать в payout_full_name');
     }
 
     // ================================================================
