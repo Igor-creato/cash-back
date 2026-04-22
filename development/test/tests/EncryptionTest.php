@@ -432,6 +432,164 @@ class EncryptionTest extends TestCase
         $this->assertSame('2001:db8::1', $ip);
     }
 
+    // ================================================================
+    // ТЕСТЫ: Dual-key ротация — роли ключей, trial-decrypt, rotate_value
+    // ================================================================
+
+    public function test_is_key_role_configured_for_all_roles(): void
+    {
+        $this->assertTrue(Cashback_Encryption::is_key_role_configured('primary'));
+        $this->assertTrue(Cashback_Encryption::is_key_role_configured('new'));
+        $this->assertTrue(Cashback_Encryption::is_key_role_configured('previous'));
+        $this->assertFalse(Cashback_Encryption::is_key_role_configured('garbage'));
+    }
+
+    public function test_get_active_keys_returns_all_three_roles(): void
+    {
+        $keys = Cashback_Encryption::get_active_keys();
+        $this->assertCount(3, $keys);
+        $this->assertArrayHasKey('primary', $keys);
+        $this->assertArrayHasKey('new', $keys);
+        $this->assertArrayHasKey('previous', $keys);
+        $this->assertSame(32, strlen($keys['primary']));
+        $this->assertNotSame($keys['primary'], $keys['new']);
+        $this->assertNotSame($keys['new'], $keys['previous']);
+    }
+
+    public function test_get_fingerprint_per_role_is_unique(): void
+    {
+        $fp_primary  = Cashback_Encryption::get_fingerprint('primary');
+        $fp_new      = Cashback_Encryption::get_fingerprint('new');
+        $fp_previous = Cashback_Encryption::get_fingerprint('previous');
+
+        $this->assertSame(64, strlen($fp_primary));
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $fp_primary);
+        $this->assertNotSame($fp_primary, $fp_new);
+        $this->assertNotSame($fp_new, $fp_previous);
+        $this->assertSame('', Cashback_Encryption::get_fingerprint('garbage'));
+    }
+
+    public function test_get_write_key_role_is_primary_when_idle(): void
+    {
+        delete_option('cashback_key_rotation_state');
+        $this->assertSame('primary', Cashback_Encryption::get_write_key_role());
+    }
+
+    public function test_get_write_key_role_switches_to_new_during_migrating(): void
+    {
+        update_option('cashback_key_rotation_state', json_encode(['state' => 'migrating']), false);
+        $this->assertSame('new', Cashback_Encryption::get_write_key_role());
+
+        update_option('cashback_key_rotation_state', json_encode(['state' => 'migrated']), false);
+        $this->assertSame('new', Cashback_Encryption::get_write_key_role());
+
+        update_option('cashback_key_rotation_state', json_encode(['state' => 'completed']), false);
+        $this->assertSame('primary', Cashback_Encryption::get_write_key_role());
+
+        delete_option('cashback_key_rotation_state');
+    }
+
+    public function test_get_write_key_role_accepts_state_as_array(): void
+    {
+        // get_option иногда возвращает уже распарсенный массив (если writer писал массив).
+        update_option('cashback_key_rotation_state', ['state' => 'migrating'], false);
+        $this->assertSame('new', Cashback_Encryption::get_write_key_role());
+        delete_option('cashback_key_rotation_state');
+    }
+
+    public function test_encrypt_uses_primary_when_idle(): void
+    {
+        delete_option('cashback_key_rotation_state');
+        $plain = 'secret';
+        $ct    = Cashback_Encryption::encrypt($plain);
+
+        // Должен читаться только через primary (не new, не previous).
+        $this->assertSame($plain, Cashback_Encryption::try_decrypt_with_role($ct, 'primary'));
+        $this->assertNull(Cashback_Encryption::try_decrypt_with_role($ct, 'new'));
+        $this->assertNull(Cashback_Encryption::try_decrypt_with_role($ct, 'previous'));
+    }
+
+    public function test_encrypt_uses_new_when_migrating(): void
+    {
+        update_option('cashback_key_rotation_state', json_encode(['state' => 'migrating']), false);
+
+        $plain = 'secret during rotation';
+        $ct    = Cashback_Encryption::encrypt($plain);
+
+        $this->assertNull(Cashback_Encryption::try_decrypt_with_role($ct, 'primary'));
+        $this->assertSame($plain, Cashback_Encryption::try_decrypt_with_role($ct, 'new'));
+
+        // decrypt() должен всё равно успешно прочитать через trial.
+        $this->assertSame($plain, Cashback_Encryption::decrypt($ct));
+
+        delete_option('cashback_key_rotation_state');
+    }
+
+    public function test_decrypt_trial_reads_primary_new_and_previous(): void
+    {
+        delete_option('cashback_key_rotation_state');
+
+        $plain = 'trial-decrypt payload';
+        $ct_primary  = Cashback_Encryption::encrypt_with_role($plain, 'primary');
+        $ct_new      = Cashback_Encryption::encrypt_with_role($plain, 'new');
+        $ct_previous = Cashback_Encryption::encrypt_with_role($plain, 'previous');
+
+        // Каждый ciphertext должен читаться через общий decrypt(), независимо от роли.
+        $this->assertSame($plain, Cashback_Encryption::decrypt($ct_primary));
+        $this->assertSame($plain, Cashback_Encryption::decrypt($ct_new));
+        $this->assertSame($plain, Cashback_Encryption::decrypt($ct_previous));
+    }
+
+    public function test_encrypt_with_role_requires_configured_role(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        Cashback_Encryption::encrypt_with_role('x', 'garbage');
+    }
+
+    public function test_try_decrypt_with_role_unconfigured_returns_null(): void
+    {
+        $ct = Cashback_Encryption::encrypt('x');
+        $this->assertNull(Cashback_Encryption::try_decrypt_with_role($ct, 'garbage'));
+    }
+
+    public function test_rotate_value_reencrypts_with_write_key(): void
+    {
+        delete_option('cashback_key_rotation_state');
+
+        $plain  = 'payload to rotate';
+        $ct_old = Cashback_Encryption::encrypt_with_role($plain, 'primary');
+
+        // Включаем режим ротации → write-key=new.
+        update_option('cashback_key_rotation_state', json_encode(['state' => 'migrating']), false);
+        $ct_rotated = Cashback_Encryption::rotate_value($ct_old);
+
+        $this->assertNotSame($ct_old, $ct_rotated);
+        $this->assertNull(Cashback_Encryption::try_decrypt_with_role($ct_rotated, 'primary'));
+        $this->assertSame($plain, Cashback_Encryption::try_decrypt_with_role($ct_rotated, 'new'));
+        $this->assertSame($plain, Cashback_Encryption::decrypt($ct_rotated));
+
+        delete_option('cashback_key_rotation_state');
+    }
+
+    public function test_rotate_value_throws_on_unreadable_ciphertext(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        Cashback_Encryption::rotate_value('v2:broken-base64-data');
+    }
+
+    public function test_decrypt_throws_when_no_key_matches(): void
+    {
+        // Шифруем каким-то одноразовым случайным ключом — ни одна из активных ролей не расшифрует.
+        $random_key = random_bytes(32);
+        $iv         = random_bytes(12);
+        $tag        = '';
+        $ciphertext = openssl_encrypt('secret', 'aes-256-gcm', $random_key, OPENSSL_RAW_DATA, $iv, $tag, '', 16);
+        $ct_foreign = 'v2:' . base64_encode($iv . $tag . $ciphertext);
+
+        $this->expectException(\RuntimeException::class);
+        Cashback_Encryption::decrypt($ct_foreign);
+    }
+
     /**
      * Очистка $_SERVER после тестов IP
      */
@@ -441,5 +599,10 @@ class EncryptionTest extends TestCase
         unset($_SERVER['HTTP_CF_CONNECTING_IP']);
         unset($_SERVER['HTTP_X_FORWARDED_FOR']);
         unset($_SERVER['HTTP_X_REAL_IP']);
+
+        // На всякий случай чистим state-option ротации между тестами.
+        if (function_exists('delete_option')) {
+            delete_option('cashback_key_rotation_state');
+        }
     }
 }
