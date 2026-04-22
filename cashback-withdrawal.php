@@ -123,6 +123,18 @@ class CashbackWithdrawal {
     }
 
     /**
+     * Форматирует сумму в plain text ("118 000,00 ₽") на основе настроек WooCommerce.
+     * Используется для вставки через jQuery .text() (iter-32 F-32-001 defense-in-depth).
+     *
+     * @param float $amount
+     * @return string
+     */
+    private function format_price_plain( float $amount ): string {
+        // wc_price() возвращает HTML; снимаем теги и декодируем сущности (&nbsp; → U+00A0, &#8381; → ₽).
+        return trim( html_entity_decode( wp_strip_all_tags( wc_price( $amount ) ), ENT_QUOTES, 'UTF-8' ) );
+    }
+
+    /**
      * Get user's available balance
      *
      * @param int $user_id
@@ -628,22 +640,22 @@ class CashbackWithdrawal {
 
         echo '<div class="balance-info-card">';
         echo '<span class="balance-info-label">' . esc_html__('Доступный баланс', 'cashback-plugin') . '</span>';
-        echo '<span id="cashback-balance-amount" class="balance-info-value ' . esc_attr( $balance > 0 ? 'balance-green' : 'balance-gray' ) . '">' . wp_kses_post( wc_price($balance) ) . '</span>';
+        echo '<span id="cashback-balance-amount" class="balance-info-value ' . esc_attr( $balance > 0 ? 'balance-green' : 'balance-gray' ) . '">' . esc_html( $this->format_price_plain( $balance ) ) . '</span>';
         echo '</div>';
 
         echo '<div class="balance-info-card">';
         echo '<span class="balance-info-label">' . esc_html__('В обработке', 'cashback-plugin') . '</span>';
-        echo '<span id="cashback-pending-amount" class="balance-info-value ' . esc_attr( $pending_balance > 0 ? 'balance-pending' : 'balance-gray' ) . '">' . wp_kses_post( wc_price($pending_balance) ) . '</span>';
+        echo '<span id="cashback-pending-amount" class="balance-info-value ' . esc_attr( $pending_balance > 0 ? 'balance-pending' : 'balance-gray' ) . '">' . esc_html( $this->format_price_plain( $pending_balance ) ) . '</span>';
         echo '</div>';
 
         echo '<div class="balance-info-card">';
         echo '<span class="balance-info-label">' . esc_html__('Заработано', 'cashback-plugin') . '</span>';
-        echo '<span id="cashback-paid-amount" class="balance-info-value ' . esc_attr( $paid_balance > 0 ? 'balance-paid' : 'balance-gray' ) . '">' . wp_kses_post( wc_price($paid_balance) ) . '</span>';
+        echo '<span id="cashback-paid-amount" class="balance-info-value ' . esc_attr( $paid_balance > 0 ? 'balance-paid' : 'balance-gray' ) . '">' . esc_html( $this->format_price_plain( $paid_balance ) ) . '</span>';
         echo '</div>';
 
         echo '</div>'; // .balance-info-grid
 
-        echo '<p>' . esc_html__('Минимальная сумма выплаты:', 'cashback-plugin') . ' <span class="min-payout-amount">' . wp_kses_post( wc_price($min_payout_amount) ) . '</span></p>';
+        echo '<p>' . esc_html__('Минимальная сумма выплаты:', 'cashback-plugin') . ' <span class="min-payout-amount">' . esc_html( $this->format_price_plain( $min_payout_amount ) ) . '</span></p>';
 
         // Форма вывода кэшбэка
         echo '<div class="cashback-withdrawal-form">';
@@ -880,7 +892,7 @@ class CashbackWithdrawal {
         $max_withdrawal_str = number_format((float) get_option('cashback_max_withdrawal_amount', 50000.00), 2, '.', '');
         if (bccomp($withdrawal_str, $max_withdrawal_str, 2) > 0) {
             /* translators: %s: maximum withdrawal amount formatted as price. */
-            wp_send_json_error(sprintf(__('Максимальная сумма вывода %s', 'cashback-plugin'), wc_price((float) $max_withdrawal_str)));
+            wp_send_json_error(sprintf(__('Максимальная сумма вывода %s', 'cashback-plugin'), $this->format_price_plain( (float) $max_withdrawal_str )));
             return;
         }
 
@@ -1202,11 +1214,11 @@ class CashbackWithdrawal {
             } elseif ($error_message === 'balance_below_min') {
                 $min_amt = $this->get_min_payout_amount($user_id);
                 /* translators: %s: minimum payout amount formatted as price. */
-                wp_send_json_error(sprintf(__('Ваш баланс меньше минимально допустимой суммы для вывода %s', 'cashback-plugin'), wc_price($min_amt)));
+                wp_send_json_error(sprintf(__('Ваш баланс меньше минимально допустимой суммы для вывода %s', 'cashback-plugin'), $this->format_price_plain( (float) $min_amt )));
             } elseif ($error_message === 'amount_below_min') {
                 $min_amt = $this->get_min_payout_amount($user_id);
                 /* translators: %s: minimum withdrawal amount formatted as price. */
-                wp_send_json_error(sprintf(__('Введите сумму больше или равно %s', 'cashback-plugin'), wc_price($min_amt)));
+                wp_send_json_error(sprintf(__('Введите сумму больше или равно %s', 'cashback-plugin'), $this->format_price_plain( (float) $min_amt )));
             } elseif ($error_message === 'payout_details_missing') {
                 wp_send_json_error(array(
                     'message'   => __('Для вывода средств пожалуйста, заполните способ вывода и номер счета в вашем профиле.', 'cashback-plugin'),
@@ -1869,11 +1881,11 @@ class CashbackWithdrawal {
 
         wp_send_json_success(array(
             'balance'           => $balances['available'],
-            'formatted_balance' => wc_price($balances['available']),
+            'formatted_balance' => $this->format_price_plain( (float) $balances['available'] ),
             'pending_balance'   => $balances['pending'],
-            'formatted_pending' => wc_price($balances['pending']),
+            'formatted_pending' => $this->format_price_plain( (float) $balances['pending'] ),
             'paid_balance'      => $balances['paid'],
-            'formatted_paid'    => wc_price($balances['paid']),
+            'formatted_paid'    => $this->format_price_plain( (float) $balances['paid'] ),
         ));
     }
 }
