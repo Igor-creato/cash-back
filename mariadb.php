@@ -493,6 +493,23 @@ class Mariadb_Plugin {
             KEY `idx_type_user` (`rate_type`,`user_id`)
         ) ENGINE=InnoDB {$charset_collate} COMMENT='История изменений ставок кэшбэка и партнёрской комиссии';";
 
+        // Таблица checkpoint-состояния cron-прогонов (Group 8 Step 3, F-8-005)
+        $table_cron_state = "CREATE TABLE IF NOT EXISTS `{$wpdb->prefix}cashback_cron_state` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `run_id` char(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'UUIDv7 всего прогона run_sync (один на 5 этапов)',
+            `stage` varchar(64) NOT NULL COMMENT 'Идентификатор этапа: background_sync / auto_transfer / process_ready / affiliate_pending / check_campaigns',
+            `status` enum('running','success','failed') NOT NULL DEFAULT 'running' COMMENT 'Текущий статус этапа',
+            `started_at` datetime NOT NULL COMMENT 'Время начала этапа',
+            `finished_at` datetime DEFAULT NULL COMMENT 'Время завершения этапа (NULL пока running)',
+            `duration_ms` int(11) unsigned DEFAULT NULL COMMENT 'Длительность этапа в миллисекундах',
+            `metrics_json` longtext DEFAULT NULL COMMENT 'JSON с метриками этапа (updated/inserted/declined/...)',
+            `error_message` text DEFAULT NULL COMMENT 'Текст ошибки при status=failed',
+            PRIMARY KEY (`id`),
+            KEY `idx_run_id` (`run_id`),
+            KEY `idx_started_at` (`started_at`),
+            KEY `idx_stage_status` (`stage`,`status`)
+        ) ENGINE=InnoDB {$charset_collate} COMMENT='Checkpoint-история прогонов cashback_api_sync';";
+
         // Порядок создания: сначала справочники, потом зависимые таблицы
         $tables = array(
             'cashback_payout_methods'            => $table_payout_methods,
@@ -510,6 +527,7 @@ class Mariadb_Plugin {
             'cashback_validation_checkpoints'    => $table_validation_checkpoints,
             'cashback_sync_log'                  => $table_sync_log,
             'cashback_rate_history'              => $table_rate_history,
+            'cashback_cron_state'                => $table_cron_state,
         );
 
         $failed_tables = array();
