@@ -118,7 +118,7 @@ $render_form = static function ( string $action_slug, string $label, string $but
                         $seconds_left = max(0, $cleanup_at - time());
                         // ceil: пока осталась хоть секунда дня — показываем его целиком,
                         // чтобы не расходиться с флешем «Старый ключ сохранён на 7 дней».
-                        $days_left    = (int) ceil($seconds_left / 86400);
+                        $days_left = (int) ceil($seconds_left / 86400);
                         /* translators: %d — days left until automatic cleanup of the previous key. */
                         echo esc_html(sprintf(_n('Авто-удаление через %d день', 'Авто-удаление через %d дн.', $days_left, 'cashback-plugin'), $days_left));
                         ?>
@@ -270,7 +270,7 @@ $render_form = static function ( string $action_slug, string $label, string $but
                 $seconds_left = max(0, $cleanup_at - time());
                 // ceil согласует отображение с флешем «сохранён на 7 дней» (см. аналогичный
                 // комментарий у fingerprint-таблицы выше).
-                $days_left    = (int) ceil($seconds_left / 86400);
+                $days_left = (int) ceil($seconds_left / 86400);
                 ?>
                 <p>
                     <?php if ($seconds_left > 0) : ?>
