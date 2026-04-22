@@ -37,7 +37,7 @@ class Cashback_Encryption_Recovery {
      * Максимальное суммарное количество строк (ciphertext + waiting payouts),
      * при котором разрешён синхронный прогон. Больше — обязательно Action Scheduler.
      */
-    public const SYNC_RUN_LIMIT     = 500;
+    public const SYNC_RUN_LIMIT = 500;
 
     /**
      * Регистрация хуков. Вызывается из cashback-plugin.php при загрузке admin-слоя.
@@ -377,9 +377,11 @@ class Cashback_Encryption_Recovery {
         $mismatch  = self::is_key_mismatch();
         $as_queued = self::is_batch_queued();
 
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- GET-флаги только для отображения баннеров после redirect; не влияют на состояние.
         $flag_scheduled           = isset($_GET['scheduled']) && '1' === $_GET['scheduled'];
         $flag_completed           = isset($_GET['completed']) && '1' === $_GET['completed'];
         $flag_confirmation_failed = isset($_GET['confirmation_failed']) && '1' === $_GET['confirmation_failed'];
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
 
         echo '<div class="wrap">';
         echo '<h1>' . esc_html__('Восстановление шифрования Cashback', 'cashback-plugin') . '</h1>';
@@ -444,7 +446,7 @@ class Cashback_Encryption_Recovery {
         echo '<input type="text" name="confirmation" value="" style="width:360px;" autocomplete="off" /></p>';
 
         // Sync-режим доступен только на малых инсталляциях — иначе max_execution_time.
-        $sync_allowed  = ($remaining + self::count_waiting_payouts()) <= self::SYNC_RUN_LIMIT;
+        $sync_allowed  = ( $remaining + self::count_waiting_payouts() ) <= self::SYNC_RUN_LIMIT;
         $sync_disabled = $sync_allowed ? '' : ' disabled';
         echo '<p><label><input type="checkbox" name="run_sync" value="1"' . esc_attr($sync_disabled) . ' /> ';
         echo esc_html(sprintf(
@@ -482,7 +484,7 @@ class Cashback_Encryption_Recovery {
 
         $current_short = '' !== $current ? substr($current, 0, 8) : '—';
         $stored_short  = '' !== $stored ? substr($stored, 0, 8) : '—';
-        $match         = ('' !== $current && '' !== $stored && hash_equals($stored, $current)) ? 'match' : 'mismatch';
+        $match         = ( '' !== $current && '' !== $stored && hash_equals($stored, $current) ) ? 'match' : 'mismatch';
         $queue_state   = self::is_batch_queued()
             ? __('в очереди', 'cashback-plugin')
             : __('пусто', 'cashback-plugin');
@@ -510,7 +512,7 @@ class Cashback_Encryption_Recovery {
             wp_die(esc_html__('Недостаточно прав.', 'cashback-plugin'));
         }
 
-        $confirmation = isset($_POST['confirmation']) ? (string) wp_unslash($_POST['confirmation']) : '';
+        $confirmation = isset($_POST['confirmation']) ? sanitize_text_field(wp_unslash($_POST['confirmation'])) : '';
         if (!hash_equals(self::CONFIRMATION_WORD, $confirmation)) {
             wp_safe_redirect(admin_url('options-general.php?page=' . self::ADMIN_PAGE_SLUG . '&confirmation_failed=1'));
             exit;
