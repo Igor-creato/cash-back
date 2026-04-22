@@ -6,7 +6,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Cashback Plugin
  * Description: Объединенный плагин для системы кэшбэка и аффилиат-партнерства
- * Version: 1.0.1
+ * Version: 1.2.0
  * Author: Cashback
  * Author URI: https://example.com
  * Text Domain: cashback-plugin
@@ -476,6 +476,11 @@ class CashbackPlugin {
         // Загружается всегда (не только в админке), чтобы AS-хендлер был доступен при обработке cron-очереди.
         $this->require_file('admin/class-cashback-encryption-recovery.php');
 
+        // Ротация ключа шифрования (dual-key online): admin-страница + AS hooks
+        // (migrate/sanity/rollback/cleanup). Загружается всегда — AS-хендлеры должны
+        // быть доступны в cron-контексте независимо от is_admin().
+        $this->require_file('admin/class-cashback-key-rotation.php');
+
         // SSRF-guard для исходящих HTTP-запросов (использует Cashback_Encryption::write_audit_log)
         $this->require_file('includes/class-cashback-outbound-http-guard.php');
 
@@ -676,6 +681,12 @@ class CashbackPlugin {
             Cashback_Encryption_Recovery::init();
         }
 
+        // Ротация ключа шифрования (online dual-key): submenu в админке +
+        // admin_post_* хендлеры + AS-hooks (migrate/sanity/rollback/cleanup).
+        if (class_exists('Cashback_Key_Rotation')) {
+            Cashback_Key_Rotation::init();
+        }
+
         // Инициализация Mariadb_Plugin (регистрирует user_register хук)
         // mariadb.php загружается в load_dependencies(), но его add_action('plugins_loaded', ...)
         // не срабатывает, т.к. plugins_loaded уже выполнен к этому моменту
@@ -796,23 +807,59 @@ class CashbackPlugin {
     }
 
     /**
-     * Путь к файлу с ключом шифрования
+     * Путь к файлу с основным ключом шифрования (CB_ENCRYPTION_KEY).
      */
     private function get_encryption_key_path(): string {
         return WP_CONTENT_DIR . '/.cashback-encryption-key.php';
     }
 
     /**
-     * Подключает файл с ключом шифрования если он существует
+     * Путь к staging-файлу нового ключа (CB_ENCRYPTION_KEY_NEW).
+     * Существует только в фазах ротации staging/migrating/migrated.
+     */
+    private function get_encryption_key_new_path(): string {
+        return WP_CONTENT_DIR . '/.cashback-encryption-key.new.php';
+    }
+
+    /**
+     * Путь к файлу предыдущего ключа (CB_ENCRYPTION_KEY_PREVIOUS).
+     * Существует только в окне отката после finalize (7 дней по умолчанию).
+     */
+    private function get_encryption_key_previous_path(): string {
+        return WP_CONTENT_DIR . '/.cashback-encryption-key.previous.php';
+    }
+
+    /**
+     * Подключает файлы с ключами шифрования, если они существуют.
+     *
+     * Порядок:
+     *  1. CB_ENCRYPTION_KEY — основной. Если уже определён в wp-config.php — не трогаем файл.
+     *  2. CB_ENCRYPTION_KEY_NEW — staging-ключ во время dual-key ротации.
+     *  3. CB_ENCRYPTION_KEY_PREVIOUS — предыдущий ключ в окне отката.
+     *
+     * Файлы NEW и PREVIOUS живут только на время ротации / окна отката,
+     * их отсутствие — штатное состояние. См. Cashback_Key_Rotation.
      */
     private function load_encryption_key(): void {
-        if (defined('CB_ENCRYPTION_KEY')) {
-            return;
+        if (!defined('CB_ENCRYPTION_KEY')) {
+            $primary = $this->get_encryption_key_path();
+            if (file_exists($primary)) {
+                require_once $primary;
+            }
         }
 
-        $key_file = $this->get_encryption_key_path();
-        if (file_exists($key_file)) {
-            require_once $key_file;
+        if (!defined('CB_ENCRYPTION_KEY_NEW')) {
+            $new_file = $this->get_encryption_key_new_path();
+            if (file_exists($new_file)) {
+                require_once $new_file;
+            }
+        }
+
+        if (!defined('CB_ENCRYPTION_KEY_PREVIOUS')) {
+            $previous_file = $this->get_encryption_key_previous_path();
+            if (file_exists($previous_file)) {
+                require_once $previous_file;
+            }
         }
     }
 

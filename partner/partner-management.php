@@ -59,7 +59,7 @@ class Cashback_Partner_Management_Admin {
             'cashback-admin-partners',
             plugins_url('../assets/js/admin-partner-management.js', __FILE__),
             array( 'jquery' ),
-            '1.0.1',
+            '1.2.0',
             true
         );
 
