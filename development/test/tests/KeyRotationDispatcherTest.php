@@ -100,35 +100,48 @@ class KeyRotationDispatcherTest extends TestCase
         $this->assertSame(Cashback_Key_Rotation::AS_HOOK_MIGRATE, $GLOBALS['_cb_test_as_scheduled']['hook']);
     }
 
-    public function test_dispatcher_transitions_to_migrated_after_last_phase(): void
+    public function test_dispatcher_transitions_to_sanity_after_last_phase(): void
     {
         $last_phase = Cashback_Key_Rotation::PHASES[ count(Cashback_Key_Rotation::PHASES) - 1 ];
         $this->set_migrating_state($last_phase);
 
         Cashback_Key_Rotation::run_migrate_batch();
 
+        // После последней migrate-фазы dispatcher инициализирует sanity-pass
+        // (шаг 3.6). state остаётся migrating до окончания sanity.
         $state = Cashback_Key_Rotation::get_state();
-        $this->assertSame('migrated', $state['state']);
+        $this->assertSame('migrating', $state['state']);
         $this->assertNull($state['current_phase']);
+        $this->assertTrue($state['sanity_active']);
+        $this->assertSame(1, $state['sanity_iteration']);
+        $this->assertSame(Cashback_Key_Rotation::SANITY_PHASES[0], $state['sanity_current_phase']);
+        $this->assertIsArray($GLOBALS['_cb_test_as_scheduled']);
+        $this->assertSame(Cashback_Key_Rotation::AS_HOOK_SANITY, $GLOBALS['_cb_test_as_scheduled']['hook']);
     }
 
-    public function test_dispatcher_runs_all_phases_to_migrated(): void
+    public function test_dispatcher_runs_all_phases_then_triggers_sanity(): void
     {
         // Прогоняем всю state-машину без wpdb (updater'ы options_* — no-op,
-        // DB-фазы проваливаются через фильтр-fallback в default).
+        // DB-фазы проваливаются через no-op в default).
         // options_social делает 2 батча (yandex, vkid), остальные по 1 → всего PHASES+1.
+        // В финале dispatcher запускает sanity-pass, state остаётся migrating.
         $this->set_migrating_state(Cashback_Key_Rotation::PHASES[0]);
 
         $expected       = count(Cashback_Key_Rotation::PHASES) + 1; // +1 за социальные провайдеры
         $max_iterations = $expected + 2;
         $iterations     = 0;
-        while (Cashback_Key_Rotation::get_state()['state'] === 'migrating' && $iterations < $max_iterations) {
+        while (
+            Cashback_Key_Rotation::get_state()['state'] === 'migrating'
+            && !Cashback_Key_Rotation::get_state()['sanity_active']
+            && $iterations < $max_iterations
+        ) {
             Cashback_Key_Rotation::run_migrate_batch();
             ++$iterations;
         }
 
         $state = Cashback_Key_Rotation::get_state();
-        $this->assertSame('migrated', $state['state']);
+        $this->assertSame('migrating', $state['state']);
+        $this->assertTrue($state['sanity_active']);
         $this->assertSame($expected, $iterations);
         $this->assertSame($expected, $state['total_batches']);
     }

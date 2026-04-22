@@ -29,6 +29,7 @@ class Cashback_Key_Rotation {
     public const CLEANUP_DEADLINE_OPTION = 'cashback_key_rotation_cleanup_at';
 
     public const AS_HOOK_MIGRATE  = 'cashback_key_rotation_migrate_batch';
+    public const AS_HOOK_SANITY   = 'cashback_key_rotation_sanity_batch';
     public const AS_HOOK_ROLLBACK = 'cashback_key_rotation_rollback_batch';
     public const AS_HOOK_CLEANUP  = 'cashback_key_rotation_cleanup_previous';
     public const AS_GROUP         = 'cashback';
@@ -74,6 +75,22 @@ class Cashback_Key_Rotation {
         'user_profile',
     );
 
+    /**
+     * Фазы sanity-pass: только таблицы. wp_options-фазы из основной миграции
+     * ротируются одним батчем под FOR UPDATE → дополнительной проверки не требуют.
+     * Плюс сохраняют порядок от мелких к крупным на случай ранней остановки.
+     */
+    public const SANITY_PHASES = array(
+        'affiliate_networks',
+        'social_tokens',
+        'social_pending',
+        'payout_requests',
+        'user_profile',
+    );
+
+    /** Максимум итераций sanity-pass перед принудительным state=migrated. */
+    public const SANITY_MAX_ITERATIONS = 3;
+
     // ================================================================
     // Регистрация хуков
     // ================================================================
@@ -90,6 +107,7 @@ class Cashback_Key_Rotation {
         add_action('wp_ajax_cashback_rotation_status', array( __CLASS__, 'ajax_status' ));
 
         add_action(self::AS_HOOK_MIGRATE, array( __CLASS__, 'run_migrate_batch' ));
+        add_action(self::AS_HOOK_SANITY, array( __CLASS__, 'run_sanity_batch' ));
         add_action(self::AS_HOOK_ROLLBACK, array( __CLASS__, 'run_rollback_batch' ));
         add_action(self::AS_HOOK_CLEANUP, array( __CLASS__, 'cleanup_previous_key' ));
     }
@@ -130,7 +148,10 @@ class Cashback_Key_Rotation {
      *   state:string, started_at:?string, finalized_at:?string,
      *   initiator_id:int,
      *   progress:array<string,array{total:int,done:int,failed:int,cursor:int}>,
-     *   current_phase:?string, last_error:?string, total_batches:int
+     *   current_phase:?string, last_error:?string, total_batches:int,
+     *   sanity_active:bool, sanity_iteration:int,
+     *   sanity_current_phase:?string, sanity_cursor:int,
+     *   sanity_iteration_reencrypted:int, sanity_unresolved:int
      * }
      */
     public static function get_state(): array {
@@ -165,7 +186,10 @@ class Cashback_Key_Rotation {
      *   state:string, started_at:?string, finalized_at:?string,
      *   initiator_id:int,
      *   progress:array<string,array{total:int,done:int,failed:int,cursor:int}>,
-     *   current_phase:?string, last_error:?string, total_batches:int
+     *   current_phase:?string, last_error:?string, total_batches:int,
+     *   sanity_active:bool, sanity_iteration:int,
+     *   sanity_current_phase:?string, sanity_cursor:int,
+     *   sanity_iteration_reencrypted:int, sanity_unresolved:int
      * }
      */
     private static function normalize_state( array $state ): array {
@@ -199,17 +223,29 @@ class Cashback_Key_Rotation {
             ? (string) $state['current_phase']
             : null;
 
+        $sanity_current_phase = isset($state['sanity_current_phase']) && is_string($state['sanity_current_phase'])
+            && in_array($state['sanity_current_phase'], self::SANITY_PHASES, true)
+            ? (string) $state['sanity_current_phase']
+            : null;
+
         return array(
-            'state'         => $name,
-            'started_at'    => isset($state['started_at'])    && is_string($state['started_at'])    ? (string) $state['started_at']    : null,
-            'finalized_at'  => isset($state['finalized_at'])  && is_string($state['finalized_at'])  ? (string) $state['finalized_at']  : null,
-            'initiator_id'  => isset($state['initiator_id'])  ? (int) $state['initiator_id']        : 0,
-            'progress'      => $progress,
-            'current_phase' => $current_phase,
-            'last_error'    => isset($state['last_error'])    && is_string($state['last_error'])    ? (string) $state['last_error']    : null,
+            'state'                        => $name,
+            'started_at'                   => isset($state['started_at']) && is_string($state['started_at']) ? (string) $state['started_at'] : null,
+            'finalized_at'                 => isset($state['finalized_at']) && is_string($state['finalized_at']) ? (string) $state['finalized_at'] : null,
+            'initiator_id'                 => isset($state['initiator_id']) ? (int) $state['initiator_id'] : 0,
+            'progress'                     => $progress,
+            'current_phase'                => $current_phase,
+            'last_error'                   => isset($state['last_error']) && is_string($state['last_error']) ? (string) $state['last_error'] : null,
             // Счётчик batch-вызовов с момента start_migration — для throttled audit log
             // (key_rotation_batch_completed раз в 10 батчей).
-            'total_batches' => isset($state['total_batches']) ? max(0, (int) $state['total_batches']) : 0,
+            'total_batches'                => isset($state['total_batches']) ? max(0, (int) $state['total_batches']) : 0,
+            // Sanity-pass: активен между завершением последней фазы migrate и state=migrated.
+            'sanity_active'                => !empty($state['sanity_active']),
+            'sanity_iteration'             => isset($state['sanity_iteration']) ? max(0, (int) $state['sanity_iteration']) : 0,
+            'sanity_current_phase'         => $sanity_current_phase,
+            'sanity_cursor'                => isset($state['sanity_cursor']) ? max(0, (int) $state['sanity_cursor']) : 0,
+            'sanity_iteration_reencrypted' => isset($state['sanity_iteration_reencrypted']) ? max(0, (int) $state['sanity_iteration_reencrypted']) : 0,
+            'sanity_unresolved'            => isset($state['sanity_unresolved']) ? max(0, (int) $state['sanity_unresolved']) : 0,
         );
     }
 
@@ -218,7 +254,10 @@ class Cashback_Key_Rotation {
      *   state:string, started_at:?string, finalized_at:?string,
      *   initiator_id:int,
      *   progress:array<string,array{total:int,done:int,failed:int,cursor:int}>,
-     *   current_phase:?string, last_error:?string, total_batches:int
+     *   current_phase:?string, last_error:?string, total_batches:int,
+     *   sanity_active:bool, sanity_iteration:int,
+     *   sanity_current_phase:?string, sanity_cursor:int,
+     *   sanity_iteration_reencrypted:int, sanity_unresolved:int
      * }
      */
     public static function new_idle_state(): array {
@@ -232,14 +271,20 @@ class Cashback_Key_Rotation {
             );
         }
         return array(
-            'state'         => self::STATE_IDLE,
-            'started_at'    => null,
-            'finalized_at'  => null,
-            'initiator_id'  => 0,
-            'progress'      => $progress,
-            'current_phase' => null,
-            'last_error'    => null,
-            'total_batches' => 0,
+            'state'                        => self::STATE_IDLE,
+            'started_at'                   => null,
+            'finalized_at'                 => null,
+            'initiator_id'                 => 0,
+            'progress'                     => $progress,
+            'current_phase'                => null,
+            'last_error'                   => null,
+            'total_batches'                => 0,
+            'sanity_active'                => false,
+            'sanity_iteration'             => 0,
+            'sanity_current_phase'         => null,
+            'sanity_cursor'                => 0,
+            'sanity_iteration_reencrypted' => 0,
+            'sanity_unresolved'            => 0,
         );
     }
 
@@ -806,10 +851,336 @@ class Cashback_Key_Rotation {
             return;
         }
 
-        // Все фазы завершены. В шаге 3.6 здесь появится sanity-pass перед state=migrated.
-        $state['state']         = self::STATE_MIGRATED;
-        $state['current_phase'] = null;
+        // Все фазы основной миграции завершены → переходим в sanity-pass.
+        // Sanity-pass ещё держит state=migrating до окончательного перехода в migrated
+        // (чтобы encrypt() продолжал использовать NEW write-key для любых
+        // пользовательских записей, которые могут прийти между фазами и sanity).
+        self::start_sanity_pass($state);
+    }
+
+    // ================================================================
+    // Sanity pass (3.6): ловит записи, которые попали в БД со старым ключом
+    // из-за TOCTOU между batch'ем и пользовательским save'ом.
+    // ================================================================
+
+    /**
+     * Инициализирует sanity-pass после завершения всех фаз migrate.
+     * Устанавливает sanity_active, iteration=1, current_phase=SANITY_PHASES[0], cursor=0.
+     * Планирует первый AS_HOOK_SANITY батч.
+     *
+     * @param array<string,mixed> $state
+     */
+    private static function start_sanity_pass( array $state ): void {
+        $state['current_phase']                = null;
+        $state['sanity_active']                = true;
+        $state['sanity_iteration']             = 1;
+        $state['sanity_current_phase']         = self::SANITY_PHASES[0];
+        $state['sanity_cursor']                = 0;
+        $state['sanity_iteration_reencrypted'] = 0;
+        $state['sanity_unresolved']            = 0;
         self::save_state($state);
+
+        try {
+            Cashback_Encryption::write_audit_log(
+                'key_rotation_sanity_started',
+                0,
+                'key_rotation',
+                null,
+                array( 'iteration' => 1 )
+            );
+        } catch (\Throwable $e) {
+            unset($e);
+        }
+
+        if (function_exists('as_enqueue_async_action')) {
+            as_enqueue_async_action(self::AS_HOOK_SANITY, array(), self::AS_GROUP);
+        }
+    }
+
+    /**
+     * Handler для AS_HOOK_SANITY. Выполняет один батч текущей sanity-фазы.
+     *
+     * Шаги:
+     *  1. Читает state; если sanity_active=false — тихо выходит (race с rollback/abort).
+     *  2. SELECT pk, enc очередного батча без лока (cursor-based).
+     *  3. Для каждой записи: try_decrypt_with_role('new') → если OK, skip; если null, rotate_table_row.
+     *  4. Если в фазе остались записи → save + re-schedule; иначе advance в следующую sanity-фазу.
+     *  5. После последней фазы — finalize_sanity_iteration(): либо next iteration, либо state=migrated.
+     */
+    public static function run_sanity_batch(): void {
+        $state = self::get_state();
+        if (!$state['sanity_active']) {
+            return;
+        }
+
+        $phase = $state['sanity_current_phase'];
+        if ($phase === null || !in_array($phase, self::SANITY_PHASES, true)) {
+            // Self-heal: устанавливаем первую фазу.
+            $state['sanity_current_phase'] = self::SANITY_PHASES[0];
+            $state['sanity_cursor']        = 0;
+            self::save_state($state);
+            self::reschedule_sanity();
+            return;
+        }
+
+        try {
+            $result = self::run_sanity_phase_batch($phase, (int) $state['sanity_cursor']);
+        } catch (\Throwable $e) {
+            $state['last_error'] = $e->getMessage();
+            self::save_state($state);
+            try {
+                Cashback_Encryption::write_audit_log(
+                    'key_rotation_sanity_failed',
+                    0,
+                    'key_rotation',
+                    null,
+                    array(
+						'iteration' => $state['sanity_iteration'],
+						'phase'     => $phase,
+						'error'     => $e->getMessage(),
+					)
+                );
+            } catch (\Throwable $inner) {
+                unset($inner);
+            }
+            return;
+        }
+
+        $state['sanity_cursor']                 = max((int) $state['sanity_cursor'], (int) $result['next_cursor']);
+        $state['sanity_iteration_reencrypted'] += (int) $result['reencrypted'];
+
+        if ($result['has_more']) {
+            self::save_state($state);
+            self::reschedule_sanity();
+            return;
+        }
+
+        // Фаза закончена → переключаем на следующую sanity-фазу.
+        $phase_index = (int) array_search($phase, self::SANITY_PHASES, true);
+        $next_index  = $phase_index + 1;
+        if ($next_index < count(self::SANITY_PHASES)) {
+            $state['sanity_current_phase'] = self::SANITY_PHASES[ $next_index ];
+            $state['sanity_cursor']        = 0;
+            self::save_state($state);
+            self::reschedule_sanity();
+            return;
+        }
+
+        // Все sanity-фазы пройдены → финализируем итерацию.
+        self::finalize_sanity_iteration($state);
+    }
+
+    /**
+     * Один батч sanity-pass в указанной фазе. Отличается от run_phase_batch тем, что
+     *  — SELECTит pk + enc сразу (нужен ciphertext для try_decrypt_with_role без доп. SELECT'а),
+     *  — ротирует только записи, которые НЕ расшифровываются role='new' (значит лежат OLD).
+     *
+     * @return array{reencrypted:int,next_cursor:int,has_more:bool}
+     */
+    private static function run_sanity_phase_batch( string $phase, int $cursor ): array {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return array(
+				'reencrypted' => 0,
+				'next_cursor' => $cursor,
+				'has_more'    => false,
+			);
+        }
+
+        $meta = self::sanity_phase_meta($phase);
+        if ($meta === null) {
+            return array(
+				'reencrypted' => 0,
+				'next_cursor' => $cursor,
+				'has_more'    => false,
+			);
+        }
+        $table      = $wpdb->prefix . $meta['table'];
+        $pk         = $meta['pk'];
+        $enc        = $meta['enc'];
+        $batch_size = self::batch_size_for_phase($phase);
+
+        // Белый список на случай подмены meta (такой быть не должно, но defensive).
+        if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $pk) || !preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $enc)) {
+            throw new \InvalidArgumentException('Invalid column identifier in sanity_phase_meta.');
+        }
+
+        $base_where  = "{$enc} IS NOT NULL AND {$enc} <> '' AND {$pk} > %d";
+        $extra_where = (string) ( $meta['extra_where'] ?? '' );
+        $extra_args  = isset($meta['extra_where_args']) && is_array($meta['extra_where_args']) ? $meta['extra_where_args'] : array();
+        $where_sql   = $extra_where !== '' ? "{$base_where} AND ({$extra_where})" : $base_where;
+
+        $prepare_args = array_merge(array( $table, $cursor ), $extra_args, array( $batch_size ));
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- pk/enc whitelisted; table via %i; spread-args.
+        $rows = $wpdb->get_results(
+            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- pk/enc whitelisted; spread-args.
+            $wpdb->prepare(
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- pk/enc whitelisted; table via %i.
+                "SELECT {$pk} AS sanity_pk, {$enc} AS sanity_enc FROM %i WHERE {$where_sql} ORDER BY {$pk} LIMIT %d",
+                ...$prepare_args
+            )
+        );
+
+        if (!is_array($rows) || count($rows) === 0) {
+            return array(
+				'reencrypted' => 0,
+				'next_cursor' => $cursor,
+				'has_more'    => false,
+			);
+        }
+
+        $reencrypted = 0;
+        $next_cursor = $cursor;
+        foreach ($rows as $row) {
+            $pk_value    = (int) ( is_object($row) ? ( $row->sanity_pk ?? 0 ) : ( $row['sanity_pk'] ?? 0 ) );
+            $ciphertext  = (string) ( is_object($row) ? ( $row->sanity_enc ?? '' ) : ( $row['sanity_enc'] ?? '' ) );
+            $next_cursor = max($next_cursor, $pk_value);
+            if ($pk_value <= 0 || $ciphertext === '') {
+                continue;
+            }
+
+            // Если расшифровывается NEW — значит уже ротировано, пропускаем.
+            $plaintext = Cashback_Encryption::try_decrypt_with_role($ciphertext, Cashback_Encryption::KEY_ROLE_NEW);
+            if ($plaintext !== null) {
+                continue;
+            }
+
+            // Иначе ротируем через стандартный row-lock путь (обрабатывает ошибки и audit_item_failure).
+            $single       = self::rotate_table_row($table, $pk, $enc, $pk_value, $phase . '_sanity');
+            $reencrypted += (int) $single['processed'];
+        }
+
+        return array(
+            'reencrypted' => $reencrypted,
+            'next_cursor' => $next_cursor,
+            'has_more'    => count($rows) >= $batch_size,
+        );
+    }
+
+    /**
+     * Метаданные фазы для sanity-SELECT (имя таблицы, pk, enc, опционально extra_where).
+     *
+     * @return array{table:string,pk:string,enc:string,extra_where?:string,extra_where_args?:array<int,mixed>}|null
+     */
+    private static function sanity_phase_meta( string $phase ): ?array {
+        switch ($phase) {
+            case 'affiliate_networks':
+                return array(
+					'table' => 'cashback_affiliate_networks',
+					'pk'    => 'id',
+					'enc'   => 'api_credentials',
+				);
+            case 'social_tokens':
+                return array(
+					'table' => 'cashback_social_tokens',
+					'pk'    => 'id',
+					'enc'   => 'refresh_token_encrypted',
+				);
+            case 'social_pending':
+                return array(
+                    'table'            => 'cashback_social_pending',
+                    'pk'               => 'id',
+                    'enc'              => 'payload_json',
+                    'extra_where'      => 'consumed_at IS NULL AND expires_at >= %s',
+                    'extra_where_args' => array( gmdate('Y-m-d H:i:s') ),
+                );
+            case 'payout_requests':
+                return array(
+					'table' => 'cashback_payout_requests',
+					'pk'    => 'id',
+					'enc'   => 'encrypted_details',
+				);
+            case 'user_profile':
+                return array(
+					'table' => 'cashback_user_profile',
+					'pk'    => 'user_id',
+					'enc'   => 'encrypted_details',
+				);
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Вызывается после окончания всех sanity-фаз в текущей итерации.
+     * Решает: запускать следующую итерацию или финализировать (state=migrated).
+     *
+     * @param array<string,mixed> $state
+     */
+    private static function finalize_sanity_iteration( array $state ): void {
+        $iteration   = (int) $state['sanity_iteration'];
+        $reencrypted = (int) $state['sanity_iteration_reencrypted'];
+
+        try {
+            Cashback_Encryption::write_audit_log(
+                'key_rotation_sanity_iteration_completed',
+                0,
+                'key_rotation',
+                null,
+                array(
+					'iteration'   => $iteration,
+					'reencrypted' => $reencrypted,
+				)
+            );
+        } catch (\Throwable $e) {
+            unset($e);
+        }
+
+        // Ещё есть что ротировать и не достигли лимита итераций → следующая итерация.
+        if ($reencrypted > 0 && $iteration < self::SANITY_MAX_ITERATIONS) {
+            $state['sanity_iteration']             = $iteration + 1;
+            $state['sanity_current_phase']         = self::SANITY_PHASES[0];
+            $state['sanity_cursor']                = 0;
+            $state['sanity_iteration_reencrypted'] = 0;
+            self::save_state($state);
+            self::reschedule_sanity();
+            return;
+        }
+
+        // Финальная итерация: есть re-encrypted на последнем проходе → могут быть unresolved.
+        // Мы не делаем ещё один подтверждающий проход после 3-й итерации — считаем, что
+        // неразрешённые записи останутся failed. Если reencrypted=0, всё чисто.
+        $unresolved = ( $reencrypted > 0 && $iteration >= self::SANITY_MAX_ITERATIONS ) ? $reencrypted : 0;
+
+        try {
+            if ($unresolved > 0) {
+                Cashback_Encryption::write_audit_log(
+                    'key_rotation_sanity_unresolved',
+                    0,
+                    'key_rotation',
+                    null,
+                    array(
+						'iterations' => $iteration,
+						'unresolved' => $unresolved,
+					)
+                );
+            } else {
+                Cashback_Encryption::write_audit_log(
+                    'key_rotation_sanity_completed',
+                    0,
+                    'key_rotation',
+                    null,
+                    array( 'iterations' => $iteration )
+                );
+            }
+        } catch (\Throwable $e) {
+            unset($e);
+        }
+
+        // Деактивируем sanity и переводим state в migrated.
+        $state['sanity_active']                = false;
+        $state['sanity_current_phase']         = null;
+        $state['sanity_unresolved']            = $unresolved;
+        $state['sanity_iteration_reencrypted'] = 0;
+        $state['state']                        = self::STATE_MIGRATED;
+        self::save_state($state);
+    }
+
+    private static function reschedule_sanity(): void {
+        if (function_exists('as_enqueue_async_action')) {
+            as_enqueue_async_action(self::AS_HOOK_SANITY, array(), self::AS_GROUP);
+        }
     }
 
     /**
