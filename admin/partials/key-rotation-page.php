@@ -62,6 +62,11 @@ $render_form = static function ( string $action_slug, string $label, string $but
 ?>
 <div class="wrap cashback-key-rotation-page" data-state="<?php echo esc_attr($state_name); ?>">
     <h1><?php esc_html_e('Ротация ключа шифрования', 'cashback-plugin'); ?></h1>
+    <?php
+    if (class_exists('Cashback_Encryption_Recovery')) {
+        Cashback_Encryption_Recovery::render_tabs_nav('rotation');
+    }
+    ?>
 
     <?php if ($flash !== null && isset($flash['message'])) : ?>
         <?php $level_class = ( ( $flash['level'] ?? '' ) === 'error' ) ? 'notice-error' : 'notice-success'; ?>
