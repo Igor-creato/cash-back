@@ -235,10 +235,49 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
     /**
      * Сохранить EPN refresh_token в wp_options, шифруя значение при наличии
      * CB_ENCRYPTION_KEY. autoload=false — токен нужен только при API-вызовах.
+     *
+     * Encrypt+UPDATE происходят в одной транзакции с SELECT ... FOR UPDATE на
+     * wp_options.option_value. Закрывает TOCTOU-race с batch-job'ом ротации
+     * (фаза options_epn): write-key для encrypt() выбирается под удержанием
+     * row-lock'а, batch не может одновременно перешифровать эту опцию.
+     *
+     * Fallback на простой update_option если $wpdb недоступен (тестовый bootstrap).
      */
     private function store_refresh_token( string $option_key, string $refresh_token ): void {
-        $value = Cashback_Encryption::encrypt_if_needed($refresh_token);
-        update_option($option_key, $value, false);
+        global $wpdb;
+
+        if (!is_object($wpdb) || !method_exists($wpdb, 'get_var')) {
+            update_option($option_key, Cashback_Encryption::encrypt_if_needed($refresh_token), false);
+            return;
+        }
+
+        $options_table = property_exists($wpdb, 'options') ? (string) $wpdb->options : 'wp_options';
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Row-lock TX begin.
+        $wpdb->query('START TRANSACTION');
+        try {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- SELECT FOR UPDATE inside TX.
+            $wpdb->get_var(
+                $wpdb->prepare(
+                    'SELECT option_value FROM %i WHERE option_name = %s FOR UPDATE',
+                    $options_table,
+                    $option_key
+                )
+            );
+
+            // Encrypt под удержанием lock'а. update_option() выполняет UPDATE на той же
+            // connection — он попадает в текущую TX и видит lock.
+            $value = Cashback_Encryption::encrypt_if_needed($refresh_token);
+            update_option($option_key, $value, false);
+
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Commit.
+            $wpdb->query('COMMIT');
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Rollback on error.
+            $wpdb->query('ROLLBACK');
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Diagnostic logging.
+            error_log('[Cashback EPN Adapter] store_refresh_token failed: ' . $e->getMessage());
+        }
     }
 
     /**
