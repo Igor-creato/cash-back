@@ -128,8 +128,9 @@ class Cashback_Key_Rotation {
      *
      * @return array{
      *   state:string, started_at:?string, finalized_at:?string,
-     *   initiator_id:int, progress:array<string,array{total:int,done:int,failed:int}>,
-     *   current_phase:?string, last_error:?string
+     *   initiator_id:int,
+     *   progress:array<string,array{total:int,done:int,failed:int,cursor:int}>,
+     *   current_phase:?string, last_error:?string, total_batches:int
      * }
      */
     public static function get_state(): array {
@@ -162,8 +163,9 @@ class Cashback_Key_Rotation {
      * @param array<string,mixed> $state
      * @return array{
      *   state:string, started_at:?string, finalized_at:?string,
-     *   initiator_id:int, progress:array<string,array{total:int,done:int,failed:int}>,
-     *   current_phase:?string, last_error:?string
+     *   initiator_id:int,
+     *   progress:array<string,array{total:int,done:int,failed:int,cursor:int}>,
+     *   current_phase:?string, last_error:?string, total_batches:int
      * }
      */
     private static function normalize_state( array $state ): array {
@@ -188,6 +190,8 @@ class Cashback_Key_Rotation {
                 'total'  => isset($row['total'])  ? max(0, (int) $row['total'])  : 0,
                 'done'   => isset($row['done'])   ? max(0, (int) $row['done'])   : 0,
                 'failed' => isset($row['failed']) ? max(0, (int) $row['failed']) : 0,
+                // cursor: PK последней обработанной записи в фазе. Для wp_options-фаз не используется.
+                'cursor' => isset($row['cursor']) ? max(0, (int) $row['cursor']) : 0,
             );
         }
 
@@ -203,24 +207,29 @@ class Cashback_Key_Rotation {
             'progress'      => $progress,
             'current_phase' => $current_phase,
             'last_error'    => isset($state['last_error'])    && is_string($state['last_error'])    ? (string) $state['last_error']    : null,
+            // Счётчик batch-вызовов с момента start_migration — для throttled audit log
+            // (key_rotation_batch_completed раз в 10 батчей).
+            'total_batches' => isset($state['total_batches']) ? max(0, (int) $state['total_batches']) : 0,
         );
     }
 
     /**
      * @return array{
      *   state:string, started_at:?string, finalized_at:?string,
-     *   initiator_id:int, progress:array<string,array{total:int,done:int,failed:int}>,
-     *   current_phase:?string, last_error:?string
+     *   initiator_id:int,
+     *   progress:array<string,array{total:int,done:int,failed:int,cursor:int}>,
+     *   current_phase:?string, last_error:?string, total_batches:int
      * }
      */
     public static function new_idle_state(): array {
         $progress = array();
         foreach (self::PHASES as $phase) {
             $progress[ $phase ] = array(
-				'total'  => 0,
-				'done'   => 0,
-				'failed' => 0,
-			);
+                'total'  => 0,
+                'done'   => 0,
+                'failed' => 0,
+                'cursor' => 0,
+            );
         }
         return array(
             'state'         => self::STATE_IDLE,
@@ -230,6 +239,7 @@ class Cashback_Key_Rotation {
             'progress'      => $progress,
             'current_phase' => null,
             'last_error'    => null,
+            'total_batches' => 0,
         );
     }
 
@@ -572,13 +582,14 @@ class Cashback_Key_Rotation {
 
         $totals = self::count_all_phases();
 
-        // Заполняем totals в progress. done/failed остаются 0.
+        // Заполняем totals в progress. done/failed/cursor остаются 0.
         $progress = array();
         foreach (self::PHASES as $phase) {
             $progress[ $phase ] = array(
                 'total'  => isset($totals[ $phase ]) ? (int) $totals[ $phase ] : 0,
                 'done'   => 0,
                 'failed' => 0,
+                'cursor' => 0,
             );
         }
 
@@ -673,11 +684,204 @@ class Cashback_Key_Rotation {
     }
 
     // ================================================================
-    // AS batch handlers (stub-заглушки — реализация в следующих шагах)
+    // run_migrate_batch: фазовый dispatcher (шаг 3.4 плана)
     // ================================================================
 
+    /**
+     * Обрабатывает один batch текущей фазы, обновляет progress, затем:
+     *   — если в фазе остались записи (has_more=true) → re-schedule себя.
+     *   — если фаза закончена → переключает current_phase на следующую, re-schedule себя.
+     *   — если все фазы закончены → state → migrated (sanity-pass добавится в шаге 3.6).
+     *
+     * Idempotent по отношению к двойному вызову: каждый вызов читает state заново,
+     * работа одного батча не зависит от state других процессов (cursor per phase).
+     *
+     * Per-phase updaters (run_phase_batch) пока stub'ы — реальные реализации в шаге 3.5.
+     */
     public static function run_migrate_batch(): void {
-        // TODO: шаг 3.3 плана — фазовая перешифровка.
+        $state = self::get_state();
+
+        if ($state['state'] !== self::STATE_MIGRATING) {
+            // Гонка: state уже продвинут другим процессом или ротация отменена. Тихо выходим.
+            return;
+        }
+
+        $phase = $state['current_phase'];
+        if ($phase === null || !in_array($phase, self::PHASES, true)) {
+            // Несогласованный state — current_phase должен быть выставлен в start_migration.
+            // Самоисправляемся: ставим первую фазу и re-schedule.
+            $state['current_phase'] = self::PHASES[0];
+            self::save_state($state);
+            self::reschedule_migrate();
+            return;
+        }
+
+        $cursor      = (int) ( $state['progress'][ $phase ]['cursor'] ?? 0 );
+        $batch_size  = self::batch_size_for_phase($phase);
+        $phase_index = (int) array_search($phase, self::PHASES, true);
+
+        try {
+            $result = self::run_phase_batch($phase, $cursor, $batch_size);
+        } catch (\Throwable $e) {
+            // Фатальный сбой батча (например, БД-ошибка). Не перезапускаем; UI покажет last_error.
+            $state['last_error'] = $e->getMessage();
+            self::save_state($state);
+            try {
+                Cashback_Encryption::write_audit_log(
+                    'key_rotation_batch_failed',
+                    0,
+                    'key_rotation',
+                    null,
+                    array(
+						'phase' => $phase,
+						'error' => $e->getMessage(),
+					)
+                );
+            } catch (\Throwable $inner) {
+                unset($inner);
+            }
+            return;
+        }
+
+        // Обновляем прогресс по результату.
+        $processed                              = max(0, (int) ( $result['processed'] ?? 0 ));
+        $failed                                 = max(0, (int) ( $result['failed'] ?? 0 ));
+        $next_cursor                            = max(0, (int) ( $result['next_cursor'] ?? $cursor ));
+        $has_more                               = (bool) ( $result['has_more'] ?? false );
+        $state['progress'][ $phase ]['done']   += $processed;
+        $state['progress'][ $phase ]['failed'] += $failed;
+        $state['progress'][ $phase ]['cursor']  = $next_cursor;
+        ++$state['total_batches'];
+
+        // Audit: throttled batch-completed каждые 10 батчей.
+        if (( $state['total_batches'] % 10 ) === 0) {
+            try {
+                Cashback_Encryption::write_audit_log(
+                    'key_rotation_batch_completed',
+                    0,
+                    'key_rotation',
+                    null,
+                    array(
+                        'phase'            => $phase,
+                        'processed_so_far' => $state['progress'][ $phase ]['done'],
+                        'total'            => $state['progress'][ $phase ]['total'],
+                        'batches'          => $state['total_batches'],
+                    )
+                );
+            } catch (\Throwable $e) {
+                unset($e);
+            }
+        }
+
+        // Фаза ещё не закончена → сохраняем и re-schedule.
+        if ($has_more) {
+            self::save_state($state);
+            self::reschedule_migrate();
+            return;
+        }
+
+        // Фаза закончена → audit + переключаем фазу.
+        try {
+            Cashback_Encryption::write_audit_log(
+                'key_rotation_phase_completed',
+                0,
+                'key_rotation',
+                null,
+                array(
+                    'phase'           => $phase,
+                    'total_in_phase'  => $state['progress'][ $phase ]['total'],
+                    'done_in_phase'   => $state['progress'][ $phase ]['done'],
+                    'failed_in_phase' => $state['progress'][ $phase ]['failed'],
+                )
+            );
+        } catch (\Throwable $e) {
+            unset($e);
+        }
+
+        $next_index = $phase_index + 1;
+        if ($next_index < count(self::PHASES)) {
+            $state['current_phase'] = self::PHASES[ $next_index ];
+            self::save_state($state);
+            self::reschedule_migrate();
+            return;
+        }
+
+        // Все фазы завершены. В шаге 3.6 здесь появится sanity-pass перед state=migrated.
+        $state['state']         = self::STATE_MIGRATED;
+        $state['current_phase'] = null;
+        self::save_state($state);
+    }
+
+    /**
+     * Роутер per-phase updater'ов. Каждый возвращает
+     *   ['processed' => int, 'failed' => int, 'next_cursor' => int, 'has_more' => bool].
+     *
+     * Реализации всех фаз — в шаге 3.5 плана. Текущие stub'ы возвращают no-op,
+     * что позволяет диспетчеру корректно продвигать состояние вперёд в тестах.
+     *
+     * @return array{processed:int,failed:int,next_cursor:int,has_more:bool}
+     */
+    public static function run_phase_batch( string $phase, int $cursor, int $batch_size ): array {
+        $default = array(
+			'processed'   => 0,
+			'failed'      => 0,
+			'next_cursor' => (int) $cursor,
+			'has_more'    => false,
+		);
+
+        if (!in_array($phase, self::PHASES, true)) {
+            return $default;
+        }
+
+        // Stub: реальные updater'ы per-phase добавятся в шаге 3.5.
+        // Фильтр позволяет инжектить тестовые результаты и при необходимости
+        // расширять поведение без правки класса.
+        $result = apply_filters(
+            'cashback_key_rotation_phase_batch_result',
+            $default,
+            $phase,
+            $cursor,
+            $batch_size
+        );
+        if (!is_array($result)) {
+            return $default;
+        }
+        return array(
+            'processed'   => isset($result['processed'])   ? max(0, (int) $result['processed'])                : 0,
+            'failed'      => isset($result['failed'])      ? max(0, (int) $result['failed'])                   : 0,
+            'next_cursor' => isset($result['next_cursor']) ? max(0, (int) $result['next_cursor'])              : (int) $cursor,
+            'has_more'    => isset($result['has_more'])    ? (bool) $result['has_more']                        : false,
+        );
+    }
+
+    /**
+     * Batch size для каждой фазы (из констант класса + per-phase override).
+     */
+    public static function batch_size_for_phase( string $phase ): int {
+        switch ($phase) {
+            case 'user_profile':
+                return self::BATCH_SIZE_PROFILES;
+            case 'payout_requests':
+                return self::BATCH_SIZE_PAYOUTS;
+            case 'options_captcha':
+            case 'options_epn':
+            case 'options_social':
+            case 'affiliate_networks':
+            case 'social_tokens':
+            case 'social_pending':
+            default:
+                return self::BATCH_SIZE_SMALL;
+        }
+    }
+
+    /**
+     * Ставит следующий batch в AS. Тонкая обёртка, вынесена чтобы не дублировать
+     * guard на function_exists('as_enqueue_async_action') в dispatcher.
+     */
+    private static function reschedule_migrate(): void {
+        if (function_exists('as_enqueue_async_action')) {
+            as_enqueue_async_action(self::AS_HOOK_MIGRATE, array(), self::AS_GROUP);
+        }
     }
 
     public static function run_rollback_batch(): void {
