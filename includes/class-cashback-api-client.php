@@ -2787,49 +2787,35 @@ class Cashback_API_Client {
         }
 
         // ─── 7. Батчевое отклонение: cashback_transactions ───
+        //
+        // Атомарность (Group 8 Step 2, F-8-002):
+        //   - Батч 100 (короткое окно row-locks).
+        //   - Каждый батч в своей TX + SELECT ... FOR UPDATE + UPDATE + COMMIT.
+        //   - Под локом перечитываем статус: UPDATE идёт только по строкам,
+        //     всё ещё находящимся в ('waiting', 'hold', 'completed'). Если
+        //     параллельно админ / другой процесс перевели строку в balance /
+        //     declined / иное — пропускаем, логирование только по реально
+        //     декланутым.
+        //   - Retry 3× на deadlock / lock-wait через retry_on_sync_deadlock (Step 1).
 
-        if (!empty($to_decline_registered)) {
-            $ids = array_column($to_decline_registered, 'id');
-            foreach (array_chunk($ids, 500) as $chunk) {
-                $placeholders = implode(',', array_fill(0, count($chunk), '%d'));
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %d literals; sniff can't see %d inside $placeholders.
-                $wpdb->query($wpdb->prepare("UPDATE %i SET order_status = 'declined' WHERE id IN ({$placeholders}) AND order_status IN ('waiting', 'hold', 'completed')", $this->transactions_table, ...$chunk));
-            }
-
-            foreach ($to_decline_registered as $tx) {
-                $this->log_sync_auto_decline(
-                    $slug,
-                    (int) $tx['id'],
-                    $tx['click_id'],
-                    $tx['order_status'],
-                    (float) $tx['comission']
-                );
-            }
-
-            $result['declined_registered'] = count($to_decline_registered);
+        if (! empty($to_decline_registered)) {
+            $result['declined_registered'] = $this->run_auto_decline_batches(
+                $wpdb,
+                $this->transactions_table,
+                $to_decline_registered,
+                $slug
+            );
         }
 
         // ─── 8. Батчевое отклонение: cashback_unregistered_transactions ───
 
-        if (!empty($to_decline_unregistered)) {
-            $ids = array_column($to_decline_unregistered, 'id');
-            foreach (array_chunk($ids, 500) as $chunk) {
-                $placeholders = implode(',', array_fill(0, count($chunk), '%d'));
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %d literals; sniff can't see %d inside $placeholders.
-                $wpdb->query($wpdb->prepare("UPDATE %i SET order_status = 'declined' WHERE id IN ({$placeholders}) AND order_status IN ('waiting', 'hold', 'completed')", $this->unregistered_table, ...$chunk));
-            }
-
-            foreach ($to_decline_unregistered as $tx) {
-                $this->log_sync_auto_decline(
-                    $slug,
-                    (int) $tx['id'],
-                    $tx['click_id'],
-                    $tx['order_status'],
-                    (float) $tx['comission']
-                );
-            }
-
-            $result['declined_unregistered'] = count($to_decline_unregistered);
+        if (! empty($to_decline_unregistered)) {
+            $result['declined_unregistered'] = $this->run_auto_decline_batches(
+                $wpdb,
+                $this->unregistered_table,
+                $to_decline_unregistered,
+                $slug
+            );
         }
 
         // ─── 9. Итоговое логирование ───
@@ -2848,6 +2834,120 @@ class Cashback_API_Client {
         }
 
         return $result;
+    }
+
+    /**
+     * Атомарно отклонить батчи stale-транзакций с row-level locking.
+     *
+     * Group 8 Step 2 (F-8-002). Для каждого чанка (до 100 id):
+     *   - START TRANSACTION
+     *   - SELECT id, order_status FROM %i WHERE id IN (...) FOR UPDATE
+     *   - фильтр «всё ещё в ('waiting','hold','completed')»
+     *   - UPDATE только отфильтрованных (post-check в WHERE)
+     *   - COMMIT
+     * На deadlock / lock-wait — retry_on_sync_deadlock (3×).
+     * log_sync_auto_decline вызывается только для реально декланутых строк
+     * (после COMMIT, вне TX — чтобы ошибка логирования не откатывала UPDATE).
+     *
+     * @param \wpdb  $wpdb
+     * @param string $table       Таблица транзакций (registered или unregistered).
+     * @param array  $to_decline  Кандидаты на decline (результаты фильтрации по API).
+     * @param string $slug        Slug сети (для логов).
+     * @return int Число реально декланутых строк.
+     */
+    private function run_auto_decline_batches( \wpdb $wpdb, string $table, array $to_decline, string $slug ): int {
+        if (empty($to_decline)) {
+            return 0;
+        }
+
+        $tx_by_id = array();
+        foreach ($to_decline as $tx) {
+            $tx_by_id[ (int) $tx['id'] ] = $tx;
+        }
+        $ids = array_keys($tx_by_id);
+
+        $declined_total = 0;
+
+        foreach (array_chunk($ids, 100) as $chunk) {
+            $declined_in_batch = array();
+
+            $this->retry_on_sync_deadlock(function () use ( $wpdb, $table, $chunk, &$declined_in_batch ) {
+                $wpdb->query('START TRANSACTION');
+
+                try {
+                    $placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %d literals; sniff can't see %d inside $placeholders.
+                    $locked = $wpdb->get_results($wpdb->prepare("SELECT id, order_status FROM %i WHERE id IN ({$placeholders}) FOR UPDATE", $table, ...$chunk), ARRAY_A);
+
+                    if ($wpdb->last_error) {
+                        $this->throw_if_deadlock($wpdb);
+                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                        error_log(sprintf(
+                            '[Cashback Auto-Decline] SELECT FOR UPDATE error on %s: %s',
+                            $table,
+                            $wpdb->last_error
+                        ));
+                        $wpdb->query('ROLLBACK');
+                        return;
+                    }
+
+                    // Фильтр под локом: оставить только ещё stale-строки.
+                    $lockable_ids = array();
+                    foreach (( $locked ?: array() ) as $row) {
+                        $status = (string) ( $row['order_status'] ?? '' );
+                        if (in_array($status, array( 'waiting', 'hold', 'completed' ), true)) {
+                            $lockable_ids[] = (int) $row['id'];
+                        }
+                    }
+
+                    if (empty($lockable_ids)) {
+                        $wpdb->query('COMMIT');
+                        return;
+                    }
+
+                    $ph2 = implode(',', array_fill(0, count($lockable_ids), '%d'));
+                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $ph2 is array_fill of %d literals; sniff can't see %d inside $ph2.
+                    $wpdb->query($wpdb->prepare("UPDATE %i SET order_status = 'declined' WHERE id IN ({$ph2}) AND order_status IN ('waiting', 'hold', 'completed')", $table, ...$lockable_ids));
+
+                    if ($wpdb->last_error) {
+                        $this->throw_if_deadlock($wpdb);
+                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                        error_log(sprintf(
+                            '[Cashback Auto-Decline] UPDATE error on %s: %s',
+                            $table,
+                            $wpdb->last_error
+                        ));
+                        $wpdb->query('ROLLBACK');
+                        return;
+                    }
+
+                    $wpdb->query('COMMIT');
+                    $declined_in_batch = $lockable_ids;
+                } catch (\Throwable $e) {
+                    $wpdb->query('ROLLBACK');
+                    throw $e;
+                }
+            }, 3);
+
+            // Логирование вне TX — сбой лога не откатывает UPDATE.
+            foreach ($declined_in_batch as $id) {
+                if (! isset($tx_by_id[ $id ])) {
+                    continue;
+                }
+                $tx = $tx_by_id[ $id ];
+                $this->log_sync_auto_decline(
+                    $slug,
+                    $id,
+                    (string) ( $tx['click_id'] ?? '' ),
+                    (string) ( $tx['order_status'] ?? '' ),
+                    (float) ( $tx['comission'] ?? 0 )
+                );
+            }
+
+            $declined_total += count($declined_in_batch);
+        }
+
+        return $declined_total;
     }
 
     /**
