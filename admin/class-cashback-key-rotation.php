@@ -946,7 +946,65 @@ class Cashback_Key_Rotation {
         }
         check_admin_referer(self::NONCE_ABORT);
 
-        self::redirect_with_flash('error', 'abort ещё не реализован (шаг 3.6 плана).');
+        $result = self::abort_during_staging();
+        self::redirect_with_flash($result['ok'] ? 'notice' : 'error', $result['message']);
+    }
+
+    /**
+     * Отменяет ротацию в фазе staging (до первого batch'а).
+     *
+     * Если state=staging и никаких done>0 → безопасно удаляем .new.php и возвращаемся в idle.
+     * В фазе migrating/migrated abort не разрешён: частично перешифрованные данные
+     * требуют либо дождаться завершения миграции + rollback, либо rollback после finalize.
+     *
+     * @return array{ok:bool,message:string}
+     */
+    public static function abort_during_staging(): array {
+        $state = self::get_state();
+        if ($state['state'] !== self::STATE_STAGING) {
+            return array(
+                'ok'      => false,
+                'message' => 'Отмена возможна только в фазе staging. Текущее состояние: ' . $state['state']
+                    . '. Для отката после finalize используйте "Откатить ротацию".',
+            );
+        }
+
+        // Дополнительная защита: отказываемся отменять если в progress есть done>0
+        // (теоретически не должно быть в staging, но защищаемся от поломанного state).
+        foreach ($state['progress'] as $phase_progress) {
+            if (( (int) ( $phase_progress['done'] ?? 0 ) ) > 0) {
+                return array(
+                    'ok'      => false,
+                    'message' => 'В прогрессе уже есть обработанные записи — abort небезопасен. Используйте rollback после finalize.',
+                );
+            }
+        }
+
+        $new_path = self::get_new_key_path();
+        if (file_exists($new_path)) {
+            // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- idempotent cleanup, файл может исчезнуть в race.
+            @unlink($new_path);
+        }
+
+        $initiator_id = (int) ( function_exists('get_current_user_id') ? get_current_user_id() : 0 );
+        self::save_state(self::new_idle_state());
+
+        try {
+            Cashback_Encryption::write_audit_log(
+                'key_rotation_aborted',
+                $initiator_id,
+                'key_rotation',
+                null,
+                array( 'reason' => 'admin_abort_in_staging' )
+            );
+        } catch (\Throwable $e) {
+            unset($e);
+        }
+
+        return array(
+            'ok'      => true,
+            'message' => 'Ротация отменена. Staging-ключ удалён, состояние возвращено в idle.',
+        );
     }
 
     // ================================================================
@@ -2384,8 +2442,55 @@ class Cashback_Key_Rotation {
         }
     }
 
+    /**
+     * AS_HOOK_CLEANUP handler: удаляет .previous.php через 7 дней после finalize.
+     *
+     * Guards: state=completed + time() >= cleanup_at + previous-файл существует.
+     * Если rollback уже произошёл (state=idle и CLEANUP_DEADLINE_OPTION сброшен) — no-op.
+     * Идемпотентен: повторные вызовы не создают дубликатов и не падают.
+     */
     public static function cleanup_previous_key(): void {
-        // TODO: шаг 3.9 плана — удаление .previous.php после окна отката.
+        $state = self::get_state();
+        if ($state['state'] !== self::STATE_COMPLETED) {
+            return;
+        }
+
+        $cleanup_at = (int) get_option(self::CLEANUP_DEADLINE_OPTION, 0);
+        if ($cleanup_at <= 0 || time() < $cleanup_at) {
+            // Либо cleanup снят (rollback), либо ещё не пришло время.
+            return;
+        }
+
+        $previous_path = self::get_previous_key_path();
+        if (!file_exists($previous_path)) {
+            // Файл уже удалён — всё равно чистим option для консистентности.
+            delete_option(self::CLEANUP_DEADLINE_OPTION);
+            return;
+        }
+
+        // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- unlink warning допустим (race, locked file).
+        @unlink($previous_path);
+        delete_option(self::CLEANUP_DEADLINE_OPTION);
+
+        $days_kept = 0;
+        if (!empty($state['finalized_at'])) {
+            $finalized = strtotime((string) $state['finalized_at']);
+            if ($finalized !== false) {
+                $days_kept = max(0, (int) floor(( time() - $finalized ) / 86400));
+            }
+        }
+
+        try {
+            Cashback_Encryption::write_audit_log(
+                'key_rotation_previous_key_purged',
+                0,
+                'key_rotation',
+                null,
+                array( 'days_kept' => $days_kept )
+            );
+        } catch (\Throwable $e) {
+            unset($e);
+        }
     }
 
     // ================================================================
