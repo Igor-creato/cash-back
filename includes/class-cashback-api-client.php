@@ -2218,7 +2218,8 @@ class Cashback_API_Client {
                     array( '%d' )
                 );
 
-                if ($wpdb->last_error) {
+                $update_err = (string) $wpdb->last_error;
+                if ($update_err !== '') {
                     $this->throw_if_deadlock($wpdb);
                     ++$update_errors;
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
@@ -2226,7 +2227,7 @@ class Cashback_API_Client {
                         '[Cashback Sync] UPDATE error for %s id=%d: %s',
                         $table,
                         (int) $fresh['id'],
-                        $wpdb->last_error
+                        $update_err
                     ));
                     if ($owns_tx) {
                         $wpdb->query('ROLLBACK');
@@ -2909,13 +2910,14 @@ class Cashback_API_Client {
                     // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $ph2 is array_fill of %d literals; sniff can't see %d inside $ph2.
                     $wpdb->query($wpdb->prepare("UPDATE %i SET order_status = 'declined' WHERE id IN ({$ph2}) AND order_status IN ('waiting', 'hold', 'completed')", $table, ...$lockable_ids));
 
-                    if ($wpdb->last_error) {
+                    $batch_err = (string) $wpdb->last_error;
+                    if ($batch_err !== '') {
                         $this->throw_if_deadlock($wpdb);
                         // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                         error_log(sprintf(
                             '[Cashback Auto-Decline] UPDATE error on %s: %s',
                             $table,
-                            $wpdb->last_error
+                            $batch_err
                         ));
                         $wpdb->query('ROLLBACK');
                         return;
