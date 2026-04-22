@@ -331,34 +331,51 @@ class Cashback_Social_Auth_DB {
             return '';
         }
 
-        try {
-            $encrypted = Cashback_Encryption::encrypt((string) wp_json_encode($payload));
-        } catch (\Throwable $e) {
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('[cashback-social] save_pending encrypt error: ' . $e->getMessage());
-            return '';
-        }
-
         $token      = bin2hex(random_bytes(32));
         $now        = current_time('mysql');
         $expires_at = gmdate('Y-m-d H:i:s', time() + ( $ttl_minutes * MINUTE_IN_SECONDS ));
 
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Write to plugin-owned table.
-        $ok = $wpdb->insert(
-            self::table_pending(),
-            array(
-                'token'        => $token,
-                'kind'         => $kind,
-                'payload_json' => $encrypted,
-                'created_at'   => $now,
-                'expires_at'   => $expires_at,
-                'consumed_at'  => null,
-                'ip'           => $ip,
-            ),
-            array( '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
-        );
+        // Encrypt + INSERT в одной транзакции. SELECT ... FOR UPDATE здесь N/A — INSERT
+        // новой строки с уникальным random-token'ом; нет существующей строки для row-lock'а.
+        // TX даёт согласованное чтение состояния ротации внутри encrypt() (read_rotation_state)
+        // и самой INSERT-операции. Основная защита от TOCTOU-race с batch-job'ом ротации
+        // (фаза social_pending) обеспечивается sanity-pass'ом ротатора.
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- TX begin.
+        $wpdb->query('START TRANSACTION');
+        try {
+            $encrypted = Cashback_Encryption::encrypt((string) wp_json_encode($payload));
 
-        return $ok ? $token : '';
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Write to plugin-owned table.
+            $ok = $wpdb->insert(
+                self::table_pending(),
+                array(
+                    'token'        => $token,
+                    'kind'         => $kind,
+                    'payload_json' => $encrypted,
+                    'created_at'   => $now,
+                    'expires_at'   => $expires_at,
+                    'consumed_at'  => null,
+                    'ip'           => $ip,
+                ),
+                array( '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
+            );
+
+            if (!$ok) {
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Rollback INSERT failure.
+                $wpdb->query('ROLLBACK');
+                return '';
+            }
+
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Commit.
+            $wpdb->query('COMMIT');
+            return $token;
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Rollback on encrypt/INSERT error.
+            $wpdb->query('ROLLBACK');
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[cashback-social] save_pending failed: ' . $e->getMessage());
+            return '';
+        }
     }
 
     /**
