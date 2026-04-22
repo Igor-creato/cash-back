@@ -140,20 +140,61 @@ class Cashback_API_Client {
             return false;
         }
 
-        $encrypted = Cashback_Encryption::encrypt($json);
-        if (false === $encrypted) {
+        // Row-lock TX: encrypt происходит ПОД удержанием FOR UPDATE на строке сети.
+        // Закрывает TOCTOU-race с batch-job'ом ротации (фаза affiliate_networks):
+        // write-key выбирается под lock'ом, batch не может одновременно перешифровать
+        // эту же запись.
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Row-lock TX begin.
+        $wpdb->query('START TRANSACTION');
+
+        try {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- SELECT FOR UPDATE inside TX.
+            $existing = $wpdb->get_var(
+                $wpdb->prepare(
+                    'SELECT id FROM %i WHERE id = %d FOR UPDATE',
+                    $this->networks_table,
+                    $network_id
+                )
+            );
+
+            if ($existing === null) {
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Rollback unknown id.
+                $wpdb->query('ROLLBACK');
+                return false;
+            }
+
+            $encrypted = Cashback_Encryption::encrypt($json);
+            if (false === $encrypted) {
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Rollback encrypt failure.
+                $wpdb->query('ROLLBACK');
+                return false;
+            }
+
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- UPDATE locked row.
+            $result = $wpdb->update(
+                $this->networks_table,
+                array( 'api_credentials' => $encrypted ),
+                array( 'id' => $network_id ),
+                array( '%s' ),
+                array( '%d' )
+            );
+
+            if ($result === false) {
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Rollback UPDATE failure.
+                $wpdb->query('ROLLBACK');
+                return false;
+            }
+
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Commit.
+            $wpdb->query('COMMIT');
+            return true;
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Rollback.
+            $wpdb->query('ROLLBACK');
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('Cashback API Client: save_credentials error: ' . $e->getMessage());
             return false;
         }
-
-        $result = $wpdb->update(
-            $this->networks_table,
-            array( 'api_credentials' => $encrypted ),
-            array( 'id' => $network_id ),
-            array( '%s' ),
-            array( '%d' )
-        );
-
-        return $result !== false;
     }
 
     /**
