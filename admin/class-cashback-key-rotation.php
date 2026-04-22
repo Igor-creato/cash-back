@@ -675,6 +675,214 @@ class Cashback_Key_Rotation {
     }
 
     // ================================================================
+    // finalize: swap ключевых файлов (шаг 3.7)
+    // ================================================================
+
+    /**
+     * Завершает ротацию: primary → previous, new → primary, удаляет .new.php,
+     * обновляет fingerprint, ставит cleanup через 7 дней.
+     *
+     * Атомарность: каждый файл пишется во временный (.tmp), затем rename(). На
+     * POSIX-файловых системах rename() атомарен. Между двумя rename'ами
+     * существует короткое окно, когда CB_ENCRYPTION_KEY = NEW, а
+     * CB_ENCRYPTION_KEY_PREVIOUS = OLD — это корректное итоговое состояние.
+     *
+     * ВАЖНО: текущий PHP-процесс сохраняет OLD-значения констант до конца
+     * запроса (define() не переопределяется). Новые запросы подхватят новые
+     * значения из переименованных файлов. Это безопасно, потому что во время
+     * пересечения обеих версий trial-decrypt и dual-key обеспечивают корректное
+     * чтение и запись.
+     *
+     * @return array{ok:bool,message:string,new_fingerprint?:string,cleanup_at?:int}
+     */
+    public static function finalize(): array {
+        $state = self::get_state();
+        if ($state['state'] !== self::STATE_MIGRATED) {
+            return array(
+                'ok'      => false,
+                'message' => 'Нельзя завершить ротацию: state=' . $state['state'] . ' (ожидается migrated).',
+            );
+        }
+
+        $primary_path  = self::get_primary_key_path();
+        $new_path      = self::get_new_key_path();
+        $previous_path = self::get_previous_key_path();
+
+        if (!file_exists($primary_path)) {
+            return array(
+				'ok'      => false,
+				'message' => 'Основной ключ-файл отсутствует: ' . basename($primary_path),
+			);
+        }
+        if (!file_exists($new_path)) {
+            return array(
+				'ok'      => false,
+				'message' => 'Staging-ключ отсутствует: ' . basename($new_path),
+			);
+        }
+        if (file_exists($previous_path)) {
+            return array(
+				'ok'      => false,
+				'message' => 'Previous-ключ уже существует: ' . basename($previous_path) . ' (возможно предыдущий finalize не завершился штатно).',
+			);
+        }
+
+        $primary_hex = self::extract_hex_from_key_file($primary_path, 'CB_ENCRYPTION_KEY');
+        $new_hex     = self::extract_hex_from_key_file($new_path, 'CB_ENCRYPTION_KEY_NEW');
+        if (strlen($primary_hex) !== 64 || strlen($new_hex) !== 64) {
+            return array(
+				'ok'      => false,
+				'message' => 'Не удалось прочитать hex-ключ из файла (ожидается 64-символьная hex-строка).',
+			);
+        }
+
+        $dir = dirname($primary_path);
+        if (!is_writable($dir)) {
+            return array(
+				'ok'      => false,
+				'message' => 'Директория ' . $dir . ' недоступна для записи.',
+			);
+        }
+
+        try {
+            // Шаг 1: пишем .previous.php с OLD-ключом (константа CB_ENCRYPTION_KEY_PREVIOUS).
+            self::atomic_write_key_file($previous_path, 'CB_ENCRYPTION_KEY_PREVIOUS', $primary_hex);
+
+            // Шаг 2: перезаписываем .cashback-encryption-key.php NEW-hex'ом (та же константа CB_ENCRYPTION_KEY).
+            self::atomic_write_key_file($primary_path, 'CB_ENCRYPTION_KEY', $new_hex);
+
+            // Шаг 3: удаляем .new.php (NEW-hex теперь живёт в primary-файле).
+            if (file_exists($new_path)) {
+                // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- unlink-warning на Windows при locked-file; операция идемпотентна.
+                @unlink($new_path);
+            }
+        } catch (\Throwable $e) {
+            return array(
+                'ok'      => false,
+                'message' => 'Ошибка файловых операций: ' . $e->getMessage(),
+            );
+        }
+
+        // Обновляем fingerprint на NEW-ключ. Используем hex напрямую, т.к.
+        // константа CB_ENCRYPTION_KEY в текущем процессе всё ещё указывает на OLD.
+        $new_fingerprint = hash_hmac('sha256', $new_hex, 'cashback_fingerprint_v1');
+        update_option('cashback_encryption_key_fingerprint', $new_fingerprint, false);
+
+        // Ставим cleanup previous-файла через 7 дней.
+        $cleanup_at = time() + self::ROLLBACK_WINDOW_DAYS * DAY_IN_SECONDS;
+        update_option(self::CLEANUP_DEADLINE_OPTION, $cleanup_at, false);
+        if (function_exists('as_schedule_single_action')) {
+            as_schedule_single_action($cleanup_at, self::AS_HOOK_CLEANUP, array(), self::AS_GROUP);
+        }
+
+        // Считаем длительность ротации.
+        $duration_seconds = 0;
+        if (!empty($state['started_at'])) {
+            $started = strtotime((string) $state['started_at']);
+            if ($started !== false) {
+                $duration_seconds = max(0, time() - $started);
+            }
+        }
+
+        // State → completed.
+        $state['state']         = self::STATE_COMPLETED;
+        $state['finalized_at']  = current_time('mysql');
+        $state['initiator_id']  = (int) ( function_exists('get_current_user_id') ? get_current_user_id() : 0 );
+        $state['current_phase'] = null;
+        self::save_state($state);
+
+        try {
+            // Собираем totals/failed для audit.
+            $totals = array();
+            $failed = array();
+            foreach (self::PHASES as $phase) {
+                $totals[ $phase ] = (int) ( $state['progress'][ $phase ]['done'] ?? 0 );
+                $failed[ $phase ] = (int) ( $state['progress'][ $phase ]['failed'] ?? 0 );
+            }
+            Cashback_Encryption::write_audit_log(
+                'key_rotation_completed',
+                $state['initiator_id'],
+                'key_rotation',
+                null,
+                array(
+                    'duration_seconds'  => $duration_seconds,
+                    'totals'            => $totals,
+                    'failed_totals'     => $failed,
+                    'sanity_unresolved' => (int) $state['sanity_unresolved'],
+                    'cleanup_at'        => $cleanup_at,
+                )
+            );
+        } catch (\Throwable $e) {
+            unset($e);
+        }
+
+        return array(
+            'ok'              => true,
+            'message'         => 'Ротация завершена. Старый ключ сохранён на ' . self::ROLLBACK_WINDOW_DAYS . ' дней для возможного отката.',
+            'new_fingerprint' => $new_fingerprint,
+            'cleanup_at'      => $cleanup_at,
+        );
+    }
+
+    /**
+     * Извлекает hex-ключ из файла формата `define('<NAME>', '<64-hex>');`.
+     * Возвращает '' при несоответствии формата или битом файле.
+     */
+    private static function extract_hex_from_key_file( string $path, string $constant_name ): string {
+        // phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown,WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents,WordPress.PHP.NoSilencedErrors.Discouraged -- Local file path в wp-content; @ подавляет warning при race (файл удалили между file_exists и read).
+        $content = @file_get_contents($path);
+        if (!is_string($content) || $content === '') {
+            return '';
+        }
+        $pattern = '/define\s*\(\s*[\'"]' . preg_quote($constant_name, '/') . '[\'"]\s*,\s*[\'"]([a-fA-F0-9]{64})[\'"]\s*\)/';
+        if (preg_match($pattern, $content, $m) !== 1) {
+            return '';
+        }
+        return strtolower($m[1]);
+    }
+
+    /**
+     * Атомарно пишет key-файл: write → fsync → chmod 0600 → rename на целевой путь.
+     * Бросает RuntimeException при любом сбое файловой операции.
+     */
+    private static function atomic_write_key_file( string $target_path, string $constant_name, string $hex ): void {
+        $tmp_path = $target_path . '.tmp';
+        $content  = "<?php\n"
+            . "/**\n"
+            . " * Cashback Plugin — Encryption Key ({$constant_name}, auto-generated by Cashback_Key_Rotation::finalize).\n"
+            . " *\n"
+            . " * WARNING: Do not share, commit to VCS, or delete this file.\n"
+            . " * Loss of this key = loss of access to encrypted user payment details.\n"
+            . " */\n"
+            . "if (!defined('ABSPATH')) { exit; }\n"
+            . "define('" . $constant_name . "', '" . $hex . "');\n";
+
+        $written = file_put_contents($tmp_path, $content, LOCK_EX);
+        if ($written === false) {
+            throw new \RuntimeException(esc_html('file_put_contents failed for ' . basename($tmp_path)));
+        }
+
+        if (function_exists('chmod')) {
+            // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- chmod может выдать warning на Windows; сбой некритичен.
+            @chmod($tmp_path, 0600);
+        }
+
+        // На Windows rename() не работает поверх существующего файла — unlink target first.
+        if (file_exists($target_path)) {
+            // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+            @unlink($target_path);
+        }
+        if (!rename($tmp_path, $target_path)) {
+            throw new \RuntimeException(esc_html('rename failed: ' . basename($tmp_path) . ' → ' . basename($target_path)));
+        }
+
+        if (function_exists('chmod')) {
+            // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+            @chmod($target_path, 0600);
+        }
+    }
+
+    // ================================================================
     // admin_post handlers
     // ================================================================
 
@@ -707,7 +915,8 @@ class Cashback_Key_Rotation {
         }
         check_admin_referer(self::NONCE_FINALIZE);
 
-        self::redirect_with_flash('error', 'finalize ещё не реализован (шаг 3.4 плана).');
+        $result = self::finalize();
+        self::redirect_with_flash($result['ok'] ? 'notice' : 'error', $result['message']);
     }
 
     public static function handle_rollback(): void {
