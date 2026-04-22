@@ -156,7 +156,7 @@ class Cashback_API_Cron {
                 Cashback_Cron_State::finish_stage(
                     $stage_id,
                     'success',
-                    is_array($transfer_result) ? $transfer_result : array()
+                    $transfer_result
                 );
             } catch (\Throwable $e) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
@@ -183,7 +183,7 @@ class Cashback_API_Cron {
                 Cashback_Cron_State::finish_stage(
                     $stage_id,
                     empty($accrual_result['errors']) ? 'success' : 'failed',
-                    is_array($accrual_result) ? $accrual_result : array(),
+                    $accrual_result,
                     ! empty($accrual_result['errors']) ? implode('; ', (array) $accrual_result['errors']) : ''
                 );
             } catch (\Throwable $e) {
@@ -211,7 +211,7 @@ class Cashback_API_Cron {
                     Cashback_Cron_State::finish_stage(
                         $stage_id,
                         'success',
-                        is_array($aff_pending) ? $aff_pending : array()
+                        $aff_pending
                     );
                 } catch (\Throwable $e) {
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
@@ -257,7 +257,7 @@ class Cashback_API_Cron {
                 Cashback_Cron_State::finish_stage(
                     $stage_id,
                     'success',
-                    is_array($campaign_results) ? array( 'per_network' => $campaign_results ) : array()
+                    array( 'per_network' => $campaign_results )
                 );
             } catch (\Throwable $e) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
