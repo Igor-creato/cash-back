@@ -97,6 +97,7 @@ class Cashback_Key_Rotation {
 
     public static function init(): void {
         add_action('admin_menu', array( __CLASS__, 'register_admin_page' ));
+        add_action('admin_enqueue_scripts', array( __CLASS__, 'enqueue_admin_assets' ));
 
         add_action('admin_post_cashback_rotation_generate', array( __CLASS__, 'handle_generate' ));
         add_action('admin_post_cashback_rotation_start', array( __CLASS__, 'handle_start' ));
@@ -2556,6 +2557,38 @@ class Cashback_Key_Rotation {
         );
     }
 
+    /**
+     * Подключает JS-polling и inline-CSS только на странице ротации.
+     *
+     * @param string $hook_suffix Имя хука текущей admin-страницы.
+     */
+    public static function enqueue_admin_assets( $hook_suffix ): void {
+        // add_submenu_page возвращает hook вида `<parent-slug>_page_<slug>`.
+        $expected = self::PARENT_MENU_SLUG . '_page_' . self::ADMIN_PAGE_SLUG;
+        if ($hook_suffix !== $expected) {
+            return;
+        }
+
+        $handle = 'cashback-key-rotation';
+        $src    = plugins_url('admin/js/key-rotation.js', dirname(__DIR__) . '/cashback-plugin.php');
+
+        wp_enqueue_script($handle, $src, array(), '1.0.0', true);
+        wp_localize_script(
+            $handle,
+            'CashbackKeyRotation',
+            array(
+                'ajaxUrl'      => admin_url('admin-ajax.php'),
+                'nonce'        => wp_create_nonce(self::NONCE_STATUS),
+                'pollInterval' => 3000,
+                'statusAction' => 'cashback_rotation_status',
+                'strings'      => array(
+                    'networkError' => __('Ошибка связи с сервером. Повтор через несколько секунд.', 'cashback-plugin'),
+                    'rateLimited'  => __('Слишком много запросов. Опрос замедлен.', 'cashback-plugin'),
+                ),
+            )
+        );
+    }
+
     public static function render_admin_page(): void {
         if (!current_user_can('manage_options')) {
             wp_die(esc_html__('Недостаточно прав.', 'cashback-plugin'));
@@ -2563,10 +2596,13 @@ class Cashback_Key_Rotation {
 
         $view = plugin_dir_path(__FILE__) . 'partials/key-rotation-page.php';
         if (file_exists($view)) {
-            $state   = self::get_state();
-            $fp_old  = Cashback_Encryption::get_fingerprint(Cashback_Encryption::KEY_ROLE_PRIMARY);
-            $fp_new  = Cashback_Encryption::get_fingerprint(Cashback_Encryption::KEY_ROLE_NEW);
-            $fp_prev = Cashback_Encryption::get_fingerprint(Cashback_Encryption::KEY_ROLE_PREVIOUS);
+            $state      = self::get_state();
+            $fp_old     = Cashback_Encryption::get_fingerprint(Cashback_Encryption::KEY_ROLE_PRIMARY);
+            $fp_new     = Cashback_Encryption::get_fingerprint(Cashback_Encryption::KEY_ROLE_NEW);
+            $fp_prev    = Cashback_Encryption::get_fingerprint(Cashback_Encryption::KEY_ROLE_PREVIOUS);
+            $cleanup_at = (int) get_option(self::CLEANUP_DEADLINE_OPTION, 0);
+            $flash      = self::consume_flash();
+            $key_mtime  = file_exists(self::get_primary_key_path()) ? (int) filemtime(self::get_primary_key_path()) : 0;
             // phpcs:ignore WordPressVIPMinimum.Files.IncludingFile.UsingVariable -- $view собран из plugin_dir_path + статической строки; без пользовательского ввода.
             include $view;
             return;
