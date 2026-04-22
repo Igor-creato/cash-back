@@ -356,6 +356,269 @@ class Cashback_Key_Rotation {
     }
 
     // ================================================================
+    // count_*: подсчёт записей по каждой фазе (для total в progress)
+    // ================================================================
+
+    /**
+     * Возвращает total-count для всех фаз. Используется в start_migration()
+     * для инициализации progress перед первым batch-job'ом.
+     *
+     * @return array<string,int>  [phase => total]
+     */
+    public static function count_all_phases(): array {
+        $counts = array();
+        foreach (self::PHASES as $phase) {
+            $counts[ $phase ] = self::count_phase($phase);
+        }
+        return $counts;
+    }
+
+    /**
+     * Роутер подсчёта по имени фазы. Неизвестная фаза → 0.
+     */
+    public static function count_phase( string $phase ): int {
+        switch ($phase) {
+            case 'options_captcha':
+                return self::count_options_captcha();
+            case 'options_epn':
+                return self::count_options_epn();
+            case 'options_social':
+                return self::count_options_social();
+            case 'affiliate_networks':
+                return self::count_affiliate_networks();
+            case 'social_tokens':
+                return self::count_social_tokens();
+            case 'social_pending':
+                return self::count_social_pending();
+            case 'payout_requests':
+                return self::count_payout_requests();
+            case 'user_profile':
+                return self::count_user_profile();
+            default:
+                return 0;
+        }
+    }
+
+    /**
+     * wp_options['cashback_captcha_server_key']: 1 если значение зашифровано helper'ом, иначе 0.
+     * Plaintext-значения до миграции options_encrypted_v1 — не в скоупе ротации ключа.
+     */
+    private static function count_options_captcha(): int {
+        $value = (string) get_option('cashback_captcha_server_key', '');
+        return ( $value !== '' && Cashback_Encryption::is_option_ciphertext($value) ) ? 1 : 0;
+    }
+
+    /**
+     * wp_options: все опции cashback_epn_refresh_* с непустым зашифрованным значением.
+     */
+    private static function count_options_epn(): int {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return 0;
+        }
+        $options_table = property_exists($wpdb, 'options') ? (string) $wpdb->options : 'wp_options';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Count query for rotation progress.
+        $count = $wpdb->get_var(
+            $wpdb->prepare(
+                'SELECT COUNT(*) FROM %i WHERE option_name LIKE %s AND option_value <> \'\' AND option_value LIKE %s',
+                $options_table,
+                'cashback_epn_refresh_%',
+                'ENC:v1:%'
+            )
+        );
+        return (int) $count;
+    }
+
+    /**
+     * cashback_social_provider_{yandex,vkid}: 1 за каждый provider, у которого
+     * client_secret_encrypted непустой и начинается с version-префикса v1:/v2:
+     * (т.е. прошёл через Cashback_Encryption::encrypt()).
+     */
+    private static function count_options_social(): int {
+        $total = 0;
+        foreach (array( 'cashback_social_provider_yandex', 'cashback_social_provider_vkid' ) as $option_name) {
+            $raw = get_option($option_name, array());
+            if (!is_array($raw)) {
+                continue;
+            }
+            $secret = isset($raw['client_secret_encrypted']) ? (string) $raw['client_secret_encrypted'] : '';
+            if ($secret === '') {
+                continue;
+            }
+            if (strpos($secret, 'v2:') === 0 || strpos($secret, 'v1:') === 0) {
+                ++$total;
+            }
+        }
+        return $total;
+    }
+
+    private static function count_affiliate_networks(): int {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return 0;
+        }
+        $table = $wpdb->prefix . 'cashback_affiliate_networks';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Count query for rotation progress.
+        return (int) $wpdb->get_var(
+            $wpdb->prepare(
+                'SELECT COUNT(*) FROM %i WHERE api_credentials IS NOT NULL AND api_credentials <> \'\'',
+                $table
+            )
+        );
+    }
+
+    private static function count_social_tokens(): int {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return 0;
+        }
+        $table = $wpdb->prefix . 'cashback_social_tokens';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Count query for rotation progress.
+        return (int) $wpdb->get_var(
+            $wpdb->prepare(
+                'SELECT COUNT(*) FROM %i WHERE refresh_token_encrypted <> \'\'',
+                $table
+            )
+        );
+    }
+
+    /**
+     * Только не потреблённые и не истёкшие записи: consumed pending-строки старше
+     * суток чистятся cleanup_expired_pending() и не нуждаются в перешифровке.
+     * Оставляем только «живые» pending — их payload понадобится при consume_pending().
+     */
+    private static function count_social_pending(): int {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return 0;
+        }
+        $table   = $wpdb->prefix . 'cashback_social_pending';
+        $now_utc = gmdate('Y-m-d H:i:s');
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Count query for rotation progress.
+        return (int) $wpdb->get_var(
+            $wpdb->prepare(
+                'SELECT COUNT(*) FROM %i WHERE payload_json <> \'\' AND consumed_at IS NULL AND expires_at >= %s',
+                $table,
+                $now_utc
+            )
+        );
+    }
+
+    private static function count_payout_requests(): int {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return 0;
+        }
+        $table = $wpdb->prefix . 'cashback_payout_requests';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Count query for rotation progress.
+        return (int) $wpdb->get_var(
+            $wpdb->prepare(
+                'SELECT COUNT(*) FROM %i WHERE encrypted_details IS NOT NULL AND encrypted_details <> \'\'',
+                $table
+            )
+        );
+    }
+
+    private static function count_user_profile(): int {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return 0;
+        }
+        $table = $wpdb->prefix . 'cashback_user_profile';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Count query for rotation progress.
+        return (int) $wpdb->get_var(
+            $wpdb->prepare(
+                'SELECT COUNT(*) FROM %i WHERE encrypted_details IS NOT NULL AND encrypted_details <> \'\'',
+                $table
+            )
+        );
+    }
+
+    // ================================================================
+    // start_migration: staging → migrating, первый batch-job
+    // ================================================================
+
+    /**
+     * Переводит state из staging в migrating, считает totals по всем фазам,
+     * ставит первый AS batch-job. Требует слово-подтверждения $confirmation.
+     *
+     * Возвращает массив {ok, message} — вызывается из handle_start() и тестов.
+     *
+     * @return array{ok:bool,message:string,totals?:array<string,int>}
+     */
+    public static function start_migration( string $confirmation ): array {
+        $state = self::get_state();
+
+        if ($state['state'] !== self::STATE_STAGING) {
+            return array(
+                'ok'      => false,
+                'message' => 'Нельзя запустить миграцию: состояние = ' . $state['state'] . ' (требуется staging).',
+            );
+        }
+
+        if (!hash_equals(self::CONFIRMATION_START, $confirmation)) {
+            return array(
+                'ok'      => false,
+                'message' => 'Неверное слово-подтверждение. Ожидается: ' . self::CONFIRMATION_START,
+            );
+        }
+
+        if (!Cashback_Encryption::is_key_role_configured(Cashback_Encryption::KEY_ROLE_NEW)) {
+            return array(
+                'ok'      => false,
+                'message' => 'Staging-ключ не загружен (CB_ENCRYPTION_KEY_NEW). Проверьте .cashback-encryption-key.new.php.',
+            );
+        }
+
+        $totals = self::count_all_phases();
+
+        // Заполняем totals в progress. done/failed остаются 0.
+        $progress = array();
+        foreach (self::PHASES as $phase) {
+            $progress[ $phase ] = array(
+                'total'  => isset($totals[ $phase ]) ? (int) $totals[ $phase ] : 0,
+                'done'   => 0,
+                'failed' => 0,
+            );
+        }
+
+        $next                  = $state;
+        $next['state']         = self::STATE_MIGRATING;
+        $next['progress']      = $progress;
+        $next['current_phase'] = self::PHASES[0];
+        $next['last_error']    = null;
+        if (empty($next['started_at'])) {
+            $next['started_at'] = current_time('mysql');
+        }
+        $next['initiator_id'] = (int) ( function_exists('get_current_user_id') ? get_current_user_id() : 0 );
+        self::save_state($next);
+
+        // Планируем первый batch — даже если totals=0 везде, batch прогонит фазы и сразу
+        // переключится на sanity/state=migrated. Это дешевле, чем дублировать логику здесь.
+        if (function_exists('as_enqueue_async_action')) {
+            as_enqueue_async_action(self::AS_HOOK_MIGRATE, array(), self::AS_GROUP);
+        }
+
+        try {
+            Cashback_Encryption::write_audit_log(
+                'key_rotation_started',
+                $next['initiator_id'],
+                'key_rotation',
+                null,
+                array( 'counts' => $totals )
+            );
+        } catch (\Throwable $e) {
+            unset($e);
+        }
+
+        return array(
+            'ok'      => true,
+            'message' => 'Миграция запущена. Фоновая перешифровка стартовала; прогресс доступен на этой странице.',
+            'totals'  => $totals,
+        );
+    }
+
+    // ================================================================
     // admin_post handlers
     // ================================================================
 
@@ -375,7 +638,11 @@ class Cashback_Key_Rotation {
         }
         check_admin_referer(self::NONCE_START);
 
-        self::redirect_with_flash('error', 'start_migration ещё не реализован (шаг 3.2 плана).');
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- check_admin_referer выше.
+        $confirmation = isset($_POST['confirmation']) ? sanitize_text_field(wp_unslash((string) $_POST['confirmation'])) : '';
+
+        $result = self::start_migration($confirmation);
+        self::redirect_with_flash($result['ok'] ? 'notice' : 'error', $result['message']);
     }
 
     public static function handle_finalize(): void {
