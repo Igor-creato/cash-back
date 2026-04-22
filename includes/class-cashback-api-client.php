@@ -2019,18 +2019,28 @@ class Cashback_API_Client {
      * Общая логика для cashback_transactions и cashback_unregistered_transactions.
      * Защиты: skip balance, skip downgrade completed → waiting.
      *
+     * Атомарность (Group 8 Step 1, F-8-001):
+     *   - Оборачивает UPDATE в START TRANSACTION;
+     *   - берёт SELECT ... FOR UPDATE по id перед guard'ами, чтобы проверки
+     *     работали на committed-состоянии, а не на stale $local;
+     *   - ретраит 3× на deadlock / lock wait timeout;
+     *   - семантика приоритета API vs админ-правок не меняется —
+     *     существующие guard'ы (balance / completed→waiting /
+     *     validate_status_transition) просто видят свежую строку.
+     *
      * @param wpdb   $wpdb
-     * @param string $table        Таблица для UPDATE
-     * @param array  $local        Локальная запись (id, order_status, comission, sum_order)
-     * @param string $mapped_status Статус из API после маппинга
-     * @param float  $api_payment  Комиссия из API
-     * @param float  $api_cart     Сумма заказа из API
-     * @param string $slug         Slug сети
-     * @param string $api_click_id Click ID из API
-     * @param array  $action       Полный action из API
+     * @param string $table          Таблица для UPDATE
+     * @param array  $local          Локальная запись (id, order_status, comission, sum_order)
+     * @param string $mapped_status  Статус из API после маппинга
+     * @param float  $api_payment    Комиссия из API
+     * @param float  $api_cart       Сумма заказа из API
+     * @param string $slug           Slug сети
+     * @param string $api_click_id   Click ID из API
+     * @param array  $action         Полный action из API
      * @param int    &$updated       Счётчик обновлённых (по ссылке)
      * @param int    &$skipped       Счётчик пропущенных (по ссылке)
      * @param int    &$update_errors Счётчик ошибок UPDATE (по ссылке)
+     * @param bool   $in_transaction Если true — caller сам владеет TX (COMMIT/ROLLBACK/retry не делаем)
      */
     private function sync_update_local(
         \wpdb $wpdb,
@@ -2045,134 +2055,281 @@ class Cashback_API_Client {
         array $field_map,
         int &$updated,
         int &$skipped,
-        int &$update_errors
+        int &$update_errors,
+        bool $in_transaction = false
     ): void {
-        $local_status = $local['order_status'];
+        $owns_tx = ! $in_transaction;
 
-        // Защита: balance — финальный, не трогаем
-        if ($local_status === 'balance') {
-            ++$skipped;
-            return;
-        }
-
-        // Защита от понижения: completed не откатываем в waiting
-        if ($local_status === 'completed' && $mapped_status === 'waiting') {
-            ++$skipped;
-            return;
-        }
-
-        // Обновляем если статус, комиссия или сумма заказа изменились
-        $status_changed     = ( $local_status !== $mapped_status );
-        $commission_changed = abs($api_payment - (float) $local['comission']) >= 0.001;
-
-        $local_cart   = (float) ( $local['sum_order'] ?? 0 );
-        $cart_changed = abs($api_cart - $local_cart) >= 0.001;
-
-        $needs_verify = empty($local['api_verified']);
-
-        // funds_ready: определяется через маппинг, fallback — прямое чтение из адаптера
-        $api_funds_ready   = $this->resolve_funds_ready($action, $field_map);
-        $needs_funds_ready = ( $api_funds_ready === 1 && empty($local['funds_ready']) );
-
-        if (!$status_changed && !$commission_changed && !$cart_changed && !$needs_verify && !$needs_funds_ready) {
-            ++$skipped;
-            return;
-        }
-
-        $update_data    = array();
-        $update_formats = array();
-
-        if ($status_changed) {
-            $update_data['order_status'] = $mapped_status;
-            $update_formats[]            = '%s';
-        }
-
-        if ($commission_changed) {
-            $update_data['comission'] = $api_payment;
-            $update_formats[]         = '%s';
-        }
-
-        if ($cart_changed) {
-            $update_data['sum_order'] = $api_cart;
-            $update_formats[]         = '%s';
-        }
-
-        // Транзакция найдена в API — помечаем как проверенную
-        if ($needs_verify) {
-            $update_data['api_verified'] = 1;
-            $update_formats[]            = '%d';
-        }
-
-        // CPA-сеть подтвердила готовность средств к снятию — обновляем funds_ready
-        // Только нарастающее: 0→1, обратно не сбрасываем
-        if ($needs_funds_ready) {
-            $update_data['funds_ready'] = 1;
-            $update_formats[]           = '%d';
-        }
-
-        // PHP-фолбэк: валидация перехода статуса
-        if ($status_changed) {
-            $validation = Cashback_Trigger_Fallbacks::validate_status_transition($local_status, $mapped_status);
-            if ($validation !== true) {
-                ++$skipped;
-                return;
-            }
-        }
-
-        // PHP-фолбэк: пересчёт кешбэка при изменении комиссии
-        if ($commission_changed) {
-            $is_registered = ( $table === $this->transactions_table );
-            $old_row       = (object) $local;
-            Cashback_Trigger_Fallbacks::recalculate_cashback_on_update($update_data, $old_row, $is_registered);
-            if (isset($update_data['cashback'])) {
-                $update_formats[] = '%f'; // cashback
-            }
-        }
-
-        $wpdb->update(
-            $table,
-            $update_data,
-            array( 'id' => $local['id'] ),
-            $update_formats,
-            array( '%d' )
-        );
-
-        if ($wpdb->last_error) {
-            ++$update_errors;
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log(sprintf(
-                '[Cashback Sync] UPDATE error for %s id=%d: %s',
-                $table,
-                $local['id'],
-                $wpdb->last_error
-            ));
-            return;
-        }
-
-        ++$updated;
-
-        // Запись в очередь уведомлений (вместо MySQL триггера)
-        $this->enqueue_notification_on_update(
+        $apply = function () use (
             $wpdb,
-            (int) $local['id'],
-            (int) $local['user_id'],
-            $local_status,
-            $mapped_status,
-            $status_changed,
-            $commission_changed,
-            $cart_changed,
+            $table,
             $local,
-            $update_data
-        );
-
-        $this->log_sync_event(
-            $slug,
-            (int) $local['id'],
-            $api_click_id ?: ( $local['uniq_id'] ?? '' ),
-            $local_status,
             $mapped_status,
-            $api_payment
-        );
+            $api_payment,
+            $api_cart,
+            $slug,
+            $api_click_id,
+            $action,
+            $field_map,
+            $owns_tx,
+            &$updated,
+            &$skipped,
+            &$update_errors
+        ): void {
+            if ($owns_tx) {
+                $wpdb->query('START TRANSACTION');
+            }
+
+            try {
+                // Перечитываем строку под локом — guard'ы работают на committed-состоянии.
+                $fresh = $wpdb->get_row(
+                    $wpdb->prepare(
+                        'SELECT * FROM %i WHERE id = %d FOR UPDATE',
+                        $table,
+                        (int) $local['id']
+                    ),
+                    ARRAY_A
+                );
+
+                if ($wpdb->last_error) {
+                    $this->throw_if_deadlock($wpdb);
+                    ++$update_errors;
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                    error_log(sprintf(
+                        '[Cashback Sync] SELECT FOR UPDATE error for %s id=%d: %s',
+                        $table,
+                        (int) $local['id'],
+                        $wpdb->last_error
+                    ));
+                    if ($owns_tx) {
+                        $wpdb->query('ROLLBACK');
+                    }
+                    return;
+                }
+
+                if (! $fresh) {
+                    // Строка пропала (удалена админом / другим cron) — считаем skip.
+                    ++$skipped;
+                    if ($owns_tx) {
+                        $wpdb->query('COMMIT');
+                    }
+                    return;
+                }
+
+                $local_status = (string) $fresh['order_status'];
+
+                // Защита: balance — финальный, не трогаем
+                if ($local_status === 'balance') {
+                    ++$skipped;
+                    if ($owns_tx) {
+                        $wpdb->query('COMMIT');
+                    }
+                    return;
+                }
+
+                // Защита от понижения: completed не откатываем в waiting
+                if ($local_status === 'completed' && $mapped_status === 'waiting') {
+                    ++$skipped;
+                    if ($owns_tx) {
+                        $wpdb->query('COMMIT');
+                    }
+                    return;
+                }
+
+                // Обновляем если статус, комиссия или сумма заказа изменились
+                $status_changed     = ( $local_status !== $mapped_status );
+                $commission_changed = abs($api_payment - (float) $fresh['comission']) >= 0.001;
+
+                $local_cart   = (float) ( $fresh['sum_order'] ?? 0 );
+                $cart_changed = abs($api_cart - $local_cart) >= 0.001;
+
+                $needs_verify = empty($fresh['api_verified']);
+
+                // funds_ready: определяется через маппинг, fallback — прямое чтение из адаптера
+                $api_funds_ready   = $this->resolve_funds_ready($action, $field_map);
+                $needs_funds_ready = ( $api_funds_ready === 1 && empty($fresh['funds_ready']) );
+
+                if (! $status_changed && ! $commission_changed && ! $cart_changed && ! $needs_verify && ! $needs_funds_ready) {
+                    ++$skipped;
+                    if ($owns_tx) {
+                        $wpdb->query('COMMIT');
+                    }
+                    return;
+                }
+
+                $update_data    = array();
+                $update_formats = array();
+
+                if ($status_changed) {
+                    $update_data['order_status'] = $mapped_status;
+                    $update_formats[]            = '%s';
+                }
+
+                if ($commission_changed) {
+                    $update_data['comission'] = $api_payment;
+                    $update_formats[]         = '%s';
+                }
+
+                if ($cart_changed) {
+                    $update_data['sum_order'] = $api_cart;
+                    $update_formats[]         = '%s';
+                }
+
+                // Транзакция найдена в API — помечаем как проверенную
+                if ($needs_verify) {
+                    $update_data['api_verified'] = 1;
+                    $update_formats[]            = '%d';
+                }
+
+                // CPA-сеть подтвердила готовность средств к снятию — обновляем funds_ready
+                // Только нарастающее: 0→1, обратно не сбрасываем
+                if ($needs_funds_ready) {
+                    $update_data['funds_ready'] = 1;
+                    $update_formats[]           = '%d';
+                }
+
+                // PHP-фолбэк: валидация перехода статуса
+                if ($status_changed) {
+                    $validation = Cashback_Trigger_Fallbacks::validate_status_transition($local_status, $mapped_status);
+                    if ($validation !== true) {
+                        ++$skipped;
+                        if ($owns_tx) {
+                            $wpdb->query('COMMIT');
+                        }
+                        return;
+                    }
+                }
+
+                // PHP-фолбэк: пересчёт кешбэка при изменении комиссии
+                if ($commission_changed) {
+                    $is_registered = ( $table === $this->transactions_table );
+                    $old_row       = (object) $fresh;
+                    Cashback_Trigger_Fallbacks::recalculate_cashback_on_update($update_data, $old_row, $is_registered);
+                    if (isset($update_data['cashback'])) {
+                        $update_formats[] = '%f'; // cashback
+                    }
+                }
+
+                $wpdb->update(
+                    $table,
+                    $update_data,
+                    array( 'id' => (int) $fresh['id'] ),
+                    $update_formats,
+                    array( '%d' )
+                );
+
+                if ($wpdb->last_error) {
+                    $this->throw_if_deadlock($wpdb);
+                    ++$update_errors;
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                    error_log(sprintf(
+                        '[Cashback Sync] UPDATE error for %s id=%d: %s',
+                        $table,
+                        (int) $fresh['id'],
+                        $wpdb->last_error
+                    ));
+                    if ($owns_tx) {
+                        $wpdb->query('ROLLBACK');
+                    }
+                    return;
+                }
+
+                ++$updated;
+
+                // Запись в очередь уведомлений (вместо MySQL триггера)
+                $this->enqueue_notification_on_update(
+                    $wpdb,
+                    (int) $fresh['id'],
+                    (int) $fresh['user_id'],
+                    $local_status,
+                    $mapped_status,
+                    $status_changed,
+                    $commission_changed,
+                    $cart_changed,
+                    $fresh,
+                    $update_data
+                );
+
+                $this->log_sync_event(
+                    $slug,
+                    (int) $fresh['id'],
+                    $api_click_id ?: ( $fresh['uniq_id'] ?? '' ),
+                    $local_status,
+                    $mapped_status,
+                    $api_payment
+                );
+
+                if ($owns_tx) {
+                    $wpdb->query('COMMIT');
+                }
+            } catch (\Throwable $e) {
+                if ($owns_tx) {
+                    $wpdb->query('ROLLBACK');
+                }
+                throw $e;
+            }
+        };
+
+        if ($owns_tx) {
+            $this->retry_on_sync_deadlock($apply, 3);
+        } else {
+            // Внешний TX: ретраим решение оставляем caller'у.
+            $apply();
+        }
+    }
+
+    /**
+     * Выбрасывает RuntimeException, если $wpdb->last_error — deadlock / lock wait timeout.
+     *
+     * Вызывается после каждого wpdb-вызова внутри sync_update_local. На обычные
+     * SQL-ошибки не реагирует — те обрабатываются штатно (++update_errors + ROLLBACK).
+     */
+    private function throw_if_deadlock( \wpdb $wpdb ): void {
+        $err = (string) $wpdb->last_error;
+        if ($err === '') {
+            return;
+        }
+
+        $is_deadlock = ( stripos($err, 'deadlock') !== false )
+            || ( stripos($err, 'lock wait timeout') !== false )
+            || ( strpos($err, '1213') !== false )
+            || ( strpos($err, '1205') !== false );
+
+        if ($is_deadlock) {
+            throw new \RuntimeException(
+                esc_html( sprintf('[Cashback Sync] deadlock/lock-wait: %s', $err) )
+            );
+        }
+    }
+
+    /**
+     * Ретраит переданный callable до $max попыток при deadlock / lock wait timeout.
+     *
+     * Линейный back-off (50 мс × номер попытки). Не-deadlock исключения
+     * пробрасываются сразу.
+     *
+     * @param callable $callback Замыкание с SQL-операцией (должно само открыть/закрыть TX).
+     * @param int      $max      Максимальное число попыток (включая первую).
+     */
+    private function retry_on_sync_deadlock( callable $callback, int $max = 3 ): void {
+        $attempt = 0;
+        while (true) {
+            try {
+                $callback();
+                return;
+            } catch (\Throwable $e) {
+                $msg         = (string) $e->getMessage();
+                $is_deadlock = ( stripos($msg, 'deadlock') !== false )
+                    || ( stripos($msg, 'lock wait timeout') !== false )
+                    || ( strpos($msg, '1213') !== false )
+                    || ( strpos($msg, '1205') !== false );
+                if (! $is_deadlock || ++$attempt >= $max) {
+                    throw $e;
+                }
+                // Линейный back-off: 50 мс, 100 мс.
+                usleep(50000 * $attempt);
+            }
+        }
     }
 
     /**
