@@ -335,14 +335,50 @@ class Cashback_Encryption_Recovery {
     // ================================================================
 
     public static function register_admin_page(): void {
+        // Регистрируем под тем же parent, что и Cashback_Key_Rotation (cashback-overview),
+        // чтобы обе страницы жили в одном разделе и могли переключаться вкладками.
+        $parent_slug = class_exists('Cashback_Key_Rotation')
+            ? Cashback_Key_Rotation::PARENT_MENU_SLUG
+            : 'cashback-overview';
         add_submenu_page(
-            'options-general.php',
+            $parent_slug,
             __('Восстановление шифрования Cashback', 'cashback-plugin'),
-            __('Cashback: восстановление', 'cashback-plugin'),
+            __('Восстановление', 'cashback-plugin'),
             'manage_options',
             self::ADMIN_PAGE_SLUG,
             array( __CLASS__, 'render_admin_page' )
         );
+    }
+
+    /**
+     * Навигация-вкладки между страницами «Ротация ключа» и «Восстановление».
+     * Вызывается из обеих render_admin_page — даёт админу очевидную точку
+     * перехода между связанными процедурами.
+     *
+     * @param string $active  'rotation' | 'recovery'
+     */
+    public static function render_tabs_nav( string $active ): void {
+        $tabs = array(
+            'rotation' => array(
+                'label' => __('Ротация ключа', 'cashback-plugin'),
+                'url'   => admin_url('admin.php?page=cashback-key-rotation'),
+            ),
+            'recovery' => array(
+                'label' => __('Восстановление', 'cashback-plugin'),
+                'url'   => admin_url('admin.php?page=' . self::ADMIN_PAGE_SLUG),
+            ),
+        );
+        echo '<h2 class="nav-tab-wrapper">';
+        foreach ($tabs as $key => $tab) {
+            $class = 'nav-tab' . ( $key === $active ? ' nav-tab-active' : '' );
+            printf(
+                '<a href="%s" class="%s">%s</a>',
+                esc_url($tab['url']),
+                esc_attr($class),
+                esc_html($tab['label'])
+            );
+        }
+        echo '</h2>';
     }
 
     public static function maybe_render_mismatch_notice(): void {
@@ -367,7 +403,7 @@ class Cashback_Encryption_Recovery {
             '<div class="notice notice-error"><p><strong>%s</strong></p><p>%s</p><p><a class="button button-primary" href="%s">%s</a></p></div>',
             esc_html__('Cashback Plugin: обнаружено несовпадение ключа шифрования', 'cashback-plugin'),
             esc_html__('Ключ шифрования был изменён после предыдущей активности плагина. Ранее зашифрованные реквизиты пользователей больше не могут быть расшифрованы. Запустите процедуру восстановления — зашифрованные записи будут безопасно обнулены, пользователям будет предложено ввести новые реквизиты.', 'cashback-plugin'),
-            esc_url(admin_url('options-general.php?page=' . self::ADMIN_PAGE_SLUG)),
+            esc_url(admin_url('admin.php?page=' . self::ADMIN_PAGE_SLUG)),
             esc_html__('Перейти к восстановлению', 'cashback-plugin')
         );
     }
@@ -389,6 +425,7 @@ class Cashback_Encryption_Recovery {
 
         echo '<div class="wrap">';
         echo '<h1>' . esc_html__('Восстановление шифрования Cashback', 'cashback-plugin') . '</h1>';
+        self::render_tabs_nav('recovery');
 
         // ---- Баннеры по результату прошлого submit'а ----
         if ($flag_confirmation_failed) {
@@ -518,7 +555,7 @@ class Cashback_Encryption_Recovery {
 
         $confirmation = isset($_POST['confirmation']) ? sanitize_text_field(wp_unslash($_POST['confirmation'])) : '';
         if (!hash_equals(self::CONFIRMATION_WORD, $confirmation)) {
-            wp_safe_redirect(admin_url('options-general.php?page=' . self::ADMIN_PAGE_SLUG . '&confirmation_failed=1'));
+            wp_safe_redirect(admin_url('admin.php?page=' . self::ADMIN_PAGE_SLUG . '&confirmation_failed=1'));
             exit;
         }
 
@@ -534,7 +571,7 @@ class Cashback_Encryption_Recovery {
         self::handle_admin_form_submit($_POST, $run_sync);
 
         $redirect_flag = $run_sync ? '&completed=1' : '&scheduled=1';
-        wp_safe_redirect(admin_url('options-general.php?page=' . self::ADMIN_PAGE_SLUG . $redirect_flag));
+        wp_safe_redirect(admin_url('admin.php?page=' . self::ADMIN_PAGE_SLUG . $redirect_flag));
         exit;
     }
 
