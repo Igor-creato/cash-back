@@ -19,6 +19,10 @@ class KeyRotationDispatcherTest extends TestCase
         delete_option(Cashback_Key_Rotation::STATE_OPTION);
         $GLOBALS['_cb_test_as_scheduled'] = false;
         $GLOBALS['_cb_test_filters']      = array();
+        // Другие тестовые классы могут оставить в $GLOBALS['wpdb'] свой стаб без get_col()/get_var() —
+        // гарантируем чистое состояние для run_phase_batch, который ожидает либо полноценный wpdb,
+        // либо его отсутствие (no-op).
+        unset($GLOBALS['wpdb']);
     }
 
     protected function tearDown(): void
@@ -26,6 +30,7 @@ class KeyRotationDispatcherTest extends TestCase
         $GLOBALS['_cb_test_filters']      = array();
         $GLOBALS['_cb_test_as_scheduled'] = false;
         delete_option(Cashback_Key_Rotation::STATE_OPTION);
+        unset($GLOBALS['wpdb']);
     }
 
     /**
