@@ -156,6 +156,57 @@ class Cashback_Affiliate_Admin {
         echo '</div>'; // wrap
     }
 
+    /**
+     * Вызвать callable после COMMIT; при сбое — error_log + audit_log с desync-маркером.
+     *
+     * Group 8 Step 4 (F-23-003). Используется для update_option()-подобных операций,
+     * которые НЕ участвуют в MySQL-транзакции (wp_options / wp_cache / внешние
+     * вызовы). Если COMMIT уже прошёл, а последующий write упал — БД и option
+     * рассинхронизированы. Helper логирует это с достаточным контекстом для
+     * ручного восстановления:
+     *   - error_log (видно в логах сервера)
+     *   - Cashback_Encryption::write_audit_log с event_name 'desync_*'
+     *     (видно в admin-audit-панели).
+     *
+     * @param callable $callback   Замыкание, которое надо выполнить после COMMIT.
+     * @param string   $context    Короткий идентификатор операции (для audit event_name).
+     * @param array    $audit_data Доп. данные для audit_log (old/new rate и т.п.).
+     * @return bool true при успехе, false при исключении.
+     */
+    private function apply_post_commit( callable $callback, string $context, array $audit_data = array() ): bool {
+        try {
+            $callback();
+            return true;
+        } catch (\Throwable $e) {
+            $message = sprintf(
+                '[Cashback Affiliate] apply_post_commit desync for "%s": %s',
+                $context,
+                $e->getMessage()
+            );
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging for post-COMMIT desync.
+            error_log($message);
+
+            if (class_exists('Cashback_Encryption')) {
+                Cashback_Encryption::write_audit_log(
+                    'desync_' . $context,
+                    get_current_user_id(),
+                    'wp_options',
+                    null,
+                    array_merge(
+                        $audit_data,
+                        array(
+                            'context' => $context,
+                            'error'   => $e->getMessage(),
+                            'note'    => 'Post-COMMIT option write failed; DB rows updated but option may be stale.',
+                        )
+                    )
+                );
+            }
+
+            return false;
+        }
+    }
+
     /* ═══════════════════════════════════════
      *  ВКЛАДКА: НАСТРОЙКИ
      * ═══════════════════════════════════════ */
@@ -1059,16 +1110,26 @@ class Cashback_Affiliate_Admin {
                 );
             }
 
-            // Обновляем глобальную ставку ПОСЛЕ COMMIT — update_option() не участвует
-            // в MySQL-транзакции. Если COMMIT прошёл, профили и логи записаны.
-            // Если update_option() упадёт, это не критично — ставка по умолчанию
-            // для новых пользователей будет старой до следующего ручного изменения.
+            // Group 8 Step 4, F-23-003: option-write не участвует в MySQL-транзакции,
+            // поэтому он помещён ПОСЛЕ COMMIT через apply_post_commit helper.
+            // Если post-commit write упадёт — получим error_log + audit_log
+            // с desync-маркером (admin увидит рассинхрон профили↔option).
             $committed_global = $is_all ? $new_rate : null;
 
             $wpdb->query('COMMIT');
 
             if ($committed_global !== null) {
-                Cashback_Affiliate_DB::set_global_rate($committed_global);
+                $this->apply_post_commit(
+                    function () use ( $committed_global ) {
+                        Cashback_Affiliate_DB::set_global_rate($committed_global);
+                    },
+                    'bulk_affiliate_commission_global_rate',
+                    array(
+                        'old_rate'       => $old_rate_raw,
+                        'new_rate'       => $new_rate,
+                        'affected_users' => (int) $result,
+                    )
+                );
             }
         } catch (Exception $e) {
             $wpdb->query('ROLLBACK');
