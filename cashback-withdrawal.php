@@ -1047,10 +1047,21 @@ class CashbackWithdrawal {
             $insert_formats = array( '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s' );
 
             if ($has_encrypted) {
-                $insert_data['encrypted_details'] = $encryption_data['encrypted_details'];
-                $insert_data['masked_details']    = $encryption_data['masked_details'];
-                $insert_formats[]                 = '%s';
-                $insert_formats[]                 = '%s';
+                // Нормализуем ciphertext к текущему write-key под удержанием row-lock'а
+                // на user_profile (FOR UPDATE выше, при чтении status). Закрывает TOCTOU-race
+                // с batch-job'ом ротации: вновь созданная заявка пишется ciphertext'ом,
+                // зашифрованным актуальным write-key'ом, без необходимости повторной обработки
+                // batch'ем или sanity-pass'ом. rotate_value() = trial-decrypt → encrypt(write-key).
+                try {
+                    $insert_data['encrypted_details'] = Cashback_Encryption::rotate_value(
+                        (string) $encryption_data['encrypted_details']
+                    );
+                } catch (\Throwable $rot_e) {
+                    throw new \Exception('encrypted_details_rotation_failed: ' . $rot_e->getMessage());
+                }
+                $insert_data['masked_details'] = $encryption_data['masked_details'];
+                $insert_formats[]              = '%s';
+                $insert_formats[]              = '%s';
             }
 
             $inserted           = false;
