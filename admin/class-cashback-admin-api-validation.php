@@ -242,22 +242,15 @@ class Cashback_Admin_API_Validation {
 
             <?php
             foreach ($networks as $network) :
-                // Защита от провала расшифровки credentials (напр. после теста
-                // «утеря ключа», когда api_credentials зашифрованы retired-ключом):
-                // Cashback_Encryption::decrypt() кидает RuntimeException, который
-                // бы обрушил всю admin-страницу в 500 — админ тогда не мог бы
-                // ни ввести новые credentials, ни переключить сеть. Глотаем
-                // исключение и показываем форму пустой с inline-уведомлением.
-                $credentials_error = null;
-                try {
-                    $saved_credentials = Cashback_API_Client::get_instance()->get_credentials((int) $network['id']) ?: array();
-                } catch (\Throwable $e) {
-                    $saved_credentials = array();
-                    $credentials_error = $e->getMessage();
-                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
-                    error_log('[Cashback Admin API] get_credentials(' . (int) $network['id'] . ') failed: ' . $e->getMessage());
-                }
-                $saved_scope = $saved_credentials['scope'] ?? '';
+                // get_credentials() гарантированно не кидает (fix в Cashback_API_Client):
+                // возвращает null если запись пустая ИЛИ если ciphertext не
+                // расшифровывается текущими активными ключами. Отличаем эти два
+                // случая через has_undecryptable_credentials() — чтобы показать
+                // админу понятный баннер только во второй ситуации.
+                $api_client                = Cashback_API_Client::get_instance();
+                $saved_credentials         = $api_client->get_credentials((int) $network['id']) ?: array();
+                $credentials_undecryptable = $api_client->has_undecryptable_credentials((int) $network['id']);
+                $saved_scope               = $saved_credentials['scope'] ?? '';
             ?>
                 <div class="cashback-network-card" data-network-id="<?php echo esc_attr($network['id']); ?>" style="display:none">
                     <h2><?php echo esc_html($network['name']); ?>
@@ -269,13 +262,13 @@ class Cashback_Admin_API_Validation {
                         <?php endif; ?>
                     </h2>
 
-                    <?php if ($credentials_error !== null) : ?>
+                    <?php if ($credentials_undecryptable) : ?>
                         <div class="notice notice-warning inline" style="margin:10px 0;padding:10px 12px;">
                             <p style="margin:0;">
                                 <strong>Сохранённые credentials этой сети не расшифровываются</strong>
                                 текущими активными ключами шифрования (напр. после утери/ротации ключа).
                                 Введите API-параметры заново и нажмите «Сохранить» — плагин перешифрует их
-                                актуальным ключом. Детали в логах PHP: <code><?php echo esc_html($credentials_error); ?></code>
+                                актуальным ключом. Детали в логах PHP (строка <code>[Cashback API Client] decrypt failed</code>).
                             </p>
                         </div>
                     <?php endif; ?>
@@ -954,24 +947,16 @@ echo 'style="display:none"';}
         }
 
         // Сохраняем credentials если указаны новые.
-        // Защита от провала расшифровки старых credentials (утеря ключа /
-        // незавершённая ротация): get_credentials() кидает RuntimeException
-        // из Cashback_Encryption::decrypt(). Без catch'а AJAX ответит 500,
-        // и админ не сможет переписать именно те credentials, которые и
-        // протухли — получается тупик. Глотаем ошибку, начинаем с пустого
-        // массива; замаскированные поля (•••) в этом случае не могут быть
-        // partial-update'ом, поэтому требуем полный ввод.
+        // get_credentials() теперь возвращает null на невозможность расшифровки
+        // (не кидает). Для partial-update'а (масленые поля •••) критично знать,
+        // есть ли расшифруемые старые данные. has_undecryptable_credentials()
+        // отличает «нет данных вообще» от «данные есть, но ключ ротирован /
+        // утерян» — во втором случае требуем полный ввод, потому что
+        // подставить старое значение вместо маски мы не можем.
         $client               = Cashback_API_Client::get_instance();
-        $existing             = array();
-        $old_credentials_lost = false;
-        try {
-            $existing = $client->get_credentials($network_id) ?: array();
-        } catch (\Throwable $e) {
-            $old_credentials_lost = true;
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
-            error_log('[Cashback Admin API] ajax_save_credentials: cannot decrypt existing credentials for network ' . $network_id . ' — full re-entry required. ' . $e->getMessage());
-        }
-        $credentials_changed = false;
+        $existing             = $client->get_credentials($network_id) ?: array();
+        $old_credentials_lost = $client->has_undecryptable_credentials($network_id);
+        $credentials_changed  = false;
 
         if ($auth_type === 'api_key') {
             $api_key = isset($_POST['api_key']) ? sanitize_text_field(wp_unslash($_POST['api_key'])) : '';
