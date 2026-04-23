@@ -30,9 +30,10 @@ class Cashback_Fraud_Collector {
         add_action('wp_login', array( $this, 'on_user_login' ), 10, 2);
         add_action('user_register', array( $this, 'on_user_register' ));
         add_action('wp_enqueue_scripts', array( $this, 'enqueue_fingerprint_script' ));
+        // 11b-2: гости не фингерпринтятся вовсе — nopriv-registration убран.
+        // `Cashback_Fraud_Consent` не определяет consent-basis для guest device_id (iter-6),
+        // поэтому единственный путь к device_id insert — authenticated + `has_consent()`.
         add_action('wp_ajax_cashback_fraud_fingerprint', array( $this, 'handle_fingerprint_ajax' ));
-        // Guest device-id записываем (если согласие не требуется для guest, см. handler).
-        add_action('wp_ajax_nopriv_cashback_fraud_fingerprint', array( $this, 'handle_fingerprint_ajax' ));
     }
 
     /**
@@ -161,13 +162,18 @@ class Cashback_Fraud_Collector {
             return;
         }
 
-        // Авторизованных юзеров требуем как раньше; гость допускается только для записи device_id
-        // (legacy-flow без device_id для гостей сохраняет прежнее поведение — ошибка).
-        $is_guest = !is_user_logged_in();
-        $uid      = $is_guest ? 0 : (int) get_current_user_id();
+        // 11b-2 (F-34-006 server-side, iter-6): гости никогда не фингерпринтятся.
+        // Defense-in-depth: nopriv-action уже не регистрируется, но guard оставляем
+        // на случай если action восстановят или handler вызовут в другом контексте.
+        if (!is_user_logged_in()) {
+            wp_send_json_error('Not logged in');
+            return;
+        }
 
-        // Rate-limit: 1 fingerprint за 10 минут — на uid или, для гостя, на IP.
-        $rate_subject = $is_guest ? 'ip_' . md5(self::get_client_ip()) : (string) $uid;
+        $uid = (int) get_current_user_id();
+
+        // Rate-limit: 1 fingerprint за 10 минут на uid.
+        $rate_subject = (string) $uid;
         $rate_key     = 'cb_fp_rate_' . $rate_subject;
         if (!wp_cache_add($rate_key, 1, 'cashback', 600)) {
             wp_send_json_success(array(
@@ -203,14 +209,9 @@ class Cashback_Fraud_Collector {
             return;
         }
 
-        // Гость без device_id — отвергаем (legacy-поведение требовало логина).
-        if ($is_guest && $device_id === '') {
-            wp_send_json_error('Not logged in');
-            return;
-        }
-
-        // Legacy запись в cashback_user_fingerprints — только для авторизованных (FK NOT NULL user_id).
-        if (!$is_guest && $fp_hash !== '') {
+        // Legacy запись в cashback_user_fingerprints — только для authenticated (FK NOT NULL user_id).
+        // 11b-2: is_user_logged_in() гарантировано true к этому моменту.
+        if ($fp_hash !== '') {
             self::record_fingerprint(
                 $uid,
                 self::get_client_ip(),
@@ -225,12 +226,11 @@ class Cashback_Fraud_Collector {
         $device_id_enabled = !class_exists('Cashback_Fraud_Settings')
             || Cashback_Fraud_Settings::is_device_id_enabled();
         if ($device_id_enabled && $device_id !== '' && class_exists('Cashback_Fraud_Device_Id')) {
-            // 152-ФЗ: для авторизованных юзеров проверяем согласие через user_meta
-            // (ставится формой регистрации в Этапе 7). Для гостей согласие не требуется.
+            // 11b-2 (152-ФЗ, iter-6): для authenticated юзеров проверяем согласие через user_meta.
             // Тумблер consent_required позволяет отключить требование (legacy/dev).
             $consent_required = !class_exists('Cashback_Fraud_Settings')
                 || Cashback_Fraud_Settings::is_consent_required();
-            $consent_ok       = $is_guest || !$consent_required;
+            $consent_ok       = !$consent_required;
             if (!$consent_ok) {
                 if (class_exists('Cashback_Fraud_Consent')) {
                     $consent_ok = (bool) call_user_func(array( 'Cashback_Fraud_Consent', 'has_consent' ), $uid);
@@ -253,7 +253,7 @@ class Cashback_Fraud_Collector {
 
                 $result          = Cashback_Fraud_Device_Id::record(
                     $payload,
-                    $is_guest ? null : $uid,
+                    $uid,
                     self::get_client_ip(),
                     $ua
                 );
