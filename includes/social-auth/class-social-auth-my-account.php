@@ -173,7 +173,7 @@ class Cashback_Social_Auth_My_Account {
         $has_password = $user instanceof WP_User && $user->user_pass !== '';
         $nonce        = wp_create_nonce('wp_rest');
 
-        echo '<table class="cashback-social-links-table shop_table">';
+        echo '<table class="cashback-social-links-table">';
         echo '<thead><tr>';
         echo '<th>' . esc_html__('Провайдер', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Дата', 'cashback-plugin') . '</th>';
