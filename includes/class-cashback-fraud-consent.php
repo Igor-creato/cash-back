@@ -44,14 +44,11 @@ class Cashback_Fraud_Consent {
         add_filter('woocommerce_registration_errors', array( __CLASS__, 'validate_consent' ), 10, 3);
         add_action('woocommerce_created_customer', array( __CLASS__, 'save_consent_on_registration' ), 10, 2);
 
-        // Social Auth: при регистрации через VK/Yandex явное согласие даётся
-        // на стороне OAuth-провайдера (политика платформы) — фиксируем consent
-        // автоматически. В модуле social-auth нет собственного хука создания юзера,
-        // поэтому опираемся на стандартный user_register с проверкой meta-маркера
-        // Cashback_Social_Auth_Account_Manager::META_VIA (выставляется сразу после
-        // wp_insert_user в create_pending_user_and_link). См. файл
-        // includes/social-auth/class-social-auth-account-manager.php:599.
-        add_action('user_register', array( __CLASS__, 'maybe_save_consent_for_social' ), 30, 1);
+        // 11b-3 (iter-11, 2026-04-23): авто-consent на user_register удалён —
+        // VK/Yandex-регистрация теперь требует явного чекбокса на UI и передаёт
+        // consent_given=true через session. Запись происходит explicit'но в
+        // Cashback_Social_Auth_Account_Manager::create_pending_user_and_link().
+        // maybe_save_consent_for_social() оставлен public для bc, но не хукается.
     }
 
     /**

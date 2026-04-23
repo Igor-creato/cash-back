@@ -632,6 +632,15 @@ class Cashback_Social_Auth_Account_Manager {
         update_user_meta($user_id, self::META_PROVIDER, $provider_id);
         update_user_meta($user_id, self::META_VIA, 1);
 
+        // 11b-3 (iter-11): explicit consent, записан на UI через checkbox,
+        // пробрасывается через session-data из handle_start. Записываем только
+        // если юзер активно согласился; иначе consent остаётся пустым и JS
+        // в fraud-fingerprint.js не начнёт собирать device_id.
+        $consent_given = (bool) ( $session_data['consent_given'] ?? false );
+        if ($consent_given && class_exists('Cashback_Fraud_Consent')) {
+            Cashback_Fraud_Consent::record_consent($user_id, $ip);
+        }
+
         $link_id = Cashback_Social_Auth_DB::save_link(array(
             'user_id'            => $user_id,
             'provider'           => $provider_id,
