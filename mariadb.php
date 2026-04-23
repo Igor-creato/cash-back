@@ -79,6 +79,7 @@ class Mariadb_Plugin {
             $instance->migrate_add_transaction_reference_id();
             $instance->migrate_add_frozen_balance_buckets();
             $instance->migrate_schema_idempotency_v1();
+            $instance->migrate_add_click_sessions_v1();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -182,6 +183,8 @@ class Mariadb_Plugin {
             `api_website_id` varchar(100) DEFAULT NULL COMMENT 'ID площадки в CPA-сети (для фильтрации)',
             `sort_order` int(11) NOT NULL DEFAULT 0 COMMENT 'Порядок сортировки',
             `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = активен',
+            `click_session_policy` VARCHAR(32) NOT NULL DEFAULT 'reuse_in_window' COMMENT 'Политика повторного клика (12i): reuse_in_window | always_new | reuse_per_product',
+            `activation_window_seconds` INT UNSIGNED NOT NULL DEFAULT 1800 COMMENT 'Per-network окно активации в секундах (60..86400, default 30 min) — 12i',
             `created_at` datetime DEFAULT current_timestamp(),
             `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
             PRIMARY KEY (`id`),
@@ -375,9 +378,12 @@ class Mariadb_Plugin {
         // Таблица логирования кликов по партнерским ссылкам
         $table_click_log = "CREATE TABLE IF NOT EXISTS `{$wpdb->prefix}cashback_click_log` (
             `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            `click_id` char(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'UUIDv7 клика без дефисов (32 hex), передаётся в CPA как subID',
+            `click_session_id` BIGINT UNSIGNED DEFAULT NULL COMMENT 'FK на cashback_click_sessions.id (12i). NULL для legacy rows до F-10-001 migration',
+            `client_request_id` CHAR(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL COMMENT 'UUID v4/v7 от клиента для идемпотентности тапов (12i)',
+            `is_session_primary` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 = этот тап создал новую сессию (click_id == session.canonical_click_id) — 12i',
+            `click_id` char(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'UUIDv7 клика без дефисов (32 hex), передаётся в CPA как subID. Для primary-тапа == canonical_click_id сессии',
             `user_id` bigint(20) unsigned NOT NULL DEFAULT 0 COMMENT 'WP user ID (0 для гостей)',
-            `session_id` varchar(128) DEFAULT NULL COMMENT 'Идентификатор сессии для незалогиненных',
+            `session_id` varchar(128) DEFAULT NULL COMMENT 'Гостевой PHP session id (для незалогиненных). Не путать с click_session_id — разные концепты',
             `product_id` bigint(20) unsigned NOT NULL COMMENT 'ID товара WooCommerce',
             `cpa_network` varchar(100) DEFAULT NULL COMMENT 'Название CPA-сети',
             `offer_id` varchar(255) DEFAULT NULL COMMENT 'ID оффера в сети',
@@ -393,6 +399,8 @@ class Mariadb_Plugin {
             `created_at` datetime(6) NOT NULL COMMENT 'Время клика (UTC)',
             PRIMARY KEY (`id`),
             UNIQUE KEY `uk_click_id` (`click_id`),
+            KEY `idx_click_session_id` (`click_session_id`),
+            KEY `idx_client_request` (`user_id`,`client_request_id`),
             KEY `idx_user_id` (`user_id`),
             KEY `idx_product_id` (`product_id`),
             KEY `idx_cpa_network` (`cpa_network`),
@@ -401,7 +409,31 @@ class Mariadb_Plugin {
             KEY `idx_session_id` (`session_id`),
             KEY `idx_spam_by_ip` (`created_at`,`spam_click`,`ip_address`),
             KEY `idx_spam_by_product` (`created_at`,`spam_click`,`product_id`)
-        ) ENGINE=InnoDB {$charset_collate} COMMENT='Лог кликов по партнерским ссылкам';";
+        ) ENGINE=InnoDB {$charset_collate} COMMENT='Лог кликов по партнерским ссылкам (tap events, 12i)';";
+
+        // 12i ADR (F-10-001): canonical click sessions — дедуп окна активации.
+        // tap events логируются в cashback_click_log, но canonical_click_id и
+        // state сессии (status, tap_count, expires_at) — здесь.
+        $table_click_sessions = "CREATE TABLE IF NOT EXISTS `{$wpdb->prefix}cashback_click_sessions` (
+            `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `canonical_click_id` CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'UUIDv7, идёт в CPA postback. == click_id первого тапа сессии',
+            `user_id` BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '0 для гостей',
+            `guest_session_id` VARCHAR(128) DEFAULT NULL COMMENT 'PHP session id для гостей',
+            `product_id` BIGINT UNSIGNED NOT NULL,
+            `merchant_id` BIGINT UNSIGNED NOT NULL COMMENT 'FK cashback_affiliate_networks.id',
+            `affiliate_url` TEXT NOT NULL COMMENT 'Канонический URL редиректа для сессии',
+            `status` ENUM('active','expired','converted','invalidated') NOT NULL DEFAULT 'active',
+            `tap_count` INT UNSIGNED NOT NULL DEFAULT 1,
+            `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+            `expires_at` DATETIME(6) NOT NULL COMMENT 'created_at + activation_window_seconds из merchant policy',
+            `last_tap_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+            `converted_at` DATETIME(6) DEFAULT NULL COMMENT 'Set when webhook receives matching transaction',
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_canonical_click_id` (`canonical_click_id`),
+            KEY `idx_user_product_active` (`user_id`,`product_id`,`status`,`expires_at`),
+            KEY `idx_guest_product_active` (`guest_session_id`,`product_id`,`status`,`expires_at`),
+            KEY `idx_expires_status` (`expires_at`,`status`)
+        ) ENGINE=InnoDB {$charset_collate} COMMENT='Canonical click sessions (12i, F-10-001 dedup)';";
 
         // Таблица-леджер: единственный источник правды для баланса
         $table_balance_ledger = "CREATE TABLE IF NOT EXISTS `{$wpdb->prefix}cashback_balance_ledger` (
@@ -524,6 +556,7 @@ class Mariadb_Plugin {
             'cashback_webhooks'                  => $table_webhooks,
             'cashback_user_profile'              => $table_profile,
             'cashback_click_log'                 => $table_click_log,
+            'cashback_click_sessions'            => $table_click_sessions,
             'cashback_validation_checkpoints'    => $table_validation_checkpoints,
             'cashback_sync_log'                  => $table_sync_log,
             'cashback_rate_history'              => $table_rate_history,
@@ -2279,6 +2312,118 @@ class Mariadb_Plugin {
      * Версионизация: option cashback_db_version. Миграция идемпотентна —
      * проверяет наличие колонок через INFORMATION_SCHEMA.
      */
+    /**
+     * Миграция 12i-1 ADR (F-10-001): click_sessions table + click_log FK +
+     * merchant policy columns в affiliate_networks.
+     *
+     * - Создаёт таблицу cashback_click_sessions (CREATE TABLE IF NOT EXISTS
+     *   идемпотентен — для fresh installs уже поднят в create_tables()).
+     * - ALTER TABLE click_log ADD click_session_id / client_request_id / is_session_primary.
+     * - ALTER TABLE affiliate_networks ADD click_session_policy / activation_window_seconds.
+     *
+     * Версионизация: cashback_db_version = 3. Проверка колонок через
+     * INFORMATION_SCHEMA — идемпотентная (паттерн migrate_add_frozen_balance_buckets).
+     */
+    public function migrate_add_click_sessions_v1(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        if ($current_version >= 3) {
+            return;
+        }
+
+        $click_log_table    = $wpdb->prefix . 'cashback_click_log';
+        $networks_table     = $wpdb->prefix . 'cashback_affiliate_networks';
+        $click_sessions_tbl = $wpdb->prefix . 'cashback_click_sessions';
+
+        // ------------------------------------------------------------------
+        // click_log: ADD COLUMN click_session_id / client_request_id / is_session_primary
+        // ------------------------------------------------------------------
+        $click_log_exists = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $click_log_table
+        ));
+        if ($click_log_exists > 0) {
+            $click_log_columns = array(
+                'click_session_id'   => "ADD COLUMN `click_session_id` BIGINT UNSIGNED DEFAULT NULL COMMENT 'FK cashback_click_sessions.id (12i)' AFTER `id`",
+                'client_request_id'  => "ADD COLUMN `client_request_id` CHAR(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL COMMENT 'UUID v4/v7 (12i)' AFTER `click_session_id`",
+                'is_session_primary' => "ADD COLUMN `is_session_primary` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 = primary tap of session (12i)' AFTER `client_request_id`",
+            );
+
+            foreach ($click_log_columns as $column_name => $alter_clause) {
+                $exists = (int) $wpdb->get_var($wpdb->prepare(
+                    'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s',
+                    $click_log_table,
+                    $column_name
+                ));
+                if ($exists === 0) {
+                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $alter_clause is a hardcoded DDL fragment from this method (no user input).
+                    $wpdb->query($wpdb->prepare("ALTER TABLE %i {$alter_clause}", $click_log_table));
+                    if ($wpdb->last_error) {
+                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                        error_log("[Cashback Migration v3] click_log ADD COLUMN {$column_name}: " . $wpdb->last_error);
+                        return;
+                    }
+                }
+            }
+
+            // Индексы click_log: idx_click_session_id + idx_client_request.
+            $click_log_indexes = array(
+                'idx_click_session_id' => 'ADD KEY `idx_click_session_id` (`click_session_id`)',
+                'idx_client_request'   => 'ADD KEY `idx_client_request` (`user_id`,`client_request_id`)',
+            );
+            foreach ($click_log_indexes as $index_name => $alter_clause) {
+                $exists = (int) $wpdb->get_var($wpdb->prepare(
+                    'SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND INDEX_NAME = %s',
+                    $click_log_table,
+                    $index_name
+                ));
+                if ($exists === 0) {
+                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $alter_clause is a hardcoded DDL fragment from this method (no user input).
+                    $wpdb->query($wpdb->prepare("ALTER TABLE %i {$alter_clause}", $click_log_table));
+                    if ($wpdb->last_error) {
+                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                        error_log("[Cashback Migration v3] click_log ADD KEY {$index_name}: " . $wpdb->last_error);
+                        return;
+                    }
+                }
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // affiliate_networks: ADD COLUMN click_session_policy / activation_window_seconds
+        // ------------------------------------------------------------------
+        $networks_exists = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $networks_table
+        ));
+        if ($networks_exists > 0) {
+            $networks_columns = array(
+                'click_session_policy'      => "ADD COLUMN `click_session_policy` VARCHAR(32) NOT NULL DEFAULT 'reuse_in_window' COMMENT 'Merchant policy (12i): reuse_in_window | always_new | reuse_per_product'",
+                'activation_window_seconds' => "ADD COLUMN `activation_window_seconds` INT UNSIGNED NOT NULL DEFAULT 1800 COMMENT 'Per-network activation window 60..86400 (12i)'",
+            );
+
+            foreach ($networks_columns as $column_name => $alter_clause) {
+                $exists = (int) $wpdb->get_var($wpdb->prepare(
+                    'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s',
+                    $networks_table,
+                    $column_name
+                ));
+                if ($exists === 0) {
+                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $alter_clause is a hardcoded DDL fragment from this method (no user input).
+                    $wpdb->query($wpdb->prepare("ALTER TABLE %i {$alter_clause}", $networks_table));
+                    if ($wpdb->last_error) {
+                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                        error_log("[Cashback Migration v3] affiliate_networks ADD COLUMN {$column_name}: " . $wpdb->last_error);
+                        return;
+                    }
+                }
+            }
+        }
+
+        update_option('cashback_db_version', 3, false);
+    }
+
     public function migrate_add_frozen_balance_buckets(): void {
         global $wpdb;
 
