@@ -721,9 +721,9 @@ class Cashback_API_Client {
             if (strlen($date_str) === 13) {
                 $timestamp = (int) ( $timestamp / 1000 );
             }
-            $dt = new DateTime();
-            $dt->setTimestamp($timestamp);
-            $dt->setTimezone(new DateTimeZone(wp_timezone_string()));
+            // 12e ADR (F-8-004): DateTimeImmutable + wp_timezone() — неизменяемость
+            // + прямой DateTimeZone без прохода через строку.
+            $dt = ( new DateTimeImmutable('@' . $timestamp) )->setTimezone(wp_timezone());
             return $dt->format('Y-m-d H:i:s');
         }
 
@@ -745,7 +745,8 @@ class Cashback_API_Client {
         );
 
         foreach ($formats as $format) {
-            $dt = DateTime::createFromFormat($format, $date_str);
+            // 12e ADR (F-8-004): DateTimeImmutable::createFromFormat — immutable, не трогает $this.
+            $dt = DateTimeImmutable::createFromFormat($format, $date_str);
             if ($dt !== false) {
                 return $dt->format('Y-m-d H:i:s');
             }
