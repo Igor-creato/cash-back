@@ -953,13 +953,31 @@ echo 'style="display:none"';}
             wp_send_json_error(array( 'message' => 'Ошибка сохранения настроек. Подробности записаны в журнал.' ));
         }
 
-        // Сохраняем credentials если указаны новые
-        $client              = Cashback_API_Client::get_instance();
-        $existing            = $client->get_credentials($network_id) ?: array();
+        // Сохраняем credentials если указаны новые.
+        // Защита от провала расшифровки старых credentials (утеря ключа /
+        // незавершённая ротация): get_credentials() кидает RuntimeException
+        // из Cashback_Encryption::decrypt(). Без catch'а AJAX ответит 500,
+        // и админ не сможет переписать именно те credentials, которые и
+        // протухли — получается тупик. Глотаем ошибку, начинаем с пустого
+        // массива; замаскированные поля (•••) в этом случае не могут быть
+        // partial-update'ом, поэтому требуем полный ввод.
+        $client               = Cashback_API_Client::get_instance();
+        $existing             = array();
+        $old_credentials_lost = false;
+        try {
+            $existing = $client->get_credentials($network_id) ?: array();
+        } catch (\Throwable $e) {
+            $old_credentials_lost = true;
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+            error_log('[Cashback Admin API] ajax_save_credentials: cannot decrypt existing credentials for network ' . $network_id . ' — full re-entry required. ' . $e->getMessage());
+        }
         $credentials_changed = false;
 
         if ($auth_type === 'api_key') {
             $api_key = isset($_POST['api_key']) ? sanitize_text_field(wp_unslash($_POST['api_key'])) : '';
+            if ($old_credentials_lost && str_starts_with($api_key, '•')) {
+                wp_send_json_error(array( 'message' => 'Старые credentials не расшифровываются текущими ключами. Введите API Key полностью — замаскированное значение не будет принято.' ));
+            }
             if (!empty($api_key) && !str_starts_with($api_key, '•')) {
                 $existing['api_key'] = $api_key;
                 $credentials_changed = true;
@@ -967,6 +985,10 @@ echo 'style="display:none"';}
         } else {
             $client_id     = isset($_POST['client_id']) ? sanitize_text_field(wp_unslash($_POST['client_id'])) : '';
             $client_secret = isset($_POST['client_secret']) ? sanitize_text_field(wp_unslash($_POST['client_secret'])) : '';
+
+            if ($old_credentials_lost && ( str_starts_with($client_id, '•') || str_starts_with($client_secret, '•') )) {
+                wp_send_json_error(array( 'message' => 'Старые credentials не расшифровываются текущими ключами. Введите client_id и client_secret полностью — замаскированные значения не будут приняты.' ));
+            }
 
             if (!empty($client_id) && !str_starts_with($client_id, '•')) {
                 $existing['client_id'] = $client_id;
