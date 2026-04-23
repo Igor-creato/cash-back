@@ -619,6 +619,8 @@ class Cashback_Claims_Frontend {
             '1.4.0'
         );
 
+        Cashback_Assets::enqueue_safe_html();
+
         wp_enqueue_script(
             'cashback-pagination',
             $plugin_dir_url . 'assets/js/cashback-pagination.js',
@@ -630,7 +632,7 @@ class Cashback_Claims_Frontend {
         wp_enqueue_script(
             'cashback-claims-js',
             $plugin_dir_url . 'assets/js/admin-claims.js',
-            array( 'jquery', 'cashback-pagination' ),
+            array( 'jquery', 'cashback-pagination', 'cashback-safe-html' ),
             '1.5.0',
             true
         );
