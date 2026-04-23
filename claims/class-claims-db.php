@@ -15,6 +15,98 @@ if (!defined('ABSPATH')) {
  */
 class Cashback_Claims_DB {
 
+    /**
+     * Неожиданные migration-ошибки, накопленные в рамках текущего request.
+     * Формат: array<array{migration:string, error:string}>.
+     *
+     * @var array<int,array{migration:string,error:string}>
+     */
+    private static array $migration_errors = array();
+
+    /**
+     * Регистрация admin_notices выполняется один раз на request.
+     */
+    private static bool $admin_notice_registered = false;
+
+    /**
+     * Классификатор DDL-ошибок MySQL/MariaDB. 12f ADR (F-20-001).
+     *
+     * true для идемпотентно-ожидаемых состояний: пустая строка (нет ошибки),
+     * "Duplicate*" (коды 1060 duplicate column / 1061 duplicate key / FK duplicate),
+     * "check constraint"/"Check constraint"/"already exists" (3822/1826).
+     *
+     * wpdb экспонирует ошибку только строкой — substring-match достаточен
+     * для защиты от drift между MySQL/MariaDB формулировками.
+     */
+    private static function is_known_ddl_error( string $error ): bool {
+        if ($error === '') {
+            return true;
+        }
+
+        $known_markers = array(
+            'Duplicate',         // 1060 duplicate column, 1061 duplicate key, duplicate FK constraint name
+            'check constraint',  // 3822 duplicate check constraint (lowercase variant)
+            'Check constraint',  // capitalised variant
+            'already exists',    // 1826 duplicate FK constraint name (alt wording)
+        );
+
+        foreach ($known_markers as $marker) {
+            if (stripos($error, $marker) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Эскалировать непредвиденную migration-ошибку: error_log + admin_notices
+     * hook (one-shot). 12f ADR (F-20-001).
+     */
+    private static function report_migration_error( string $migration, string $error ): void {
+        self::$migration_errors[] = array(
+            'migration' => $migration,
+            'error'     => $error,
+        );
+
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Diagnostic logging: post-mortem grep [Claims] Migration error.
+        error_log('[Claims] Migration error in ' . $migration . ': ' . $error);
+
+        if (!self::$admin_notice_registered && function_exists('add_action')) {
+            self::$admin_notice_registered = true;
+            add_action('admin_notices', array( self::class, 'render_migration_errors_notice' ));
+        }
+    }
+
+    /**
+     * Admin-notice callback со списком migration-имен. Raw SQL и текст ошибки
+     * в UI не попадают — только имя миграции (information-disclosure guard).
+     */
+    public static function render_migration_errors_notice(): void {
+        if (empty(self::$migration_errors)) {
+            return;
+        }
+        if (!current_user_can('activate_plugins')) {
+            return;
+        }
+
+        $migrations = array_values(array_unique(array_map(
+            static fn( array $e ): string => $e['migration'],
+            self::$migration_errors
+        )));
+        $list       = implode(', ', $migrations);
+
+        printf(
+            '<div class="notice notice-warning"><p><strong>%s</strong> %s</p></div>',
+            esc_html__('Cashback Claims:', 'cashback-plugin'),
+            esc_html(sprintf(
+                /* translators: %s is a comma-separated list of migration names */
+                __('обнаружены ошибки миграций: %s. Детали — в error_log (grep [Claims] Migration error).', 'cashback-plugin'),
+                $list
+            ))
+        );
+    }
+
     public static function create_tables(): void {
         global $wpdb;
 
@@ -118,9 +210,10 @@ class Cashback_Claims_DB {
         foreach ($constraints as $sql) {
             // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- DDL from local array (ALTER TABLE constraints), no user input.
             $wpdb->query($sql);
-            if ($wpdb->last_error && strpos($wpdb->last_error, 'Duplicate') === false) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                error_log('[Claims] Constraint warning (non-fatal): ' . $wpdb->last_error);
+            // 12f ADR (F-20-001): классифицируем через is_known_ddl_error вместо
+            // substring-match на "Duplicate" — покрываем также check-constraint и FK-duplicate.
+            if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
+                self::report_migration_error('add_constraints', $wpdb->last_error);
             }
         }
         $wpdb->suppress_errors($suppress);
@@ -137,10 +230,25 @@ class Cashback_Claims_DB {
         $col = $wpdb->get_results( $wpdb->prepare( 'SHOW COLUMNS FROM %i LIKE %s', $table, 'is_read' ) );
 
         if (empty($col)) {
+            // 12f ADR (F-20-001): после каждого DDL проверяем $wpdb->last_error
+            // и эскалируем через report_migration_error, если не idempotent-expected.
             $wpdb->query( $wpdb->prepare( "ALTER TABLE %i ADD COLUMN `is_read` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = прочитано пользователем' AFTER `actor_type`", $table ) );
+            if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
+                self::report_migration_error('migrate_add_is_read:add_column', $wpdb->last_error);
+            }
+
             $wpdb->query( $wpdb->prepare( 'ALTER TABLE %i ADD KEY `idx_unread` (`is_read`, `actor_type`)', $table ) );
+            if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
+                self::report_migration_error('migrate_add_is_read:add_key', $wpdb->last_error);
+            }
+
             // Mark all existing events as read so users don't get flooded
             $wpdb->query( $wpdb->prepare( 'UPDATE %i SET `is_read` = 1', $table ) );
+            if ($wpdb->last_error) {
+                // UPDATE не имеет "known" duplicate-semantics — любая ошибка = unexpected.
+                self::report_migration_error('migrate_add_is_read:backfill', $wpdb->last_error);
+            }
+
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Claims] Migration: added is_read column to claim_events');
         }
@@ -157,10 +265,23 @@ class Cashback_Claims_DB {
         $col = $wpdb->get_results( $wpdb->prepare( 'SHOW COLUMNS FROM %i LIKE %s', $table, 'is_read_admin' ) );
 
         if (empty($col)) {
+            // 12f ADR (F-20-001): эскалация непредвиденных DDL-ошибок (см. migrate_add_is_read).
             $wpdb->query( $wpdb->prepare( "ALTER TABLE %i ADD COLUMN `is_read_admin` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = прочитано администратором' AFTER `is_read`", $table ) );
+            if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
+                self::report_migration_error('migrate_add_is_read_admin:add_column', $wpdb->last_error);
+            }
+
             $wpdb->query( $wpdb->prepare( 'ALTER TABLE %i ADD KEY `idx_unread_admin` (`is_read_admin`, `actor_type`)', $table ) );
+            if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
+                self::report_migration_error('migrate_add_is_read_admin:add_key', $wpdb->last_error);
+            }
+
             // Mark user-authored events from the last 30 days as unread; older ones stay read
             $wpdb->query( $wpdb->prepare( 'UPDATE %i SET `is_read_admin` = 0 WHERE `actor_type` = %s AND `created_at` >= (NOW() - INTERVAL 30 DAY)', $table, 'user' ) );
+            if ($wpdb->last_error) {
+                self::report_migration_error('migrate_add_is_read_admin:backfill', $wpdb->last_error);
+            }
+
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Claims] Migration: added is_read_admin column to claim_events');
         }
