@@ -12,6 +12,89 @@ if (!defined('ABSPATH')) {
 class Cashback_Notifications_DB {
 
     /**
+     * Неожиданные migration-ошибки, накопленные в рамках request.
+     *
+     * @var array<int,array{migration:string,error:string}>
+     */
+    private static array $migration_errors = array();
+
+    /**
+     * Регистрация admin_notices выполняется один раз на request.
+     */
+    private static bool $admin_notice_registered = false;
+
+    /**
+     * Классификатор DDL-ошибок MySQL/MariaDB (паттерн из 12f, Claims_DB).
+     * true для идемпотентно-ожидаемых состояний.
+     */
+    private static function is_known_ddl_error( string $error ): bool {
+        if ($error === '') {
+            return true;
+        }
+
+        $known_markers = array(
+            'Duplicate',         // 1060/1061/FK duplicate
+            'check constraint',
+            'Check constraint',
+            'already exists',
+        );
+
+        foreach ($known_markers as $marker) {
+            if (stripos($error, $marker) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Эскалация непредвиденной migration-ошибки: error_log + admin_notices (one-shot).
+     */
+    private static function report_migration_error( string $migration, string $error ): void {
+        self::$migration_errors[] = array(
+            'migration' => $migration,
+            'error'     => $error,
+        );
+
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Diagnostic logging: post-mortem grep [Notifications] Migration error.
+        error_log('[Notifications] Migration error in ' . $migration . ': ' . $error);
+
+        if (!self::$admin_notice_registered && function_exists('add_action')) {
+            self::$admin_notice_registered = true;
+            add_action('admin_notices', array( self::class, 'render_migration_errors_notice' ));
+        }
+    }
+
+    /**
+     * Admin-notice: только имена миграций (information-disclosure guard).
+     */
+    public static function render_migration_errors_notice(): void {
+        if (empty(self::$migration_errors)) {
+            return;
+        }
+        if (!current_user_can('activate_plugins')) {
+            return;
+        }
+
+        $migrations = array_values(array_unique(array_map(
+            static fn( array $e ): string => $e['migration'],
+            self::$migration_errors
+        )));
+        $list       = implode(', ', $migrations);
+
+        printf(
+            '<div class="notice notice-warning"><p><strong>%s</strong> %s</p></div>',
+            esc_html__('Cashback Notifications:', 'cashback-plugin'),
+            esc_html(sprintf(
+                /* translators: %s is a comma-separated list of migration names */
+                __('обнаружены ошибки миграций: %s. Детали — в error_log (grep [Notifications] Migration error).', 'cashback-plugin'),
+                $list
+            ))
+        );
+    }
+
+    /**
      * Создание таблицы предпочтений уведомлений
      */
     public static function create_tables(): void {
@@ -65,6 +148,9 @@ class Cashback_Notifications_DB {
         ) {$charset_collate};";
 
         // Очередь получателей кампании.
+        // 12g ADR (F-23-004/005): processing_token per-batch ownership token для
+        // защиты от collision параллельных воркеров; last_error TEXT вместо
+        // error VARCHAR(255) — не обрезает длинные SMTP stack traces.
         $sql_broadcast_queue = "CREATE TABLE IF NOT EXISTS `{$prefix}cashback_broadcast_queue` (
             id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             campaign_id BIGINT UNSIGNED NOT NULL,
@@ -73,9 +159,12 @@ class Cashback_Notifications_DB {
             status VARCHAR(10) NOT NULL DEFAULT 'pending',
             attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
             error VARCHAR(255) DEFAULT NULL,
+            last_error TEXT DEFAULT NULL,
+            processing_token CHAR(36) DEFAULT NULL,
             processed_at DATETIME DEFAULT NULL,
             UNIQUE KEY uniq_campaign_user (campaign_id, user_id),
-            KEY idx_campaign_status (campaign_id, status)
+            KEY idx_campaign_status (campaign_id, status),
+            KEY idx_processing_token (processing_token)
         ) {$charset_collate};";
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -83,6 +172,45 @@ class Cashback_Notifications_DB {
         dbDelta($sql_queue);
         dbDelta($sql_broadcast_campaigns);
         dbDelta($sql_broadcast_queue);
+    }
+
+    /**
+     * Миграция для существующих установок: добавляет processing_token / last_error /
+     * idx_processing_token. Closes F-23-004 / F-23-005. Pattern — как в Claims_DB
+     * (SHOW COLUMNS guard + явная эскалация unexpected-ошибок через report_migration_error).
+     */
+    public static function migrate_add_processing_token_and_last_error(): void {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cashback_broadcast_queue';
+
+        // Таблицы может не быть на свежей инсталляции, где create_tables() ещё не прошёл
+        // (redundant call из bootstrap — ничего не делаем).
+        $exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
+        if ($exists !== $table) {
+            return;
+        }
+
+        $col_token = $wpdb->get_results( $wpdb->prepare( 'SHOW COLUMNS FROM %i LIKE %s', $table, 'processing_token' ) );
+        if (empty($col_token)) {
+            $wpdb->query( $wpdb->prepare( 'ALTER TABLE %i ADD COLUMN `processing_token` CHAR(36) DEFAULT NULL AFTER `error`', $table ) );
+            if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
+                self::report_migration_error('broadcast_queue:add_processing_token', $wpdb->last_error);
+            }
+
+            $wpdb->query( $wpdb->prepare( 'ALTER TABLE %i ADD KEY `idx_processing_token` (`processing_token`)', $table ) );
+            if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
+                self::report_migration_error('broadcast_queue:add_processing_token_key', $wpdb->last_error);
+            }
+        }
+
+        $col_last_error = $wpdb->get_results( $wpdb->prepare( 'SHOW COLUMNS FROM %i LIKE %s', $table, 'last_error' ) );
+        if (empty($col_last_error)) {
+            $wpdb->query( $wpdb->prepare( 'ALTER TABLE %i ADD COLUMN `last_error` TEXT DEFAULT NULL AFTER `error`', $table ) );
+            if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
+                self::report_migration_error('broadcast_queue:add_last_error', $wpdb->last_error);
+            }
+        }
     }
 
     /**

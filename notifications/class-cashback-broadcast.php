@@ -626,8 +626,9 @@ class Cashback_Broadcast {
         // iter-24 F-24-003: recovery застрявших 'processing' (воркер упал до финализации).
         // Только строки, не обновлявшие processed_at > 10 минут — это точно brошенные.
         // В штатном цикле claim→send→финализация processed_at обновляется в claim phase.
+        // 12g ADR (F-23-004): при recovery обнуляем processing_token — старый токен воркера больше не валиден.
         $wpdb->query($wpdb->prepare(
-            "UPDATE %i SET status = 'pending'
+            "UPDATE %i SET status = 'pending', processing_token = NULL
               WHERE campaign_id = %d
                 AND status = 'processing'
                 AND (processed_at IS NULL OR processed_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE))",
@@ -637,6 +638,10 @@ class Cashback_Broadcast {
 
         // iter-24 F-24-003: атомарный claim батча через промежуточный статус 'processing'.
         // Короткая транзакция с FOR UPDATE + bulk UPDATE страхует от дублей при параллельных воркерах.
+        // 12g ADR (F-23-004): defense-in-depth — per-batch processing_token для CAS
+        // на финализации (если TX-гарантия сломается при replication / gap-lock collisions,
+        // токен даст ownership-match на UPDATE статуса).
+        $claim_token = wp_generate_uuid4();
         $wpdb->query('START TRANSACTION');
 
         $rows = $wpdb->get_results($wpdb->prepare(
@@ -659,9 +664,9 @@ class Cashback_Broadcast {
                 $claim_ids[] = (int) $r['id'];
             }
             $ph_ids    = implode(',', array_fill(0, count($claim_ids), '%d'));
-            $claim_sql = "UPDATE %i SET status = 'processing', attempts = attempts + 1, processed_at = %s WHERE id IN ({$ph_ids}) AND status = 'pending'";
+            $claim_sql = "UPDATE %i SET status = 'processing', attempts = attempts + 1, processed_at = %s, processing_token = %s WHERE id IN ({$ph_ids}) AND status = 'pending'";
             // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $ph_ids is a '%d'-list of fixed length; values bound via prepare().
-            $wpdb->query($wpdb->prepare($claim_sql, array_merge(array( self::table_queue(), $now_sql ), $claim_ids)));
+            $wpdb->query($wpdb->prepare($claim_sql, array_merge(array( self::table_queue(), $now_sql, $claim_token ), $claim_ids)));
             $wpdb->query('COMMIT');
 
             // В памяти обновляем attempts после claim (для логики is_last).
@@ -686,16 +691,19 @@ class Cashback_Broadcast {
                     $campaign_id
                 ));
                 if ($current_status !== 'sending') {
+                    // 12g ADR (F-23-004/005): CAS на processing_token — только воркер
+                    // с корректным токеном может финализировать строку. last_error
+                    // вместо error (F-23-005: TEXT вместо VARCHAR(255)).
                     $wpdb->update(
                         self::table_queue(),
                         array(
                             'status'       => 'failed',
-                            'error'        => 'cancelled',
+                            'last_error'   => 'cancelled',
                             'processed_at' => $now_sql,
                         ),
                         array(
-                            'id'     => $queue_id,
-                            'status' => 'processing',
+                            'id'               => $queue_id,
+                            'processing_token' => $claim_token,
                         ),
                         array( '%s', '%s', '%s' ),
                         array( '%d', '%s' )
@@ -725,7 +733,7 @@ class Cashback_Broadcast {
                 }
 
                 if ($ok) {
-                    // CAS: апдейт только если строка всё ещё в 'processing' (защита от параллельных manipulations).
+                    // 12g ADR (F-23-004): CAS на processing_token — только владелец токена финализирует.
                     $wpdb->update(
                         self::table_queue(),
                         array(
@@ -733,8 +741,8 @@ class Cashback_Broadcast {
                             'processed_at' => $now_sql,
                         ),
                         array(
-                            'id'     => $queue_id,
-                            'status' => 'processing',
+                            'id'               => $queue_id,
+                            'processing_token' => $claim_token,
                         ),
                         array( '%s', '%s' ),
                         array( '%d', '%s' )
@@ -743,16 +751,17 @@ class Cashback_Broadcast {
                 } else {
                     $new_status = $is_last ? 'failed' : 'pending';
                     $error      = $this->resolve_send_error($user_id);
+                    // 12g ADR (F-23-004/005): CAS на processing_token + last_error TEXT.
                     $wpdb->update(
                         self::table_queue(),
                         array(
                             'status'       => $new_status,
-                            'error'        => $error,
+                            'last_error'   => $error,
                             'processed_at' => $is_last ? $now_sql : null,
                         ),
                         array(
-                            'id'     => $queue_id,
-                            'status' => 'processing',
+                            'id'               => $queue_id,
+                            'processing_token' => $claim_token,
                         ),
                         array( '%s', '%s', '%s' ),
                         array( '%d', '%s' )
