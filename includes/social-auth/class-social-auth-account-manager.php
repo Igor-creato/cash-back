@@ -480,8 +480,8 @@ class Cashback_Social_Auth_Account_Manager {
         $user_agent      = isset($session_data['user_agent']) ? (string) $session_data['user_agent'] : '';
 
         $redirect_base = function_exists('wc_get_account_endpoint_url')
-            ? (string) wc_get_account_endpoint_url('cashback-social')
-            : home_url('/my-account/cashback-social/');
+            ? (string) wc_get_account_endpoint_url('edit-account')
+            : home_url('/my-account/edit-account/');
 
         $existing = Cashback_Social_Auth_DB::find_link($provider_id, $external_id);
         if (is_array($existing) && !empty($existing['id'])) {

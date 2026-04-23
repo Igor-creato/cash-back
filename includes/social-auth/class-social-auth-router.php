@@ -786,18 +786,18 @@ class Cashback_Social_Auth_Router {
             );
         }
 
-        $target = add_query_arg('cashback_social_unlinked', '1', (string) wc_get_account_endpoint_url('cashback-social'));
+        $target = add_query_arg('cashback_social_unlinked', '1', (string) wc_get_account_endpoint_url('edit-account'));
         wp_safe_redirect($target);
         exit;
     }
 
     /**
-     * Редирект на вкладку ЛК «Соцсети» с кодом ошибки.
+     * Редирект на вкладку ЛК «Соцсети» (внутри edit-account) с кодом ошибки.
      */
     private function redirect_account_social_with_error( string $code ): void {
         $base   = function_exists('wc_get_account_endpoint_url')
-            ? (string) wc_get_account_endpoint_url('cashback-social')
-            : home_url('/my-account/cashback-social/');
+            ? (string) wc_get_account_endpoint_url('edit-account')
+            : home_url('/my-account/edit-account/');
         $target = add_query_arg('cashback_social_error', rawurlencode($code), $base);
         wp_safe_redirect($target);
         exit;
