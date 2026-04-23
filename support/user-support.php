@@ -104,21 +104,7 @@ class Cashback_User_Support {
             '1.2.0'
         );
 
-        wp_enqueue_script(
-            'dompurify',
-            plugins_url('assets/js/purify.min.js', __FILE__),
-            array(),
-            '3.3.2',
-            true
-        );
-
-        wp_enqueue_script(
-            'cashback-safe-html',
-            plugins_url('assets/js/safe-html.js', __FILE__),
-            array( 'dompurify' ),
-            '1.1.0',
-            true
-        );
+        Cashback_Assets::enqueue_safe_html();
 
         wp_enqueue_script(
             'cashback-pagination',

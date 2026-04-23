@@ -407,12 +407,19 @@ if (!isset($GLOBALS['_cb_test_enqueued_scripts'])) {
 if (!function_exists('wp_enqueue_style')) {
     function wp_enqueue_style(string $handle, string $src = '', array $deps = [], mixed $ver = false, string $media = 'all'): void
     {
+        // Повторяем семантику WP: enqueue без src для уже зарегистрированного handle
+        // не затирает его регистрационные данные, только помечает как enqueued.
+        if ($src === '' && isset($GLOBALS['_cb_test_enqueued_styles'][ $handle ])) {
+            $GLOBALS['_cb_test_enqueued_styles'][ $handle ]['enqueued'] = true;
+            return;
+        }
         $GLOBALS['_cb_test_enqueued_styles'][ $handle ] = array(
-            'handle' => $handle,
-            'src'    => $src,
-            'deps'   => $deps,
-            'ver'    => $ver,
-            'media'  => $media,
+            'handle'   => $handle,
+            'src'      => $src,
+            'deps'     => $deps,
+            'ver'      => $ver,
+            'media'    => $media,
+            'enqueued' => true,
         );
     }
 }
@@ -420,12 +427,17 @@ if (!function_exists('wp_enqueue_style')) {
 if (!function_exists('wp_enqueue_script')) {
     function wp_enqueue_script(string $handle, string $src = '', array $deps = [], mixed $ver = false, bool $in_footer = false): void
     {
+        if ($src === '' && isset($GLOBALS['_cb_test_enqueued_scripts'][ $handle ])) {
+            $GLOBALS['_cb_test_enqueued_scripts'][ $handle ]['enqueued'] = true;
+            return;
+        }
         $GLOBALS['_cb_test_enqueued_scripts'][ $handle ] = array(
             'handle'    => $handle,
             'src'       => $src,
             'deps'      => $deps,
             'ver'       => $ver,
             'in_footer' => $in_footer,
+            'enqueued'  => true,
         );
     }
 }
