@@ -1138,20 +1138,27 @@ echo 'style="display:none"';}
 
         $table = $wpdb->prefix . ( $is_unregistered ? 'cashback_unregistered_transactions' : 'cashback_transactions' );
 
+        // 12c ADR (F-4-002): TX + SELECT FOR UPDATE — guards (validate_status_transition)
+        // работают на committed-состоянии под локом, чтобы параллельные admin-правки /
+        // API-sync не создавали lost update. Паттерн: Группа 8, sync_update_local.
+        $wpdb->query('START TRANSACTION');
+
         // Проверяем существование и текущий статус.
         $current = $wpdb->get_row($wpdb->prepare(
-            'SELECT id, order_status, comission, applied_cashback_rate FROM %i WHERE id = %d',
+            'SELECT id, order_status, comission, applied_cashback_rate FROM %i WHERE id = %d FOR UPDATE',
             $table,
             $transaction_id
         ));
 
         if (!$current) {
+            $wpdb->query('ROLLBACK');
             wp_send_json_error(array( 'message' => 'Транзакция не найдена' ));
         }
 
         // PHP-фолбэк: валидация перехода статуса
         $validation = Cashback_Trigger_Fallbacks::validate_status_transition($current->order_status, $order_status);
         if ($validation !== true) {
+            $wpdb->query('ROLLBACK');
             wp_send_json_error(array( 'message' => $validation ));
         }
 
@@ -1183,13 +1190,18 @@ echo 'style="display:none"';}
         );
 
         if ($updated === false || $wpdb->last_error) {
+            $last_error = $wpdb->last_error;
+            $wpdb->query('ROLLBACK');
             if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging (debug only).
-                error_log('[cashback] api-validation edit_transaction: ' . $wpdb->last_error);
+                error_log('[cashback] api-validation edit_transaction: ' . $last_error);
             }
             wp_send_json_error(array( 'message' => 'Ошибка обновления транзакции. Подробности записаны в журнал.' ));
         }
 
+        $wpdb->query('COMMIT');
+
+        // audit log — вне TX: failure логирования не должен откатывать успешный UPDATE.
         $this->log_audit('edit_transaction', $transaction_id, array(
             'order_status' => $order_status,
             'comission'    => $comission,
@@ -1394,14 +1406,18 @@ echo 'style="display:none"';}
 
         $table = $wpdb->prefix . ( $is_unregistered ? 'cashback_unregistered_transactions' : 'cashback_transactions' );
 
+        // 12c ADR (F-4-002): TX + SELECT FOR UPDATE — см. комментарий в ajax_edit_transaction.
+        $wpdb->query('START TRANSACTION');
+
         // Проверяем существование и текущий статус.
         $current = $wpdb->get_row($wpdb->prepare(
-            'SELECT id, order_status, comission, sum_order, applied_cashback_rate FROM %i WHERE id = %d',
+            'SELECT id, order_status, comission, sum_order, applied_cashback_rate FROM %i WHERE id = %d FOR UPDATE',
             $table,
             $local_id
         ));
 
         if (!$current) {
+            $wpdb->query('ROLLBACK');
             wp_send_json_error(array( 'message' => 'Транзакция не найдена' ));
         }
 
@@ -1414,6 +1430,7 @@ echo 'style="display:none"';}
         // PHP-фолбэк: валидация перехода статуса
         $validation = Cashback_Trigger_Fallbacks::validate_status_transition($current->order_status, $mapped_status);
         if ($validation !== true) {
+            $wpdb->query('ROLLBACK');
             wp_send_json_error(array( 'message' => $validation ));
         }
 
@@ -1442,13 +1459,18 @@ echo 'style="display:none"';}
         );
 
         if ($updated === false || $wpdb->last_error) {
+            $last_error = $wpdb->last_error;
+            $wpdb->query('ROLLBACK');
             if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging (debug only).
-                error_log('[cashback] api-validation overwrite_transaction: ' . $wpdb->last_error);
+                error_log('[cashback] api-validation overwrite_transaction: ' . $last_error);
             }
             wp_send_json_error(array( 'message' => 'Ошибка обновления транзакции. Подробности записаны в журнал.' ));
         }
 
+        $wpdb->query('COMMIT');
+
+        // audit log — вне TX (см. ajax_edit_transaction).
         $this->log_audit('overwrite_transaction', $local_id, array(
             'old_status'    => $current->order_status,
             'new_status'    => $mapped_status,
