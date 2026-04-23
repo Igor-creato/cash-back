@@ -775,6 +775,21 @@ class WC_Affiliate_URL_Params {
                 exit;
             }
 
+            // 12h-1 ADR (F-2-001): даже если build_final_affiliate_url вернёт null для
+            // non-http(s) base_url, мы fallback'имся на get_product_url() — сам он тоже
+            // может быть intent:// / market:// / javascript: (admin сохранил без валидации).
+            // Здесь — hard block: reject на safe home_url() + лог для post-mortem.
+            if (!$this->is_safe_http_url($fallback_url)) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Diagnostic logging: grep [wc-affiliate-url-params] Rejected unsafe scheme.
+                error_log(sprintf(
+                    '[wc-affiliate-url-params] Rejected unsafe destination scheme for product #%d',
+                    $product_id
+                ));
+                // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to internal home_url() on security reject.
+                wp_redirect(home_url(), 302);
+                exit;
+            }
+
             // Генерация click_id через UUID v7 (time-ordered, лучшая индексация в БД)
             $click_id = cashback_generate_uuid7(false);
 
@@ -954,7 +969,8 @@ class WC_Affiliate_URL_Params {
                 $table,
                 $click_id
             ));
-            $url = ( $row && in_array(wp_parse_url($row, PHP_URL_SCHEME), array( 'http', 'https' ), true) )
+            // 12h-1 ADR (F-2-001): single point of truth scheme check через helper.
+            $url = ( is_string($row) && $this->is_safe_http_url($row) )
                 ? $row
                 : home_url();
             // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
@@ -975,11 +991,9 @@ class WC_Affiliate_URL_Params {
         ), ARRAY_A);
 
         $affiliate_url = '';
-        if (!empty($click['affiliate_url'])) {
-            $scheme = wp_parse_url($click['affiliate_url'], PHP_URL_SCHEME);
-            if (in_array($scheme, array( 'http', 'https' ), true)) {
-                $affiliate_url = $click['affiliate_url'];
-            }
+        if (!empty($click['affiliate_url']) && $this->is_safe_http_url((string) $click['affiliate_url'])) {
+            // 12h-1 ADR (F-2-001): single point of truth scheme check через helper.
+            $affiliate_url = (string) $click['affiliate_url'];
         }
 
         if (empty($affiliate_url)) {
@@ -1264,6 +1278,27 @@ HTML;
     }
 
     /**
+     * 12h-1 ADR (F-2-001): single point of truth для scheme-валидации destination URL.
+     *
+     * Продуктовое решение 2026-04-23: партнёрам и админам нельзя указывать
+     * `intent://`, `market://`, `tg://`, `ms-windows-store://`, `javascript:`,
+     * `data:`, `file:` и другие opaque-схемы как destination WooCommerce external
+     * product URL. Только `http://` / `https://`. Deep-linking в мобильные
+     * приложения — будущая архитектурная фича через отдельный routing layer,
+     * не через свободный ввод в `_product_url`.
+     *
+     * @param string $url URL из `_product_url` post meta или из `cashback_click_log.affiliate_url`.
+     * @return bool true только если scheme ∈ {http, https}; false для пустой строки, opaque-схем, garbage.
+     */
+    private function is_safe_http_url( string $url ): bool {
+        if ($url === '') {
+            return false;
+        }
+        $scheme = wp_parse_url($url, PHP_URL_SCHEME);
+        return in_array($scheme, array( 'http', 'https' ), true);
+    }
+
+    /**
      * Построение финального affiliate URL с подстановкой реальных значений параметров.
      *
      * @since 3.0.0
@@ -1285,9 +1320,8 @@ HTML;
             return null;
         }
 
-        // Защита от open redirect: разрешаем только http/https схемы
-        $scheme = wp_parse_url($base_url, PHP_URL_SCHEME);
-        if (!in_array($scheme, array( 'http', 'https' ), true)) {
+        // 12h-1 ADR (F-2-001): защита от open redirect — только http/https (см. is_safe_http_url).
+        if (!$this->is_safe_http_url($base_url)) {
             return null;
         }
 
