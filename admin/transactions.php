@@ -746,8 +746,8 @@ class Cashback_Transactions_Admin {
 					'%s',
 					'%s',
 					'%s',
-                    '%f',
-					'%f',
+                    '%s', // sum_order (money → decimal-string, F-35-004 locale-safe)
+					'%s', // comission (money → decimal-string)
 					'%s',
 					'%s',
 					'%d',
