@@ -70,23 +70,26 @@ class Cashback_Claims_Manager {
         $ip = class_exists('Cashback_Encryption') ? Cashback_Encryption::get_client_ip() : ( isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '0.0.0.0' );
         $ua = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '';
 
+        // Money- и rate-поля сериализуются как canonical decimal-string + `%s` для
+        // locale-safety (Группа 10 ADR): order_value — DECIMAL(10,2), probability_score —
+        // DECIMAL(5,2). `%f` в prepare locale-зависим.
         $insert_data = array(
             'user_id'           => $user_id,
             'click_id'          => $data['click_id'],
             'product_id'        => $eligibility['data']['product_id'] ?? 0,
             'product_name'      => $eligibility['data']['product_name'] ?? null,
             'order_id'          => sanitize_text_field($data['order_id']),
-            'order_value'       => (float) $data['order_value'],
+            'order_value'       => number_format((float) $data['order_value'], 2, '.', ''),
             'order_date'        => sanitize_text_field($data['order_date']),
             'comment'           => sanitize_textarea_field($data['comment'] ?? ''),
             'status'            => 'submitted',
-            'probability_score' => $scoring['score'],
+            'probability_score' => number_format((float) $scoring['score'], 2, '.', ''),
             'is_suspicious'     => $antifraud['suspicious'] ? 1 : 0,
             'ip_address'        => $ip,
             'user_agent'        => $ua,
         );
 
-        $insert_format = array( '%d', '%s', '%d', '%s', '%s', '%f', '%s', '%s', '%s', '%f', '%d', '%s', '%s' );
+        $insert_format = array( '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s' );
 
         $merchant_id = $eligibility['data']['merchant_id'] ?? 0;
         if ($merchant_id > 0) {

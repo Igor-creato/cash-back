@@ -1155,17 +1155,23 @@ echo 'style="display:none"';}
             wp_send_json_error(array( 'message' => $validation ));
         }
 
+        // Money-поля пишем как canonical decimal-string (`%s`), чтобы избежать
+        // locale-зависимого поведения `%f` (Группа 10 ADR, F-4-004): в локалях с `,`
+        // как decimal separator `sprintf('%f', 5.5)` может выдать `"5,500000"`, что
+        // MySQL не смог бы привести к DECIMAL.
         $update_data    = array(
             'order_status' => $order_status,
-            'comission'    => $comission,
-            'sum_order'    => $sum_order,
+            'comission'    => number_format($comission, 2, '.', ''),
+            'sum_order'    => number_format($sum_order, 2, '.', ''),
         );
-        $update_formats = array( '%s', '%f', '%f' );
+        $update_formats = array( '%s', '%s', '%s' );
 
         // PHP-фолбэк: пересчёт кешбэка при изменении комиссии
         Cashback_Trigger_Fallbacks::recalculate_cashback_on_update($update_data, $current, !$is_unregistered);
         if (isset($update_data['cashback'])) {
-            $update_formats[] = '%f';
+            // Trigger_Fallbacks пишет float — нормализуем на границе wpdb.
+            $update_data['cashback'] = number_format((float) $update_data['cashback'], 2, '.', '');
+            $update_formats[]        = '%s';
         }
 
         $updated = $wpdb->update(
@@ -1268,13 +1274,14 @@ echo 'style="display:none"';}
         $is_unregistered = $user_id === 'unregistered' || !is_numeric($user_id) || (int) $user_id === 0;
         $table           = $wpdb->prefix . ( $is_unregistered ? 'cashback_unregistered_transactions' : 'cashback_transactions' );
 
+        // Money-поля (comission/sum_order) — canonical decimal-string + `%s` (F-4-004).
         $data = array(
             'user_id'         => $is_unregistered ? $user_id : (int) $user_id,
             'uniq_id'         => $action_id,
             'order_number'    => $order_id,
             'partner'         => $network_config['name'] ?? $network,
-            'comission'       => $payment,
-            'sum_order'       => $cart,
+            'comission'       => number_format($payment, 2, '.', ''),
+            'sum_order'       => number_format($cart, 2, '.', ''),
             'order_status'    => $mapped_status,
             'offer_id'        => $campaign_id !== '' ? (int) $campaign_id : null,
             'offer_name'      => $campaign,
@@ -1294,8 +1301,8 @@ echo 'style="display:none"';}
             '%s',  // uniq_id
             '%s',  // order_number
             '%s',  // partner
-            '%f',  // comission
-            '%f',  // sum_order
+            '%s',  // comission (money → decimal-string)
+            '%s',  // sum_order (money → decimal-string)
             '%s',  // order_status
             '%d',  // offer_id
             '%s',  // offer_name
@@ -1310,10 +1317,16 @@ echo 'style="display:none"';}
             '%s',  // idempotency_key
         );
 
-        // PHP-фолбэк расчёта кешбэка
+        // PHP-фолбэк расчёта кешбэка — пишет float в $data, нормализуем на границе wpdb.
         Cashback_Trigger_Fallbacks::calculate_cashback($data, !$is_unregistered);
-        $formats[] = '%f'; // applied_cashback_rate
-        $formats[] = '%f'; // cashback
+        if (isset($data['applied_cashback_rate'])) {
+            $data['applied_cashback_rate'] = number_format((float) $data['applied_cashback_rate'], 2, '.', '');
+        }
+        if (isset($data['cashback'])) {
+            $data['cashback'] = number_format((float) $data['cashback'], 2, '.', '');
+        }
+        $formats[] = '%s'; // applied_cashback_rate (rate-как-string, контракт 2 знака)
+        $formats[] = '%s'; // cashback (money → decimal-string)
 
         // Удаляем NULL-значения и их форматы, чтобы $wpdb->insert корректно работал
         $clean_data    = array();
@@ -1404,18 +1417,20 @@ echo 'style="display:none"';}
             wp_send_json_error(array( 'message' => $validation ));
         }
 
+        // Money-поля (comission/sum_order) — canonical decimal-string + `%s` (F-4-004).
         $update_data    = array(
             'order_status' => $mapped_status,
-            'comission'    => $api_payment,
-            'sum_order'    => $api_cart,
+            'comission'    => number_format($api_payment, 2, '.', ''),
+            'sum_order'    => number_format($api_cart, 2, '.', ''),
             'api_verified' => 1,
         );
-        $update_formats = array( '%s', '%f', '%f', '%d' );
+        $update_formats = array( '%s', '%s', '%s', '%d' );
 
         // PHP-фолбэк: пересчёт кешбэка при изменении комиссии
         Cashback_Trigger_Fallbacks::recalculate_cashback_on_update($update_data, $current, !$is_unregistered);
         if (isset($update_data['cashback'])) {
-            $update_formats[] = '%f';
+            $update_data['cashback'] = number_format((float) $update_data['cashback'], 2, '.', '');
+            $update_formats[]        = '%s';
         }
 
         $updated = $wpdb->update(

@@ -499,6 +499,11 @@ class CashbackPlugin {
         // Подключается рано: используется в разных AJAX-обработчиках (payouts/transactions/claims).
         $this->require_file('includes/class-cashback-idempotency.php');
 
+        // Money VO (Группа 10 ADR, Step 3a) — immutable BCMath-based valueобъект для
+        // денежных сумм. Убирает (float)-cast'ы, `%f` в $wpdb->prepare и ad-hoc BCMath
+        // на money-путях (payouts, withdrawal, affiliate, ledger).
+        $this->require_file('includes/class-cashback-money.php');
+
         // PHP-фолбэки для логики MySQL-триггеров
         $this->require_file('includes/class-cashback-trigger-fallbacks.php');
 
