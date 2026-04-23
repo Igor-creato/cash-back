@@ -659,6 +659,18 @@ class Cashback_Social_Auth_Account_Manager {
                 'stage'    => 'save_link',
                 'user_id'  => $user_id,
             ));
+            // 12b (F-13-004): компенсация — удаляем вставленного юзера, чтобы не
+            // оставлять orphan с META_PENDING=1 без связки. Email-адрес освобождается
+            // (UNIQUE в wp_users) для повторной попытки.
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'provider' => $provider_id,
+                'stage'    => 'compensation_save_link_failed',
+                'user_id'  => $user_id,
+            ));
+            if (!function_exists('wp_delete_user')) {
+                require_once ABSPATH . 'wp-admin/includes/user.php';
+            }
+            wp_delete_user($user_id);
             return array(
                 'error' => __('Не удалось создать связку с социальной сетью.', 'cashback-plugin'),
             );
@@ -691,6 +703,20 @@ class Cashback_Social_Auth_Account_Manager {
         );
 
         if ($verify_token === '') {
+            // 12b (F-13-004): компенсация — удаляем связку и юзера. Без этого
+            // остаётся пара (link, user), блокирующая повторную попытку того же
+            // провайдер-аккаунта (UNIQUE uk_prov_ext) и email'а (UNIQUE wp_users).
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'provider' => $provider_id,
+                'stage'    => 'compensation_save_pending_failed',
+                'user_id'  => $user_id,
+                'link_id'  => $link_id,
+            ));
+            Cashback_Social_Auth_DB::delete_link($link_id);
+            if (!function_exists('wp_delete_user')) {
+                require_once ABSPATH . 'wp-admin/includes/user.php';
+            }
+            wp_delete_user($user_id);
             return array(
                 'error' => __('Не удалось подготовить письмо подтверждения.', 'cashback-plugin'),
             );

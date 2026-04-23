@@ -22,6 +22,19 @@ class Cashback_Social_Auth_Bootstrap {
 
     private bool $booted = false;
 
+    /**
+     * Basenames файлов модуля, которые не удалось подключить. Заполняется из
+     * load_files(), читается в render_missing_files_notice().
+     *
+     * @var array<int,string>
+     */
+    private static array $missing_files = array();
+
+    /**
+     * Регистрация admin_notices выполняется один раз на life-cycle запроса.
+     */
+    private static bool $admin_notice_registered = false;
+
     public static function instance(): self {
         if (self::$instance === null) {
             self::$instance = new self();
@@ -58,6 +71,8 @@ class Cashback_Social_Auth_Bootstrap {
         foreach ($files as $file) {
             if (file_exists($file)) {
                 require_once $file;
+            } else {
+                self::report_missing_file($file);
             }
         }
 
@@ -68,8 +83,51 @@ class Cashback_Social_Auth_Bootstrap {
             $admin_file  = $plugin_root . '/admin/class-cashback-social-admin.php';
             if (file_exists($admin_file)) {
                 require_once $admin_file;
+            } else {
+                self::report_missing_file($admin_file);
             }
         }
+    }
+
+    /**
+     * Зарегистрировать отсутствующий файл модуля: error_log + admin_notices hook.
+     * 12b ADR (F-15-002): tolerance сохраняется (не fatal), но админ видит деградацию.
+     */
+    private static function report_missing_file( string $file ): void {
+        $base                  = basename($file);
+        self::$missing_files[] = $base;
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Diagnostic logging: partial-deploy detection на production.
+        error_log('[cashback-social] Missing module file: ' . $base);
+
+        if (!self::$admin_notice_registered && function_exists('add_action')) {
+            self::$admin_notice_registered = true;
+            add_action('admin_notices', array( self::class, 'render_missing_files_notice' ));
+        }
+    }
+
+    /**
+     * Отрисовать admin-notice со списком отсутствующих файлов (basenames).
+     * Скрыт от ролей без activate_plugins — чтобы не раскрывать структуру плагина.
+     */
+    public static function render_missing_files_notice(): void {
+        if (empty(self::$missing_files)) {
+            return;
+        }
+        if (!current_user_can('activate_plugins')) {
+            return;
+        }
+        $unique = array_values(array_unique(self::$missing_files));
+        $list   = implode(', ', $unique);
+
+        printf(
+            '<div class="notice notice-warning"><p><strong>%s</strong> %s</p></div>',
+            esc_html__('Cashback Social Auth:', 'cashback-plugin'),
+            esc_html(sprintf(
+                /* translators: %s is a comma-separated list of missing file basenames */
+                __('модуль загружен частично, отсутствуют файлы: %s. Проверьте целостность деплоя.', 'cashback-plugin'),
+                $list
+            ))
+        );
     }
 
     /**
