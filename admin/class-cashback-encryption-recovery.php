@@ -184,8 +184,8 @@ class Cashback_Encryption_Recovery {
      */
     public static function run_batch_affiliate_networks( int $limit = self::BATCH_SIZE ): int {
         global $wpdb;
-        $table = $wpdb->prefix . 'cashback_affiliate_networks';
-        $limit = max(1, min(5000, $limit));
+        $table    = $wpdb->prefix . 'cashback_affiliate_networks';
+        $limit    = max(1, min(5000, $limit));
         $affected = $wpdb->query(
             $wpdb->prepare(
                 "UPDATE %i SET api_credentials = NULL WHERE api_credentials IS NOT NULL AND api_credentials <> '' LIMIT %d",
@@ -218,8 +218,8 @@ class Cashback_Encryption_Recovery {
      */
     public static function run_batch_social_tokens( int $limit = self::BATCH_SIZE ): int {
         global $wpdb;
-        $table = $wpdb->prefix . 'cashback_social_tokens';
-        $limit = max(1, min(5000, $limit));
+        $table    = $wpdb->prefix . 'cashback_social_tokens';
+        $limit    = max(1, min(5000, $limit));
         $affected = $wpdb->query(
             $wpdb->prepare(
                 "UPDATE %i SET refresh_token_encrypted = '', scopes = '', access_token_expires_at = NULL WHERE refresh_token_encrypted <> '' LIMIT %d",
@@ -253,8 +253,8 @@ class Cashback_Encryption_Recovery {
      */
     public static function run_batch_social_pending( int $limit = self::BATCH_SIZE ): int {
         global $wpdb;
-        $table = $wpdb->prefix . 'cashback_social_pending';
-        $limit = max(1, min(5000, $limit));
+        $table    = $wpdb->prefix . 'cashback_social_pending';
+        $limit    = max(1, min(5000, $limit));
         $affected = $wpdb->query(
             $wpdb->prepare(
                 "DELETE FROM %i WHERE payload_json <> '' LIMIT %d",
