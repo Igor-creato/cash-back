@@ -136,7 +136,10 @@ class Cashback_Fraud_Collector {
             // debug=true только при WP_DEBUG, чтобы не шуметь в production console
             'debug'       => ( defined('WP_DEBUG') && WP_DEBUG ),
             'has_consent' => (bool) $has_consent,
-            'is_guest'    => !is_user_logged_in(),
+            // В 11b-1 enqueue гейтит is_user_logged_in(), поэтому здесь is_guest
+            // детерминированно false. Поле прокинуто для forward-compat с 11b-2,
+            // когда enqueue-гард снимется и скрипт будет загружаться гостям для purge.
+            'is_guest'    => false,
         ));
     }
 
