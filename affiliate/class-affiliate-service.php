@@ -547,17 +547,21 @@ class Cashback_Affiliate_Service {
 
             $referrer_id     = $referral_map[ $user_id ];
             $rate            = $rates_cache[ $referrer_id ] ?? $global_rate;
-            $commission      = round($cashback * (float) $rate / 100, 2);
+            // Сохраняем round()-семантику (half-away-from-zero), но сразу
+            // канонизируем результат в decimal-string (F-11-002): устраняем
+            // locale-leak при последующем `(string) \$commission` в bcadd.
+            $commission_raw  = round($cashback * (float) $rate / 100, 2);
+            $commission      = number_format($commission_raw, 2, '.', '');
             $idempotency_key = 'aff_accrual_' . $tx_id;
 
-            if ($commission <= 0) {
+            if ($commission_raw <= 0) {
                 continue;
             }
 
             // Reference ID с retry при коллизии (в batch просто генерируем уникальные)
             $reference_id = Cashback_Affiliate_DB::generate_affiliate_reference_id();
 
-            // Accrual
+            // Accrual — все money-поля уже canonical decimal-string.
             $accrual_values[] = '(%s, %d, %d, %d, %s, %s, %s, %s, %s)';
             $accrual_args[]   = $reference_id;
             $accrual_args[]   = $referrer_id;
@@ -565,7 +569,7 @@ class Cashback_Affiliate_Service {
             $accrual_args[]   = $tx_id;
             $accrual_args[]   = number_format($cashback, 2, '.', '');
             $accrual_args[]   = number_format((float) $rate, 2, '.', '');
-            $accrual_args[]   = number_format($commission, 2, '.', '');
+            $accrual_args[]   = $commission;
             $accrual_args[]   = 'available';
             $accrual_args[]   = $idempotency_key;
 
@@ -573,7 +577,7 @@ class Cashback_Affiliate_Service {
             $ledger_values[] = '(%d, %s, %s, %d, %s, %d, %s)';
             $ledger_args[]   = $referrer_id;
             $ledger_args[]   = 'affiliate_accrual';
-            $ledger_args[]   = number_format($commission, 2, '.', '');
+            $ledger_args[]   = $commission;
             $ledger_args[]   = $tx_id;
             $ledger_args[]   = 'affiliate_accrual';  // reference_type
             $ledger_args[]   = $tx_id;               // reference_id = transaction_id
@@ -837,7 +841,9 @@ class Cashback_Affiliate_Service {
             return $result;
         }
 
-        $global_rate = (float) Cashback_Affiliate_DB::get_global_rate();
+        // Canonical rate-string (F-11-002): %f в prepare locale-зависим; вместо
+        // float → число переводим через number_format → `%s` в prepare.
+        $global_rate_canon = number_format((float) Cashback_Affiliate_DB::get_global_rate(), 2, '.', '');
 
         $tx_table           = $prefix . 'cashback_transactions';
         $profiles_table     = $prefix . 'cashback_affiliate_profiles';
@@ -848,7 +854,7 @@ class Cashback_Affiliate_Service {
         $missing = $wpdb->get_results($wpdb->prepare(
             'SELECT t.id AS tx_id, t.user_id, t.cashback, t.order_status,
                     ap.referred_by_user_id AS referrer_id,
-                    COALESCE(ap_ref.affiliate_rate, %f) AS eff_rate
+                    COALESCE(ap_ref.affiliate_rate, CAST(%s AS DECIMAL(5,2))) AS eff_rate
              FROM %i t
              INNER JOIN %i ap
                      ON ap.user_id = t.user_id
@@ -866,7 +872,7 @@ class Cashback_Affiliate_Service {
                    WHERE aa.transaction_id = t.id AND aa.referrer_id = ap.referred_by_user_id
                )
              LIMIT 500',
-            $global_rate,
+            $global_rate_canon,
             $tx_table,
             $profiles_table,
             $profiles_table,
@@ -876,12 +882,15 @@ class Cashback_Affiliate_Service {
 
         // Создаём pending/declined accruals
         foreach ($missing as $row) {
-            $cashback   = (float) $row['cashback'];
-            $rate       = (float) $row['eff_rate'];
-            $commission = round($cashback * $rate / 100, 2);
-            if ($commission <= 0) {
+            $cashback       = (float) $row['cashback'];
+            $rate           = (float) $row['eff_rate'];
+            $commission_raw = round($cashback * $rate / 100, 2);
+            if ($commission_raw <= 0) {
                 continue;
             }
+            // Canonicalize (F-11-002): гарантируем decimal-string на границе wpdb,
+            // сохраняя round()-семантику (half-away-from-zero).
+            $commission = number_format($commission_raw, 2, '.', '');
 
             $status          = $row['order_status'] === 'declined' ? 'declined' : 'pending';
             $reference_id    = Cashback_Affiliate_DB::generate_affiliate_reference_id();
@@ -899,7 +908,7 @@ class Cashback_Affiliate_Service {
                 (int) $row['tx_id'],
                 number_format($cashback, 2, '.', ''),
                 number_format($rate, 2, '.', ''),
-                number_format($commission, 2, '.', ''),
+                $commission,
                 $status,
                 $idempotency_key
             ));
