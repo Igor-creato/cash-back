@@ -319,6 +319,25 @@ class Cashback_Partner_Management_Admin {
                                     </select>
                                 </td>
                             </tr>
+                            <!-- 12i-5 ADR (F-10-001): per-network click session policy -->
+                            <tr>
+                                <th scope="row"><label for="click_session_policy">Политика клика:</label></th>
+                                <td>
+                                    <select id="click_session_policy" name="click_session_policy">
+                                        <option value="reuse_in_window" selected>Переиспользовать в окне</option>
+                                        <option value="always_new">Всегда новый клик</option>
+                                        <option value="reuse_per_product">Переиспользовать по товару</option>
+                                    </select>
+                                    <p class="description">Поведение при повторном клике пользователя. Рекомендуется "Переиспользовать в окне" (защита от CPA-штрафов за дубли).</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row"><label for="activation_window_seconds">Окно активации (сек):</label></th>
+                                <td>
+                                    <input type="number" id="activation_window_seconds" name="activation_window_seconds" value="1800" min="60" max="86400" />
+                                    <p class="description">Диапазон 60..86400 (от 1 минуты до 24 часов). По умолчанию 1800 (30 минут).</p>
+                                </td>
+                            </tr>
                         </table>
                         <p class="submit">
                             <input type="submit" name="add_partner" id="add-partner-submit" class="button button-primary" value="Добавить партнера" />
@@ -365,12 +384,26 @@ class Cashback_Partner_Management_Admin {
                                 <th scope="col">Примечание</th>
                                 <th scope="col">Сортировка</th>
                                 <th scope="col">Активен</th>
+                                <!-- 12i-5 ADR (F-10-001): per-network click session policy -->
+                                <th scope="col">Политика клика</th>
+                                <th scope="col">Окно (сек)</th>
                                 <th scope="col">Действия</th>
                             </tr>
                         </thead>
                         <tbody id="partners-tbody">
                             <?php if (!empty($partners)) : ?>
                                 <?php foreach ($partners as $partner) : ?>
+                                    <?php
+                                    // 12i-5 ADR (F-10-001): human-readable label для policy.
+                                    $policy_labels      = array(
+                                        'reuse_in_window' => 'Переиспользовать в окне',
+                                        'always_new'      => 'Всегда новый клик',
+                                        'reuse_per_product' => 'Переиспользовать по товару',
+                                    );
+                                    $partner_policy     = isset($partner['click_session_policy']) ? (string) $partner['click_session_policy'] : 'reuse_in_window';
+                                    $partner_policy_lbl = $policy_labels[ $partner_policy ] ?? 'Переиспользовать в окне';
+                                    $partner_window     = isset($partner['activation_window_seconds']) ? (int) $partner['activation_window_seconds'] : 1800;
+                                    ?>
                                     <tr data-id="<?php echo esc_attr($partner['id']); ?>">
                                         <td class="edit-field" data-field="name"><?php echo esc_html($partner['name']); ?></td>
                                         <td class="edit-field" data-field="slug"><?php echo esc_html($partner['slug']); ?></td>
@@ -378,6 +411,12 @@ class Cashback_Partner_Management_Admin {
                                         <td class="edit-field" data-field="sort_order"><?php echo esc_html($partner['sort_order']); ?></td>
                                         <td class="edit-field" data-field="is_active">
                                             <?php echo $partner['is_active'] ? 'Да' : 'Нет'; ?>
+                                        </td>
+                                        <td class="edit-field" data-field="click_session_policy" data-value="<?php echo esc_attr($partner_policy); ?>">
+                                            <?php echo esc_html($partner_policy_lbl); ?>
+                                        </td>
+                                        <td class="edit-field" data-field="activation_window_seconds">
+                                            <?php echo esc_html((string) $partner_window); ?>
                                         </td>
                                         <td>
                                             <button class="button button-secondary edit-btn">Редактировать</button>
@@ -388,7 +427,7 @@ class Cashback_Partner_Management_Admin {
                                 <?php endforeach; ?>
                             <?php else : ?>
                                 <tr>
-                                    <td colspan="6">
+                                    <td colspan="8">
                                         <?php if ($is_search) : ?>
                                             По запросу &laquo;<?php echo esc_html($search_query); ?>&raquo; партнеры не найдены.
                                         <?php else : ?>
@@ -441,6 +480,28 @@ class Cashback_Partner_Management_Admin {
             return;
         }
 
+        // 12i-5 ADR (F-10-001): idempotency для client-side retries admin-AJAX.
+        $idem_scope      = 'admin_partner_update';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(sanitize_text_field(wp_unslash($_POST['request_id'])));
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+					'code'    => 'in_progress',
+					'message' => 'Запрос уже обрабатывается.',
+				), 409);
+                return;
+            }
+        }
+
         global $wpdb;
 
         $id         = isset($_POST['id']) ? intval($_POST['id']) : 0;
@@ -449,6 +510,19 @@ class Cashback_Partner_Management_Admin {
         $notes      = isset($_POST['notes']) && is_string($_POST['notes']) ? sanitize_textarea_field(wp_unslash($_POST['notes'])) : '';
         $sort_order = isset($_POST['sort_order']) ? intval($_POST['sort_order']) : 0;
         $is_active  = isset($_POST['is_active']) ? intval($_POST['is_active']) : 0;
+
+        // 12i-5 ADR (F-10-001): click session policy + activation window с fail-safe clamp.
+        $policy_allowlist = array( 'reuse_in_window', 'always_new', 'reuse_per_product' );
+        $policy           = isset($_POST['click_session_policy']) && is_string($_POST['click_session_policy'])
+            ? sanitize_text_field(wp_unslash($_POST['click_session_policy']))
+            : 'reuse_in_window';
+        if (!in_array($policy, $policy_allowlist, true)) {
+            $policy = 'reuse_in_window';
+        }
+        $window = isset($_POST['activation_window_seconds']) ? intval($_POST['activation_window_seconds']) : 1800;
+        if ($window < 60 || $window > 86400) {
+            $window = 1800;
+        }
 
         // Валидация данных
         if (empty($name) || empty($slug)) {
@@ -465,14 +539,16 @@ class Cashback_Partner_Management_Admin {
         $result = $wpdb->update(
             $this->table_name,
             array(
-                'name'       => $name,
-                'slug'       => $slug,
-                'notes'      => $notes,
-                'sort_order' => $sort_order,
-                'is_active'  => $is_active,
+                'name'                      => $name,
+                'slug'                      => $slug,
+                'notes'                     => $notes,
+                'sort_order'                => $sort_order,
+                'is_active'                 => $is_active,
+                'click_session_policy'      => $policy,
+                'activation_window_seconds' => $window,
             ),
             array( 'id' => $id ),
-            array( '%s', '%s', '%s', '%d', '%d' ),
+            array( '%s', '%s', '%s', '%d', '%d', '%s', '%d' ),
             array( '%d' )
         );
 
@@ -487,16 +563,24 @@ class Cashback_Partner_Management_Admin {
             $products_affected = $this->sync_products_visibility($id, $is_active);
         }
 
-        // Возвращаем обновленные данные
-        wp_send_json_success(array(
-            'id'                => $id,
-            'name'              => $name,
-            'slug'              => $slug,
-            'notes'             => $notes,
-            'sort_order'        => $sort_order,
-            'is_active'         => $is_active,
-            'products_affected' => $products_affected,
-        ));
+        $response_data = array(
+            'id'                        => $id,
+            'name'                      => $name,
+            'slug'                      => $slug,
+            'notes'                     => $notes,
+            'sort_order'                => $sort_order,
+            'is_active'                 => $is_active,
+            'click_session_policy'      => $policy,
+            'activation_window_seconds' => $window,
+            'products_affected'         => $products_affected,
+        );
+
+        // 12i-5 ADR (F-10-001): store_result для retry-replay в TTL.
+        if ($idem_request_id !== '') {
+            Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response_data);
+        }
+
+        wp_send_json_success($response_data);
     }
 
     /**
@@ -516,6 +600,28 @@ class Cashback_Partner_Management_Admin {
             return;
         }
 
+        // 12i-5 ADR (F-10-001): idempotency для client-side retries admin-AJAX.
+        $idem_scope      = 'admin_partner_add';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(sanitize_text_field(wp_unslash($_POST['request_id'])));
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+					'code'    => 'in_progress',
+					'message' => 'Запрос уже обрабатывается.',
+				), 409);
+                return;
+            }
+        }
+
         global $wpdb;
 
         $name       = isset($_POST['name']) && is_string($_POST['name']) ? sanitize_text_field(wp_unslash($_POST['name'])) : '';
@@ -523,6 +629,19 @@ class Cashback_Partner_Management_Admin {
         $notes      = isset($_POST['notes']) && is_string($_POST['notes']) ? sanitize_textarea_field(wp_unslash($_POST['notes'])) : '';
         $sort_order = isset($_POST['sort_order']) ? intval($_POST['sort_order']) : 0;
         $is_active  = isset($_POST['is_active']) ? intval($_POST['is_active']) : 0;
+
+        // 12i-5 ADR (F-10-001): click session policy + activation window с fail-safe clamp.
+        $policy_allowlist = array( 'reuse_in_window', 'always_new', 'reuse_per_product' );
+        $policy           = isset($_POST['click_session_policy']) && is_string($_POST['click_session_policy'])
+            ? sanitize_text_field(wp_unslash($_POST['click_session_policy']))
+            : 'reuse_in_window';
+        if (!in_array($policy, $policy_allowlist, true)) {
+            $policy = 'reuse_in_window';
+        }
+        $window = isset($_POST['activation_window_seconds']) ? intval($_POST['activation_window_seconds']) : 1800;
+        if ($window < 60 || $window > 86400) {
+            $window = 1800;
+        }
 
         // Валидация данных
         if (empty($name) || empty($slug)) {
@@ -549,13 +668,15 @@ class Cashback_Partner_Management_Admin {
         $result = $wpdb->insert(
             $this->table_name,
             array(
-                'name'       => $name,
-                'slug'       => $slug,
-                'notes'      => $notes,
-                'sort_order' => $sort_order,
-                'is_active'  => $is_active,
+                'name'                      => $name,
+                'slug'                      => $slug,
+                'notes'                     => $notes,
+                'sort_order'                => $sort_order,
+                'is_active'                 => $is_active,
+                'click_session_policy'      => $policy,
+                'activation_window_seconds' => $window,
             ),
-            array( '%s', '%s', '%s', '%d', '%d' )
+            array( '%s', '%s', '%s', '%d', '%d', '%s', '%d' )
         );
 
         if ($result === false) {
@@ -568,7 +689,17 @@ class Cashback_Partner_Management_Admin {
             return;
         }
 
-        wp_send_json_success();
+        $response_data = array(
+            'click_session_policy'      => $policy,
+            'activation_window_seconds' => $window,
+        );
+
+        // 12i-5 ADR (F-10-001): store_result для retry-replay в TTL.
+        if ($idem_request_id !== '') {
+            Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response_data);
+        }
+
+        wp_send_json_success($response_data);
     }
 
     /**

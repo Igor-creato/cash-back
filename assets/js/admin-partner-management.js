@@ -2,6 +2,25 @@ jQuery(document).ready(function($) {
 
     var MAX_PARAMS = 10;
 
+    // 12i-5 ADR (F-10-001): UUID v4 для client-side идемпотентности admin-AJAX.
+    function makeRequestId() {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            return window.crypto.randomUUID();
+        }
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0;
+            var v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+
+    // 12i-5 ADR (F-10-001): human-readable labels для click_session_policy.
+    var POLICY_LABELS = {
+        'reuse_in_window':    'Переиспользовать в окне',
+        'always_new':         'Всегда новый клик',
+        'reuse_per_product':  'Переиспользовать по товару'
+    };
+
     // =============================
     // Вкладка "Партнеры" — inline-редактирование
     // =============================
@@ -22,6 +41,18 @@ jQuery(document).ready(function($) {
                 selectHtml += '<option value="0"' + (currentValue === 'Нет' ? ' selected' : '') + '>Нет</option>';
                 selectHtml += '</select>';
                 cell.html(selectHtml);
+            } else if (field === 'click_session_policy') {
+                // 12i-5 ADR: policy dropdown с 3 options. data-value на cell хранит raw slug.
+                var currentSlug = cell.data('value') || 'reuse_in_window';
+                var policySelect = '<select class="edit-input" data-field="' + field + '">';
+                policySelect += '<option value="reuse_in_window"' + (currentSlug === 'reuse_in_window' ? ' selected' : '') + '>Переиспользовать в окне</option>';
+                policySelect += '<option value="always_new"' + (currentSlug === 'always_new' ? ' selected' : '') + '>Всегда новый клик</option>';
+                policySelect += '<option value="reuse_per_product"' + (currentSlug === 'reuse_per_product' ? ' selected' : '') + '>Переиспользовать по товару</option>';
+                policySelect += '</select>';
+                cell.html(policySelect);
+            } else if (field === 'activation_window_seconds') {
+                // 12i-5 ADR: numeric input с clamp 60..86400.
+                cell.html('<input type="number" class="edit-input" data-field="' + field + '" value="' + escapeHtml(currentValue) + '" min="60" max="86400" style="width:100%;box-sizing:border-box;" />');
             } else if (field === 'sort_order') {
                 cell.html('<input type="number" class="edit-input" data-field="' + field + '" value="' + escapeHtml(currentValue) + '" min="0" style="width:100%;box-sizing:border-box;" />');
             } else {
@@ -43,10 +74,12 @@ jQuery(document).ready(function($) {
     $('.save-btn').on('click', function() {
         var row = $(this).closest('tr');
         var id = row.data('id');
+        // 12i-5 ADR (F-10-001): request_id для server-side idempotency.
         var data = {
             'action': 'update_partner',
             'id': id,
-            'nonce': cashbackPartnersData.updateNonce
+            'nonce': cashbackPartnersData.updateNonce,
+            'request_id': makeRequestId()
         };
 
         row.find('.edit-input').each(function() {
@@ -64,6 +97,18 @@ jQuery(document).ready(function($) {
 
                 var isActiveText = response.data.is_active == 1 ? 'Да' : 'Нет';
                 row.find('.edit-field[data-field="is_active"]').text(isActiveText);
+
+                // 12i-5 ADR: обновляем новые ячейки (human-readable policy + window number).
+                if (response.data.click_session_policy) {
+                    var policySlug = response.data.click_session_policy;
+                    var policyLabel = POLICY_LABELS[policySlug] || POLICY_LABELS.reuse_in_window;
+                    var policyCell = row.find('.edit-field[data-field="click_session_policy"]');
+                    policyCell.text(policyLabel);
+                    policyCell.attr('data-value', policySlug);
+                }
+                if (typeof response.data.activation_window_seconds !== 'undefined') {
+                    row.find('.edit-field[data-field="activation_window_seconds"]').text(response.data.activation_window_seconds);
+                }
 
                 row.find('.save-btn, .cancel-btn').hide();
                 row.find('.edit-btn').show();
@@ -88,6 +133,11 @@ jQuery(document).ready(function($) {
             if (field === 'is_active') {
                 var displayValue = currentValue == '1' ? 'Да' : 'Нет';
                 cell.text(displayValue);
+            } else if (field === 'click_session_policy') {
+                // 12i-5 ADR: human-readable label, raw slug — в data-value.
+                var policyLabel = POLICY_LABELS[currentValue] || POLICY_LABELS.reuse_in_window;
+                cell.text(policyLabel);
+                cell.attr('data-value', currentValue);
             } else {
                 cell.text(currentValue);
             }
@@ -101,14 +151,18 @@ jQuery(document).ready(function($) {
     $('#add-partner').on('submit', function(e) {
         e.preventDefault();
 
+        // 12i-5 ADR (F-10-001): request_id + новые поля click_session_policy/activation_window_seconds.
         var formData = {
             'action': 'add_partner',
             'nonce': cashbackPartnersData.addNonce,
+            'request_id': makeRequestId(),
             'name': $('#name').val(),
             'slug': $('#slug').val(),
             'notes': $('#notes').val(),
             'sort_order': $('#sort_order').val(),
-            'is_active': $('#is_active').val()
+            'is_active': $('#is_active').val(),
+            'click_session_policy': $('#click_session_policy').val(),
+            'activation_window_seconds': $('#activation_window_seconds').val()
         };
 
         $.post(ajaxurl, formData, function(response) {
