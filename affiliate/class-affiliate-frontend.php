@@ -86,6 +86,8 @@ class Cashback_Affiliate_Frontend {
             '1.1.0'
         );
 
+        Cashback_Assets::enqueue_safe_html();
+
         wp_enqueue_script(
             'cashback-pagination',
             plugins_url('../assets/js/cashback-pagination.js', __FILE__),
@@ -97,7 +99,7 @@ class Cashback_Affiliate_Frontend {
         wp_enqueue_script(
             'cashback-affiliate-frontend-js',
             plugins_url('../assets/js/affiliate-frontend.js', __FILE__),
-            array( 'jquery', 'cashback-pagination' ),
+            array( 'jquery', 'cashback-pagination', 'cashback-safe-html' ),
             '1.0.0',
             true
         );

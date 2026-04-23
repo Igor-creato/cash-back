@@ -58,21 +58,7 @@ class Cashback_Support_Admin {
             return;
         }
 
-        wp_enqueue_script(
-            'dompurify',
-            plugins_url('assets/js/purify.min.js', __FILE__),
-            array(),
-            '3.3.2',
-            false
-        );
-
-        wp_enqueue_script(
-            'cashback-safe-html',
-            plugins_url('assets/js/safe-html.js', __FILE__),
-            array( 'dompurify' ),
-            '1.1.0',
-            false
-        );
+        Cashback_Assets::enqueue_safe_html();
     }
 
     /**
