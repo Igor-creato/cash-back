@@ -139,6 +139,21 @@ class Cashback_Social_Auth_Router {
             }
         }
 
+        // 11b-3 (iter-11): explicit consent. Checkbox на UI ставит query-param
+        // cashback_social_consent=1 через JS; без него отказываем на OAuth-start,
+        // чтобы юзер не мог достичь user-creation-flow без явного клика «согласен».
+        $consent_raw   = (string) $request->get_param('cashback_social_consent');
+        $consent_given = ( $consent_raw === '1' );
+        if (!$consent_given) {
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'provider' => $provider_id,
+                'stage'    => 'start',
+                'reason'   => 'no_consent',
+            ));
+            $this->redirect_to_login_with_error('start_failed');
+            return null;
+        }
+
         Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_START, array(
             'provider' => $provider_id,
             'ip'       => $ip,
@@ -161,6 +176,8 @@ class Cashback_Social_Auth_Router {
             'scope_phone'       => method_exists($provider, 'is_phone_scope_enabled') ? (bool) $provider->is_phone_scope_enabled() : false,
             'ip'                => $ip,
             'user_agent'        => $this->get_user_agent(),
+            // 11b-3: фиксируем explicit consent для записи в user_meta после wp_insert_user.
+            'consent_given'     => $consent_given,
         );
 
         Cashback_Social_Auth_Session::store($provider_id, $data);
