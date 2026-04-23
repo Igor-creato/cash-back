@@ -48,6 +48,11 @@ class Cashback_REST_API {
         add_filter('rest_pre_dispatch', array( $this, 'block_user_enumeration' ), 10, 3);
         add_action('template_redirect', array( $this, 'block_author_enumeration' ));
         add_action('template_redirect', array( $this, 'handle_activation_page' ), 1);
+        // Защита от кэширования редиректов/ошибок на путях расширения.
+        // Инцидент 2026-04-23: браузер закешировал 301 с /wp-json/cashback/v1/me
+        // на home_url — расширение было мертво у пользователя до ручной очистки кэша.
+        add_action('send_headers', array( $this, 'force_no_store_on_rest_paths' ), 1);
+        add_filter('redirect_canonical', array( $this, 'skip_canonical_redirect_for_rest' ), 10, 2);
         // Сброс кеша магазинов при сохранении или удалении товара
         add_action('save_post_product', array( $this, 'flush_stores_cache' ));
         add_action('delete_post', array( $this, 'flush_stores_cache' ));
@@ -101,6 +106,41 @@ class Cashback_REST_API {
             wp_safe_redirect(home_url(), 301);
             exit;
         }
+    }
+
+    /**
+     * Защита от долгоживущего кэша редиректов/ошибок на путях cashback/v1.
+     *
+     * 301 по умолчанию кэшируются браузером практически бессрочно. Если на пути
+     * расширения по любой причине случился редирект (canonical, 404→home, плагин
+     * SEO), браузер запоминает его и перестаёт обращаться к серверу — расширение
+     * выглядит мёртвым. Добавляем `Cache-Control: no-store` на все запросы к
+     * нашему namespace, чтобы ни один неуспешный ответ не смог залипнуть в кэше.
+     */
+    public function force_no_store_on_rest_paths(): void {
+        if (!$this->is_cashback_rest_request()) {
+            return;
+        }
+        if (headers_sent()) {
+            return;
+        }
+        nocache_headers();
+    }
+
+    /**
+     * Отключить WP canonical redirect для REST-путей cashback/v1.
+     *
+     * Если по какой-то причине REST-route временно не зарегистрирован (плагин
+     * выключен, rewrite не сброшен после деплоя), WP отдаёт 301 на home_url.
+     * Браузер кэширует этот 301 и продолжает его воспроизводить после починки.
+     * Возврат false из фильтра отменяет редирект на уровне WP.
+     */
+    public function skip_canonical_redirect_for_rest( $redirect_url, $requested_url ) {
+        unset( $requested_url );
+        if ($this->is_cashback_rest_request()) {
+            return false;
+        }
+        return $redirect_url;
     }
 
     /**
