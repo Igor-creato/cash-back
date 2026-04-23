@@ -163,13 +163,9 @@ class CashbackAssetsTest extends TestCase
         self::assertNotNull($dompurify);
 
         $src = (string) $dompurify['src'];
-        // plugins_url в тестах возвращает http://localhost/wp-content/plugins/...,
-        // вытаскиваем относительный путь после plugins/ и проверяем реальный файл.
+        // Bootstrap-стаб plugins_url возвращает 'http://localhost/wp-content/plugins/' . $path,
+        // игнорируя $plugin. Итоговый $path — относительный от корня плагина.
         $relative = (string) preg_replace('#^https?://[^/]+/wp-content/plugins/#', '', $src);
-
-        // Возможные варианты: 'cash-back/support/assets/js/purify.min.js' или 'cash-back/assets/js/purify.min.js'.
-        // Вырезаем префикс имени плагина, если есть.
-        $relative = (string) preg_replace('#^[^/]+/#', '', $relative, 1);
 
         $file = $this->plugin_root . '/' . $relative;
         self::assertFileExists(
