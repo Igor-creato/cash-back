@@ -978,13 +978,27 @@ class WC_Affiliate_URL_Params {
         // Гости — моментальный редирект (страница только для авторизованных)
         if (!is_user_logged_in()) {
             global $wpdb;
-            $table = $wpdb->prefix . 'cashback_click_log';
+
+            // 12i-3 ADR (F-10-001): primary lookup в cashback_click_sessions.
+            $sessions_table = $wpdb->prefix . 'cashback_click_sessions';
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table, no cache needed for single redirect lookup.
             $row = $wpdb->get_var($wpdb->prepare(
-                'SELECT affiliate_url FROM %i WHERE click_id = %s LIMIT 1',
-                $table,
+                "SELECT affiliate_url FROM %i WHERE canonical_click_id = %s AND status = 'active' AND expires_at > NOW() LIMIT 1",
+                $sessions_table,
                 $click_id
             ));
+
+            // 12i-3 ADR: fallback на cashback_click_log для legacy rows (до 12i-1 migration).
+            if (!is_string($row) || $row === '') {
+                $click_log_table = $wpdb->prefix . 'cashback_click_log';
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table, legacy fallback.
+                $row = $wpdb->get_var($wpdb->prepare(
+                    'SELECT affiliate_url FROM %i WHERE click_id = %s LIMIT 1',
+                    $click_log_table,
+                    $click_id
+                ));
+            }
+
             // 12h-1 ADR (F-2-001): single point of truth scheme check через helper.
             $url = ( is_string($row) && $this->is_safe_http_url($row) )
                 ? $row
@@ -998,13 +1012,26 @@ class WC_Affiliate_URL_Params {
 
         // phpcs:ignore VariableAnalysis.CodeAnalysis.VariableAnalysis.VariableRedeclaration -- Previous global declaration is inside an if-block that always exits; this path requires its own import.
         global $wpdb;
-        $table = $wpdb->prefix . 'cashback_click_log';
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table, no cache needed for activation page lookup.
+
+        // 12i-3 ADR (F-10-001): primary lookup в cashback_click_sessions по canonical_click_id.
+        $sessions_table = $wpdb->prefix . 'cashback_click_sessions';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table, activation page lookup.
         $click = $wpdb->get_row($wpdb->prepare(
-            'SELECT affiliate_url, product_id FROM %i WHERE click_id = %s LIMIT 1',
-            $table,
+            "SELECT affiliate_url, product_id FROM %i WHERE canonical_click_id = %s AND status = 'active' AND expires_at > NOW() LIMIT 1",
+            $sessions_table,
             $click_id
         ), ARRAY_A);
+
+        // 12i-3 ADR: fallback на cashback_click_log для legacy rows.
+        if (empty($click)) {
+            $click_log_table = $wpdb->prefix . 'cashback_click_log';
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table, legacy fallback.
+            $click = $wpdb->get_row($wpdb->prepare(
+                'SELECT affiliate_url, product_id FROM %i WHERE click_id = %s LIMIT 1',
+                $click_log_table,
+                $click_id
+            ), ARRAY_A);
+        }
 
         $affiliate_url = '';
         if (!empty($click['affiliate_url']) && $this->is_safe_http_url((string) $click['affiliate_url'])) {
