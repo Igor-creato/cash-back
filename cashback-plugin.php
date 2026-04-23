@@ -344,6 +344,7 @@ class CashbackPlugin {
         $this->require_file('notifications/class-cashback-notifications-db.php');
         if (class_exists('Cashback_Notifications_DB')) {
             Cashback_Notifications_DB::create_tables();
+            Cashback_Notifications_DB::migrate_add_processing_token_and_last_error();
         }
 
         // Social Auth: создание таблиц и default-опций модуля соц-авторизации.
