@@ -242,8 +242,22 @@ class Cashback_Admin_API_Validation {
 
             <?php
             foreach ($networks as $network) :
-                $saved_credentials = Cashback_API_Client::get_instance()->get_credentials((int) $network['id']) ?: array();
-                $saved_scope       = $saved_credentials['scope'] ?? '';
+                // Защита от провала расшифровки credentials (напр. после теста
+                // «утеря ключа», когда api_credentials зашифрованы retired-ключом):
+                // Cashback_Encryption::decrypt() кидает RuntimeException, который
+                // бы обрушил всю admin-страницу в 500 — админ тогда не мог бы
+                // ни ввести новые credentials, ни переключить сеть. Глотаем
+                // исключение и показываем форму пустой с inline-уведомлением.
+                $credentials_error = null;
+                try {
+                    $saved_credentials = Cashback_API_Client::get_instance()->get_credentials((int) $network['id']) ?: array();
+                } catch (\Throwable $e) {
+                    $saved_credentials = array();
+                    $credentials_error = $e->getMessage();
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+                    error_log('[Cashback Admin API] get_credentials(' . (int) $network['id'] . ') failed: ' . $e->getMessage());
+                }
+                $saved_scope = $saved_credentials['scope'] ?? '';
             ?>
                 <div class="cashback-network-card" data-network-id="<?php echo esc_attr($network['id']); ?>" style="display:none">
                     <h2><?php echo esc_html($network['name']); ?>
@@ -254,6 +268,17 @@ class Cashback_Admin_API_Validation {
                             <span class="status-badge inactive">Неактивна</span>
                         <?php endif; ?>
                     </h2>
+
+                    <?php if ($credentials_error !== null) : ?>
+                        <div class="notice notice-warning inline" style="margin:10px 0;padding:10px 12px;">
+                            <p style="margin:0;">
+                                <strong>Сохранённые credentials этой сети не расшифровываются</strong>
+                                текущими активными ключами шифрования (напр. после утери/ротации ключа).
+                                Введите API-параметры заново и нажмите «Сохранить» — плагин перешифрует их
+                                актуальным ключом. Детали в логах PHP: <code><?php echo esc_html($credentials_error); ?></code>
+                            </p>
+                        </div>
+                    <?php endif; ?>
 
                     <table class="form-table">
                         <tr>
