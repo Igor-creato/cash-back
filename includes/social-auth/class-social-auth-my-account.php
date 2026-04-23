@@ -7,17 +7,20 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Вкладка ЛК «Социальная авторизация».
+ * Интеграция модуля соц-авторизации в стандартную вкладку WooCommerce
+ * «Данные аккаунта» (edit-account, в RU-переводе — «Анкета»).
  *
- * - Endpoint: /my-account/cashback-social/
- * - Пункт меню «Соцсети» перед customer-logout.
- * - Содержимое: список привязанных провайдеров + кнопки «Привязать».
+ * Раньше вкладка жила на отдельном endpoint /my-account/cashback-social/,
+ * но из-за отсутствия flush_rewrite_rules() пункт меню вёл на 404.
+ * Теперь содержимое (привязки соц-сетей) добавляется второй вкладкой
+ * прямо в edit-account через хуки WooCommerce.
  *
  * @since 1.1.0
  */
 class Cashback_Social_Auth_My_Account {
 
-    public const ENDPOINT = 'cashback-social';
+    private const TAB_ACCOUNT_ID = 'tab-edit-account';
+    private const TAB_SOCIAL_ID  = 'tab-social-links';
 
     private static ?self $instance = null;
 
@@ -31,76 +34,102 @@ class Cashback_Social_Auth_My_Account {
     private function __construct() {
     }
 
-    /**
-     * Зарегистрировать хуки WooCommerce.
-     */
     public function register_hooks(): void {
-        add_action('init', array( $this, 'register_endpoint' ));
-        add_filter('query_vars', array( $this, 'add_query_vars' ));
-        add_filter('woocommerce_account_menu_items', array( $this, 'add_menu_item' ));
-        add_action('woocommerce_account_' . self::ENDPOINT . '_endpoint', array( $this, 'render_content' ));
-    }
-
-    public function register_endpoint(): void {
-        add_rewrite_endpoint(self::ENDPOINT, EP_ROOT | EP_PAGES);
+        add_action('woocommerce_before_edit_account_form', array( $this, 'render_tabs_open' ));
+        add_action('woocommerce_after_edit_account_form', array( $this, 'render_tabs_close_with_social' ));
     }
 
     /**
-     * @param array<string, mixed> $vars
-     * @return array<string, mixed>
+     * Включён ли модуль (общий switch) — единая точка проверки.
      */
-    public function add_query_vars( $vars ) {
-        $vars[] = self::ENDPOINT;
-        return $vars;
+    private function is_enabled(): bool {
+        return (int) get_option('cashback_social_enabled', 0) === 1;
     }
 
     /**
-     * Вставить пункт меню «Соцсети» перед customer-logout (или после cashback-notifications).
-     *
-     * @param array<string, string> $items
-     * @return array<string, string>
+     * Открыть навигацию вкладок и контейнер первой вкладки (Анкета).
+     * WooCommerce-форма edit-account отрисуется ВНУТРИ этого контейнера.
      */
-    public function add_menu_item( $items ) {
-        if (!is_array($items)) {
-            return $items;
-        }
-
-        // Показывать только если модуль включён.
-        if ((int) get_option('cashback_social_enabled', 0) !== 1) {
-            return $items;
-        }
-
-        $new_label = __('Соцсети', 'cashback-plugin');
-        $new_items = array();
-
-        // Вставка перед customer-logout.
-        foreach ($items as $key => $label) {
-            if ($key === 'customer-logout') {
-                $new_items[ self::ENDPOINT ] = $new_label;
-            }
-            $new_items[ $key ] = $label;
-        }
-
-        // Если customer-logout нет — добавим в конец.
-        if (!isset($new_items[ self::ENDPOINT ])) {
-            $new_items[ self::ENDPOINT ] = $new_label;
-        }
-
-        return $new_items;
-    }
-
-    /**
-     * Отрисовать содержимое вкладки.
-     */
-    public function render_content(): void {
-        $user_id = get_current_user_id();
-        if ($user_id <= 0) {
-            echo '<p>' . esc_html__('Вы должны быть авторизованы.', 'cashback-plugin') . '</p>';
+    public function render_tabs_open(): void {
+        if (!$this->is_enabled()) {
             return;
         }
 
-        if ((int) get_option('cashback_social_enabled', 0) !== 1) {
-            echo '<p>' . esc_html__('Модуль социальной авторизации выключен.', 'cashback-plugin') . '</p>';
+        echo '<div class="cashback-tabs">';
+        echo '<button type="button" class="cashback-tab active" data-tab="' . esc_attr(self::TAB_ACCOUNT_ID) . '">'
+            . esc_html__('Анкета', 'cashback-plugin') . '</button>';
+        echo '<button type="button" class="cashback-tab" data-tab="' . esc_attr(self::TAB_SOCIAL_ID) . '">'
+            . esc_html__('Привязанные соц. сети', 'cashback-plugin') . '</button>';
+        echo '</div>';
+
+        echo '<div class="cashback-tab-content active" id="' . esc_attr(self::TAB_ACCOUNT_ID) . '">';
+    }
+
+    /**
+     * Закрыть первую вкладку и отрисовать вторую — список привязок соц-сетей.
+     */
+    public function render_tabs_close_with_social(): void {
+        if (!$this->is_enabled()) {
+            return;
+        }
+
+        echo '</div>'; // #tab-edit-account
+
+        echo '<div class="cashback-tab-content" id="' . esc_attr(self::TAB_SOCIAL_ID) . '">';
+        $this->render_social_content();
+        echo '</div>'; // #tab-social-links
+
+        $this->maybe_print_autoactivate_script();
+    }
+
+    /**
+     * Если в URL есть флэш-параметр от OAuth-колбэка/unlink — автоматически
+     * переключиться на вкладку соц-сетей при загрузке страницы.
+     */
+    private function maybe_print_autoactivate_script(): void {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only flash detection.
+        $has_flash = isset($_GET['cashback_social_linked'])
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only flash detection.
+            || isset($_GET['cashback_social_unlinked'])
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only flash detection.
+            || isset($_GET['cashback_social_error']);
+
+        if (!$has_flash) {
+            return;
+        }
+
+        $tab_id = self::TAB_SOCIAL_ID;
+        ?>
+<script>
+(function () {
+    var target = <?php echo wp_json_encode($tab_id); ?>;
+    function activate() {
+        var tabs = document.querySelectorAll('.cashback-tab');
+        var contents = document.querySelectorAll('.cashback-tab-content');
+        for (var i = 0; i < tabs.length; i++) {
+            tabs[i].classList.toggle('active', tabs[i].getAttribute('data-tab') === target);
+        }
+        for (var j = 0; j < contents.length; j++) {
+            contents[j].classList.toggle('active', contents[j].id === target);
+        }
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', activate);
+    } else {
+        activate();
+    }
+}());
+</script>
+        <?php
+    }
+
+    /**
+     * Содержимое вкладки «Привязанные соц. сети».
+     */
+    private function render_social_content(): void {
+        $user_id = get_current_user_id();
+        if ($user_id <= 0) {
+            echo '<p>' . esc_html__('Вы должны быть авторизованы.', 'cashback-plugin') . '</p>';
             return;
         }
 

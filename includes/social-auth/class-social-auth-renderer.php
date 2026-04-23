@@ -260,8 +260,8 @@ class Cashback_Social_Auth_Renderer {
         $redirect = '';
         if ($context === 'account_link') {
             $redirect = function_exists('wc_get_account_endpoint_url')
-                ? (string) wc_get_account_endpoint_url('cashback-social')
-                : home_url('/my-account/cashback-social/');
+                ? (string) wc_get_account_endpoint_url('edit-account')
+                : home_url('/my-account/edit-account/');
         } else {
             // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect hint from query.
             if (isset($_GET['redirect_to'])) {
