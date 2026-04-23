@@ -335,6 +335,8 @@ class HistoryPayout {
                 '1.5.0'
             );
 
+            Cashback_Assets::enqueue_safe_html();
+
             wp_enqueue_script(
                 'cashback-pagination',
                 plugin_dir_url(__FILE__) . 'assets/js/cashback-pagination.js',
@@ -346,7 +348,7 @@ class HistoryPayout {
             wp_enqueue_script(
                 'history-payout-ajax',
                 plugin_dir_url(__FILE__) . 'assets/js/history-payout.js',
-                array( 'jquery', 'cashback-pagination' ),
+                array( 'jquery', 'cashback-pagination', 'cashback-safe-html' ),
                 '1.2.0',
                 true
             );

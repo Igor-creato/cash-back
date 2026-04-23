@@ -549,6 +549,10 @@ class CashbackPlugin {
         // Единая пагинация (используется и в админке, и во фронтенде)
         $this->require_file('includes/class-cashback-pagination.php');
 
+        // Централизованный enqueue ассетов (Группа 9 ADR): DOMPurify + safe-html wrapper
+        // для всех модулей, вставляющих server-generated HTML через jQuery.html().
+        $this->require_file('includes/class-cashback-assets.php');
+
         // Checkpoint-хранилище cron-прогонов (Group 8 Step 3, F-8-005)
         $this->require_file('includes/class-cashback-cron-state.php');
 
