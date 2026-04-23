@@ -198,7 +198,38 @@ class Cashback_API_Client {
     }
 
     /**
-     * Получить расшифрованные credentials сети
+     * Проверяет, есть ли у сети зашифрованные credentials, которые
+     * нельзя расшифровать текущими активными ключами. true означает:
+     * строка в БД есть, api_credentials не пустые, но decrypt() вернул null.
+     * Используется admin-UI для показа уведомления «требуется повторный ввод».
+     *
+     * @param int $network_id
+     * @return bool
+     */
+    public function has_undecryptable_credentials( int $network_id ): bool {
+        global $wpdb;
+        $has_data = (bool) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT 1 FROM %i WHERE id = %d AND api_credentials IS NOT NULL AND api_credentials <> ''",
+                $this->networks_table,
+                $network_id
+            )
+        );
+        if (!$has_data) {
+            return false;
+        }
+        return $this->get_credentials($network_id) === null;
+    }
+
+    /**
+     * Получить расшифрованные credentials сети.
+     *
+     * Контракт: НИКОГДА не кидает. При невозможности расшифровать
+     * (ключ ротирован/утерян, данные битые) — возвращает null + пишет
+     * причину в error_log. Это единая точка защиты: десятки callers
+     * (/activate, validate_user, check_campaigns, background_sync,
+     * sync_update_local, render_settings_tab и т.д.) получают null
+     * и обрабатывают его как «credentials не настроены» — никаких 500.
      *
      * @param int $network_id
      * @return array|null
@@ -220,7 +251,14 @@ class Cashback_API_Client {
             return null;
         }
 
-        $json = Cashback_Encryption::decrypt($encrypted);
+        try {
+            $json = Cashback_Encryption::decrypt($encrypted);
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+            error_log('[Cashback API Client] decrypt failed for network_id=' . $network_id . ': ' . $e->getMessage() . ' — treating as missing credentials.');
+            return null;
+        }
+
         if (false === $json) {
             return null;
         }
