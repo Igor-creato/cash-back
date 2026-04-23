@@ -145,12 +145,44 @@
         });
     }
 
+    function deleteIndexedDB(key) {
+        return openIdb().then(function (db) {
+            if (!db) return false;
+            return new Promise(function (resolve) {
+                try {
+                    var tx = db.transaction(IDB_STORE, 'readwrite');
+                    var store = tx.objectStore(IDB_STORE);
+                    var req = store.delete(key);
+                    req.onsuccess = function () { resolve(true); };
+                    req.onerror = function () { resolve(false); };
+                } catch (e) { resolve(false); }
+            });
+        });
+    }
+
     function readLocalStorage(key) {
         try { return localStorage.getItem(key); } catch (e) { return null; }
     }
 
     function writeLocalStorage(key, value) {
         try { localStorage.setItem(key, value); } catch (e) {}
+    }
+
+    // --------------------------------------------------------------
+    // 11b-1 (F-34-006): consent-gate + purge
+    // --------------------------------------------------------------
+    // Зачистка всех трёх слоёв evercookie при отсутствии consent.
+    // Вызывается до getOrCreateDeviceId при каждом page-load, если cashbackFraudFP.has_consent=false.
+    // Чистит только свой ключ STORAGE_KEY — чужие LS/IDB/cookie не трогаем.
+    function purgeDeviceIdStorage() {
+        try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+        try {
+            // max-age=0 удаляет cookie немедленно во всех современных браузерах.
+            var secure = (typeof location !== 'undefined' && location.protocol === 'https:') ? '; Secure' : '';
+            document.cookie = STORAGE_KEY + '=; max-age=0; path=/; SameSite=Lax' + secure;
+        } catch (e) {}
+        // IDB delete — best-effort, promise не ждём (страницу не блокируем).
+        deleteIndexedDB(STORAGE_KEY);
     }
 
     /**
@@ -276,6 +308,16 @@
     // Main
     // --------------------------------------------------------------
     function init() {
+        // 11b-1 (F-34-006): без consent не пишем в cookie/LS/IDB и чистим существующие записи.
+        // 152-ФЗ: сам факт записи на устройстве без явного согласия = нарушение.
+        // Authenticated user без consent_meta или с withdrawn_at → has_consent=false → purge + return.
+        // Гости сюда в 11b-1 не доходят (enqueue_fingerprint_script гейтит is_user_logged_in),
+        // но флаг is_guest прокинут для forward-compat 11b-2.
+        if (!cashbackFraudFP.has_consent) {
+            purgeDeviceIdStorage();
+            dbg('cb_fp: no consent — purged device_id, skipping fingerprint pipeline');
+            return;
+        }
         return getOrCreateDeviceId().then(function (deviceId) {
             return Promise.all([
                 Promise.resolve(deviceId),
