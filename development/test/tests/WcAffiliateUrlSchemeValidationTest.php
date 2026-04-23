@@ -325,4 +325,187 @@ class WcAffiliateUrlSchemeValidationTest extends TestCase
             'Regression: основная ветка wp_redirect($affiliate_url, 302) для http(s) должна остаться.'
         );
     }
+
+    // =====================================================================
+    // 12h-2: admin save validation (F-2-001, admin-side)
+    // =====================================================================
+    //
+    // Контракт: при admin save external WooCommerce product через wp-admin
+    // хук `woocommerce_admin_process_product_object` должен вызывать
+    // validate_external_product_url_scheme($product). Если product_url
+    // non-http(s) — `$product->set_props(['product_url' => ''])` (безопасный
+    // дефолт), WC_Admin_Notices (при наличии класса) получает кастом-notice.
+
+    public function test_validate_external_product_url_scheme_method_exists(): void
+    {
+        self::assertMatchesRegularExpression(
+            '/public\s+function\s+validate_external_product_url_scheme\s*\(\s*[\w\\\\]*\s*\$\w+\s*\)\s*:\s*void/',
+            $this->source,
+            '12h-2: должен быть публичный метод validate_external_product_url_scheme(WC_Product $product): void.'
+        );
+    }
+
+    public function test_hook_registered_on_woocommerce_admin_process_product_object(): void
+    {
+        self::assertMatchesRegularExpression(
+            "/add_action\s*\(\s*['\"]woocommerce_admin_process_product_object['\"]\s*,\s*array\s*\(\s*\\\$this\s*,\s*['\"]validate_external_product_url_scheme['\"]\s*\)/",
+            $this->source,
+            '12h-2: add_action(woocommerce_admin_process_product_object, [$this, validate_external_product_url_scheme]) '
+            . 'должен быть зарегистрирован в конструкторе.'
+        );
+    }
+
+    public function test_validate_clears_url_for_unsafe_scheme(): void
+    {
+        $reflection = new ReflectionClass('WC_Affiliate_URL_Params');
+        $instance   = $reflection->newInstanceWithoutConstructor();
+        $method     = $reflection->getMethod('validate_external_product_url_scheme');
+
+        $product = new class {
+            public string $url         = 'intent://shopee.app/product/123';
+            public array  $props_set   = array();
+            public string $type        = 'external';
+            public int    $id          = 42;
+            public string $name        = 'Test Product';
+
+            public function get_type(): string { return $this->type; }
+            public function get_product_url(): string { return $this->url; }
+            public function set_props( array $props ): void {
+                $this->props_set = $props;
+                if (array_key_exists('product_url', $props)) {
+                    $this->url = (string) $props['product_url'];
+                }
+            }
+            public function get_id(): int { return $this->id; }
+            public function get_name(): string { return $this->name; }
+        };
+
+        $method->invoke($instance, $product);
+
+        self::assertArrayHasKey(
+            'product_url',
+            $product->props_set,
+            '12h-2: для non-http(s) URL метод должен вызвать set_props с ключом product_url.'
+        );
+        self::assertSame(
+            '',
+            $product->props_set['product_url'],
+            '12h-2: product_url должен быть обнулён (пустая строка) для unsafe-схемы.'
+        );
+        self::assertSame(
+            '',
+            $product->url,
+            '12h-2: после set_props get_product_url должен вернуть пустую строку.'
+        );
+    }
+
+    public function test_validate_preserves_safe_url(): void
+    {
+        $reflection = new ReflectionClass('WC_Affiliate_URL_Params');
+        $instance   = $reflection->newInstanceWithoutConstructor();
+        $method     = $reflection->getMethod('validate_external_product_url_scheme');
+
+        $product = new class {
+            public string $url         = 'https://shop.example.com/p/123';
+            public array  $props_set   = array();
+            public string $type        = 'external';
+            public int    $id          = 42;
+            public string $name        = 'Test Product';
+
+            public function get_type(): string { return $this->type; }
+            public function get_product_url(): string { return $this->url; }
+            public function set_props( array $props ): void {
+                $this->props_set = $props;
+                if (array_key_exists('product_url', $props)) {
+                    $this->url = (string) $props['product_url'];
+                }
+            }
+            public function get_id(): int { return $this->id; }
+            public function get_name(): string { return $this->name; }
+        };
+
+        $method->invoke($instance, $product);
+
+        self::assertSame(
+            array(),
+            $product->props_set,
+            '12h-2 Regression: для валидного https:// URL set_props НЕ должен вызываться.'
+        );
+        self::assertSame(
+            'https://shop.example.com/p/123',
+            $product->url,
+            '12h-2 Regression: валидный URL должен остаться нетронутым.'
+        );
+    }
+
+    public function test_validate_skips_non_external_product_type(): void
+    {
+        $reflection = new ReflectionClass('WC_Affiliate_URL_Params');
+        $instance   = $reflection->newInstanceWithoutConstructor();
+        $method     = $reflection->getMethod('validate_external_product_url_scheme');
+
+        // Simple product (не external) — валидация product_url не применяется.
+        $product = new class {
+            public string $url         = 'intent://something';
+            public array  $props_set   = array();
+            public string $type        = 'simple';
+            public int    $id          = 42;
+            public string $name        = 'Test Product';
+
+            public function get_type(): string { return $this->type; }
+            public function get_product_url(): string { return $this->url; }
+            public function set_props( array $props ): void { $this->props_set = $props; }
+            public function get_id(): int { return $this->id; }
+            public function get_name(): string { return $this->name; }
+        };
+
+        $method->invoke($instance, $product);
+
+        self::assertSame(
+            array(),
+            $product->props_set,
+            '12h-2: для non-external product (simple/variable/etc.) валидация product_url не применяется — '
+            . 'это поле есть только у WC_Product_External.'
+        );
+    }
+
+    public function test_validate_skips_empty_url(): void
+    {
+        // Пустой product_url (даже для external product) — не ошибка, а валидное состояние
+        // "ссылка ещё не заполнена". set_props не дёргаем.
+        $reflection = new ReflectionClass('WC_Affiliate_URL_Params');
+        $instance   = $reflection->newInstanceWithoutConstructor();
+        $method     = $reflection->getMethod('validate_external_product_url_scheme');
+
+        $product = new class {
+            public string $url         = '';
+            public array  $props_set   = array();
+            public string $type        = 'external';
+            public int    $id          = 42;
+            public string $name        = 'Test Product';
+
+            public function get_type(): string { return $this->type; }
+            public function get_product_url(): string { return $this->url; }
+            public function set_props( array $props ): void { $this->props_set = $props; }
+            public function get_id(): int { return $this->id; }
+            public function get_name(): string { return $this->name; }
+        };
+
+        $method->invoke($instance, $product);
+
+        self::assertSame(array(), $product->props_set);
+    }
+
+    public function test_validate_uses_shared_helper(): void
+    {
+        // DRY: validate_external_product_url_scheme должен использовать тот же
+        // is_safe_http_url helper, а не дублировать scheme-check.
+        $body = $this->extract_method('validate_external_product_url_scheme');
+
+        self::assertMatchesRegularExpression(
+            '/\$this->is_safe_http_url\s*\(/',
+            $body,
+            '12h-2 DRY: метод должен использовать $this->is_safe_http_url (single point of truth).'
+        );
+    }
 }
