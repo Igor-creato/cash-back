@@ -61,6 +61,11 @@ class WC_Affiliate_URL_Params {
         add_action('woocommerce_product_options_general_product_data', array( $this, 'add_custom_fields' ));
         add_action('woocommerce_process_product_meta', array( $this, 'save_custom_fields' ));
 
+        // 12h-2 ADR (F-2-001): админ-валидация scheme в external product URL.
+        // WooCommerce вызывает этот хук до persist'а товара, поэтому set_props()
+        // с пустым product_url фактически отменяет запись unsafe-URL в БД.
+        add_action('woocommerce_admin_process_product_object', array( $this, 'validate_external_product_url_scheme' ), 20, 1);
+
         // Админ-уведомления (ошибки валидации при сохранении)
         add_action('admin_notices', array( $this, 'show_admin_notices' ));
 
@@ -598,6 +603,17 @@ class WC_Affiliate_URL_Params {
                 esc_html($warning)
             );
             delete_transient('cashback_affiliate_network_warning_' . $user_id);
+        }
+
+        // 12h-2 ADR (F-2-001): non-http(s) product URL отклонён при save.
+        $url_rejected = get_transient('cashback_product_url_rejected_' . $user_id);
+        if ($url_rejected) {
+            printf(
+                '<div class="notice notice-warning is-dismissible"><p><strong>%s</strong> %s</p></div>',
+                esc_html__('Cashback:', 'cashback-plugin'),
+                esc_html($url_rejected)
+            );
+            delete_transient('cashback_product_url_rejected_' . $user_id);
         }
     }
 
@@ -1275,6 +1291,58 @@ body{
 HTML;
         // phpcs:enable WordPress.Security.EscapeOutput.HeredocOutputNotEscaped
         exit;
+    }
+
+    /**
+     * 12h-2 ADR (F-2-001 admin-side): блокирует сохранение non-http(s) URL в
+     * `_product_url` при save через wp-admin → Products → Edit Product.
+     *
+     * Вешается на `woocommerce_admin_process_product_object` (prio 20) —
+     * WooCommerce вызывает его до commit'а товара в БД, что позволяет через
+     * `$product->set_props(['product_url' => ''])` безопасно отменить запись
+     * unsafe-URL. Админ увидит notice через существующий `show_admin_notices()`
+     * pipeline (transient cashback_product_url_rejected_{user_id}).
+     *
+     * Runtime-защита (12h-1) уже нейтрализует уже сохранённые "плохие" URL:
+     * этот хук — дополнительная защита на входной границе, не дублирующая.
+     *
+     * @param \WC_Product $product Объект товара WooCommerce (duck-typed в тестах).
+     */
+    public function validate_external_product_url_scheme( $product ): void {
+        if (!is_object($product) || !method_exists($product, 'get_type')) {
+            return;
+        }
+        if ($product->get_type() !== 'external') {
+            return;
+        }
+
+        $url = (string) $product->get_product_url();
+        if ($url === '' || $this->is_safe_http_url($url)) {
+            return;
+        }
+
+        $product->set_props(array( 'product_url' => '' ));
+
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Diagnostic logging: grep [wc-affiliate-url-params] Rejected unsafe product URL on save.
+        error_log(sprintf(
+            '[wc-affiliate-url-params] Rejected unsafe product URL on save: product #%d',
+            (int) $product->get_id()
+        ));
+
+        // Admin notice через существующий transient-based pipeline в show_admin_notices().
+        $user_id = get_current_user_id();
+        if ($user_id > 0) {
+            set_transient(
+                'cashback_product_url_rejected_' . $user_id,
+                sprintf(
+                    /* translators: 1: product name, 2: product ID */
+                    __('URL товара "%1$s" (ID %2$d) имел недопустимую схему. Допустимы только http:// и https://. URL очищен.', 'cashback-plugin'),
+                    (string) $product->get_name(),
+                    (int) $product->get_id()
+                ),
+                MINUTE_IN_SECONDS * 5
+            );
+        }
     }
 
     /**
