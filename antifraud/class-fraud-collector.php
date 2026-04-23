@@ -122,11 +122,21 @@ class Cashback_Fraud_Collector {
             true
         );
 
+        // 11b-1 (F-34-006): отдаём клиенту флаг consent'а, чтобы JS ранним return'ом
+        // пропускал evercookie-write и чистил cookie/localStorage/IndexedDB при отсутствии
+        // согласия. is_guest — forward-compat для 11b-2 (когда снимем enqueue-guard).
+        $user_id     = (int) get_current_user_id();
+        $has_consent = class_exists('Cashback_Fraud_Consent')
+            ? Cashback_Fraud_Consent::has_consent($user_id)
+            : false;
+
         wp_localize_script('cashback-fraud-fingerprint', 'cashbackFraudFP', array(
-            'ajaxurl' => admin_url('admin-ajax.php'),
-            'nonce'   => wp_create_nonce('cashback_fraud_fingerprint_nonce'),
+            'ajaxurl'     => admin_url('admin-ajax.php'),
+            'nonce'       => wp_create_nonce('cashback_fraud_fingerprint_nonce'),
             // debug=true только при WP_DEBUG, чтобы не шуметь в production console
-            'debug'   => ( defined('WP_DEBUG') && WP_DEBUG ),
+            'debug'       => ( defined('WP_DEBUG') && WP_DEBUG ),
+            'has_consent' => (bool) $has_consent,
+            'is_guest'    => !is_user_logged_in(),
         ));
     }
 

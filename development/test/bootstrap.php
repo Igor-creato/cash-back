@@ -235,6 +235,35 @@ if (!function_exists('get_userdata')) {
     }
 }
 
+if (!function_exists('get_user_meta')) {
+    function get_user_meta(int $user_id, string $key = '', bool $single = false): mixed
+    {
+        $store = $GLOBALS['_cb_test_user_meta'] ?? array();
+        $user_bucket = $store[ $user_id ] ?? array();
+        if ($key === '') {
+            return $user_bucket;
+        }
+        if (!array_key_exists($key, $user_bucket)) {
+            return $single ? '' : array();
+        }
+        return $single ? $user_bucket[ $key ] : array( $user_bucket[ $key ] );
+    }
+}
+
+if (!function_exists('update_user_meta')) {
+    function update_user_meta(int $user_id, string $key, mixed $value, mixed $prev_value = ''): bool
+    {
+        if (!isset($GLOBALS['_cb_test_user_meta']) || !is_array($GLOBALS['_cb_test_user_meta'])) {
+            $GLOBALS['_cb_test_user_meta'] = array();
+        }
+        if (!isset($GLOBALS['_cb_test_user_meta'][ $user_id ]) || !is_array($GLOBALS['_cb_test_user_meta'][ $user_id ])) {
+            $GLOBALS['_cb_test_user_meta'][ $user_id ] = array();
+        }
+        $GLOBALS['_cb_test_user_meta'][ $user_id ][ $key ] = $value;
+        return true;
+    }
+}
+
 if (!function_exists('is_admin')) {
     function is_admin(): bool
     {
@@ -245,7 +274,7 @@ if (!function_exists('is_admin')) {
 if (!function_exists('is_account_page')) {
     function is_account_page(): bool
     {
-        return false;
+        return (bool) ($GLOBALS['_cb_test_is_account_page'] ?? false);
     }
 }
 
@@ -467,6 +496,13 @@ if (!function_exists('wp_script_is')) {
 if (!function_exists('wp_localize_script')) {
     function wp_localize_script(string $handle, string $object_name, array $l10n): bool
     {
+        if (!isset($GLOBALS['_cb_test_localized_scripts']) || !is_array($GLOBALS['_cb_test_localized_scripts'])) {
+            $GLOBALS['_cb_test_localized_scripts'] = array();
+        }
+        if (!isset($GLOBALS['_cb_test_localized_scripts'][ $handle ]) || !is_array($GLOBALS['_cb_test_localized_scripts'][ $handle ])) {
+            $GLOBALS['_cb_test_localized_scripts'][ $handle ] = array();
+        }
+        $GLOBALS['_cb_test_localized_scripts'][ $handle ][ $object_name ] = $l10n;
         return true;
     }
 }
