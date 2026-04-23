@@ -397,12 +397,59 @@ if (!function_exists('wp_cache_delete')) {
     }
 }
 
+if (!isset($GLOBALS['_cb_test_enqueued_styles'])) {
+    $GLOBALS['_cb_test_enqueued_styles'] = array();
+}
+if (!isset($GLOBALS['_cb_test_enqueued_scripts'])) {
+    $GLOBALS['_cb_test_enqueued_scripts'] = array();
+}
+
 if (!function_exists('wp_enqueue_style')) {
-    function wp_enqueue_style(string $handle, string $src = '', array $deps = [], mixed $ver = false, string $media = 'all'): void {}
+    function wp_enqueue_style(string $handle, string $src = '', array $deps = [], mixed $ver = false, string $media = 'all'): void
+    {
+        $GLOBALS['_cb_test_enqueued_styles'][ $handle ] = array(
+            'handle' => $handle,
+            'src'    => $src,
+            'deps'   => $deps,
+            'ver'    => $ver,
+            'media'  => $media,
+        );
+    }
 }
 
 if (!function_exists('wp_enqueue_script')) {
-    function wp_enqueue_script(string $handle, string $src = '', array $deps = [], mixed $ver = false, bool $in_footer = false): void {}
+    function wp_enqueue_script(string $handle, string $src = '', array $deps = [], mixed $ver = false, bool $in_footer = false): void
+    {
+        $GLOBALS['_cb_test_enqueued_scripts'][ $handle ] = array(
+            'handle'    => $handle,
+            'src'       => $src,
+            'deps'      => $deps,
+            'ver'       => $ver,
+            'in_footer' => $in_footer,
+        );
+    }
+}
+
+if (!function_exists('wp_register_script')) {
+    function wp_register_script(string $handle, string $src = '', array $deps = [], mixed $ver = false, bool $in_footer = false): bool
+    {
+        $GLOBALS['_cb_test_enqueued_scripts'][ $handle ] = array(
+            'handle'     => $handle,
+            'src'        => $src,
+            'deps'       => $deps,
+            'ver'        => $ver,
+            'in_footer'  => $in_footer,
+            'registered' => true,
+        );
+        return true;
+    }
+}
+
+if (!function_exists('wp_script_is')) {
+    function wp_script_is(string $handle, string $list = 'enqueued'): bool
+    {
+        return isset($GLOBALS['_cb_test_enqueued_scripts'][ $handle ]);
+    }
 }
 
 if (!function_exists('wp_localize_script')) {
