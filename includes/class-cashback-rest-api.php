@@ -501,7 +501,7 @@ class Cashback_REST_API {
             'SELECT offer_name, cashback, order_status, currency, partner, action_date, created_at
              FROM %i
              WHERE user_id = %d
-             ORDER BY created_at DESC
+             ORDER BY COALESCE(action_date, created_at) DESC
              LIMIT %d OFFSET %d',
             $table,
             $user_id,
