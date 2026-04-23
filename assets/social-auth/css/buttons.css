@@ -109,26 +109,6 @@
     font-weight: 600;
 }
 
-.cashback-social-unlink-btn {
-    background: transparent;
-    color: #b0261a;
-    border: 1px solid #b0261a;
-    padding: 4px 10px;
-    border-radius: 4px;
-    font-size: 13px;
-    cursor: pointer;
-}
-
-.cashback-social-unlink-btn:hover {
-    background: #b0261a;
-    color: #fff;
-}
-
-.cashback-social-unlink-btn[disabled] {
-    opacity: .5;
-    cursor: not-allowed;
-}
-
 .cashback-social-empty {
     color: #777;
     font-style: italic;

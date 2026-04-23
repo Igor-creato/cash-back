@@ -159,7 +159,10 @@ class Cashback_Social_Auth_My_Account {
     }
 
     /**
-     * Таблица привязок.
+     * Таблица привязок: провайдер, дата (без времени), кнопка «Отвязать».
+     *
+     * Чувствительные данные (IP, User-Agent) намеренно не показываются клиенту —
+     * они доступны админу через журнал аудита.
      *
      * @param array<int, array<string, mixed>> $links
      * @param array<string, string>            $labels
@@ -170,12 +173,10 @@ class Cashback_Social_Auth_My_Account {
         $has_password = $user instanceof WP_User && $user->user_pass !== '';
         $nonce        = wp_create_nonce('wp_rest');
 
-        echo '<table class="cashback-social-links-table">';
+        echo '<table class="cashback-social-links-table shop_table">';
         echo '<thead><tr>';
         echo '<th>' . esc_html__('Провайдер', 'cashback-plugin') . '</th>';
-        echo '<th>' . esc_html__('Привязан', 'cashback-plugin') . '</th>';
-        echo '<th>' . esc_html__('IP', 'cashback-plugin') . '</th>';
-        echo '<th>' . esc_html__('Устройство', 'cashback-plugin') . '</th>';
+        echo '<th>' . esc_html__('Дата', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Действия', 'cashback-plugin') . '</th>';
         echo '</tr></thead><tbody>';
 
@@ -183,9 +184,6 @@ class Cashback_Social_Auth_My_Account {
             $provider_id = isset($row['provider']) ? (string) $row['provider'] : '';
             $label       = $labels[ $provider_id ] ?? $provider_id;
             $linked_at   = isset($row['linked_at']) ? (string) $row['linked_at'] : '';
-            $link_ip     = isset($row['link_ip']) ? (string) $row['link_ip'] : '';
-            $link_ua     = isset($row['link_user_agent']) ? (string) $row['link_user_agent'] : '';
-            $link_ua_sh  = $link_ua !== '' ? substr($link_ua, 0, 60) . ( strlen($link_ua) > 60 ? '…' : '' ) : '';
 
             // Разрешено удалять если есть пароль ИЛИ это не последняя связка.
             $can_unlink = $has_password || $total_links > 1;
@@ -193,15 +191,13 @@ class Cashback_Social_Auth_My_Account {
 
             echo '<tr>';
             echo '<td>' . esc_html($label) . '</td>';
-            echo '<td>' . esc_html($this->format_datetime($linked_at)) . '</td>';
-            echo '<td>' . esc_html($link_ip) . '</td>';
-            echo '<td>' . esc_html($link_ua_sh) . '</td>';
+            echo '<td>' . esc_html($this->format_date($linked_at)) . '</td>';
             echo '<td>';
             echo '<form method="post" action="' . esc_url(rest_url('cashback/v1/social/unlink')) . '" class="cashback-social-unlink-form" data-provider="' . esc_attr($provider_id) . '">';
             echo '<input type="hidden" name="provider" value="' . esc_attr($provider_id) . '" />';
             echo '<input type="hidden" name="_wpnonce" value="' . esc_attr($nonce) . '" />';
             // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $disabled содержит pre-escaped attribute или пустую строку.
-            echo '<button type="submit" class="cashback-social-unlink-btn" onclick="return confirm(\'' . esc_js(__('Отвязать аккаунт?', 'cashback-plugin')) . '\');"' . $disabled . '>';
+            echo '<button type="submit" class="woocommerce-Button button" onclick="return confirm(\'' . esc_js(__('Отвязать аккаунт?', 'cashback-plugin')) . '\');"' . $disabled . '>';
             echo esc_html__('Отвязать', 'cashback-plugin');
             echo '</button>';
             echo '</form>';
@@ -269,17 +265,17 @@ class Cashback_Social_Auth_My_Account {
     }
 
     /**
-     * Человеко-читаемая дата (формат сайта).
+     * Человеко-читаемая дата (формат сайта, без времени).
      */
-    private function format_datetime( string $mysql ): string {
-        if ($mysql === '' || $mysql === null) {
+    private function format_date( string $mysql ): string {
+        if ($mysql === '') {
             return '';
         }
         $ts = strtotime($mysql);
         if (!$ts) {
             return $mysql;
         }
-        $fmt = get_option('date_format', 'Y-m-d') . ' ' . get_option('time_format', 'H:i');
+        $fmt = (string) get_option('date_format', 'Y-m-d');
         return (string) date_i18n($fmt, $ts);
     }
 }
