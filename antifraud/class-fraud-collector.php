@@ -103,10 +103,21 @@ class Cashback_Fraud_Collector {
             return;
         }
 
+        // Группа 11a (F-34-007/008): FingerprintJS OSS v3.4.2 (MIT) из локального bundle,
+        // вместо загрузки с openfpcdn.io через `new Function`. UMD-бандл ставит
+        // `window.FingerprintJS` до загрузки нашего wrapper-скрипта.
+        wp_register_script(
+            'cashback-fingerprintjs',
+            plugins_url('../assets/vendor/fingerprintjs/fp.min.js', __FILE__),
+            array(),
+            '3.4.2',
+            true
+        );
+
         wp_enqueue_script(
             'cashback-fraud-fingerprint',
             plugins_url('../assets/js/fraud-fingerprint.js', __FILE__),
-            array(),
+            array( 'cashback-fingerprintjs' ),
             '1.3.0',
             true
         );
