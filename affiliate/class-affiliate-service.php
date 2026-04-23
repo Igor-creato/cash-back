@@ -545,8 +545,8 @@ class Cashback_Affiliate_Service {
                 continue;
             }
 
-            $referrer_id     = $referral_map[ $user_id ];
-            $rate            = $rates_cache[ $referrer_id ] ?? $global_rate;
+            $referrer_id = $referral_map[ $user_id ];
+            $rate        = $rates_cache[ $referrer_id ] ?? $global_rate;
             // Сохраняем round()-семантику (half-away-from-zero), но сразу
             // канонизируем результат в decimal-string (F-11-002): устраняем
             // locale-leak при последующем `(string) \$commission` в bcadd.
