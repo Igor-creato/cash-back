@@ -596,10 +596,23 @@ class Cashback_REST_API {
         }
 
         // CPA-сеть + merchant policy.
+        // Защита от провала расшифровки credentials (напр. пост-rotation, когда
+        // api_credentials в БД зашифрованы retired-ключом): get_network_config()
+        // кидает RuntimeException из Cashback_Encryption::decrypt(). Для /activate
+        // credentials не нужны — нужны только policy/window, которые имеют
+        // fail-safe дефолты. Глотаем исключение, чтобы активация не падала в 500
+        // из-за проблемы ключей, требующей действия администратора.
         $cpa_network     = $this->get_network_slug($product_id);
-        $merchant_config = $cpa_network
-            ? Cashback_API_Client::get_instance()->get_network_config($cpa_network)
-            : null;
+        $merchant_config = null;
+        if ($cpa_network) {
+            try {
+                $merchant_config = Cashback_API_Client::get_instance()->get_network_config($cpa_network);
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+                error_log('[Cashback REST API] get_network_config(' . $cpa_network . ') failed, falling back to defaults: ' . $e->getMessage());
+                $merchant_config = null;
+            }
+        }
 
         // 12i-2 ADR (F-10-001): fail-safe clamp policy/window — защита от misconfig.
         $policy_allowlist = array( 'reuse_in_window', 'always_new', 'reuse_per_product' );
