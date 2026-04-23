@@ -236,9 +236,9 @@ class Cashback_Social_Auth_Renderer {
             $classes .= ' cashback-social-btn--disabled';
         }
 
-        $href            = $is_account_link ? esc_url($consent_url) : '#';
-        $aria_disabled   = $is_account_link ? 'false' : 'true';
-        $data_consent    = esc_url($consent_url);
+        $href          = $is_account_link ? esc_url($consent_url) : '#';
+        $aria_disabled = $is_account_link ? 'false' : 'true';
+        $data_consent  = esc_url($consent_url);
 
         $html  = '<a href="' . $href . '" class="' . esc_attr($classes) . '"';
         $html .= ' aria-disabled="' . esc_attr($aria_disabled) . '"';
