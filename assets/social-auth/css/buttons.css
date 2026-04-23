@@ -97,16 +97,56 @@
 
 .cashback-social-links-table th,
 .cashback-social-links-table td {
-    padding: 8px 10px;
+    padding: 12px 16px;
     border-bottom: 1px solid #ececec;
     text-align: left;
     font-size: 14px;
-    vertical-align: top;
+    vertical-align: middle;
+}
+
+/* Внутренние отступы у крайних колонок, чтобы текст/кнопка
+   не прилипали к краям контейнера. */
+.cashback-social-links-table th:first-child,
+.cashback-social-links-table td:first-child {
+    padding-left: 20px;
+}
+
+.cashback-social-links-table th:last-child,
+.cashback-social-links-table td:last-child {
+    padding-right: 20px;
+    text-align: right;
 }
 
 .cashback-social-links-table th {
     background: #f5f5f5;
     font-weight: 600;
+}
+
+/* Кнопка «Отвязать» — стилизация под акцентную кнопку активной темы
+   (использует те же CSS-переменные, что и кнопки «Вывести» / «Сохранить настройки»
+   в cashback-withdrawal — см. assets/css/frontend.css). */
+.cashback-social-links-table .cashback-social-unlink-form button.button {
+    border-radius: var(--btn-accented-brd-radius, 4px) !important;
+    color: var(--btn-accented-color, #fff) !important;
+    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
+    box-shadow: var(--btn-accented-box-shadow) !important;
+    text-transform: var(--btn-accented-transform, var(--btn-transform, uppercase)) !important;
+    font-weight: var(--btn-accented-font-weight, var(--btn-font-weight, 600)) !important;
+    font-family: var(--btn-accented-font-family, var(--btn-font-family, inherit)) !important;
+    font-style: var(--btn-accented-font-style, var(--btn-font-style, unset)) !important;
+    border: none !important;
+    cursor: pointer;
+}
+
+.cashback-social-links-table .cashback-social-unlink-form button.button:hover:not([disabled]) {
+    color: var(--btn-accented-color-hover, #fff) !important;
+    background-color: var(--btn-accented-bgcolor-hover, #005a87) !important;
+    box-shadow: var(--btn-accented-box-shadow-hover) !important;
+}
+
+.cashback-social-links-table .cashback-social-unlink-form button.button[disabled] {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
 .cashback-social-empty {
