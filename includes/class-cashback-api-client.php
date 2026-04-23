@@ -2140,15 +2140,15 @@ class Cashback_API_Client {
                 // Money-сравнение (F-8-003): заменяет float-epsilon `abs(...) >= 0.001`
                 // на bit-exact сравнение BCMath-decimal — устраняет корневой класс
                 // false-positive/false-negative при accumulation-артефактах float'а.
-                $status_changed       = ( $local_status !== $mapped_status );
-                $api_payment_canon    = number_format($api_payment, 2, '.', '');
-                $api_cart_canon       = number_format($api_cart, 2, '.', '');
-                $api_payment_money    = Cashback_Money::from_db_value($api_payment_canon);
-                $fresh_comission_money = Cashback_Money::from_db_value((string) ($fresh['comission'] ?? '0'));
-                $fresh_sum_order_money = Cashback_Money::from_db_value((string) ($fresh['sum_order'] ?? '0'));
-                $api_cart_money       = Cashback_Money::from_db_value($api_cart_canon);
-                $commission_changed   = ! $api_payment_money->equals($fresh_comission_money);
-                $cart_changed         = ! $api_cart_money->equals($fresh_sum_order_money);
+                $status_changed        = ( $local_status !== $mapped_status );
+                $api_payment_canon     = number_format( $api_payment, 2, '.', '' );
+                $api_cart_canon        = number_format( $api_cart, 2, '.', '' );
+                $api_payment_money     = Cashback_Money::from_db_value( $api_payment_canon );
+                $fresh_comission_money = Cashback_Money::from_db_value( (string) ( $fresh['comission'] ?? '0' ) );
+                $fresh_sum_order_money = Cashback_Money::from_db_value( (string) ( $fresh['sum_order'] ?? '0' ) );
+                $api_cart_money        = Cashback_Money::from_db_value( $api_cart_canon );
+                $commission_changed    = ! $api_payment_money->equals( $fresh_comission_money );
+                $cart_changed          = ! $api_cart_money->equals( $fresh_sum_order_money );
 
                 $needs_verify = empty($fresh['api_verified']);
 

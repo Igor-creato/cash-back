@@ -406,9 +406,9 @@ class Cashback_REST_API {
         // Money-поля: валидация через Cashback_Money (fail-closed) перед (float)-cast
         // в ответ (F-35-004). В cashback/v2 цель — вернуть `->to_string()` как
         // decimal-string, сейчас сохраняем float-контракт ради совместимости.
-        $available = Cashback_Money::from_db_value((string) ( $balance['available_balance'] ?? '0' ));
-        $pending   = Cashback_Money::from_db_value((string) ( $balance['pending_balance'] ?? '0' ));
-        $paid      = Cashback_Money::from_db_value((string) ( $balance['paid_balance'] ?? '0' ));
+        $available = Cashback_Money::from_db_value( (string) ( $balance['available_balance'] ?? '0' ) );
+        $pending   = Cashback_Money::from_db_value( (string) ( $balance['pending_balance'] ?? '0' ) );
+        $paid      = Cashback_Money::from_db_value( (string) ( $balance['paid_balance'] ?? '0' ) );
 
         return new \WP_REST_Response(array(
             'user_id'       => $user_id,
@@ -465,7 +465,7 @@ class Cashback_REST_API {
         $formatted = array();
         foreach ($items as $item) {
             // Money-валидация DB-значения перед (float)-cast в ответ (F-35-004).
-            $cashback_money = Cashback_Money::from_db_value((string) ( $item['cashback'] ?? '0' ));
+            $cashback_money = Cashback_Money::from_db_value( (string) ( $item['cashback'] ?? '0' ) );
             $formatted[]    = array(
                 'offer_name'   => $item['offer_name'],
                 'cashback'     => (float) $cashback_money->to_string(),
