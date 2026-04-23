@@ -115,18 +115,13 @@ class Cashback_Captcha {
             return true;
         }
 
-        $validate_url = add_query_arg(
-            array(
-                'secret' => $server_key,
-                'token'  => $token,
-                'ip'     => $ip,
-            ),
-            self::VALIDATE_URL
-        );
+        // 12d ADR (F-10-003): secret/token/ip уходят в POST body, не в query string.
+        // URL без параметров — не утекает в access-log / reverse-proxy / browser history.
+        $validate_url = self::VALIDATE_URL;
 
         // SSRF-guard: host SmartCaptcha'и захардкожен и входит в baseline allowlist;
         // проверка защищает от случаев, когда site-owner подменил allowlist через фильтр.
-        // При deny — graceful degradation (как при других ошибках API ниже).
+        // При deny — graceful degradation (config state, не upstream failure).
         if (class_exists('Cashback_Outbound_HTTP_Guard')) {
             $guard_check = Cashback_Outbound_HTTP_Guard::validate_url($validate_url);
             if (is_wp_error($guard_check)) {
@@ -136,33 +131,44 @@ class Cashback_Captcha {
             }
         }
 
-        $response = wp_remote_get(
+        $response = wp_remote_post(
             $validate_url,
             array(
                 'timeout'   => self::API_TIMEOUT,
                 'sslverify' => true,
+                'body'      => array(
+                    'secret' => $server_key,
+                    'token'  => $token,
+                    'ip'     => $ip,
+                ),
             )
         );
 
+        // 12d ADR (F-10-004): fail-closed на upstream error. Legacy fail-open
+        // (availability trade-off) доступен через filter cashback_captcha_upstream_policy
+        // = 'allow'.
+        $upstream_fail_result = ( apply_filters('cashback_captcha_upstream_policy', 'deny') === 'allow' );
+
         if (is_wp_error($response)) {
-            // API недоступен — graceful degradation, пропускаем
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Cashback Bot Protection] SmartCaptcha API error: ' . $response->get_error_message());
-            return true;
+            return $upstream_fail_result;
         }
 
         $code = wp_remote_retrieve_response_code($response);
         if ($code !== 200) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Cashback Bot Protection] SmartCaptcha API HTTP ' . $code);
-            return true;
+            return $upstream_fail_result;
         }
 
         $body = wp_remote_retrieve_body($response);
         $data = json_decode($body, true);
 
         if (!is_array($data)) {
-            return true;
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Bot Protection] SmartCaptcha API non-JSON response');
+            return $upstream_fail_result;
         }
 
         $passed = isset($data['status']) && $data['status'] === 'ok';
