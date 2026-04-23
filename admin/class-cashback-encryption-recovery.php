@@ -163,6 +163,121 @@ class Cashback_Encryption_Recovery {
     }
 
     /**
+     * Сколько CPA-сетей ещё держат зашифрованные api_credentials.
+     */
+    public static function count_affiliate_networks_with_ciphertext(): int {
+        global $wpdb;
+        $table = $wpdb->prefix . 'cashback_affiliate_networks';
+        return (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(*) FROM %i WHERE api_credentials IS NOT NULL AND api_credentials <> ''",
+                $table
+            )
+        );
+    }
+
+    /**
+     * Очистка партии api_credentials у CPA-сетей (Admitad, EPN и т.д.).
+     * Строки сохраняются — это справочник сетей, нужный для click_log и policy.
+     * После очистки админ вводит credentials заново через «Кэшбэк → Партнёры»,
+     * плагин шифрует их текущим primary-ключом.
+     */
+    public static function run_batch_affiliate_networks( int $limit = self::BATCH_SIZE ): int {
+        global $wpdb;
+        $table = $wpdb->prefix . 'cashback_affiliate_networks';
+        $limit = max(1, min(5000, $limit));
+        $affected = $wpdb->query(
+            $wpdb->prepare(
+                "UPDATE %i SET api_credentials = NULL WHERE api_credentials IS NOT NULL AND api_credentials <> '' LIMIT %d",
+                $table,
+                $limit
+            )
+        );
+        return is_int($affected) ? $affected : 0;
+    }
+
+    /**
+     * Сколько OAuth refresh-токенов соц-провайдеров ещё зашифрованы.
+     */
+    public static function count_social_tokens_with_ciphertext(): int {
+        global $wpdb;
+        $table = $wpdb->prefix . 'cashback_social_tokens';
+        return (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(*) FROM %i WHERE refresh_token_encrypted <> ''",
+                $table
+            )
+        );
+    }
+
+    /**
+     * Очистка refresh-токенов социального OAuth.
+     * Пользователи сохраняют link на провайдера (cashback_social_links),
+     * при следующей попытке refresh сервер увидит пустой токен и
+     * прозрачно запросит повторный логин через OAuth — штатный UX.
+     */
+    public static function run_batch_social_tokens( int $limit = self::BATCH_SIZE ): int {
+        global $wpdb;
+        $table = $wpdb->prefix . 'cashback_social_tokens';
+        $limit = max(1, min(5000, $limit));
+        $affected = $wpdb->query(
+            $wpdb->prepare(
+                "UPDATE %i SET refresh_token_encrypted = '', scopes = '', access_token_expires_at = NULL WHERE refresh_token_encrypted <> '' LIMIT %d",
+                $table,
+                $limit
+            )
+        );
+        return is_int($affected) ? $affected : 0;
+    }
+
+    /**
+     * Сколько «живых» pending-строк OAuth ещё содержат зашифрованный payload.
+     * Pending — короткоживущие (TTL ~15 мин) state-токены OAuth flow.
+     */
+    public static function count_social_pending_with_ciphertext(): int {
+        global $wpdb;
+        $table = $wpdb->prefix . 'cashback_social_pending';
+        return (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(*) FROM %i WHERE payload_json <> ''",
+                $table
+            )
+        );
+    }
+
+    /**
+     * Очистка pending-строк OAuth — они эфемерны (TTL 15 мин), любой активный
+     * flow после потери ключа всё равно сломан: пользователь просто нажмёт
+     * «Войти через VK/Yandex» ещё раз и получит новый state. DELETE чище,
+     * чем обнуление NOT NULL text-колонки.
+     */
+    public static function run_batch_social_pending( int $limit = self::BATCH_SIZE ): int {
+        global $wpdb;
+        $table = $wpdb->prefix . 'cashback_social_pending';
+        $limit = max(1, min(5000, $limit));
+        $affected = $wpdb->query(
+            $wpdb->prepare(
+                "DELETE FROM %i WHERE payload_json <> '' LIMIT %d",
+                $table,
+                $limit
+            )
+        );
+        return is_int($affected) ? $affected : 0;
+    }
+
+    /**
+     * Суммарное число «мёртвых» ciphertext-строк во всех таблицах,
+     * которые чистит recovery. Используется как критерий завершения Phase B
+     * и для UI-индикатора «осталось очистить N записей».
+     */
+    public static function count_all_ciphertext_rows(): int {
+        return self::count_rows_with_ciphertext()
+            + self::count_affiliate_networks_with_ciphertext()
+            + self::count_social_tokens_with_ciphertext()
+            + self::count_social_pending_with_ciphertext();
+    }
+
+    /**
      * Сколько активных заявок на выплату (status='waiting') ещё ждут отмены.
      * Используется в двухфазном job, чтобы определить завершена ли phase A.
      */
@@ -256,13 +371,27 @@ class Cashback_Encryption_Recovery {
             return;
         }
 
-        // ---- Phase B: purge profile ciphertexts ----
-        $affected = self::run_batch(self::BATCH_SIZE);
+        // ---- Phase B: purge ciphertexts across ALL encrypted tables ----
+        // До Группы 4b чистился только cashback_user_profile. После введения
+        // key-rotation (Группа 4b, 2026-04-22) в БД появились ещё три места
+        // с зашифрованными значениями: CPA-credentials, соц-токены и
+        // pending-state OAuth. Если не очищать их при утере ключа — /activate
+        // и соц-логин будут падать 500 до ручного вмешательства администратора.
+        $purged_profiles = self::run_batch(self::BATCH_SIZE);
+        $purged_networks = self::run_batch_affiliate_networks(self::BATCH_SIZE);
+        $purged_tokens   = self::run_batch_social_tokens(self::BATCH_SIZE);
+        $purged_pending  = self::run_batch_social_pending(self::BATCH_SIZE);
 
         // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-        error_log(sprintf('[Cashback Recovery] Phase B: purged %d profile row(s)', $affected));
+        error_log(sprintf(
+            '[Cashback Recovery] Phase B: purged profile=%d, networks=%d, tokens=%d, pending=%d',
+            $purged_profiles,
+            $purged_networks,
+            $purged_tokens,
+            $purged_pending
+        ));
 
-        if (self::count_rows_with_ciphertext() > 0) {
+        if (self::count_all_ciphertext_rows() > 0) {
             if (function_exists('as_enqueue_async_action')) {
                 as_enqueue_async_action(self::AS_HOOK, array(), self::AS_GROUP);
             }
@@ -279,7 +408,12 @@ class Cashback_Encryption_Recovery {
                     0,
                     'encryption',
                     null,
-                    array( 'rows_purged_last_batch' => $affected )
+                    array(
+                        'purged_profile_last_batch'  => $purged_profiles,
+                        'purged_networks_last_batch' => $purged_networks,
+                        'purged_tokens_last_batch'   => $purged_tokens,
+                        'purged_pending_last_batch'  => $purged_pending,
+                    )
                 );
             } catch (\Throwable $e) {
                 // Не ломаем основной поток, если аудит-таблица недоступна.
@@ -305,10 +439,14 @@ class Cashback_Encryption_Recovery {
             }
         }
 
-        // Phase B: крутимся, пока есть ciphertext.
+        // Phase B: крутимся, пока остаётся ciphertext в ЛЮБОЙ из 4 таблиц.
         $safety = 200;
-        while (self::count_rows_with_ciphertext() > 0 && $safety-- > 0) {
-            if (self::run_batch(self::BATCH_SIZE) === 0) {
+        while (self::count_all_ciphertext_rows() > 0 && $safety-- > 0) {
+            $purged = self::run_batch(self::BATCH_SIZE)
+                + self::run_batch_affiliate_networks(self::BATCH_SIZE)
+                + self::run_batch_social_tokens(self::BATCH_SIZE)
+                + self::run_batch_social_pending(self::BATCH_SIZE);
+            if ($purged === 0) {
                 break;
             }
         }
