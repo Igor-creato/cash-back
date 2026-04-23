@@ -222,10 +222,13 @@ final class ApiClientSyncAtomicityTest extends TestCase
             $body,
             'Вызов validate_status_transition() должен быть сохранён.'
         );
+        // Группа 10 ADR (F-8-003): float-epsilon `abs($api_payment - ...) >= 0.001`
+        // заменён на bit-exact Money::equals() — проверяем, что commission-сравнение
+        // сохранилось в новой форме (api_payment → Cashback_Money → equals).
         $this->assertMatchesRegularExpression(
-            '/abs\s*\(\s*\$api_payment/',
+            '/\$api_payment_money\s*->\s*equals\s*\(\s*\$fresh_comission_money\s*\)/',
             $body,
-            'Сравнение abs($api_payment - local commission) должно быть сохранено.'
+            'Сравнение commission через Cashback_Money::equals должно быть сохранено.'
         );
         $this->assertStringContainsString(
             'resolve_funds_ready(',
