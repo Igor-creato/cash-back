@@ -35,6 +35,7 @@ function cashback_plugin_uninstall(): void {
         'cashback_fraud_detection_cron',
         'cashback_fraud_cleanup_cron',
         'cashback_notification_process_queue',
+        'cashback_social_cleanup_pending_cron',
     );
     foreach ($cron_hooks as $hook) {
         $timestamp = wp_next_scheduled($hook);
@@ -88,6 +89,11 @@ function cashback_plugin_uninstall(): void {
         // Notifications module
         "{$prefix}cashback_notification_queue",
         "{$prefix}cashback_notification_preferences",
+        // Social-auth module (порядок внутри блока: зависимые сначала, опорные после;
+        // array_reverse ниже инвертирует обход — tokens/pending дропаются раньше links).
+        "{$prefix}cashback_social_links",
+        "{$prefix}cashback_social_pending",
+        "{$prefix}cashback_social_tokens",
     );
 
     // Drop triggers
@@ -242,6 +248,10 @@ function cashback_plugin_uninstall(): void {
         'cashback_captcha_server_key',
         'cashback_bot_grey_threshold',
         'cashback_bot_block_threshold',
+        // Social-auth module
+        'cashback_social_enabled',
+        'cashback_social_provider_yandex',
+        'cashback_social_provider_vkid',
     );
 
     foreach ($options as $option) {
