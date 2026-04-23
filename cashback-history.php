@@ -393,6 +393,8 @@ class CashbackHistory {
                 );
             }
 
+            Cashback_Assets::enqueue_safe_html();
+
             wp_enqueue_script(
                 'cashback-pagination',
                 plugin_dir_url(__FILE__) . 'assets/js/cashback-pagination.js',
@@ -404,7 +406,7 @@ class CashbackHistory {
             wp_enqueue_script(
                 'cashback-history-ajax',
                 plugin_dir_url(__FILE__) . 'assets/js/cashback-history.js',
-                array( 'jquery', 'cashback-pagination' ),
+                array( 'jquery', 'cashback-pagination', 'cashback-safe-html' ),
                 '1.2.0',
                 true
             );
