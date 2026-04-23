@@ -4,8 +4,10 @@
  * - Persistent device_id (UUID v4) сохраняется в LocalStorage + IndexedDB + Cookie
  *   (evercookie pattern: восстанавливается из любого живого хранилища, синхронизируется
  *   во все три, чтобы выживать clear-cookies / private mode).
- * - FingerprintJS OSS v4 даёт стабильный visitor_id (CDN, с graceful fallback на
- *   старый самописный SHA-256 если CDN заблокирован/недоступен).
+ * - FingerprintJS OSS v3.4.2 даёт стабильный visitor_id. UMD-бандл грузится локально
+ *   через wp_enqueue_script как зависимость (см. Cashback_Fraud_Collector), ставит
+ *   window.FingerprintJS до выполнения этого скрипта. Graceful fallback на legacy
+ *   SHA-256 если bundle не подгрузился (deploy-ошибка / блок со стороны браузера).
  * - Legacy SHA-256 fingerprint всё равно отправляется ради обратной совместимости
  *   с check_shared_fingerprint в Cashback_Fraud_Detector.
  *
@@ -27,7 +29,6 @@
     var IDB_NAME = 'cashback';
     var IDB_STORE = 'kv';
     var COOKIE_DAYS = 365;
-    var FP_CDN = 'https://openfpcdn.io/fingerprintjs/v4';
 
     function dbg() {
         if (DEBUG && typeof console !== 'undefined' && console.log) {
@@ -180,26 +181,19 @@
     }
 
     // --------------------------------------------------------------
-    // FingerprintJS OSS v4 loader (CDN, с graceful fallback)
+    // FingerprintJS OSS v3.4.2 loader (локальный UMD-бандл, graceful fallback)
     // --------------------------------------------------------------
+    // Бандл поставляется из assets/vendor/fingerprintjs/fp.min.js и enqueue-ится
+    // как зависимость cashback-fraud-fingerprint (см. Cashback_Fraud_Collector).
+    // К моменту выполнения этого скрипта window.FingerprintJS уже должен быть
+    // определён. Если его нет — deploy-проблема или браузер заблокировал скрипт;
+    // возвращаем null, чтобы сработал legacy SHA-256 fallback.
     function loadFingerprintJS() {
         if (typeof window !== 'undefined' && window.FingerprintJS) {
             return Promise.resolve(window.FingerprintJS);
         }
-        // Динамический import работает в современных браузерах; ловим CSP/network-блокировки.
-        try {
-            // eslint-disable-next-line no-new-func
-            var dynImport = new Function('u', 'return import(u)');
-            return dynImport(FP_CDN).then(function (mod) {
-                return mod && (mod.default || mod);
-            }).catch(function () {
-                dbg('cb_fp: FingerprintJS CDN load failed');
-                return null;
-            });
-        } catch (e) {
-            dbg('cb_fp: dynamic import unsupported');
-            return Promise.resolve(null);
-        }
+        dbg('cb_fp: window.FingerprintJS missing — local bundle not enqueued, using legacy fallback');
+        return Promise.resolve(null);
     }
 
     // --------------------------------------------------------------
