@@ -724,6 +724,34 @@ class Cashback_REST_API {
         // Lookup by click_id: used by the browser extension after a server-side redirect
         // (?cashback_click=) to pre-store the activation before arriving at the partner site.
         if (!empty($click_id) && strlen($click_id) === 32 && ctype_xdigit($click_id)) {
+            // 12i-3 ADR (F-10-001): primary lookup в cashback_click_sessions по
+            // canonical_click_id + status='active' + expires_at > NOW().
+            $sessions_table = $wpdb->prefix . 'cashback_click_sessions';
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
+            $session_row = $wpdb->get_row($wpdb->prepare(
+                "SELECT canonical_click_id, product_id, created_at, expires_at
+                   FROM %i
+                  WHERE canonical_click_id = %s AND user_id = %d
+                    AND status = 'active' AND expires_at > NOW()
+                  LIMIT 1",
+                $sessions_table,
+                $click_id,
+                $user_id
+            ), ARRAY_A);
+
+            if ($session_row) {
+                $dest_domain = $this->get_store_domain((int) $session_row['product_id']);
+                return new \WP_REST_Response(array(
+                    'activated'    => true,
+                    'domain'       => $dest_domain,
+                    'activated_at' => $session_row['created_at'],
+                    'expires_at'   => $session_row['expires_at'],
+                    'click_id'     => $session_row['canonical_click_id'],
+                ), 200);
+            }
+
+            // 12i-3 ADR: fallback на cashback_click_log для legacy rows (до 12i-1
+            // migration click_session_id == NULL, новая таблица ещё не знает о них).
             $click_log_table = $wpdb->prefix . 'cashback_click_log';
             $threshold       = gmdate('Y-m-d H:i:s', time() - self::ACTIVATION_WINDOW);
 
@@ -796,12 +824,29 @@ class Cashback_REST_API {
             ), 200);
         }
 
+        $placeholders = implode(',', array_fill(0, count($product_ids), '%d'));
+
+        // 12i-3 ADR (F-10-001): primary lookup в cashback_click_sessions по
+        // последней активной сессии на любом товаре этого домена.
+        $sessions_table = $wpdb->prefix . 'cashback_click_sessions';
+        $sessions_args  = array_merge(array( $sessions_table, $user_id ), array_map('intval', $product_ids));
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- Custom plugin table; $placeholders — array_fill '%d'; таблица через %i; sniff не видит %d внутри $placeholders.
+        $session_row = $wpdb->get_row( $wpdb->prepare( "SELECT canonical_click_id, created_at, expires_at FROM %i WHERE user_id = %d AND product_id IN ({$placeholders}) AND status = 'active' AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1", ...$sessions_args ), ARRAY_A );
+
+        if ($session_row) {
+            return new \WP_REST_Response(array(
+                'activated'    => true,
+                'activated_at' => $session_row['created_at'],
+                'expires_at'   => $session_row['expires_at'],
+                'click_id'     => $session_row['canonical_click_id'],
+            ), 200);
+        }
+
+        // 12i-3 ADR: fallback на cashback_click_log для legacy rows.
         $click_log_table = $wpdb->prefix . 'cashback_click_log';
         $threshold       = gmdate('Y-m-d H:i:s', time() - self::ACTIVATION_WINDOW);
-
-        // Ищем последний клик пользователя на товары этого домена
-        $placeholders = implode(',', array_fill(0, count($product_ids), '%d'));
-        $query_args   = array_merge(array( $click_log_table, $user_id ), array_map('intval', $product_ids), array( $threshold ));
+        $query_args      = array_merge(array( $click_log_table, $user_id ), array_map('intval', $product_ids), array( $threshold ));
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- Custom plugin table; $placeholders — array_fill '%d'; таблица через %i; sniff не видит %d внутри $placeholders.
         $click = $wpdb->get_row( $wpdb->prepare( "SELECT click_id, created_at FROM %i WHERE user_id = %d AND product_id IN ({$placeholders}) AND created_at >= %s ORDER BY created_at DESC LIMIT 1", ...$query_args ), ARRAY_A );
