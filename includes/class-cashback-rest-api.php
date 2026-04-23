@@ -369,6 +369,14 @@ class Cashback_REST_API {
 
     /**
      * GET /me — Баланс и профиль текущего пользователя.
+     *
+     * Money-поля (balance.available/pending/paid) возвращаются как float для обратной
+     * совместимости с браузерным расширением (cashback/v1). Перед сериализацией значения
+     * прогоняются через `Cashback_Money::from_db_value()` — fail-closed при corruption
+     * DB-строки (F-35-004 defense-in-depth).
+     *
+     * @deprecated float-ответ — будет заменён на canonical decimal-string в cashback/v2
+     *             (ADR Группа 10 Step 4, блокируется координированным релизом расширения).
      */
     // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- WP REST API callback signature requires WP_REST_Request parameter.
     public function get_me( \WP_REST_Request $request ): \WP_REST_Response {
@@ -395,13 +403,20 @@ class Cashback_REST_API {
             $user_id
         ), ARRAY_A);
 
+        // Money-поля: валидация через Cashback_Money (fail-closed) перед (float)-cast
+        // в ответ (F-35-004). В cashback/v2 цель — вернуть `->to_string()` как
+        // decimal-string, сейчас сохраняем float-контракт ради совместимости.
+        $available = Cashback_Money::from_db_value((string) ( $balance['available_balance'] ?? '0' ));
+        $pending   = Cashback_Money::from_db_value((string) ( $balance['pending_balance'] ?? '0' ));
+        $paid      = Cashback_Money::from_db_value((string) ( $balance['paid_balance'] ?? '0' ));
+
         return new \WP_REST_Response(array(
             'user_id'       => $user_id,
             'display_name'  => $user->display_name,
             'balance'       => array(
-                'available' => (float) ( $balance['available_balance'] ?? 0 ),
-                'pending'   => (float) ( $balance['pending_balance'] ?? 0 ),
-                'paid'      => (float) ( $balance['paid_balance'] ?? 0 ),
+                'available' => (float) $available->to_string(),
+                'pending'   => (float) $pending->to_string(),
+                'paid'      => (float) $paid->to_string(),
             ),
             'cashback_rate' => (float) ( $profile['cashback_rate'] ?? 60 ),
             'status'        => $profile['status'] ?? 'active',
@@ -410,6 +425,12 @@ class Cashback_REST_API {
 
     /**
      * GET /me/transactions — Последние транзакции пользователя.
+     *
+     * Поле `cashback` возвращается как float для обратной совместимости с расширением;
+     * перед cast-ом значение валидируется через Cashback_Money (F-35-004 defense-in-depth).
+     *
+     * @deprecated float-ответ — будет заменён на canonical decimal-string в cashback/v2
+     *             (ADR Группа 10 Step 4, блокируется координированным релизом расширения).
      */
     public function get_transactions( \WP_REST_Request $request ): \WP_REST_Response {
         global $wpdb;
@@ -443,9 +464,11 @@ class Cashback_REST_API {
 
         $formatted = array();
         foreach ($items as $item) {
-            $formatted[] = array(
+            // Money-валидация DB-значения перед (float)-cast в ответ (F-35-004).
+            $cashback_money = Cashback_Money::from_db_value((string) ( $item['cashback'] ?? '0' ));
+            $formatted[]    = array(
                 'offer_name'   => $item['offer_name'],
-                'cashback'     => (float) $item['cashback'],
+                'cashback'     => (float) $cashback_money->to_string(),
                 'currency'     => $item['currency'] ?: 'RUB',
                 'order_status' => $item['order_status'],
                 'partner'      => $item['partner'],

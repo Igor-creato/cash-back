@@ -2136,12 +2136,19 @@ class Cashback_API_Client {
                     return;
                 }
 
-                // Обновляем если статус, комиссия или сумма заказа изменились
-                $status_changed     = ( $local_status !== $mapped_status );
-                $commission_changed = abs($api_payment - (float) $fresh['comission']) >= 0.001;
-
-                $local_cart   = (float) ( $fresh['sum_order'] ?? 0 );
-                $cart_changed = abs($api_cart - $local_cart) >= 0.001;
+                // Обновляем если статус, комиссия или сумма заказа изменились.
+                // Money-сравнение (F-8-003): заменяет float-epsilon `abs(...) >= 0.001`
+                // на bit-exact сравнение BCMath-decimal — устраняет корневой класс
+                // false-positive/false-negative при accumulation-артефактах float'а.
+                $status_changed       = ( $local_status !== $mapped_status );
+                $api_payment_canon    = number_format($api_payment, 2, '.', '');
+                $api_cart_canon       = number_format($api_cart, 2, '.', '');
+                $api_payment_money    = Cashback_Money::from_db_value($api_payment_canon);
+                $fresh_comission_money = Cashback_Money::from_db_value((string) ($fresh['comission'] ?? '0'));
+                $fresh_sum_order_money = Cashback_Money::from_db_value((string) ($fresh['sum_order'] ?? '0'));
+                $api_cart_money       = Cashback_Money::from_db_value($api_cart_canon);
+                $commission_changed   = ! $api_payment_money->equals($fresh_comission_money);
+                $cart_changed         = ! $api_cart_money->equals($fresh_sum_order_money);
 
                 $needs_verify = empty($fresh['api_verified']);
 
@@ -2166,12 +2173,14 @@ class Cashback_API_Client {
                 }
 
                 if ($commission_changed) {
-                    $update_data['comission'] = $api_payment;
+                    // canonical decimal-string, не float (F-8-003).
+                    $update_data['comission'] = $api_payment_money->to_db_value();
                     $update_formats[]         = '%s';
                 }
 
                 if ($cart_changed) {
-                    $update_data['sum_order'] = $api_cart;
+                    // canonical decimal-string, не float (F-8-003).
+                    $update_data['sum_order'] = $api_cart_money->to_db_value();
                     $update_formats[]         = '%s';
                 }
 
@@ -2206,7 +2215,9 @@ class Cashback_API_Client {
                     $old_row       = (object) $fresh;
                     Cashback_Trigger_Fallbacks::recalculate_cashback_on_update($update_data, $old_row, $is_registered);
                     if (isset($update_data['cashback'])) {
-                        $update_formats[] = '%f'; // cashback
+                        // Trigger_Fallbacks пишет float — нормализуем на границе wpdb (F-8-003).
+                        $update_data['cashback'] = number_format((float) $update_data['cashback'], 2, '.', '');
+                        $update_formats[]        = '%s'; // cashback (money → decimal-string)
                     }
                 }
 
@@ -2461,14 +2472,15 @@ class Cashback_API_Client {
         // 9. Ключ идемпотентности (детерминистический — один action_id+slug = один ключ)
         $idempotency_key = hash('sha256', 'cron_sync_' . $action_id . '_' . $slug);
 
-        // 10. Формируем данные для INSERT
+        // 10. Формируем данные для INSERT.
+        // Money-поля (comission/sum_order) — canonical decimal-string + `%s` (F-8-003).
         $data = array(
             'user_id'         => $is_unregistered ? $raw_user_id : (int) $raw_user_id,
             'uniq_id'         => $action_id,
             'order_number'    => $order_id,
             'partner'         => $network_name,
-            'comission'       => $payment,
-            'sum_order'       => $cart,
+            'comission'       => number_format($payment, 2, '.', ''),
+            'sum_order'       => number_format($cart, 2, '.', ''),
             'order_status'    => $mapped_status,
             'offer_id'        => ( $campaign_id !== null && $campaign_id !== '' && $campaign_id !== 0 ) ? (int) $campaign_id : null,
             'offer_name'      => $campaign,
@@ -2488,8 +2500,8 @@ class Cashback_API_Client {
             '%s',  // uniq_id
             '%s',  // order_number
             '%s',  // partner
-            '%f',  // comission
-            '%f',  // sum_order
+            '%s',  // comission (money → decimal-string)
+            '%s',  // sum_order (money → decimal-string)
             '%s',  // order_status
             '%d',  // offer_id
             '%s',  // offer_name
@@ -2506,8 +2518,14 @@ class Cashback_API_Client {
 
         // 11. PHP-фолбэк расчёта кешбэка (идемпотентен при наличии триггеров)
         Cashback_Trigger_Fallbacks::calculate_cashback($data, !$is_unregistered);
-        $formats[] = '%f'; // applied_cashback_rate
-        $formats[] = '%f'; // cashback
+        if (isset($data['applied_cashback_rate'])) {
+            $data['applied_cashback_rate'] = number_format((float) $data['applied_cashback_rate'], 2, '.', '');
+        }
+        if (isset($data['cashback'])) {
+            $data['cashback'] = number_format((float) $data['cashback'], 2, '.', '');
+        }
+        $formats[] = '%s'; // applied_cashback_rate (rate-as-string, 2 знака)
+        $formats[] = '%s'; // cashback (money → decimal-string)
 
         // 12. Убираем NULL-значения (аналогично ajax_add_transaction)
         $clean_data    = array();
