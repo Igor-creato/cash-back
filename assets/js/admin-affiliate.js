@@ -363,4 +363,61 @@
         });
     });
 
+    /* ── F-22-003: Low-confidence review queue ── */
+
+    function sendReviewAction($btn, action, userId, successMessage) {
+        var $row = $btn.closest('tr');
+        $row.find('.cashback-approve-low-conf, .cashback-reject-low-conf').prop('disabled', true);
+
+        $.post(data.ajaxurl, {
+            action: action,
+            nonce: data.reviewNonce,
+            user_id: userId
+        }).done(function (resp) {
+            if (resp && resp.success) {
+                // Анимированное удаление строки
+                $row.fadeOut(300, function () {
+                    $row.remove();
+                });
+                // Обновляем badge-счётчики (taб + sidebar)
+                $('.cashback-affiliate-admin .awaiting-mod, .nav-tab .awaiting-mod').each(function () {
+                    var $badge = $(this);
+                    var current = parseInt($badge.text(), 10) || 0;
+                    var next = Math.max(0, current - 1);
+                    if (next === 0) {
+                        $badge.remove();
+                    } else {
+                        $badge.text(String(next));
+                    }
+                });
+                if (successMessage) {
+                    // Лёгкий toast через admin-notice
+                    var $notice = $('<div class="notice notice-success is-dismissible"><p>' + escapeHtml(successMessage) + '</p></div>');
+                    $('.cashback-affiliate-admin > h1').after($notice);
+                    setTimeout(function () { $notice.fadeOut(400, function () { $notice.remove(); }); }, 3000);
+                }
+            } else {
+                $row.find('.cashback-approve-low-conf, .cashback-reject-low-conf').prop('disabled', false);
+                alert((resp && resp.data && resp.data.message) ? resp.data.message : 'Ошибка');
+            }
+        }).fail(function () {
+            $row.find('.cashback-approve-low-conf, .cashback-reject-low-conf').prop('disabled', false);
+            alert('Ошибка соединения.');
+        });
+    }
+
+    $(document).on('click', '.cashback-approve-low-conf', function () {
+        var userId = $(this).data('user-id');
+        if (!userId) { return; }
+        if (!confirm('Подтвердить привязку? Начисления уйдут в баланс реферера.')) { return; }
+        sendReviewAction($(this), 'affiliate_approve_low_confidence', userId, 'Привязка одобрена.');
+    });
+
+    $(document).on('click', '.cashback-reject-low-conf', function () {
+        var userId = $(this).data('user-id');
+        if (!userId) { return; }
+        if (!confirm('Отклонить привязку? Начисления будут declined, юзер навсегда потеряет право на реф-выплаты.')) { return; }
+        sendReviewAction($(this), 'affiliate_reject_low_confidence', userId, 'Привязка отклонена.');
+    });
+
 })(jQuery);

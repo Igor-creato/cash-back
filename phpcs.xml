@@ -41,6 +41,9 @@
         <exclude name="Generic.WhiteSpace.ArbitraryParenthesesSpacing"/>
         <!-- Formatting-only: CRLF vs LF (кодовая база исторически на CRLF) -->
         <exclude name="Generic.Files.LineEndings"/>
+        <!-- Formatting-only: выравнивание пробелов вокруг concat '.' и после cast -->
+        <exclude name="Squiz.Strings.ConcatenationSpacing"/>
+        <exclude name="Generic.Formatting.SpaceAfterCast"/>
     </rule>
 
     <rule ref="WordPress-Extra">
