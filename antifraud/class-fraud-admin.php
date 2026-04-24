@@ -1356,13 +1356,14 @@ class Cashback_Fraud_Admin {
                 throw new \Exception('Пользователь уже забанен');
             }
 
+            $banned_at_mysql = current_time('mysql');
             $profile_updated = $wpdb->update(
                 $profile_table,
                 array(
                     'status'     => 'banned',
                     'ban_reason' => $ban_reason,
-                    'banned_at'  => current_time('mysql'),
-                    'updated_at' => current_time('mysql'),
+                    'banned_at'  => $banned_at_mysql,
+                    'updated_at' => $banned_at_mysql,
                 ),
                 array( 'user_id' => $user_id ),
                 array( '%s', '%s', '%s', '%s' ),
@@ -1375,6 +1376,16 @@ class Cashback_Fraud_Admin {
 
             // PHP-фолбэк: заморозка баланса (идемпотентно при наличии триггера)
             Cashback_Trigger_Fallbacks::freeze_balance_on_ban($user_id);
+
+            // Группа 14 (ledger-first): после того, как триггер/fallback переместили
+            // available+pending → frozen_*_ban, фиксируем заморозку в cashback_balance_ledger.
+            // Идемпотентно через UNIQUE idempotency_key = ban_freeze_{user_id}_{banned_at_unix}.
+            if (class_exists('Cashback_Ban_Ledger')) {
+                $banned_at_unix = (int) strtotime($banned_at_mysql);
+                if ($banned_at_unix > 0) {
+                    Cashback_Ban_Ledger::write_freeze_entry($user_id, $banned_at_unix);
+                }
+            }
 
             // Decline active payout requests
             $active_requests = $wpdb->get_results($wpdb->prepare(
