@@ -471,7 +471,7 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
         if (!preg_match('/function\s+bind_referral_on_registration\s*\([^)]*\)[^{]*\{/', $src, $m, PREG_OFFSET_CAPTURE)) {
             $this->fail('bind_referral_on_registration() not found');
         }
-        $body = substr($src, $m[0][1], 6000);
+        $body = substr($src, $m[0][1], 10000);
 
         foreach (
             [
@@ -497,7 +497,7 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
         if (!preg_match('/function\s+bind_referral_on_registration\s*\([^)]*\)[^{]*\{/', $src, $m, PREG_OFFSET_CAPTURE)) {
             $this->fail('bind_referral_on_registration() not found');
         }
-        $body = substr($src, $m[0][1], 6000);
+        $body = substr($src, $m[0][1], 10000);
 
         $this->assertMatchesRegularExpression(
             "/\\\$confidence\s*===?\s*['\"]high['\"].{0,80}['\"]none['\"].{0,80}['\"]pending['\"]|['\"]none['\"].{0,80}['\"]pending['\"].{0,80}\\\$confidence.{0,30}['\"]high['\"]/s",
@@ -513,7 +513,7 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
         if (!preg_match('/function\s+bind_referral_on_registration\s*\([^)]*\)[^{]*\{/', $src, $m, PREG_OFFSET_CAPTURE)) {
             $this->fail('bind_referral_on_registration() not found');
         }
-        $body = substr($src, $m[0][1], 6000);
+        $body = substr($src, $m[0][1], 10000);
 
         $this->assertMatchesRegularExpression(
             "/Cashback_Affiliate_Audit::log\s*\(\s*['\"]referral_bound['\"]/",
@@ -766,7 +766,7 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
         if (!preg_match('/function\s+bind_referral_on_registration\s*\([^)]*\)[^{]*\{/', $src, $m, PREG_OFFSET_CAPTURE)) {
             $this->fail('bind_referral_on_registration() not found');
         }
-        $body = substr($src, $m[0][1], 6000);
+        $body = substr($src, $m[0][1], 10000);
 
         $this->assertMatchesRegularExpression(
             "/Cashback_Rate_Limiter::check\s*\(\s*['\"]affiliate_signup['\"]/",
@@ -789,7 +789,7 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
         if (!preg_match('/function\s+bind_referral_on_registration\s*\([^)]*\)[^{]*\{/', $src, $m, PREG_OFFSET_CAPTURE)) {
             $this->fail('bind_referral_on_registration() not found');
         }
-        $body = substr($src, $m[0][1], 6000);
+        $body = substr($src, $m[0][1], 10000);
 
         $this->assertMatchesRegularExpression(
             "/Cashback_Affiliate_Audit::log\s*\(\s*['\"]rate_limit_downgrade_bind['\"]/",

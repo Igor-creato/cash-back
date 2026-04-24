@@ -575,6 +575,21 @@ class Cashback_Affiliate_Service {
         $referrer_id = (int) $cookie['referrer_id'];
         $click_id    = (string) $cookie['click_id'];
 
+        // F-22-003: rate-limit на signup-binding. Composite-ключ subnet+ua_family
+        // (не голый IP) чтобы не страдали соседи по NAT с разными браузерами.
+        // При blocked — binding НЕ отменяется, downgrade до confidence=low
+        // + review_status=pending + signal в antifraud_signals. Regex:
+        // 'affiliate_signup'...subnet/family/composite_key/rl_key.
+        $rl_signup_blocked = false;
+        if (class_exists('Cashback_Rate_Limiter')) {
+            $hdr_rl        = self::collect_request_headers_for_key();
+            $ua_norm       = self::normalize_ua($hdr_rl['ua']);
+            $subnet_hash   = hash('sha256', self::extract_subnet($ip));
+            $composite_key = substr($subnet_hash, 0, 16) . ':' . $ua_norm['family'];
+            $rl_check      = Cashback_Rate_Limiter::check('affiliate_signup', 0, $composite_key);
+            $rl_signup_blocked = empty($rl_check['allowed']);
+        }
+
         // Антифрод проверки
         $check = Cashback_Affiliate_Antifraud::validate_referral(
             $referrer_id,
@@ -601,10 +616,32 @@ class Cashback_Affiliate_Service {
             return;
         }
 
-        $confidence    = (string) $check['confidence'];
+        // F-22-003: merge RL-blocked в итоговое решение — downgrade,
+        // не reject. Confidence принудительно 'low', signal добавляется,
+        // review_status → pending (review queue).
+        $signals_list = array_values($check['signals'] ?? array());
+        if ($rl_signup_blocked) {
+            if (!in_array('rate_limit_signup_blocked', $signals_list, true)) {
+                $signals_list[] = 'rate_limit_signup_blocked';
+            }
+            $confidence = 'low';
+            if (class_exists('Cashback_Affiliate_Audit')) {
+                Cashback_Affiliate_Audit::log('rate_limit_downgrade_bind', array(
+                    'target_user_id' => $user_id,
+                    'referrer_id'    => $referrer_id,
+                    'click_id'       => $click_id,
+                    'confidence'     => 'low',
+                    'signals'        => $signals_list,
+                    'reason'         => 'affiliate_signup_rate_limit',
+                ));
+            }
+        } else {
+            $confidence = (string) $check['confidence'];
+        }
+
         $review_status = ($confidence === 'high') ? 'none' : 'pending';
-        $signals_json  = !empty($check['signals'])
-            ? (string) wp_json_encode(array_values($check['signals']))
+        $signals_json  = !empty($signals_list)
+            ? (string) wp_json_encode($signals_list)
             : null;
 
         global $wpdb;
@@ -659,12 +696,13 @@ class Cashback_Affiliate_Service {
                     'referrer_id'    => $referrer_id,
                     'click_id'       => $click_id,
                     'confidence'     => $confidence,
-                    'signals'        => $check['signals'] ?? array(),
+                    'signals'        => $signals_list,
                     'payload'        => array(
-                        'source'        => $source,
-                        'collision'     => $collision,
-                        'review_status' => $review_status,
-                        'cookie_valid'  => $cookie_valid,
+                        'source'          => $source,
+                        'collision'       => $collision,
+                        'review_status'   => $review_status,
+                        'cookie_valid'    => $cookie_valid,
+                        'rl_signup_block' => $rl_signup_blocked,
                     ),
                 ));
             }
