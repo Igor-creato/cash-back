@@ -32,8 +32,20 @@ class Cashback_Balance_Reconciliation {
     const LAST_SUMMARY_OPT   = 'cashback_balance_reconciliation_last_summary';
 
     public static function init(): void {
-        add_action( self::HOOK_NAME, array( self::class, 'run' ) );
+        // Void-обёртка для action callback: PHPStan+phpstan-wordpress ругается на
+        // do_action-коллбеки, возвращающие значение (actions ≠ filters). run() сам
+        // возвращает summary-массив — используется из admin manual-run (Группа 15),
+        // поэтому сигнатуру не меняем, а оборачиваем.
+        add_action( self::HOOK_NAME, array( self::class, 'run_hook' ) );
         add_action( 'init', array( self::class, 'maybe_schedule' ) );
+    }
+
+    /**
+     * Void-адаптер для WP action callback. Сам run() возвращает structured summary,
+     * который нужен вызывающему коду (admin manual-run), но AS-hook игнорирует return.
+     */
+    public static function run_hook(): void {
+        self::run();
     }
 
     public static function maybe_schedule(): void {
