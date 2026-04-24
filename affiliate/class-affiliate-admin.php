@@ -245,7 +245,7 @@ class Cashback_Affiliate_Admin {
         echo '<input type="checkbox" id="aff-antifraud-enabled" name="antifraud_enabled" value="1" ' . checked($antifraud_enabled, true, false) . '>';
         echo ' ' . esc_html__('Включить антифрод при привязке рефералов', 'cashback-plugin');
         echo '</label>';
-        echo '<p class="description">' . esc_html__('Проверка совпадения IP, подозрительного тайминга. Отключите для тестирования. Проверки self-referral, валидности реферера и дубликатов работают всегда.', 'cashback-plugin') . '</p></td>';
+        echo '<p class="description">' . esc_html__('Включает дополнительные сигналы: совпадение подсети IP (/24 или IPv6 /64), подозрительный тайминг клик→регистрация, NAT-коллизии. Один сигнал → привязка идёт в ручную модерацию (review queue). 2+ сигнала → отклоняется. Базовые защиты (self-referral, забаненные рефереры, дубликаты, rate-limit на спам кликов/регистраций, 5-минутный TTL fallback и запись NAT-коллизий в audit-лог) работают всегда — эту галку можно выключать только для тестирования.', 'cashback-plugin') . '</p></td>';
         echo '</tr>';
 
         echo '</table>';
