@@ -424,4 +424,79 @@ final class BalanceAdjustAjaxTest extends TestCase
             'S2.B: reconciliation-admin должна enqueue-ить модал для кнопки из таблицы расхождений'
         );
     }
+
+    // =========================================================================
+    // S3 — already_accrued → S2 модал в admin-transactions.js
+    // =========================================================================
+
+    public function test_transactions_admin_row_has_data_user_id(): void
+    {
+        $src = $this->source('admin/transactions.php');
+        $this->assertStringContainsString(
+            'data-user-id="<?php echo esc_attr($tx[\'user_id\'])',
+            $src,
+            'S3: <tr> транзакции должен содержать data-user-id для JS'
+        );
+    }
+
+    public function test_transactions_admin_enqueues_balance_adjust_assets(): void
+    {
+        $src = $this->source('admin/transactions.php');
+        $this->assertStringContainsString(
+            "'cashback-admin-balance-adjust'",
+            $src,
+            'S3: admin/transactions.php должен enqueue модал S2'
+        );
+    }
+
+    public function test_transactions_js_handles_already_accrued_code(): void
+    {
+        $src = $this->source('assets/js/admin-transactions.js');
+        $this->assertStringContainsString(
+            "code === 'already_accrued'",
+            $src,
+            'S3: admin-transactions.js должен проверять code=already_accrued в save-handler'
+        );
+    }
+
+    public function test_transactions_js_prompts_adjustment_on_already_accrued(): void
+    {
+        $src = $this->source('assets/js/admin-transactions.js');
+        $this->assertStringContainsString(
+            'promptAlreadyAccruedAdjustment',
+            $src,
+            'S3: admin-transactions.js должен иметь helper promptAlreadyAccruedAdjustment'
+        );
+    }
+
+    public function test_transactions_js_opens_balance_adjust_modal(): void
+    {
+        $src = $this->source('assets/js/admin-transactions.js');
+        $this->assertStringContainsString(
+            'window.CashbackBalanceAdjust.open',
+            $src,
+            'S3: JS должен открывать S2 модал через window.CashbackBalanceAdjust.open'
+        );
+    }
+
+    public function test_transactions_js_prefills_reason_with_transaction_id(): void
+    {
+        $src = $this->source('assets/js/admin-transactions.js');
+        // Reason префил должен упоминать конкретную транзакцию — для аудита.
+        $this->assertMatchesRegularExpression(
+            '/prefillReason\s*:[\s\S]{0,200}транзакц/u',
+            $src,
+            'S3: prefillReason должен ссылаться на транзакцию #<id>'
+        );
+    }
+
+    public function test_transactions_js_reads_user_id_from_row_dataset(): void
+    {
+        $src = $this->source('assets/js/admin-transactions.js');
+        $this->assertMatchesRegularExpression(
+            '/row\.attr\(\s*[\'"]data-user-id[\'"]\s*\)/',
+            $src,
+            'S3: JS должен читать user_id из data-user-id строки'
+        );
+    }
 }

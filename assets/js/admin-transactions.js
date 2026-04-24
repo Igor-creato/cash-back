@@ -43,6 +43,50 @@
         row.find('.cashback-display').text(txData.cashback);
     }
 
+    /**
+     * Группа 15, S3: предупреждение «транзакция уже в ledger» + CTA на модал S2.
+     *
+     * Вызывается из save-handler при получении { code: 'already_accrued' }.
+     * Показывает простой confirm-диалог: если admin подтверждает — открываем
+     * window.CashbackBalanceAdjust.open с prefill userId + reason, ссылающимся
+     * на конкретную транзакцию. amount admin вводит сам (вычисление дельты из
+     * новых cashback/comission требует дубля server-side calc-логики и хрупко).
+     */
+    function promptAlreadyAccruedAdjustment(row, transactionId) {
+        var userId = parseInt(row.attr('data-user-id'), 10);
+        if (!userId || userId <= 0) {
+            alert('Транзакция #' + transactionId + ' уже начислена в ledger. Для корректировки баланса откройте пользователя вручную.');
+            return;
+        }
+
+        var confirmed = window.confirm(
+            'Транзакция #' + transactionId + ' уже начислена в ledger (accrual_' + transactionId + ').' +
+            '\n\nПрямое изменение цифр сломает целостность баланса.' +
+            '\n\nХотите создать корректирующую запись?'
+        );
+        if (!confirmed) {
+            // Admin отказался — возвращаемся к строке без изменений, edit-mode остаётся.
+            return;
+        }
+
+        if (!window.CashbackBalanceAdjust || typeof window.CashbackBalanceAdjust.open !== 'function') {
+            alert('Модуль корректировки не загружен. Обновите страницу.');
+            return;
+        }
+
+        window.CashbackBalanceAdjust.open({
+            userId: userId,
+            prefillReason: 'Корректировка после попытки править транзакцию #' + transactionId +
+                ' (already_accrued — запись в ledger уже есть).',
+            onSuccess: function () {
+                // После успешной корректировки возвращаем строку в неизменённый вид
+                // (правка транзакции не применялась — корректировка была параллельной операцией).
+                row.find('.save-btn, .cancel-btn').hide();
+                row.find('.edit-btn').show();
+            }
+        });
+    }
+
     var transferTransactionId = null;
     var transferRow = null;
 
@@ -295,6 +339,14 @@
                     row.find('.save-btn, .cancel-btn').hide();
                     row.find('.edit-btn').show();
                 } else {
+                    // Группа 15, S3: already_accrued — транзакция уже в ledger.
+                    // Вместо generic alert предлагаем открыть модал S2 и создать
+                    // корректирующую запись (не ломать целостность баланса).
+                    var code = response.data && response.data.code;
+                    if (code === 'already_accrued') {
+                        promptAlreadyAccruedAdjustment(row, transactionId);
+                        return;
+                    }
                     alert('Ошибка: ' + (response.data.message || 'Неизвестная ошибка'));
                 }
             }).fail(function (jqXHR) {
