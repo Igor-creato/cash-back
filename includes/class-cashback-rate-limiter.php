@@ -167,12 +167,16 @@ class Cashback_Rate_Limiter {
     /**
      * Проверить и зарегистрировать действие пользователя.
      *
-     * @param string $action  Имя AJAX-действия.
-     * @param int    $user_id ID пользователя.
-     * @param string $ip      IP-адрес.
+     * @param string $action              Имя AJAX-действия.
+     * @param int    $user_id             ID пользователя.
+     * @param string $ip                  IP-адрес.
+     * @param bool   $skip_blocked_check  Группа 13 iter-4 F1: если true — пропустить
+     *                                    is_blocked_ip gate. Используется bot-protection
+     *                                    guard'ом после успешной CAPTCHA для blocked
+     *                                    гостя, чтобы recovery path действительно работал.
      * @return array{allowed: bool, remaining: int, retry_after: int}
      */
-    public static function check( string $action, int $user_id, string $ip ): array {
+    public static function check( string $action, int $user_id, string $ip, bool $skip_blocked_check = false ): array {
         $tier = self::get_tier($action);
 
         if ($tier === null) {
@@ -197,9 +201,12 @@ class Cashback_Rate_Limiter {
             );
         }
 
-        // Заблокированный IP (grey score >= блок-порог) — отклоняем до истечения GREY_TTL,
-        // как задекларировано в комментарии класса (>=80 → все AJAX отклоняются).
-        if (self::is_blocked_ip($ip)) {
+        // Заблокированный subject (grey score >= блок-порог) — отклоняем до истечения GREY_TTL.
+        // Для авторизованных ключ per-user (NAT-safe), для гостей — per-IP.
+        // Iter-4 F1: $skip_blocked_check пропускает этот gate после подтверждённой CAPTCHA
+        // (bot-protection передаёт true после captcha verify для blocked гостя — иначе
+        // recovery path не работает, check() снова возвращает 429).
+        if (!$skip_blocked_check && self::is_blocked_ip($user_id, $ip)) {
             return array(
                 'allowed'     => false,
                 'remaining'   => 0,
@@ -209,8 +216,8 @@ class Cashback_Rate_Limiter {
 
         [$limit, $window] = self::TIERS[ $tier ];
 
-        // Для серых IP — урезаем лимит на critical/write
-        if (in_array($tier, array( 'critical', 'write' ), true) && self::is_grey_ip($ip)) {
+        // Для серых subject — урезаем лимит на critical/write
+        if (in_array($tier, array( 'critical', 'write' ), true) && self::is_grey_ip($user_id, $ip)) {
             $limit = max(1, (int) floor($limit / 2));
         }
 
@@ -235,8 +242,8 @@ class Cashback_Rate_Limiter {
         }
 
         if (! $result['allowed']) {
-            // Записываем нарушение для grey scoring
-            self::record_violation($ip, 'rate_limit');
+            // Записываем нарушение для grey scoring (per-user или per-IP — см. grey_subject).
+            self::record_violation($user_id, $ip, 'rate_limit');
 
             return array(
                 'allowed'     => false,
@@ -253,14 +260,25 @@ class Cashback_Rate_Limiter {
     }
 
     /**
-     * Детерминированный ключ для rate-limit counter (Группа 7).
+     * Детерминированный ключ для rate-limit counter (Группа 7, NAT-safe в Группе 13).
      *
-     * Формат: `{tier[0]}_{sha1(action|user_id|ip)[0:40]}` → 42 символа ≤ VARCHAR(64) PK лимита.
-     * Префикс tier-buck'а нужен чтобы разные тиры одного action не коллижили
-     * (на практике одно действие всегда одного тира, но defense-in-depth).
+     * Стратегия (iter-4 F2: default per-IP, NAT-relief opt-in):
+     *   - Авторизованные ($user_id > 0): ключ = (action, user_id) без IP — NAT-safe,
+     *     один пользователь работает с разных сетей, квота следует за ним.
+     *   - Гости ($user_id = 0): ключ per-IP (`ip:<raw>`). НЕ collapse в subnet по умолчанию —
+     *     иначе любое public guest action (contact submit, social_start) делит bucket
+     *     всего /24 без UA separation → один abuser DoS-ит всех соседей.
+     *   - NAT-relief у callsite'а opt-in: caller сам pre-compose'ит composite
+     *     (`hash(subnet)[0:16]:ua_family`) и передаёт как `$ip` — extract_subnet()
+     *     возвращает '' на non-IP строку, так что pre-composed passes through as-is.
+     *     Ref: `handle_referral_visit` (affiliate_click), `bind_referral_on_registration`
+     *     (affiliate_signup).
+     *
+     * Формат: `{tier[0]}_{sha1(action|subject)[0:40]}` → 42 символа ≤ VARCHAR(64) PK.
      */
     private static function make_scope_key( string $tier, string $action, int $user_id, string $ip ): string {
-        return sprintf('%s_%s', $tier[0], substr(sha1($action . '|' . $user_id . '|' . $ip), 0, 40));
+        $subject = $user_id > 0 ? 'u:' . $user_id : 'ip:' . $ip;
+        return sprintf('%s_%s', $tier[0], substr(sha1($action . '|' . $subject), 0, 40));
     }
 
     /**
@@ -343,14 +361,27 @@ class Cashback_Rate_Limiter {
     private const GREY_TTL = 3600;
 
     /**
-     * Записать нарушение для IP.
+     * Вычислить "субъект" grey-скоринга (Группа 13, NAT-safety).
      *
-     * @param string $ip     IP-адрес.
-     * @param string $reason Тип нарушения (rate_limit|bot_ua|honeypot|timing).
+     * Авторизованный пользователь → ключ по user_id (один плохой за NAT не травит весь пул).
+     * Гость → ключ по IP (backward-compat; capcha-gate вместо 429 делается в bot-protection).
+     *
+     * @internal Публично для тестов и callsites, которым нужен явный subject.
      */
-    public static function record_violation( string $ip, string $reason ): void {
+    public static function grey_subject( int $user_id, string $ip ): string {
+        return $user_id > 0 ? 'u:' . $user_id : 'ip:' . $ip;
+    }
+
+    /**
+     * Записать нарушение для пользователя/IP.
+     *
+     * @param int    $user_id ID пользователя (0 — гость).
+     * @param string $ip      IP-адрес.
+     * @param string $reason  Тип нарушения (rate_limit|bot_ua|honeypot|timing).
+     */
+    public static function record_violation( int $user_id, string $ip, string $reason ): void {
         $score_add = self::VIOLATION_SCORES[ $reason ] ?? 10;
-        $key       = self::grey_key($ip);
+        $key       = self::grey_key(self::grey_subject($user_id, $ip));
         $current   = (int) get_transient($key);
         $new_score = min(100, $current + $score_add);
 
@@ -359,44 +390,34 @@ class Cashback_Rate_Limiter {
     }
 
     /**
-     * Является ли IP серым (score >= порога).
-     *
-     * @param string $ip IP-адрес.
-     * @return bool
+     * Является ли subject серым (score >= порога).
      */
-    public static function is_grey_ip( string $ip ): bool {
+    public static function is_grey_ip( int $user_id, string $ip ): bool {
         $threshold = (int) get_option('cashback_bot_grey_threshold', 20);
-        return self::get_grey_score($ip) >= $threshold;
+        return self::get_grey_score($user_id, $ip) >= $threshold;
     }
 
     /**
-     * Является ли IP заблокированным (score >= порога блокировки).
-     *
-     * @param string $ip IP-адрес.
-     * @return bool
+     * Является ли subject заблокированным (score >= порога блокировки).
      */
-    public static function is_blocked_ip( string $ip ): bool {
+    public static function is_blocked_ip( int $user_id, string $ip ): bool {
         $threshold = (int) get_option('cashback_bot_block_threshold', 80);
-        return self::get_grey_score($ip) >= $threshold;
+        return self::get_grey_score($user_id, $ip) >= $threshold;
     }
 
     /**
-     * Получить grey score для IP.
+     * Получить grey score для subject.
      *
-     * @param string $ip IP-адрес.
      * @return int Score 0-100.
      */
-    public static function get_grey_score( string $ip ): int {
-        return (int) get_transient(self::grey_key($ip));
+    public static function get_grey_score( int $user_id, string $ip ): int {
+        return (int) get_transient(self::grey_key(self::grey_subject($user_id, $ip)));
     }
 
     /**
-     * Transient ключ для grey score.
-     *
-     * @param string $ip IP-адрес.
-     * @return string
+     * Transient ключ для grey score (по subject-токену).
      */
-    private static function grey_key( string $ip ): string {
-        return 'cb_grey_' . substr(md5($ip), 0, 12);
+    private static function grey_key( string $subject ): string {
+        return 'cb_grey_' . substr(md5($subject), 0, 12);
     }
 }

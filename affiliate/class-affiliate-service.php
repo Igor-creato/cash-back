@@ -108,8 +108,16 @@ class Cashback_Affiliate_Service {
         // F-22-003: rate-limit на click entry-point. Проверяется ПОСЛЕ валидации
         // partner_token (чтобы не тратить лимит на мусор) и ДО log_click/cookie.
         // При blocked — audit обязателен (иначе RL = чёрная дыра).
+        // Группа 13 NAT-safety: композитный ключ (subnet + UA-family) вместо raw IP,
+        // чтобы один плохой клиент за NAT не блочил ref-клики всему пулу.
         if (class_exists('Cashback_Rate_Limiter')) {
-            $rl_check = Cashback_Rate_Limiter::check('affiliate_click', 0, $ip);
+            $ua_raw = isset($_SERVER['HTTP_USER_AGENT'])
+                // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+                ? (string) wp_unslash($_SERVER['HTTP_USER_AGENT'])
+                : '';
+            $rl_subject = substr(hash('sha256', self::extract_subnet($ip)), 0, 16)
+                . ':' . self::normalize_ua($ua_raw)['family'];
+            $rl_check   = Cashback_Rate_Limiter::check('affiliate_click', 0, $rl_subject);
             if (empty($rl_check['allowed'])) {
                 if (class_exists('Cashback_Affiliate_Audit')) {
                     Cashback_Affiliate_Audit::log('rate_limit_blocked_click', array(
@@ -409,7 +417,7 @@ class Cashback_Affiliate_Service {
      *
      * @return array{family: string, major: string}
      */
-    private static function normalize_ua( string $raw_ua ): array {
+    public static function normalize_ua( string $raw_ua ): array {
         $family = 'unknown';
         $major  = '0';
 

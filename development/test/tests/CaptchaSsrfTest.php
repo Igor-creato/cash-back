@@ -80,7 +80,7 @@ class CaptchaSsrfTest extends TestCase
 
     public function test_verify_token_happy_path_calls_wp_remote_get_once(): void
     {
-        $result = Cashback_Captcha::verify_token('dummy-captcha-token', '203.0.113.10');
+        $result = Cashback_Captcha::verify_token('dummy-captcha-token', 0, '203.0.113.10');
 
         $this->assertTrue($result);
         $this->assertCount(1, $GLOBALS['_cb_test_http_calls']);
@@ -105,7 +105,7 @@ class CaptchaSsrfTest extends TestCase
         });
         Cashback_Outbound_HTTP_Guard::invalidate_cache();
 
-        $result = Cashback_Captcha::verify_token('dummy-captcha-token', '203.0.113.10');
+        $result = Cashback_Captcha::verify_token('dummy-captcha-token', 0, '203.0.113.10');
 
         // Graceful degradation — API "недоступен" → пропускаем проверку.
         $this->assertTrue($result);

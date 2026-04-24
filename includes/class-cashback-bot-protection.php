@@ -65,20 +65,48 @@ class Cashback_Bot_Protection {
         $user_id = get_current_user_id();
         $tier    = Cashback_Rate_Limiter::get_tier($action);
 
-        // 1. IP заблокирован (score ≥ 80)
-        if (Cashback_Rate_Limiter::is_blocked_ip($ip)) {
-            wp_send_json_error(
-                array(
-                    'code'    => 'blocked',
-                    'message' => 'Слишком много подозрительных запросов. Попробуйте позже.',
-                ),
-                429
-            );
+        // 1. Subject заблокирован (score ≥ 80). Группа 13 NAT-safety:
+        //    - Авторизованные: grey score per-user → 429 только лично этому пользователю.
+        //    - Гости: grey score per-IP → за NAT один плохой клиент мог блочить весь пул;
+        //      теперь не 429, а принудительная CAPTCHA (если провайдер настроен).
+        //    - Iter-4 F1: после успешной CAPTCHA bypass'им block gate в Rate_Limiter::check(),
+        //      иначе тот снова увидит is_blocked_ip() и вернёт 429 — recovery path не работал.
+        $blocked_bypassed_via_captcha = false;
+        if (Cashback_Rate_Limiter::is_blocked_ip($user_id, $ip)) {
+            $captcha_configured = class_exists('Cashback_Captcha')
+                && method_exists('Cashback_Captcha', 'is_configured')
+                && Cashback_Captcha::is_configured();
+
+            if ($user_id > 0 || !$captcha_configured) {
+                wp_send_json_error(
+                    array(
+                        'code'    => 'blocked',
+                        'message' => 'Слишком много подозрительных запросов. Попробуйте позже.',
+                    ),
+                    429
+                );
+            }
+
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing -- CAPTCHA token value independently verified via Cashback_Captcha::verify_token() before the form nonce is checked by caller.
+            $captcha_token = isset($_POST['cb_captcha_token'])
+                // phpcs:ignore WordPress.Security.NonceVerification.Missing -- CAPTCHA token value independently verified via Cashback_Captcha::verify_token() before the form nonce is checked by caller.
+                ? sanitize_text_field(wp_unslash($_POST['cb_captcha_token']))
+                : '';
+
+            if ($captcha_token === '' || !Cashback_Captcha::verify_token($captcha_token, $user_id, $ip)) {
+                wp_send_json_error(array(
+                    'code'       => 'captcha_required',
+                    'message'    => 'Пожалуйста, пройдите проверку.',
+                    'client_key' => Cashback_Captcha::get_client_key(),
+                ));
+            }
+            // CAPTCHA прошла — продолжаем обработку, bypass'им block gate ниже.
+            $blocked_bypassed_via_captcha = true;
         }
 
         // 2. Bot User-Agent
         if (self::is_bot_user_agent()) {
-            Cashback_Rate_Limiter::record_violation($ip, 'bot_ua');
+            Cashback_Rate_Limiter::record_violation($user_id, $ip, 'bot_ua');
             wp_send_json_error(
                 array(
                     'code'    => 'blocked',
@@ -91,7 +119,7 @@ class Cashback_Bot_Protection {
         // 3. Honeypot (поле cb_website_url должно быть пустым)
         // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Honeypot field checked before nonce verification by caller; this is an anti-bot pre-check on a public endpoint protected by rate-limit and CAPTCHA.
         if (isset($_POST['cb_website_url']) && $_POST['cb_website_url'] !== '') {
-            Cashback_Rate_Limiter::record_violation($ip, 'honeypot');
+            Cashback_Rate_Limiter::record_violation($user_id, $ip, 'honeypot');
             // Тихий reject — бот не должен знать что его поймали
             wp_send_json_error(
                 array(
@@ -110,13 +138,13 @@ class Cashback_Bot_Protection {
             $delta_s = ( $now_ms - $form_ts ) / 1000;
 
             if ($form_ts > 0 && $delta_s < self::MIN_SUBMIT_TIME) {
-                Cashback_Rate_Limiter::record_violation($ip, 'timing');
+                Cashback_Rate_Limiter::record_violation($user_id, $ip, 'timing');
                 // Не блокируем, только добавляем баллы — может стать серым
             }
         }
 
-        // 5. Rate limit
-        $rate_result = Cashback_Rate_Limiter::check($action, $user_id, $ip);
+        // 5. Rate limit (с bypass block gate если CAPTCHA-recovery path пройден)
+        $rate_result = Cashback_Rate_Limiter::check($action, $user_id, $ip, $blocked_bypassed_via_captcha);
 
         if (!$rate_result['allowed']) {
             wp_send_json_error(
@@ -129,10 +157,10 @@ class Cashback_Bot_Protection {
             );
         }
 
-        // 6. CAPTCHA gate для серых IP на critical/write
+        // 6. CAPTCHA gate для серых subject на critical/write
         if ($tier !== null
             && in_array($tier, self::CAPTCHA_TIERS, true)
-            && Cashback_Captcha::should_require($ip)
+            && Cashback_Captcha::should_require($user_id, $ip)
         ) {
             // phpcs:ignore WordPress.Security.NonceVerification.Missing -- CAPTCHA token read before form nonce validation by caller; token itself is independently verified via Cashback_Captcha::verify_token() on a public endpoint protected by rate-limit.
             $captcha_token = isset($_POST['cb_captcha_token'])
@@ -151,7 +179,7 @@ class Cashback_Bot_Protection {
                 );
             }
 
-            if (!Cashback_Captcha::verify_token($captcha_token, $ip)) {
+            if (!Cashback_Captcha::verify_token($captcha_token, $user_id, $ip)) {
                 wp_send_json_error(
                     array(
                         'code'    => 'captcha_failed',
@@ -166,12 +194,14 @@ class Cashback_Bot_Protection {
 
     /**
      * Подключение frontend-скриптов и стилей.
+     *
+     * Группа 13 NAT-safety: раньше гейтилось `is_user_logged_in()` — но после
+     * того как guard_ajax_requests() стал отдавать `captcha_required` гостям
+     * вместо 429, фронту нужен интерсептор `ajaxComplete` для lazy-load SmartCaptcha
+     * и retry. Иначе гость получит silent dead-end. Скрипт легковесный, безопасен
+     * на неавторизованных страницах (работает через admin-ajax + localize).
      */
     public static function enqueue_frontend_assets(): void {
-        if (!is_user_logged_in()) {
-            return;
-        }
-
         $plugin_url = plugin_dir_url(__DIR__);
         $version    = '2.1.0';
 
@@ -190,11 +220,12 @@ class Cashback_Bot_Protection {
             true
         );
 
-        $ip = self::get_ip();
+        $ip      = self::get_ip();
+        $user_id = (int) get_current_user_id();
 
         wp_localize_script('cashback-bot-protection', 'cbBotProtection', array(
             'ajaxUrl'          => admin_url('admin-ajax.php'),
-            'captchaRequired'  => Cashback_Captcha::should_require($ip),
+            'captchaRequired'  => Cashback_Captcha::should_require($user_id, $ip),
             'captchaClientKey' => Cashback_Captcha::get_client_key(),
             'captchaJsUrl'     => 'https://smartcaptcha.yandexcloud.net/captcha.js',
         ));

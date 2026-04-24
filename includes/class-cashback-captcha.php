@@ -44,14 +44,15 @@ class Cashback_Captcha {
     }
 
     /**
-     * Нужна ли CAPTCHA для данного IP.
+     * Нужна ли CAPTCHA для данного subject (user_id + IP).
      *
-     * Условия: CAPTCHA настроена + IP серый + верификация не закеширована.
+     * Условия: CAPTCHA настроена + subject серый + верификация не закеширована.
+     * Группа 13 NAT-safety: subject = user_id (авторизованный) или IP (гость).
      *
-     * @param string $ip IP-адрес.
-     * @return bool
+     * @param int    $user_id ID пользователя (0 — гость).
+     * @param string $ip      IP-адрес.
      */
-    public static function should_require( string $ip ): bool {
+    public static function should_require( int $user_id, string $ip ): bool {
         if (!self::is_configured()) {
             return false;
         }
@@ -60,13 +61,15 @@ class Cashback_Captcha {
             return false;
         }
 
-        // IP не серый — CAPTCHA не нужна
-        if (!Cashback_Rate_Limiter::is_grey_ip($ip)) {
+        // Subject не серый — CAPTCHA не нужна
+        if (!Cashback_Rate_Limiter::is_grey_ip($user_id, $ip)) {
             return false;
         }
 
-        // Уже верифицирован — CAPTCHA не нужна
-        if (self::is_verified($ip)) {
+        // Уже верифицирован для этого subject'а — CAPTCHA не нужна.
+        // Группа 13: verified-cache subject-aware, чтобы per-user grey enforcement
+        // не откатывался к per-IP после того как один пользователь на NAT прошёл CAPTCHA.
+        if (self::is_verified($user_id, $ip)) {
             return false;
         }
 
@@ -100,11 +103,16 @@ class Cashback_Captcha {
     /**
      * Серверная проверка токена SmartCaptcha.
      *
-     * @param string $token Токен от клиента.
-     * @param string $ip    IP-адрес пользователя.
+     * Группа 13: принимает `$user_id` для subject-aware verified-cache —
+     * чтобы один пользователь на общем NAT-IP, прошедший CAPTCHA, не открывал
+     * CAPTCHA-gate всем остальным серым аккаунтам на том же IP.
+     *
+     * @param string $token   Токен от клиента.
+     * @param int    $user_id ID пользователя (0 — гость; кеш per-IP).
+     * @param string $ip      IP-адрес пользователя.
      * @return bool true если верификация пройдена.
      */
-    public static function verify_token( string $token, string $ip ): bool {
+    public static function verify_token( string $token, int $user_id, string $ip ): bool {
         if ($token === '') {
             return false;
         }
@@ -174,39 +182,53 @@ class Cashback_Captcha {
         $passed = isset($data['status']) && $data['status'] === 'ok';
 
         if ($passed) {
-            // Кешируем успешную верификацию
-            self::cache_verification($ip);
+            // Кешируем успешную верификацию per-subject (uid для логина, ip для гостя).
+            self::cache_verification($user_id, $ip);
         }
 
         return $passed;
     }
 
     /**
-     * Проверить, есть ли кешированная верификация для IP.
+     * Проверить, есть ли кешированная верификация для subject'а.
      *
-     * @param string $ip IP-адрес.
-     * @return bool
+     * Группа 13: subject-aware. Залогиненный видит только свой кеш, гость — общий per-IP
+     * (допустимо для NAT: один гость прошёл капчу — пул за тем же IP получает pass на TTL).
      */
-    public static function is_verified( string $ip ): bool {
-        return (bool) get_transient(self::cache_key($ip));
+    public static function is_verified( int $user_id, string $ip ): bool {
+        return (bool) get_transient(self::cache_key($user_id, $ip));
     }
 
     /**
-     * Закешировать успешную верификацию.
-     *
-     * @param string $ip IP-адрес.
+     * Закешировать успешную верификацию per-subject.
      */
-    private static function cache_verification( string $ip ): void {
-        set_transient(self::cache_key($ip), 1, self::VERIFY_CACHE_TTL);
+    private static function cache_verification( int $user_id, string $ip ): void {
+        set_transient(self::cache_key($user_id, $ip), 1, self::VERIFY_CACHE_TTL);
     }
 
     /**
-     * Transient ключ для кеша верификации.
+     * Transient ключ для кеша верификации per-subject.
      *
-     * @param string $ip IP-адрес.
-     * @return string
+     * Группа 13 iter-4: для гостей subject = individual IP + UA-family.
+     * Ранее (iter-3) использовали subnet+UA — но это открывало cross-subject bypass:
+     * grey-scoring у гостей per-IP, а verified-cache per-subnet → guest A прошёл
+     * CAPTCHA (бакет subnet+UA) → guest B на другом IP в том же subnet пропускается,
+     * хотя его grey-scope привязан к его IP. Individual-IP ключ в cache нужен,
+     * чтобы CAPTCHA-pass не "утекала" между независимыми grey-гостями.
      */
-    private static function cache_key( string $ip ): string {
-        return 'cb_cap_' . substr(md5($ip), 0, 12);
+    private static function cache_key( int $user_id, string $ip ): string {
+        if ($user_id > 0) {
+            $subject = 'u:' . $user_id;
+        } else {
+            $ua_raw = isset($_SERVER['HTTP_USER_AGENT'])
+                // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotValidated, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPressVIPMinimum.Variables.ServerVariables.UserControlledHeaders
+                ? (string) wp_unslash($_SERVER['HTTP_USER_AGENT'])
+                : '';
+            $family = class_exists('Cashback_Affiliate_Service')
+                ? \Cashback_Affiliate_Service::normalize_ua($ua_raw)['family']
+                : 'unknown';
+            $subject = 'g:' . $ip . '|' . $family;
+        }
+        return 'cb_cap_' . substr(md5($subject), 0, 12);
     }
 }

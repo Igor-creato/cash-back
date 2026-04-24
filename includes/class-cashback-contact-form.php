@@ -26,8 +26,22 @@ class Cashback_Contact_Form {
     /** @var self|null */
     private static ?self $instance = null;
 
-    /** Rate limit: макс. отправок за окно. */
+    /** Rate limit: макс. отправок за окно (per-user для авторизованных). */
     private const RATE_LIMIT = 3;
+
+    /**
+     * Группа 13 iter-4: гостевой pre-CAPTCHA bucket (per-IP + UA-family).
+     * Узкий ведро, ловит abuse с одного IP (failed captcha, junk-submits) без
+     * сторонних пользователей на NAT. 20/час даёт запас для легитимного использования.
+     */
+    private const RATE_LIMIT_GUEST_IP = 20;
+
+    /**
+     * Гостевой post-CAPTCHA bucket (per-subnet + UA-family) — NAT-relief на
+     * реальных доставках. Заряжается ТОЛЬКО после прохождения CAPTCHA
+     * (если настроена). Лимит выше (30), т.к. только подлинные submits туда попадают.
+     */
+    private const RATE_LIMIT_GUEST = 30;
 
     /** Rate limit: окно в секундах (1 час). */
     private const RATE_WINDOW = 3600;
@@ -168,24 +182,49 @@ class Cashback_Contact_Form {
      * Обработка AJAX-отправки формы.
      */
     public function handle_submit(): void {
-        // Rate limit по IP — Группа 7 (шаг 8 ADR): атомарный counter вместо
-        // неатомарного get_transient/set_transient. Инкремент происходит ДО
-        // валидации (ранее — только после успешного submit), чтобы rejected-попытки
-        // тоже учитывались в квоте — иначе атакующий обошёл бы лимит через
-        // намеренно-проваленные отправки (bot-check/honeypot).
-        $ip        = $this->get_ip();
-        $scope_key = 'contact_' . substr(sha1($ip), 0, 40);
+        // Rate limit — Группа 7 (шаг 8 ADR) атомарный counter; Группа 13 iter-4:
+        //   - Авторизованные: один pre-bucket per-user (3/час).
+        //   - Гости: ДВА bucket'а:
+        //     (1) pre-CAPTCHA per-(IP+UA) — узкий, ловит abuse с одного IP.
+        //     (2) post-CAPTCHA per-(subnet+UA) — широкий, NAT-relief на подлинных
+        //         доставках. Заряжается только после успешной CAPTCHA (если настроена).
+        //   Два bucket'а защищают от DoS: 30 junk POSTов с invalid captcha с одного IP
+        //   забивают только pre-bucket этого IP, не shared subnet-bucket всего NAT.
+        // Инкремент pre-bucket до bot-checks — чтобы rejected-попытки тоже учитывались.
+        $ip      = $this->get_ip();
+        $user_id = (int) ( function_exists('get_current_user_id') ? get_current_user_id() : 0 );
 
         if (!class_exists('Cashback_Rate_Limiter')) {
             require_once __DIR__ . '/class-cashback-rate-limiter.php';
         }
 
+        // Вычисляем UA-family один раз (переиспользуется в pre/post scope).
+        $ua_raw = isset($_SERVER['HTTP_USER_AGENT'])
+            // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+            ? (string) wp_unslash($_SERVER['HTTP_USER_AGENT'])
+            : '';
+        $ua_family = class_exists('Cashback_Affiliate_Service')
+            ? \Cashback_Affiliate_Service::normalize_ua($ua_raw)['family']
+            : 'unknown';
+
+        if ($user_id > 0) {
+            $pre_scope_key = 'contact_u_' . substr(sha1((string) $user_id), 0, 38);
+            $pre_limit     = self::RATE_LIMIT;
+        } else {
+            $pre_scope_key = 'contact_ip_' . substr(sha1($ip . '|' . $ua_family), 0, 37);
+            $pre_limit     = self::RATE_LIMIT_GUEST_IP;
+        }
+
+        // Iter-4 F3: $counter инициализируется ДО try, чтобы post-bucket мог
+        // безопасно определить, доступен ли backend (null = fail-open, skip post-bucket).
+        $counter = null;
         try {
             $counter = \Cashback_Rate_Limiter::counter_backend();
-            $result  = $counter->increment($scope_key, self::RATE_WINDOW, self::RATE_LIMIT);
+            $result  = $counter->increment($pre_scope_key, self::RATE_WINDOW, $pre_limit);
         } catch (\Throwable $e) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Rate-limit backend diagnostic (group 7, step 8).
             error_log('[cashback-contact-form] rate-limit backend error: ' . $e->getMessage());
+            $counter = null;
             $result = array(
 				'allowed'  => true,
 				'hits'     => 1,
@@ -204,7 +243,7 @@ class Cashback_Contact_Form {
         // Honeypot
         if (isset($_POST['cb_website_url']) && $_POST['cb_website_url'] !== '') {
             if (class_exists('Cashback_Rate_Limiter')) {
-                Cashback_Rate_Limiter::record_violation($ip, 'honeypot');
+                Cashback_Rate_Limiter::record_violation($user_id, $ip, 'honeypot');
             }
             wp_send_json_error(array(
                 'code'    => 'error',
@@ -220,7 +259,7 @@ class Cashback_Contact_Form {
 
             if ($form_ts > 0 && $delta_s < 2) {
                 if (class_exists('Cashback_Rate_Limiter')) {
-                    Cashback_Rate_Limiter::record_violation($ip, 'timing');
+                    Cashback_Rate_Limiter::record_violation($user_id, $ip, 'timing');
                 }
                 wp_send_json_error(array(
                     'code'    => 'error',
@@ -232,7 +271,7 @@ class Cashback_Contact_Form {
         // Bot UA
         if ($this->is_bot_user_agent()) {
             if (class_exists('Cashback_Rate_Limiter')) {
-                Cashback_Rate_Limiter::record_violation($ip, 'bot_ua');
+                Cashback_Rate_Limiter::record_violation($user_id, $ip, 'bot_ua');
             }
             wp_send_json_error(array(
                 'code'    => 'blocked',
@@ -246,11 +285,50 @@ class Cashback_Contact_Form {
                 ? sanitize_text_field(wp_unslash($_POST['cb_captcha_token']))
                 : '';
 
-            if ($captcha_token === '' || !Cashback_Captcha::verify_token($captcha_token, $ip)) {
+            if ($captcha_token === '' || !Cashback_Captcha::verify_token($captcha_token, $user_id, $ip)) {
                 wp_send_json_error(array(
                     'code'    => 'captcha_failed',
                     'message' => 'Проверка не пройдена. Пожалуйста, подтвердите, что вы не робот.',
                 ));
+            }
+        }
+
+        // Post-CAPTCHA bucket (только гости, только если backend доступен):
+        // shared per-(subnet+UA) — NAT-relief на подлинных доставках. Заряжается
+        // ТОЛЬКО после прохождения CAPTCHA/bot-checks, чтобы attacker failed-captcha
+        // спамом не DoS-ил соседей за NAT.
+        // Iter-4 F3: guard `$counter !== null` — если counter_backend() бросил в
+        // pre-bucket try, fail-open не должен превращаться в fatal null-deref здесь.
+        if ($user_id === 0 && $counter !== null) {
+            $subnet = class_exists('Cashback_Affiliate_Service')
+                ? \Cashback_Affiliate_Service::extract_subnet($ip)
+                : '';
+            $post_subject = ($subnet !== '')
+                ? ('n:' . $subnet . '|' . $ua_family)
+                : ('r:' . $ip . '|' . $ua_family);
+            $post_scope_key = 'contact_g_' . substr(sha1($post_subject), 0, 38);
+
+            try {
+                $post_result = $counter->increment(
+                    $post_scope_key,
+                    self::RATE_WINDOW,
+                    self::RATE_LIMIT_GUEST
+                );
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Rate-limit backend diagnostic (iter-4 post-bucket).
+                error_log('[cashback-contact-form] post-bucket backend error: ' . $e->getMessage());
+                $post_result = array(
+                    'allowed'  => true,
+                    'hits'     => 1,
+                    'reset_at' => time() + self::RATE_WINDOW,
+                );
+            }
+
+            if (! $post_result['allowed']) {
+                wp_send_json_error(array(
+                    'code'    => 'rate_limited',
+                    'message' => 'Слишком много сообщений с вашей подсети. Попробуйте через час.',
+                ), 429);
             }
         }
 
