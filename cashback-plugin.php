@@ -369,6 +369,13 @@ class CashbackPlugin {
             wp_schedule_event(time(), 'hourly', 'cashback_fraud_cluster_detect_cron');
         }
 
+        // F-22-003 (Группа 12): ежедневный auto-promote low-confidence
+        // рефералов (review_status='pending' → 'auto_approved') после
+        // 14-дневного clean-periode. Callback batch-based + idempotent.
+        if (!wp_next_scheduled('cashback_affiliate_auto_promote')) {
+            wp_schedule_event(time(), 'daily', 'cashback_affiliate_auto_promote');
+        }
+
         // Миграция планировщика: снимаем устаревшие WP-Cron события для задач,
         // переведённых на Action Scheduler. Повторная постановка AS-actions
         // произойдёт автоматически на init (см. Cashback_Broadcast::__construct,
@@ -407,6 +414,7 @@ class CashbackPlugin {
             'cashback_fraud_cleanup_cron',
             'cashback_fraud_cluster_detect_cron',
             'cashback_rate_limit_gc_cron',
+            'cashback_affiliate_auto_promote', // F-22-003
         );
 
         foreach ($cron_hooks as $hook) {
@@ -414,7 +422,14 @@ class CashbackPlugin {
             if ($timestamp) {
                 wp_unschedule_event($timestamp, $hook);
             }
+            // Дополнительный safety-clear на случай нескольких запланированных
+            // инстансов одного хука (F-22-003 auto-promote и пр.).
+            wp_clear_scheduled_hook($hook);
         }
+
+        // F-22-003 (Группа 12): явный clear для auto-promote cron — закрепляет
+        // инвариант удаления именно этого hook при деактивации.
+        wp_clear_scheduled_hook('cashback_affiliate_auto_promote');
 
         // Action Scheduler хуки (переведены на AS в рамках миграции планировщика)
         $as_hooks = array(

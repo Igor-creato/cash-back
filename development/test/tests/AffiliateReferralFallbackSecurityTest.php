@@ -820,14 +820,16 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
     {
         $src = $this->read(self::PLUGIN_BOOT);
 
+        // wp_schedule_event(time(), 'daily', 'cashback_affiliate_auto_promote'):
+        // time() содержит ()-пару, поэтому [^)]* слишком строго — используем .{0,N}.
         $this->assertMatchesRegularExpression(
-            "/wp_schedule_event\s*\([^)]*['\"]cashback_affiliate_auto_promote['\"]|['\"]cashback_affiliate_auto_promote['\"][^)]*wp_schedule_event/s",
+            "/wp_schedule_event\s*\(.{0,120}['\"]cashback_affiliate_auto_promote['\"]/s",
             $src,
             'cashback_affiliate_auto_promote должен регистрироваться в wp_schedule_event (daily).'
         );
 
         $this->assertMatchesRegularExpression(
-            "/wp_clear_scheduled_hook\s*\([^)]*['\"]cashback_affiliate_auto_promote['\"]|['\"]cashback_affiliate_auto_promote['\"][^)]*wp_clear_scheduled_hook/s",
+            "/wp_clear_scheduled_hook\s*\(.{0,40}['\"]cashback_affiliate_auto_promote['\"]/s",
             $src,
             'Deactivation hook должен очищать cashback_affiliate_auto_promote.'
         );
