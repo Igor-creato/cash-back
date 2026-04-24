@@ -685,6 +685,18 @@ class CashbackPlugin {
                 }
             }
         }
+
+        // F-22-003: attribution model (5 колонок в profiles + accruals, индекс idx_review_queue).
+        // Миграция идемпотентна — fast-path через cashback_affiliate_db_version (return на ≥ 1.2),
+        // повторный ALTER защищён is_known_ddl_error(). Безопасно вызывать на каждом init.
+        if (class_exists('Cashback_Affiliate_DB')) {
+            try {
+                Cashback_Affiliate_DB::migrate_f22_003_attribution_model();
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] F-22-003 auto-migration failed: ' . $e->getMessage());
+            }
+        }
     }
 
     /**
