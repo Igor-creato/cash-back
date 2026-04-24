@@ -1,0 +1,115 @@
+/*
+ * Cashback admin — модал ручной корректировки баланса (Группа 15, S2.B).
+ * Vanilla-стили, без зависимостей. role="dialog" + backdrop с blur.
+ */
+
+.cashback-balance-adjust-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba(15, 23, 42, 0.5);
+	backdrop-filter: blur(3px);
+	-webkit-backdrop-filter: blur(3px);
+	z-index: 160000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 20px;
+}
+
+.cashback-balance-adjust-backdrop[hidden] {
+	display: none;
+}
+
+.cashback-balance-adjust-modal {
+	background: #fff;
+	border-radius: 6px;
+	box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+	max-width: 520px;
+	width: 100%;
+	max-height: 90vh;
+	overflow: auto;
+	padding: 24px;
+	position: relative;
+}
+
+.cashback-balance-adjust-modal h2 {
+	margin: 0 0 12px;
+	font-size: 18px;
+	color: #1d2327;
+}
+
+.cashback-balance-adjust-modal .cashback-balance-adjust-user-info {
+	background: #f6f7f7;
+	border: 1px solid #dcdcde;
+	border-radius: 3px;
+	padding: 8px 12px;
+	margin: 0 0 16px;
+	font-size: 13px;
+	color: #3c434a;
+}
+
+.cashback-balance-adjust-modal label {
+	display: block;
+	margin: 12px 0 4px;
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.cashback-balance-adjust-modal input[type="text"],
+.cashback-balance-adjust-modal textarea {
+	width: 100%;
+	box-sizing: border-box;
+}
+
+.cashback-balance-adjust-modal textarea {
+	min-height: 80px;
+	font-family: inherit;
+}
+
+.cashback-balance-adjust-modal .cashback-balance-adjust-hint {
+	font-size: 12px;
+	color: #646970;
+	margin: 4px 0 0;
+}
+
+.cashback-balance-adjust-modal .cashback-balance-adjust-confirm {
+	margin: 16px 0 0;
+	display: flex;
+	gap: 8px;
+	align-items: flex-start;
+}
+
+.cashback-balance-adjust-modal .cashback-balance-adjust-confirm input {
+	margin-top: 2px;
+}
+
+.cashback-balance-adjust-modal .cashback-balance-adjust-actions {
+	margin: 20px 0 0;
+	display: flex;
+	gap: 8px;
+	justify-content: flex-end;
+}
+
+.cashback-balance-adjust-modal .cashback-balance-adjust-message {
+	margin: 12px 0 0;
+	padding: 8px 12px;
+	border-radius: 3px;
+	font-size: 13px;
+}
+
+.cashback-balance-adjust-modal .cashback-balance-adjust-message.is-success {
+	background: #dcefdc;
+	color: #224f22;
+	border: 1px solid #a8c8a8;
+}
+
+.cashback-balance-adjust-modal .cashback-balance-adjust-message.is-error {
+	background: #fbe8e8;
+	color: #761919;
+	border: 1px solid #e0a6a6;
+}
+
+.cashback-balance-adjust-modal button[disabled] {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
