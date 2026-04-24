@@ -918,7 +918,7 @@ class WC_Affiliate_URL_Params {
             $sessions_table = $wpdb->prefix . 'cashback_click_sessions';
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table, no cache needed for single redirect lookup.
             $row = $wpdb->get_var($wpdb->prepare(
-                "SELECT affiliate_url FROM %i WHERE canonical_click_id = %s AND user_id = 0 AND status = 'active' AND expires_at > NOW() LIMIT 1",
+                "SELECT affiliate_url FROM %i WHERE canonical_click_id = %s AND user_id = 0 AND status = 'active' AND expires_at > UTC_TIMESTAMP() LIMIT 1",
                 $sessions_table,
                 $click_id
             ));
@@ -952,7 +952,7 @@ class WC_Affiliate_URL_Params {
         $sessions_table = $wpdb->prefix . 'cashback_click_sessions';
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table, activation page lookup.
         $click = $wpdb->get_row($wpdb->prepare(
-            "SELECT affiliate_url, product_id FROM %i WHERE canonical_click_id = %s AND user_id = %d AND status = 'active' AND expires_at > NOW() LIMIT 1",
+            "SELECT affiliate_url, product_id FROM %i WHERE canonical_click_id = %s AND user_id = %d AND status = 'active' AND expires_at > UTC_TIMESTAMP() LIMIT 1",
             $sessions_table,
             $click_id,
             $user_id

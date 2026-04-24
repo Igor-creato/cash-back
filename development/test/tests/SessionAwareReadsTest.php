@@ -75,9 +75,9 @@ class SessionAwareReadsTest extends TestCase
     public function test_session_status_filters_expires_at(): void
     {
         self::assertMatchesRegularExpression(
-            '/expires_at\s*>\s*NOW|expires_at\s*>\s*%s/i',
+            '/expires_at\s*>\s*(?:NOW|UTC_TIMESTAMP)|expires_at\s*>\s*%s/i',
             $this->get_session_status_body,
-            '12i-3: session lookup должен фильтровать expires_at > NOW (или threshold) — не возвращаем истёкшие.'
+            '12i-3: session lookup должен фильтровать expires_at > NOW/UTC_TIMESTAMP (или threshold) — не возвращаем истёкшие.'
         );
     }
 
@@ -120,9 +120,9 @@ class SessionAwareReadsTest extends TestCase
             '12i-3: activation_page должен фильтровать status=active.'
         );
         self::assertMatchesRegularExpression(
-            '/expires_at\s*>\s*NOW/i',
+            '/expires_at\s*>\s*(?:NOW|UTC_TIMESTAMP)/i',
             $this->handle_activation_body,
-            '12i-3: activation_page должен фильтровать expires_at > NOW.'
+            '12i-3: activation_page должен фильтровать expires_at > NOW/UTC_TIMESTAMP.'
         );
     }
 

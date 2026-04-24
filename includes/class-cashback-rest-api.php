@@ -654,14 +654,15 @@ class Cashback_REST_API {
         // (?cashback_click=) to pre-store the activation before arriving at the partner site.
         if (!empty($click_id) && strlen($click_id) === 32 && ctype_xdigit($click_id)) {
             // 12i-3 ADR (F-10-001): primary lookup в cashback_click_sessions по
-            // canonical_click_id + status='active' + expires_at > NOW().
+            // canonical_click_id + status='active' + expires_at > UTC_TIMESTAMP().
+            // UTC_TIMESTAMP() matches gmdate-written expires_at — timezone-safe.
             $sessions_table = $wpdb->prefix . 'cashback_click_sessions';
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
             $session_row = $wpdb->get_row($wpdb->prepare(
                 "SELECT canonical_click_id, product_id, created_at, expires_at
                    FROM %i
                   WHERE canonical_click_id = %s AND user_id = %d
-                    AND status = 'active' AND expires_at > NOW()
+                    AND status = 'active' AND expires_at > UTC_TIMESTAMP()
                   LIMIT 1",
                 $sessions_table,
                 $click_id,
@@ -761,7 +762,7 @@ class Cashback_REST_API {
         $sessions_args  = array_merge(array( $sessions_table, $user_id ), array_map('intval', $product_ids));
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- Custom plugin table; $placeholders — array_fill '%d'; таблица через %i; sniff не видит %d внутри $placeholders.
-        $session_row = $wpdb->get_row( $wpdb->prepare( "SELECT canonical_click_id, created_at, expires_at FROM %i WHERE user_id = %d AND product_id IN ({$placeholders}) AND status = 'active' AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1", ...$sessions_args ), ARRAY_A );
+        $session_row = $wpdb->get_row( $wpdb->prepare( "SELECT canonical_click_id, created_at, expires_at FROM %i WHERE user_id = %d AND product_id IN ({$placeholders}) AND status = 'active' AND expires_at > UTC_TIMESTAMP() ORDER BY created_at DESC LIMIT 1", ...$sessions_args ), ARRAY_A );
 
         if ($session_row) {
             return new \WP_REST_Response(array(
