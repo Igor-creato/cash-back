@@ -75,6 +75,8 @@ class Mariadb_Plugin {
             $instance->create_events();
             $instance->initialize_existing_users();
             $instance->migrate_rate_history_enum();
+            $instance->migrate_ledger_ban_enum();
+            $instance->migrate_backfill_ledger_accruals();
             $instance->migrate_drop_notification_triggers();
             $instance->migrate_add_transaction_reference_id();
             $instance->migrate_unregistered_reference_id_prefix();
@@ -440,7 +442,7 @@ class Mariadb_Plugin {
         $table_balance_ledger = "CREATE TABLE IF NOT EXISTS `{$wpdb->prefix}cashback_balance_ledger` (
             `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             `user_id` bigint(20) unsigned NOT NULL COMMENT 'ID пользователя',
-            `type` enum('accrual','payout_hold','payout_complete','payout_cancel','payout_declined','adjustment','affiliate_accrual','affiliate_reversal','affiliate_freeze','affiliate_unfreeze') NOT NULL COMMENT 'Тип операции',
+            `type` enum('accrual','payout_hold','payout_complete','payout_cancel','payout_declined','adjustment','affiliate_accrual','affiliate_reversal','affiliate_freeze','affiliate_unfreeze','ban_freeze','ban_unfreeze') NOT NULL COMMENT 'Тип операции',
             `amount` decimal(18,2) NOT NULL COMMENT 'Сумма со знаком (+ начисление, - списание)',
             `transaction_id` bigint(20) unsigned DEFAULT NULL COMMENT 'ID транзакции (для accrual/affiliate)',
             `payout_request_id` bigint(20) unsigned DEFAULT NULL COMMENT 'ID заявки на выплату',
@@ -1781,6 +1783,8 @@ class Mariadb_Plugin {
             'affiliate_reversal' => '0.00',
             'affiliate_freeze'   => '0.00',
             'affiliate_unfreeze' => '0.00',
+            'ban_freeze'         => '0.00',
+            'ban_unfreeze'       => '0.00',
         );
         $counts = array();
         foreach ($ledger_sums as $row) {
@@ -1806,19 +1810,32 @@ class Mariadb_Plugin {
             $aff_frozen = '0.00';
         }
 
-        // Расчётный available: accrual - |hold| + cancel + adjustment + affiliate_net
-        // payout_hold отрицательный → bcadd с отрицательным = вычитание
+        // Ban contributions (Группа 14): ban_freeze (-), ban_unfreeze (+).
+        // ban_net списывает/возвращает в available (знак в amount уже правильный).
+        // ban_frozen = активно замороженный ban-объём = |ban_freeze| - ban_unfreeze, clamp >= 0.
+        $ban_net    = bcadd($sums['ban_freeze'], $sums['ban_unfreeze'], 2);
+        $ban_frozen = bcsub(bcmul($sums['ban_freeze'], '-1', 2), $sums['ban_unfreeze'], 2);
+        if (bccomp($ban_frozen, '0', 2) < 0) {
+            $ban_frozen = '0.00';
+        }
+
+        // Расчётный available: accrual - |hold| + cancel + adjustment + affiliate_net + ban_net
+        // payout_hold, ban_freeze отрицательные → bcadd с отрицательным = вычитание.
         $ledger_available = bcadd(
             bcadd(
                 bcadd(
-                    bcadd($sums['accrual'], $sums['payout_hold'], 2),
-                    $sums['payout_cancel'],
+                    bcadd(
+                        bcadd($sums['accrual'], $sums['payout_hold'], 2),
+                        $sums['payout_cancel'],
+                        2
+                    ),
+                    $sums['adjustment'],
                     2
                 ),
-                $sums['adjustment'],
+                $aff_net,
                 2
             ),
-            $aff_net,
+            $ban_net,
             2
         );
 
@@ -1833,8 +1850,8 @@ class Mariadb_Plugin {
         // Расчётный paid: |payout_complete| (только реально выплаченные)
         $ledger_paid = $abs_complete;
 
-        // Расчётный frozen (из леджера): |payout_declined| + affiliate frozen portion
-        $ledger_frozen = bcadd($abs_declined, $aff_frozen, 2);
+        // Расчётный frozen (из леджера): |payout_declined| + affiliate frozen + ban frozen
+        $ledger_frozen = bcadd(bcadd($abs_declined, $aff_frozen, 2), $ban_frozen, 2);
 
         // 2. Кэш из cashback_user_balance
         $cache = $wpdb->get_row($wpdb->prepare(
@@ -2177,6 +2194,159 @@ class Mariadb_Plugin {
         if ($wpdb->last_error) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Cashback] Failed to migrate rate_history ENUM: ' . $wpdb->last_error);
+        }
+    }
+
+    /**
+     * Миграция: safety-backfill ledger.accrual для исторических transactions.
+     *
+     * Группа 14 (шаг G): если в прошлом были случаи, когда transactions с
+     * processed_at IS NOT NULL не получили парной accrual_{id} в ledger
+     * (раннее состояние плагина / прерванный batch в process_ready_transactions),
+     * миграция восстанавливает соответствие.
+     *
+     * Идемпотентность: ON DUPLICATE KEY UPDATE id=id по UNIQUE idempotency_key,
+     * плюс option-флаг cashback_ledger_accrual_backfill_v1 для fast-path.
+     */
+    public function migrate_backfill_ledger_accruals(): void {
+        if ( get_option( 'cashback_ledger_accrual_backfill_v1' ) === 'done' ) {
+            return;
+        }
+
+        global $wpdb;
+
+        $tx_table     = $wpdb->prefix . 'cashback_transactions';
+        $ledger_table = $wpdb->prefix . 'cashback_balance_ledger';
+
+        // Guard: обе таблицы должны существовать.
+        $have_both = (int) $wpdb->get_var( $wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (%s, %s)',
+            $tx_table,
+            $ledger_table
+        ) );
+        if ( $have_both < 2 ) {
+            return;
+        }
+
+        $inserted_total = 0;
+        $batch_size     = 500;
+
+        for ( $i = 0; $i < 1000; $i++ ) {
+            // Находим transactions с processed_at IS NOT NULL и cashback>0,
+            // у которых НЕТ парной записи accrual_{id} в ledger.
+            $rows = $wpdb->get_results( $wpdb->prepare(
+                "SELECT t.id, t.user_id, t.cashback
+                 FROM %i t
+                 LEFT JOIN %i l
+                   ON l.transaction_id = t.id AND l.type = 'accrual'
+                 WHERE t.processed_at IS NOT NULL
+                   AND t.cashback IS NOT NULL
+                   AND t.cashback > 0
+                   AND l.id IS NULL
+                 ORDER BY t.id ASC
+                 LIMIT %d",
+                $tx_table,
+                $ledger_table,
+                $batch_size
+            ), ARRAY_A );
+
+            if ( empty( $rows ) ) {
+                break;
+            }
+
+            $values_sql = array();
+            $args       = array( $ledger_table );
+            foreach ( $rows as $row ) {
+                $values_sql[] = '(%d, %s, %s, %d, %s)';
+                $args[]       = (int) $row['user_id'];
+                $args[]       = 'accrual';
+                $args[]       = number_format( (float) $row['cashback'], 2, '.', '' );
+                $args[]       = (int) $row['id'];
+                $args[]       = 'accrual_' . (int) $row['id'];
+            }
+
+            $values_sql_joined = implode( ', ', $values_sql );
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $values_sql_joined — статичная последовательность placeholders '(%d, %s, %s, %d, %s)'; args передаются через prepare(), sniffer не считает через spread.
+            $result = $wpdb->query( $wpdb->prepare(
+                "INSERT INTO %i
+                    (user_id, type, amount, transaction_id, idempotency_key)
+                 VALUES {$values_sql_joined}
+                 ON DUPLICATE KEY UPDATE id = id",
+                ...$args
+            ) );
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+
+            if ( $result === false ) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log( '[Cashback Backfill] ledger.accrual insert failed: ' . $wpdb->last_error );
+                break;
+            }
+
+            $inserted_total += (int) $wpdb->rows_affected;
+
+            // Если вставок было меньше batch — значит долг догнан.
+            if ( count( $rows ) < $batch_size ) {
+                break;
+            }
+        }
+
+        update_option( 'cashback_ledger_accrual_backfill_v1', 'done', false );
+
+        if ( $inserted_total > 0 ) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log( sprintf( '[Cashback Backfill] ledger accruals backfilled: %d rows', $inserted_total ) );
+        }
+    }
+
+    /**
+     * Миграция: добавление 'ban_freeze' и 'ban_unfreeze' в ENUM type таблицы cashback_balance_ledger.
+     *
+     * Для новых установок эти значения уже есть в CREATE TABLE. На существующих
+     * инсталляциях (deploy до группы 14) миграция безопасна и идемпотентна — если
+     * значения уже присутствуют в COLUMN_TYPE, функция выходит без ALTER.
+     */
+    public function migrate_ledger_ban_enum(): void {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cashback_balance_ledger';
+
+        $exists = $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $table
+        ));
+
+        if (!$exists) {
+            return;
+        }
+
+        $column_type = $wpdb->get_row($wpdb->prepare(
+            "SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = 'type'",
+            $table
+        ));
+
+        if (!$column_type) {
+            return;
+        }
+
+        // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- MySQL information_schema column is returned as uppercase COLUMN_TYPE.
+        $current_type = (string) $column_type->COLUMN_TYPE;
+
+        if (strpos($current_type, "'ban_freeze'") !== false && strpos($current_type, "'ban_unfreeze'") !== false) {
+            return;
+        }
+
+        $wpdb->query($wpdb->prepare(
+            "ALTER TABLE %i
+             MODIFY COLUMN `type` ENUM('accrual','payout_hold','payout_complete','payout_cancel','payout_declined','adjustment','affiliate_accrual','affiliate_reversal','affiliate_freeze','affiliate_unfreeze','ban_freeze','ban_unfreeze')
+             NOT NULL COMMENT 'Тип операции'",
+            $table
+        ));
+
+        if ($wpdb->last_error) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback] Failed to migrate balance_ledger type ENUM: ' . $wpdb->last_error);
         }
     }
 

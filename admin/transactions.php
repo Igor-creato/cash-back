@@ -433,7 +433,7 @@ class Cashback_Transactions_Admin {
         try {
             // Блокируем строку для предотвращения конкурентного обновления (MySQL Event, sync)
             $current = $wpdb->get_row($wpdb->prepare(
-                'SELECT id, reference_id, user_id, order_status, sum_order, comission, cashback FROM %i WHERE id = %d FOR UPDATE',
+                'SELECT id, reference_id, user_id, order_status, sum_order, comission, cashback, processed_at FROM %i WHERE id = %d FOR UPDATE',
                 $table_name,
                 $transaction_id
             ), ARRAY_A);
@@ -448,6 +448,33 @@ class Cashback_Transactions_Admin {
                 $wpdb->query('ROLLBACK');
                 wp_send_json_error(array( 'message' => 'Транзакция с финальным статусом не может быть изменена.' ));
                 return;
+            }
+
+            // Группа 14 (ledger-first, шаг C): транзакция с processed_at IS NOT NULL
+            // уже имеет парную accrual-запись в cashback_balance_ledger (начисление
+            // в process_ready_transactions между шагами 3 и 5 — до promote в 'balance').
+            // Правка цифр (comission/cashback/sum_order) или статус-перехода в этом окне
+            // создаст расхождение ledger ↔ кэш. Разрешаем только через отдельный adjustment.
+            if (!empty($current['processed_at'])) {
+                $financial_fields = array( 'comission', 'cashback', 'sum_order', 'order_status' );
+                $touches_finance  = false;
+                foreach ($financial_fields as $field) {
+                    if (array_key_exists($field, $update_data)) {
+                        $touches_finance = true;
+                        break;
+                    }
+                }
+                if ($touches_finance) {
+                    $wpdb->query('ROLLBACK');
+                    if ($idem_request_id !== '') {
+                        Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                    }
+                    wp_send_json_error(array(
+                        'code'    => 'already_accrued',
+                        'message' => 'Транзакция уже начислена в леджер. Изменения цифр или статуса запрещены: используйте отдельную корректировку баланса (adjustment).',
+                    ));
+                    return;
+                }
             }
 
             // iter-28 F-28-002: проверяем state-machine переход через общий валидатор

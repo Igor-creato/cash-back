@@ -525,6 +525,10 @@ class CashbackPlugin {
         // PHP-фолбэки для логики MySQL-триггеров
         $this->require_file('includes/class-cashback-trigger-fallbacks.php');
 
+        // Ledger-write helper для ban/unban (Группа 14) — парная запись в
+        // cashback_balance_ledger при заморозке/разморозке баланса пользователя.
+        $this->require_file('includes/class-cashback-ban-ledger.php');
+
         // Подключение зависимых файлов (общие — нужны на фронтенде и в админке)
         $this->require_file('mariadb.php');
         $this->require_file('cashback-history.php');
@@ -582,6 +586,9 @@ class CashbackPlugin {
         // API клиент и cron (синхронизация работает через WP Cron)
         $this->require_file('includes/class-cashback-api-client.php');
         $this->require_file('includes/class-cashback-api-cron.php');
+
+        // Группа 14: ежедневная сверка ledger vs кэш баланса.
+        $this->require_file('includes/class-cashback-balance-reconciliation.php');
 
         // --- Click-session service (12i-2 ADR) — общий сервис для /activate и ?cashback_click= ---
         $this->require_file('includes/class-cashback-click-session-service.php');
@@ -730,6 +737,26 @@ class CashbackPlugin {
                 error_log('[Cashback] F-20-002 scoring_breakdown auto-migration failed: ' . $e->getMessage());
             }
         }
+
+        // Группа 14: ban_freeze/ban_unfreeze значения в ENUM type таблицы cashback_balance_ledger.
+        // Миграция идемпотентна — fast-path через COLUMN_TYPE из information_schema.
+        if (class_exists('Mariadb_Plugin')) {
+            try {
+                Mariadb_Plugin::get_instance()->migrate_ledger_ban_enum();
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] Ledger ban-enum auto-migration failed: ' . $e->getMessage());
+            }
+
+            // Группа 14 (шаг G): safety-backfill ledger.accrual для старых processed transactions.
+            // Fast-path через option-флаг cashback_ledger_accrual_backfill_v1.
+            try {
+                Mariadb_Plugin::get_instance()->migrate_backfill_ledger_accruals();
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] Ledger accrual backfill auto-migration failed: ' . $e->getMessage());
+            }
+        }
     }
 
     /**
@@ -825,6 +852,11 @@ class CashbackPlugin {
         // --- API Валидация: cron фоновой синхронизации (фронт + админка) ---
         if (class_exists('Cashback_API_Cron')) {
             Cashback_API_Cron::init();
+        }
+
+        // --- Группа 14: ежедневная сверка баланса (AS-job ledger vs cache) ---
+        if (class_exists('Cashback_Balance_Reconciliation')) {
+            Cashback_Balance_Reconciliation::init();
         }
 
         // --- REST API для браузерного расширения ---
