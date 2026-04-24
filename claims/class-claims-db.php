@@ -295,28 +295,70 @@ class Cashback_Claims_DB {
      * (time/merchant/user/consistency/risk) — чтобы админ в detail-карточке
      * видел, почему заявка получила такую цифру. Legacy-строки остаются
      * с NULL (admin UI их обрабатывает gracefully).
+     *
+     * Raw $wpdb->query без prepare — pattern из migrate_f22_003_attribution_model
+     * и create_tables (безопасно: $wpdb->prefix — не user input). `$wpdb->prepare`
+     * с `%i` + длинный COMMENT с non-ASCII отвергается валидатором wpdb на
+     * некоторых WP-версиях («invalid data»).
+     *
+     * Post-verify: после ALTER повторяем SHOW COLUMNS — только если колонка
+     * реально появилась, логируем success. Иначе — эскалация через
+     * report_migration_error.
      */
     public static function migrate_add_scoring_breakdown(): void {
         global $wpdb;
 
         $table = $wpdb->prefix . 'cashback_claims';
 
-        $col = $wpdb->get_results( $wpdb->prepare( 'SHOW COLUMNS FROM %i LIKE %s', $table, 'scoring_breakdown' ) );
-
-        if (empty($col)) {
-            // 12f ADR (F-20-001): классифицируем DDL-ошибки через is_known_ddl_error,
-            // непредвиденные эскалируем через report_migration_error.
-            $wpdb->query( $wpdb->prepare(
-                "ALTER TABLE %i ADD COLUMN `scoring_breakdown` text DEFAULT NULL COMMENT 'JSON разложение probability_score по 5 факторам (F-20-002)' AFTER `probability_score`",
-                $table
-            ) );
-            if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
-                self::report_migration_error('migrate_add_scoring_breakdown:add_column', $wpdb->last_error);
-            }
-
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('[Claims] Migration: added scoring_breakdown column to cashback_claims');
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table derived from $wpdb->prefix, not user input.
+        $col = $wpdb->get_results( "SHOW COLUMNS FROM `{$table}` LIKE 'scoring_breakdown'" );
+        if (!empty($col)) {
+            return;
         }
+
+        // 12f ADR (F-20-001): классифицируем DDL-ошибки через is_known_ddl_error,
+        // непредвиденные эскалируем через report_migration_error.
+        $alter_sql = "ALTER TABLE `{$table}` ADD COLUMN `scoring_breakdown` TEXT NULL DEFAULT NULL COMMENT 'JSON breakdown of probability_score (F-20-002)' AFTER `probability_score`";
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Static DDL; $table from $wpdb->prefix, not user input.
+        $wpdb->query($alter_sql);
+        if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
+            self::report_migration_error('migrate_add_scoring_breakdown:add_column', $wpdb->last_error);
+        }
+
+        // Post-verify: колонка реально создана? Иначе — эскалация.
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table from $wpdb->prefix, not user input.
+        $post_col = $wpdb->get_results( "SHOW COLUMNS FROM `{$table}` LIKE 'scoring_breakdown'" );
+        if (empty($post_col)) {
+            self::report_migration_error(
+                'migrate_add_scoring_breakdown:verify',
+                'ALTER TABLE did not create column (last_error=' . $wpdb->last_error . ')'
+            );
+            return;
+        }
+
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+        error_log('[Claims] Migration: added scoring_breakdown column to cashback_claims');
+    }
+
+    /**
+     * Per-request cached check: есть ли колонка scoring_breakdown в cashback_claims.
+     * Используется create() как defense-in-depth — если миграция не прошла
+     * (DDL silently failed, старая WP-версия, etc.), insert пропустит поле.
+     */
+    public static function has_scoring_breakdown_column(): bool {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'cashback_claims';
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table from $wpdb->prefix, not user input.
+        $col    = $wpdb->get_results( "SHOW COLUMNS FROM `{$table}` LIKE 'scoring_breakdown'" );
+        $cached = !empty($col);
+
+        return $cached;
     }
 
     /**
