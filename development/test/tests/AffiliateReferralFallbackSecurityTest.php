@@ -250,8 +250,9 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
     {
         $src = $this->read(self::DB_FILE);
 
+        // Учитываем backticks вокруг имени колонки (WP-convention).
         $this->assertMatchesRegularExpression(
-            "/attribution_source\s+ENUM\s*\(\s*['\"]cookie['\"]\s*,\s*['\"]transient['\"]\s*,\s*['\"]signed_token['\"]\s*\)/i",
+            "/attribution_source`?\s+ENUM\s*\(\s*['\"]cookie['\"]\s*,\s*['\"]transient['\"]\s*,\s*['\"]signed_token['\"]\s*\)/i",
             $src,
             "attribution_source ENUM должен быть ('cookie','transient','signed_token')."
         );
@@ -262,7 +263,7 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
         $src = $this->read(self::DB_FILE);
 
         $this->assertMatchesRegularExpression(
-            "/attribution_confidence\s+ENUM\s*\(\s*['\"]high['\"]\s*,\s*['\"]medium['\"]\s*,\s*['\"]low['\"]\s*\)/i",
+            "/attribution_confidence`?\s+ENUM\s*\(\s*['\"]high['\"]\s*,\s*['\"]medium['\"]\s*,\s*['\"]low['\"]\s*\)/i",
             $src,
             "attribution_confidence ENUM должен быть ('high','medium','low')."
         );
@@ -273,7 +274,7 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
         $src = $this->read(self::DB_FILE);
 
         $this->assertMatchesRegularExpression(
-            "/review_status\s+ENUM\s*\(\s*['\"]none['\"]\s*,\s*['\"]pending['\"]\s*,\s*['\"]manual_approved['\"]\s*,\s*['\"]manual_rejected['\"]\s*,\s*['\"]auto_approved['\"]\s*\)/i",
+            "/review_status`?\s+ENUM\s*\(\s*['\"]none['\"]\s*,\s*['\"]pending['\"]\s*,\s*['\"]manual_approved['\"]\s*,\s*['\"]manual_rejected['\"]\s*,\s*['\"]auto_approved['\"]\s*\)/i",
             $src,
             "review_status ENUM должен быть ('none','pending','manual_approved','manual_rejected','auto_approved')."
         );
@@ -284,7 +285,7 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
         $src = $this->read(self::DB_FILE);
 
         $this->assertMatchesRegularExpression(
-            "/referral_reward_eligible\s+TINYINT\s*\(\s*1\s*\)\s+NOT\s+NULL\s+DEFAULT\s+1/i",
+            "/referral_reward_eligible`?\s+TINYINT\s*\(\s*1\s*\)\s+NOT\s+NULL\s+DEFAULT\s+1/i",
             $src,
             'referral_reward_eligible TINYINT(1) NOT NULL DEFAULT 1 должно быть добавлено в profiles.'
         );
@@ -295,19 +296,19 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
         $src = $this->read(self::DB_FILE);
 
         $this->assertMatchesRegularExpression(
-            '/collision_detected\s+TINYINT\s*\(\s*1\s*\)\s+NOT\s+NULL\s+DEFAULT\s+0/i',
+            '/collision_detected`?\s+TINYINT\s*\(\s*1\s*\)\s+NOT\s+NULL\s+DEFAULT\s+0/i',
             $src,
             'collision_detected TINYINT(1) NOT NULL DEFAULT 0 должно быть в profiles.'
         );
 
         // LONGTEXT, НЕ JSON
         $this->assertMatchesRegularExpression(
-            '/antifraud_signals\s+LONGTEXT/i',
+            '/antifraud_signals`?\s+LONGTEXT/i',
             $src,
             'antifraud_signals должен быть LONGTEXT (MariaDB-совместимость, JSON валидируется в PHP).'
         );
         $this->assertDoesNotMatchRegularExpression(
-            '/antifraud_signals\s+JSON\b/i',
+            '/antifraud_signals`?\s+JSON\b/i',
             $src,
             'antifraud_signals НЕ должен быть JSON (MariaDB JSON = alias LONGTEXT с constraint — несовместимо).'
         );
@@ -339,8 +340,9 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
     {
         $src = $this->read(self::DB_FILE);
 
+        // UPDATE может использовать %i placeholder или литеральное имя таблицы.
         $this->assertMatchesRegularExpression(
-            "/UPDATE.{0,200}cashback_affiliate_profiles.{0,500}attribution_source\s*=\s*['\"]cookie['\"].{0,200}attribution_confidence\s*=\s*['\"]high['\"].{0,200}review_status\s*=\s*['\"]none['\"]/si",
+            "/UPDATE.{0,400}(?:cashback_affiliate_profiles|%i|\\\$profiles_table).{0,500}attribution_source\s*=\s*['\"]cookie['\"].{0,200}attribution_confidence\s*=\s*['\"]high['\"].{0,200}review_status\s*=\s*['\"]none['\"]/si",
             $src,
             'Backfill: existing bindings должны получить attribution_source=cookie, confidence=high, review_status=none.'
         );
@@ -423,17 +425,17 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
         $block = $m[0];
 
         $this->assertMatchesRegularExpression(
-            '/signals\s+LONGTEXT/i',
+            '/signals`?\s+LONGTEXT/i',
             $block,
             'cashback_affiliate_audit.signals должен быть LONGTEXT.'
         );
         $this->assertMatchesRegularExpression(
-            '/payload\s+LONGTEXT/i',
+            '/payload`?\s+LONGTEXT/i',
             $block,
             'cashback_affiliate_audit.payload должен быть LONGTEXT.'
         );
         $this->assertDoesNotMatchRegularExpression(
-            '/\b(signals|payload)\s+JSON\b/i',
+            '/(?<![_a-z])(signals|payload)`?\s+JSON\b/i',
             $block,
             'Audit-таблица НЕ должна использовать JSON тип (MariaDB-совместимость).'
         );

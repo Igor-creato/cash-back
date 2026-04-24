@@ -330,6 +330,7 @@ class CashbackPlugin {
         if (class_exists('Cashback_Affiliate_DB')) {
             Cashback_Affiliate_DB::create_tables();
             Cashback_Affiliate_DB::migrate_accruals_pending_statuses();
+            Cashback_Affiliate_DB::migrate_f22_003_attribution_model();
         }
 
         // Создание таблиц claims-модуля (неначисленный кэшбэк)
