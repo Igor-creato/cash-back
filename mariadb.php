@@ -2372,7 +2372,7 @@ class Mariadb_Plugin {
                     ));
 
                     if ($result !== false) {
-                        $total_updated++;
+                        ++$total_updated;
                         break;
                     }
 
