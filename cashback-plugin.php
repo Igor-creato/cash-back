@@ -578,6 +578,7 @@ class CashbackPlugin {
 
         // Affiliate module (реферальная программа)
         $this->require_file('affiliate/class-affiliate-db.php');
+        $this->require_file('affiliate/class-affiliate-audit.php');
         $this->require_file('affiliate/class-affiliate-antifraud.php');
         $this->require_file('affiliate/class-affiliate-service.php');
         $this->require_file('affiliate/class-affiliate-frontend.php');
