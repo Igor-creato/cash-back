@@ -28,6 +28,10 @@ class Cashback_Affiliate_Admin {
         add_action('wp_ajax_affiliate_get_partner_details', array( $this, 'handle_get_partner_details' ));
         add_action('wp_ajax_affiliate_bulk_update_commission_rate', array( $this, 'handle_bulk_update_commission_rate' ));
         add_action('wp_ajax_affiliate_edit_accrual', array( $this, 'handle_edit_accrual' ));
+
+        // F-22-003 (Группа 12): low-confidence review queue.
+        add_action('wp_ajax_affiliate_approve_low_confidence', array( $this, 'handle_approve_low_confidence' ));
+        add_action('wp_ajax_affiliate_reject_low_confidence', array( $this, 'handle_reject_low_confidence' ));
     }
 
     public function add_admin_menu(): void {
@@ -1335,5 +1339,205 @@ class Cashback_Affiliate_Admin {
         }
 
         wp_send_json_success($response_data);
+    }
+
+    /* ═══════════════════════════════════════
+     *  F-22-003 — Low-confidence review queue (Step 12)
+     * ═══════════════════════════════════════ */
+
+    /**
+     * AJAX: Admin одобряет low-confidence привязку.
+     *
+     * Actions:
+     *   • cashback_affiliate_profiles: review_status → 'manual_approved'
+     *   • cashback_affiliate_accruals (pending этого юзера):
+     *     review_status_at_creation → 'manual_approved'
+     *   • process_affiliate_commissions() чтобы pending → available.
+     *   • Audit 'manual_approve' с actor_user_id=current admin.
+     *
+     * attribution_confidence НЕ трогаем (immutable) — меняется только
+     * review_status и payout-eligibility.
+     */
+    public function handle_approve_low_confidence(): void {
+        if (!wp_verify_nonce(
+            sanitize_text_field(wp_unslash($_POST['nonce'] ?? '')),
+            'affiliate_review_nonce'
+        )) {
+            wp_send_json_error(array( 'message' => self::MSG_INVALID_NONCE ));
+            return;
+        }
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array( 'message' => self::MSG_NO_PERMISSION ));
+            return;
+        }
+
+        $user_id = isset($_POST['user_id']) ? absint($_POST['user_id']) : 0;
+        if ($user_id < 1) {
+            wp_send_json_error(array( 'message' => 'Не указан пользователь.' ));
+            return;
+        }
+
+        global $wpdb;
+        $profiles_table = $wpdb->prefix . 'cashback_affiliate_profiles';
+        $accruals_table = $wpdb->prefix . 'cashback_affiliate_accruals';
+
+        $wpdb->query('START TRANSACTION');
+
+        try {
+            // Атомарный перевод review_status='pending' → 'manual_approved'.
+            // TOCTOU-guard на текущий 'pending' — защищает от параллельного
+            // cron auto-promote или повторного approve.
+            $updated = $wpdb->query($wpdb->prepare(
+                "UPDATE %i
+                 SET review_status = 'manual_approved'
+                 WHERE user_id = %d AND review_status = 'pending'
+                 LIMIT 1",
+                $profiles_table,
+                $user_id
+            ));
+
+            if ($updated !== 1) {
+                $wpdb->query('ROLLBACK');
+                wp_send_json_error(array(
+                    'message' => 'Запись не найдена или уже обработана.',
+                ), 409);
+                return;
+            }
+
+            // Accrual snapshot → manual_approved для pending этого юзера.
+            $wpdb->query($wpdb->prepare(
+                "UPDATE %i
+                 SET review_status_at_creation = 'manual_approved'
+                 WHERE referred_user_id = %d AND status = 'pending'",
+                $accruals_table,
+                $user_id
+            ));
+
+            // Собираем кандидатов для process_affiliate_commissions — гейт
+            // теперь разрешит available (см. Шаг 8).
+            $promote_txs = $wpdb->get_results($wpdb->prepare(
+                "SELECT transaction_id AS id, referred_user_id AS user_id, cashback_amount AS cashback
+                 FROM %i
+                 WHERE referred_user_id = %d
+                   AND status = 'pending'
+                   AND review_status_at_creation = 'manual_approved'",
+                $accruals_table,
+                $user_id
+            ), ARRAY_A);
+
+            $wpdb->query('COMMIT');
+
+            if (is_array($promote_txs) && !empty($promote_txs) && class_exists('Cashback_Affiliate_Service')) {
+                Cashback_Affiliate_Service::process_affiliate_commissions($promote_txs, false);
+            }
+
+            if (class_exists('Cashback_Affiliate_Audit')) {
+                Cashback_Affiliate_Audit::log('manual_approve', array(
+                    'actor_user_id'  => get_current_user_id(),
+                    'target_user_id' => $user_id,
+                    'reason'         => 'admin_review_queue',
+                ));
+            }
+
+            wp_send_json_success(array(
+                'message'           => 'Привязка одобрена.',
+                'accruals_promoted' => is_array($promote_txs) ? count($promote_txs) : 0,
+            ));
+        } catch (\Throwable $e) {
+            $wpdb->query('ROLLBACK');
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Diagnostic: grep '[Affiliate] approve_low_confidence'.
+            error_log('[Affiliate] approve_low_confidence failed: ' . $e->getMessage());
+            wp_send_json_error(array( 'message' => 'Ошибка обработки.' ), 500);
+        }
+    }
+
+    /**
+     * AJAX: Admin отклоняет low-confidence привязку.
+     *
+     * Actions:
+     *   • cashback_affiliate_profiles:
+     *     review_status='manual_rejected', referral_reward_eligible=0
+     *     (последнее делает юзера навсегда ineligible для accrual —
+     *     process_affiliate_commissions пропустит его в SELECT profiles).
+     *   • cashback_affiliate_accruals (pending): status='declined'.
+     *   • Audit 'manual_reject' с actor_user_id=current admin.
+     *
+     * Связку не снимаем (referred_by_user_id immutable) — только
+     * блокируем payout.
+     */
+    public function handle_reject_low_confidence(): void {
+        if (!wp_verify_nonce(
+            sanitize_text_field(wp_unslash($_POST['nonce'] ?? '')),
+            'affiliate_review_nonce'
+        )) {
+            wp_send_json_error(array( 'message' => self::MSG_INVALID_NONCE ));
+            return;
+        }
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array( 'message' => self::MSG_NO_PERMISSION ));
+            return;
+        }
+
+        $user_id = isset($_POST['user_id']) ? absint($_POST['user_id']) : 0;
+        if ($user_id < 1) {
+            wp_send_json_error(array( 'message' => 'Не указан пользователь.' ));
+            return;
+        }
+
+        global $wpdb;
+        $profiles_table = $wpdb->prefix . 'cashback_affiliate_profiles';
+        $accruals_table = $wpdb->prefix . 'cashback_affiliate_accruals';
+
+        $wpdb->query('START TRANSACTION');
+
+        try {
+            // Profile: review_status='manual_rejected', referral_reward_eligible=0.
+            $updated = $wpdb->query($wpdb->prepare(
+                "UPDATE %i
+                 SET review_status            = 'manual_rejected',
+                     referral_reward_eligible = 0
+                 WHERE user_id = %d AND review_status = 'pending'
+                 LIMIT 1",
+                $profiles_table,
+                $user_id
+            ));
+
+            if ($updated !== 1) {
+                $wpdb->query('ROLLBACK');
+                wp_send_json_error(array(
+                    'message' => 'Запись не найдена или уже обработана.',
+                ), 409);
+                return;
+            }
+
+            // Все pending accruals этого юзера → status='declined'.
+            $declined = $wpdb->query($wpdb->prepare(
+                "UPDATE %i
+                 SET status = 'declined'
+                 WHERE referred_user_id = %d AND status = 'pending'",
+                $accruals_table,
+                $user_id
+            ));
+
+            $wpdb->query('COMMIT');
+
+            if (class_exists('Cashback_Affiliate_Audit')) {
+                Cashback_Affiliate_Audit::log('manual_reject', array(
+                    'actor_user_id'  => get_current_user_id(),
+                    'target_user_id' => $user_id,
+                    'reason'         => 'admin_review_queue',
+                ));
+            }
+
+            wp_send_json_success(array(
+                'message'           => 'Привязка отклонена.',
+                'accruals_declined' => (int) $declined,
+            ));
+        } catch (\Throwable $e) {
+            $wpdb->query('ROLLBACK');
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Diagnostic: grep '[Affiliate] reject_low_confidence'.
+            error_log('[Affiliate] reject_low_confidence failed: ' . $e->getMessage());
+            wp_send_json_error(array( 'message' => 'Ошибка обработки.' ), 500);
+        }
     }
 }
