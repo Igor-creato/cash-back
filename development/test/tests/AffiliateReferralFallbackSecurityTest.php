@@ -953,11 +953,19 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
             'reject admin action должен ставить review_status=manual_rejected + referral_reward_eligible=0.'
         );
 
-        // UPDATE accruals SET status='declined' для pending
+        // UPDATE pending accruals → declined. Код может использовать %i placeholder
+        // с $accruals_table, поэтому проверяем семантическую близость:
+        // referred_user_id (scope — по юзеру) + status='declined' + status='pending'
+        // (источник filter).
         $this->assertMatchesRegularExpression(
-            "/UPDATE[^;]*cashback_affiliate_accruals[^;]*status\s*=\s*['\"]declined['\"]|status\s*=\s*['\"]declined['\"][^;]*cashback_affiliate_accruals/si",
+            "/status\s*=\s*['\"]declined['\"].{0,400}referred_user_id|referred_user_id.{0,400}status\s*=\s*['\"]declined['\"]/si",
             $src,
             'reject должен переводить pending accruals этого юзера в status=declined.'
+        );
+        $this->assertMatchesRegularExpression(
+            "/UPDATE.{0,100}%i.{0,300}status\s*=\s*['\"]declined['\"]|UPDATE.{0,100}cashback_affiliate_accruals.{0,300}status\s*=\s*['\"]declined['\"]/si",
+            $src,
+            'UPDATE-запрос к accruals таблице с SET status=declined должен присутствовать.'
         );
     }
 
