@@ -171,10 +171,10 @@ final class Cashback_Balance_Issue_Renderer {
 		$cache_frozen    = isset( $cache['frozen_balance'] ) ? (string) $cache['frozen_balance'] : '0.00';
 
 		$rows = array(
-			array( 'Доступно',             $ledger_available, $cache_available ),
-			array( 'В ожидании выплаты',   $ledger_pending,   $cache_pending ),
-			array( 'Выплачено',            $ledger_paid,      $cache_paid ),
-			array( 'Заморожено',           null,              $cache_frozen ),
+			array( 'Доступно', $ledger_available, $cache_available ),
+			array( 'В ожидании выплаты', $ledger_pending, $cache_pending ),
+			array( 'Выплачено', $ledger_paid, $cache_paid ),
+			array( 'Заморожено', null, $cache_frozen ),
 		);
 
 		// ИТОГО: ledger_total = available + pending + paid (frozen в snapshot'е не лежит).
@@ -248,18 +248,18 @@ final class Cashback_Balance_Issue_Renderer {
 		// Группировка по знаку amount: приходы / расходы / бан.
 		// Справочник: label + группа. Нулевые типы скрываем.
 		$catalog = array(
-			'accrual'            => array( 'Начислен кэшбэк',                 'income' ),
-			'affiliate_accrual'  => array( 'Партнёрская комиссия начислена',  'income' ),
-			'affiliate_unfreeze' => array( 'Партнёрская: разморожено',        'income' ),
-			'payout_cancel'      => array( 'Возврат по отменённой заявке',    'income' ),
-			'payout_hold'        => array( 'Заявка на выплату (блокировка)',  'outflow' ),
-			'payout_complete'    => array( 'Выплачено на реквизиты',          'outflow' ),
-			'payout_declined'    => array( 'Выплата отклонена (заморожено)',  'outflow' ),
-			'affiliate_reversal' => array( 'Партнёрская: отмена начисления',  'outflow' ),
-			'affiliate_freeze'   => array( 'Партнёрская: заморожено',         'outflow' ),
-			'ban_freeze'         => array( 'Заморожено при бане',             'ban' ),
-			'ban_unfreeze'       => array( 'Разморожено при разбане',         'ban' ),
-			'adjustment'         => array( 'Ручная корректировка',            'adjustment' ),
+			'accrual'            => array( 'Начислен кэшбэк', 'income' ),
+			'affiliate_accrual'  => array( 'Партнёрская комиссия начислена', 'income' ),
+			'affiliate_unfreeze' => array( 'Партнёрская: разморожено', 'income' ),
+			'payout_cancel'      => array( 'Возврат по отменённой заявке', 'income' ),
+			'payout_hold'        => array( 'Заявка на выплату (блокировка)', 'outflow' ),
+			'payout_complete'    => array( 'Выплачено на реквизиты', 'outflow' ),
+			'payout_declined'    => array( 'Выплата отклонена (заморожено)', 'outflow' ),
+			'affiliate_reversal' => array( 'Партнёрская: отмена начисления', 'outflow' ),
+			'affiliate_freeze'   => array( 'Партнёрская: заморожено', 'outflow' ),
+			'ban_freeze'         => array( 'Заморожено при бане', 'ban' ),
+			'ban_unfreeze'       => array( 'Разморожено при разбане', 'ban' ),
+			'adjustment'         => array( 'Ручная корректировка', 'adjustment' ),
 		);
 
 		$groups = array(
