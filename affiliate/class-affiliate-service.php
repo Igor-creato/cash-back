@@ -100,6 +100,24 @@ class Cashback_Affiliate_Service {
             // phpcs:ignore WordPressVIPMinimum.Variables.ServerVariables.UserControlledHeaders,WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__REMOTE_ADDR__ -- REMOTE_ADDR set by webserver from TCP connection, not client-controlled; per-request only.
             : ( isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '0.0.0.0' );
 
+        // F-22-003: rate-limit на click entry-point. Проверяется ПОСЛЕ валидации
+        // partner_token (чтобы не тратить лимит на мусор) и ДО log_click/cookie.
+        // При blocked — audit обязателен (иначе RL = чёрная дыра).
+        if (class_exists('Cashback_Rate_Limiter')) {
+            $rl_check = Cashback_Rate_Limiter::check('affiliate_click', 0, $ip);
+            if (empty($rl_check['allowed'])) {
+                if (class_exists('Cashback_Affiliate_Audit')) {
+                    Cashback_Affiliate_Audit::log('rate_limit_blocked_click', array(
+                        'referrer_id'        => $referrer_id,
+                        'partner_token_hash' => hash('sha256', $ref_raw),
+                        'ip_hash'            => hash('sha256', $ip),
+                        'reason'             => 'affiliate_click_rate_limit',
+                    ));
+                }
+                return;
+            }
+        }
+
         // Логирование клика
         $this->log_click($click_id, $referrer_id, $ip);
 
