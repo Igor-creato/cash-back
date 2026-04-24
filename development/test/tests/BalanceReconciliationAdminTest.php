@@ -216,4 +216,110 @@ final class BalanceReconciliationAdminTest extends TestCase
             'S1.B: таблица расхождений должна использовать WP-native класс wp-list-table'
         );
     }
+
+    // =========================================================================
+    // S1.C — manual-run кнопка (admin_post + single-lock + redirect-flash)
+    // =========================================================================
+
+    public function test_admin_class_registers_admin_post_manual_run_hook(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        $this->assertMatchesRegularExpression(
+            "/add_action\s*\(\s*'admin_post_cashback_reconcil_manual_run'\s*,/",
+            $src,
+            'S1.C: admin_post_cashback_reconcil_manual_run должен быть зарегистрирован в init()'
+        );
+    }
+
+    public function test_admin_class_has_handle_manual_run_method(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        $this->assertMatchesRegularExpression(
+            '/public\s+static\s+function\s+handle_manual_run\s*\(\s*\)\s*:\s*void/',
+            $src,
+            'S1.C: handle_manual_run должен быть public static function(): void'
+        );
+    }
+
+    public function test_admin_class_checks_nonce_in_manual_run(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        $this->assertStringContainsString(
+            'check_admin_referer',
+            $src,
+            'S1.C: handle_manual_run должен валидировать nonce через check_admin_referer'
+        );
+    }
+
+    public function test_admin_class_uses_get_lock_for_concurrent_runs(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        $this->assertStringContainsString(
+            "GET_LOCK('cashback_reconcil_manual', 0)",
+            $src,
+            'S1.C: параллельные нажатия должны блокироваться GET_LOCK(..., 0)'
+        );
+        $this->assertStringContainsString(
+            "RELEASE_LOCK('cashback_reconcil_manual')",
+            $src,
+            'S1.C: лок должен освобождаться через RELEASE_LOCK'
+        );
+    }
+
+    public function test_admin_class_calls_reconciliation_run_in_manual_handler(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        $this->assertStringContainsString(
+            'Cashback_Balance_Reconciliation::run()',
+            $src,
+            'S1.C: handle_manual_run должен вызывать Cashback_Balance_Reconciliation::run()'
+        );
+    }
+
+    public function test_admin_class_caps_manual_run_batches(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        // Защита от бесконечного цикла на огромных таблицах — max_batches константа.
+        $this->assertMatchesRegularExpression(
+            '/MANUAL_RUN_MAX_BATCHES\s*=\s*20/',
+            $src,
+            'S1.C: максимум батчей в manual-run должен быть 20 (защита от таймаута)'
+        );
+    }
+
+    public function test_admin_class_redirects_with_flash_after_manual_run(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        $this->assertStringContainsString(
+            'wp_safe_redirect',
+            $src,
+            'S1.C: handle_manual_run должен редиректить через wp_safe_redirect'
+        );
+        $this->assertMatchesRegularExpression(
+            '/set_transient\s*\(\s*[\'"]cashback_reconcil_flash_/',
+            $src,
+            'S1.C: flash-сообщение через transient cashback_reconcil_flash_<user_id>'
+        );
+    }
+
+    public function test_render_page_has_manual_run_form(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        // Форма POST-ит на admin-post.php — URL строится через admin_url().
+        $this->assertMatchesRegularExpression(
+            "/admin_url\(\s*['\"]admin-post\.php['\"]\s*\)/",
+            $src,
+            'S1.C: форма должна POST-ить на admin_url(admin-post.php)'
+        );
+        $this->assertStringContainsString(
+            'cashback_reconcil_manual_run',
+            $src,
+            'S1.C: форма должна иметь hidden input action=cashback_reconcil_manual_run'
+        );
+        $this->assertStringContainsString(
+            'wp_nonce_field',
+            $src,
+            'S1.C: форма должна содержать wp_nonce_field'
+        );
+    }
 }
