@@ -2287,6 +2287,84 @@ class Cashback_API_Client {
 
                 ++$updated;
 
+                // Группа 14 (ledger-first, шаг D): reversal. Если транзакция уже
+                // процессена в ledger (processed_at IS NOT NULL) и CPA-сеть изменила
+                // статус completed → declined, списываем прежнее начисление через
+                // запись type='adjustment' с reference_type='reversal'. В той же TX
+                // декрементим cashback_user_balance.available_balance (clamp>=0) —
+                // иначе пользователь видит неизменённый баланс до reconciliation-job'a.
+                // Идемпотентно: UNIQUE idempotency_key = reversal_tx_{id} гарантирует
+                // однократность даже при retry sync_update_local.
+                if (
+                    ! empty( $fresh['processed_at'] )
+                    && $status_changed
+                    && $table === $this->transactions_table
+                    && $local_status === 'completed'
+                    && $mapped_status === 'declined'
+                ) {
+                    $old_cashback = Cashback_Money::from_db_value( (string) ( $fresh['cashback'] ?? '0' ) );
+                    if ( ! $old_cashback->is_zero() && ! $old_cashback->is_negative() ) {
+                        $reversal_amount = bcmul( $old_cashback->to_db_value(), '-1', 2 );
+                        $reversal_idem   = sprintf( 'reversal_tx_%d', (int) $fresh['id'] );
+                        $ledger_table    = $wpdb->prefix . 'cashback_balance_ledger';
+                        $balance_table   = $wpdb->prefix . 'cashback_user_balance';
+
+                        $ledger_ok = $wpdb->query( $wpdb->prepare(
+                            'INSERT INTO %i (user_id, type, amount, transaction_id, reference_type, idempotency_key)
+                             VALUES (%d, %s, %s, %d, %s, %s)
+                             ON DUPLICATE KEY UPDATE id = id',
+                            $ledger_table,
+                            (int) $fresh['user_id'],
+                            'adjustment',
+                            $reversal_amount,
+                            (int) $fresh['id'],
+                            'reversal',
+                            $reversal_idem
+                        ) );
+
+                        if ( $ledger_ok === false ) {
+                            $this->throw_if_deadlock( $wpdb );
+                            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                            error_log( sprintf(
+                                '[Cashback Sync] reversal ledger INSERT failed for tx id=%d: %s',
+                                (int) $fresh['id'],
+                                $wpdb->last_error
+                            ) );
+                            ++$update_errors;
+                            if ( $owns_tx ) {
+                                $wpdb->query( 'ROLLBACK' );
+                            }
+                            return;
+                        }
+
+                        if ( (int) $wpdb->rows_affected === 1 ) {
+                            $cache_ok = $wpdb->query( $wpdb->prepare(
+                                'UPDATE %i
+                                 SET available_balance = GREATEST(0.00, available_balance - %s),
+                                     version = version + 1
+                                 WHERE user_id = %d',
+                                $balance_table,
+                                $old_cashback->to_db_value(),
+                                (int) $fresh['user_id']
+                            ) );
+                            if ( $cache_ok === false ) {
+                                $this->throw_if_deadlock( $wpdb );
+                                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                                error_log( sprintf(
+                                    '[Cashback Sync] reversal balance UPDATE failed for user_id=%d: %s',
+                                    (int) $fresh['user_id'],
+                                    $wpdb->last_error
+                                ) );
+                                ++$update_errors;
+                                if ( $owns_tx ) {
+                                    $wpdb->query( 'ROLLBACK' );
+                                }
+                                return;
+                            }
+                        }
+                    }
+                }
+
                 // Запись в очередь уведомлений (вместо MySQL триггера)
                 $this->enqueue_notification_on_update(
                     $wpdb,

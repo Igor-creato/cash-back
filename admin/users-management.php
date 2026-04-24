@@ -458,7 +458,7 @@ class Cashback_Users_Management_Admin {
         try {
             // БЛОКИРУЕМ строку профиля с FOR UPDATE для предотвращения race conditions.
             $profile = $wpdb->get_row($wpdb->prepare(
-                'SELECT status, ban_reason FROM %i WHERE user_id = %d FOR UPDATE',
+                'SELECT status, ban_reason, banned_at FROM %i WHERE user_id = %d FOR UPDATE',
                 $this->profile_table_name,
                 $user_id
             ));
@@ -467,7 +467,10 @@ class Cashback_Users_Management_Admin {
                 throw new Exception('Профиль пользователя не найден');
             }
 
-            $old_status = $profile->status;
+            $old_status         = $profile->status;
+            $old_banned_at_unix = (isset($profile->banned_at) && $profile->banned_at)
+                ? (int) strtotime((string) $profile->banned_at)
+                : 0;
 
             // PHP-фолбэк: установка banned_at при бане / очистка при разбане
             if (isset($status)) {
@@ -484,6 +487,18 @@ class Cashback_Users_Management_Admin {
             // Добавляем дату обновления
             $update_data['updated_at'] = current_time('mysql');
             $update_formats[]          = '%s';
+
+            // Группа 14 (ledger-first): пишем ban_unfreeze в ledger ДО UPDATE profile.
+            // Триггер tr_unfreeze_balance_on_unban (или PHP-fallback
+            // Cashback_Trigger_Fallbacks::unfreeze_balance_on_unban) обнулит ban-бакеты
+            // при срабатывании на UPDATE → нужно зафиксировать сумму, пока она ещё в
+            // frozen_balance_ban / frozen_pending_balance_ban. Идемпотентно через
+            // UNIQUE ledger.idempotency_key = ban_unfreeze_{user_id}_{old_banned_at}.
+            if ($old_status === 'banned' && isset($status) && $status !== 'banned'
+                && $old_banned_at_unix > 0 && class_exists('Cashback_Ban_Ledger')
+            ) {
+                Cashback_Ban_Ledger::write_unfreeze_entry($user_id, $old_banned_at_unix);
+            }
 
             // Обновляем только те поля, которые были изменены
             $result = $wpdb->update(
@@ -509,6 +524,17 @@ class Cashback_Users_Management_Admin {
 
                 if (!$ban_success) {
                     throw new Exception('Ошибка при обработке бана пользователя');
+                }
+
+                // Группа 14 (ledger-first): пишем ban_freeze в ledger ПОСЛЕ UPDATE profile
+                // и после handle_user_ban (freeze_balance_on_ban fallback + триггер уже
+                // переместили available/pending → frozen_*_ban). idempotency_key =
+                // ban_freeze_{user_id}_{new_banned_at} детерминирован от set_banned_at().
+                if (isset($update_data['banned_at']) && class_exists('Cashback_Ban_Ledger')) {
+                    $new_banned_at_unix = (int) strtotime((string) $update_data['banned_at']);
+                    if ($new_banned_at_unix > 0) {
+                        Cashback_Ban_Ledger::write_freeze_entry($user_id, $new_banned_at_unix);
+                    }
                 }
             }
 
