@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
  * Сервис управления click-sessions (12i-2 ADR, F-10-001).
  *
  * Инкапсулирует dedup-логику через SELECT FOR UPDATE по
- * (user_id, product_id, status='active', expires_at>NOW()), merchant policy clamp
+ * (user_id, product_id, status='active', expires_at>UTC_TIMESTAMP()), merchant policy clamp
  * (reuse_in_window / always_new / reuse_per_product) и запись сессии + tap-event'а
  * в cashback_click_sessions / cashback_click_log.
  *
@@ -172,11 +172,14 @@ final class Cashback_Click_Session_Service {
             $existing = null;
             if ($policy !== 'always_new') {
                 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- FOR UPDATE inside TX (Group 8 pattern).
+                // expires_at пишется через gmdate() (UTC), поэтому сравнение тоже в UTC:
+                // NOW() возвращает server local time — timezone mismatch рушит dedup
+                // (production bug: каждый клик создавал новую сессию при server != UTC).
                 $existing = $wpdb->get_row($wpdb->prepare(
                     "SELECT id, canonical_click_id, affiliate_url, tap_count
                        FROM %i
                       WHERE user_id = %d AND product_id = %d
-                        AND status = 'active' AND expires_at > NOW()
+                        AND status = 'active' AND expires_at > UTC_TIMESTAMP()
                       ORDER BY created_at DESC LIMIT 1
                       FOR UPDATE",
                     $sessions_t,
@@ -186,10 +189,10 @@ final class Cashback_Click_Session_Service {
             }
 
             if (is_array($existing) && !empty($existing['id'])) {
-                // Reuse: inc tap_count + last_tap_at = NOW().
+                // Reuse: inc tap_count + last_tap_at = UTC (match gmdate-written expires_at).
                 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Update inside TX.
                 $wpdb->query($wpdb->prepare(
-                    'UPDATE %i SET tap_count = tap_count + 1, last_tap_at = NOW(6) WHERE id = %d',
+                    'UPDATE %i SET tap_count = tap_count + 1, last_tap_at = UTC_TIMESTAMP(6) WHERE id = %d',
                     $sessions_t,
                     (int) $existing['id']
                 ));
