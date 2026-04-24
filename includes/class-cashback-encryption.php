@@ -65,6 +65,17 @@ class Cashback_Encryption {
     /** Соль HMAC для fingerprint — та же, что у Cashback_Encryption_Recovery. */
     private const FINGERPRINT_SALT = 'cashback_fingerprint_v1';
 
+    /**
+     * Соли для domain-separated HMAC-подписей URL / cookie (F-2-001 hardening).
+     *
+     * Ключи подписей derive'ятся из CB_ENCRYPTION_KEY (primary role) через HMAC-SHA256
+     * с этими солями — каждая подпись использует разный дериват, подмена одного контекста
+     * другим невозможна. При key rotation ключ меняется → старые подписи
+     * инвалидируются, что соответствует коротким TTL (5-min URL, 30-min cookie).
+     */
+    private const ACTIVATION_TOKEN_SALT = 'cashback_activation_token_v1';
+    private const COOKIE_SIGNATURE_SALT = 'cashback_cookie_signature_v1';
+
     /** wp_option с состоянием ротации — см. Cashback_Key_Rotation::STATE_OPTION. */
     private const ROTATION_STATE_OPTION = 'cashback_key_rotation_state';
 
@@ -185,6 +196,135 @@ class Cashback_Encryption {
         }
         $hex = (string) constant(self::KEY_CONSTANTS[ $role ]);
         return hash_hmac('sha256', $hex, self::FINGERPRINT_SALT);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // F-2-001 hardening — HMAC-подписи activation URL / cookie.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Подписывает activation token для URL `?cashback_go=1&click_id=…&t=…`.
+     *
+     * Привязка к user_id — защита от reuse чужого click_id авторизованным юзером
+     * (activation page доступна только logged-in; guard сам по себе не предотвращает
+     * IDOR по click_id). TTL проверяется в verify_activation_token по $max_age_sec.
+     *
+     * Формат токена: `base64url(pack('N', issued_at))` . `.` . `base64url(hmac_8bytes)`.
+     * Короткий 64-bit HMAC достаточен для 5-min TTL — бюджет подбора < 2^63 операций.
+     *
+     * @param string $click_id  32-hex canonical_click_id.
+     * @param int    $user_id   ID авторизованного пользователя (>0 — для гостей токен не нужен).
+     * @param int    $issued_at Unix timestamp (сек.) создания токена.
+     */
+    public static function sign_activation_token( string $click_id, int $user_id, int $issued_at ): string {
+        $payload   = $issued_at . '|' . $click_id . '|' . $user_id;
+        $key       = self::derive_signing_key(self::ACTIVATION_TOKEN_SALT);
+        $hmac_full = hash_hmac('sha256', $payload, $key, true);
+        $hmac_8    = substr($hmac_full, 0, 8);
+
+        return self::base64url_encode(pack('N', $issued_at)) . '.' . self::base64url_encode($hmac_8);
+    }
+
+    /**
+     * Проверяет activation token: подпись + age window + привязка к (click_id, user_id).
+     *
+     * Fail-closed на любой аномалии (битый base64, неверная длина, clock-skew,
+     * истекший TTL, HMAC mismatch). Используется `hash_equals` — timing-safe compare.
+     *
+     * @param int $max_age_sec Макс. возраст токена в секундах (по умолчанию 5 минут).
+     */
+    public static function verify_activation_token( string $token, string $click_id, int $user_id, int $max_age_sec = 300 ): bool {
+        $parts = explode('.', $token, 2);
+        if (count($parts) !== 2) {
+            return false;
+        }
+
+        $issued_bytes = self::base64url_decode($parts[0]);
+        $hmac_bytes   = self::base64url_decode($parts[1]);
+        if ($issued_bytes === null || $hmac_bytes === null) {
+            return false;
+        }
+        if (strlen($issued_bytes) !== 4 || strlen($hmac_bytes) !== 8) {
+            return false;
+        }
+
+        $unpacked = unpack('N', $issued_bytes);
+        if (!is_array($unpacked) || !isset($unpacked[1])) {
+            return false;
+        }
+        $issued_at = (int) $unpacked[1];
+
+        $now = time();
+        // Отрицательный clock-skew (токен «из будущего») допускаем до 30 секунд, дальше — отказ.
+        if ($issued_at > $now + 30) {
+            return false;
+        }
+        if ($issued_at + $max_age_sec < $now) {
+            return false;
+        }
+
+        $expected = self::sign_activation_token($click_id, $user_id, $issued_at);
+        return hash_equals($expected, $token);
+    }
+
+    /**
+     * Подписывает cookie payload `cb_activation`.
+     *
+     * Используется additively (non-breaking): старые клиенты cookie без поля `sig`
+     * читаются без проверки; сервер ужесточает проверку после окна миграции
+     * браузерного расширения.
+     *
+     * Формат подписи: `base64url(hmac_16bytes)` (128-bit — с запасом для 30-min TTL).
+     *
+     * @param string $click_id 32-hex canonical_click_id.
+     * @param string $domain   Нормализованный store domain (lowercase без протокола).
+     * @param int    $ts       Unix timestamp (сек.) записи cookie.
+     */
+    public static function sign_cookie_payload( string $click_id, string $domain, int $ts ): string {
+        $payload   = $click_id . '|' . strtolower($domain) . '|' . $ts;
+        $key       = self::derive_signing_key(self::COOKIE_SIGNATURE_SALT);
+        $hmac_full = hash_hmac('sha256', $payload, $key, true);
+
+        return self::base64url_encode(substr($hmac_full, 0, 16));
+    }
+
+    /**
+     * Проверяет cookie payload: fail-closed при несовпадении.
+     * TTL проверяется caller'ом по полю `ts` из cookie JSON (ограничен setcookie expires).
+     */
+    public static function verify_cookie_payload( string $sig, string $click_id, string $domain, int $ts ): bool {
+        $expected = self::sign_cookie_payload($click_id, $domain, $ts);
+        return hash_equals($expected, $sig);
+    }
+
+    /**
+     * Дериват 32-байтного ключа подписи из primary encryption key через HMAC-SHA256.
+     * Соль — domain-separator (activation vs cookie), чтобы один ключ нельзя было
+     * использовать для подделки подписи другого типа.
+     */
+    private static function derive_signing_key( string $salt ): string {
+        $master = self::get_key_binary(self::KEY_ROLE_PRIMARY);
+        return hash_hmac('sha256', $salt, $master, true);
+    }
+
+    /**
+     * URL-safe base64 encode: `+` → `-`, `/` → `_`, без padding `=`.
+     */
+    private static function base64url_encode( string $data ): string {
+        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+    }
+
+    /**
+     * URL-safe base64 decode (обратная операция). Возвращает null при невалидном вводе.
+     */
+    private static function base64url_decode( string $data ): ?string {
+        $normalized = strtr($data, '-_', '+/');
+        $pad        = strlen($normalized) % 4;
+        if ($pad > 0) {
+            $normalized .= str_repeat('=', 4 - $pad);
+        }
+        $decoded = base64_decode($normalized, true);
+        return $decoded === false ? null : $decoded;
     }
 
     /**

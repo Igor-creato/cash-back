@@ -207,37 +207,21 @@ class WcAffiliateUrlSchemeValidationTest extends TestCase
     // 3. handle_click_redirect валидирует $fallback_url
     // =====================================================================
 
-    public function test_handle_click_redirect_validates_fallback_url(): void
+    public function test_handle_click_redirect_validates_affiliate_url(): void
     {
         $body = $this->extract_method('handle_click_redirect');
 
-        // $fallback_url инициализируется через get_product_url() и валидируется через helper.
+        // После group 12 refactor: affiliate_url приходит из сервиса, handle_click_redirect
+        // прогоняет его через is_safe_http_url перед финальным редиректом.
         self::assertMatchesRegularExpression(
-            '/\$fallback_url\s*=\s*\$product->get_product_url\s*\(\s*\)/',
+            '/is_safe_http_url\s*\(\s*\$affiliate_url\s*\)/',
             $body,
-            'Regression: инициализация $fallback_url через get_product_url() должна сохраниться.'
+            'F-2-001: handle_click_redirect должен валидировать $affiliate_url через is_safe_http_url перед редиректом.'
         );
 
+        // При fail валидации — wp_redirect(home_url(), 302) + exit.
         self::assertMatchesRegularExpression(
-            '/is_safe_http_url\s*\(\s*\$fallback_url\s*\)/',
-            $body,
-            'F-2-001: handle_click_redirect должен валидировать $fallback_url через is_safe_http_url.'
-        );
-
-        // Порядок: get_product_url() → is_safe_http_url($fallback_url).
-        $get_pos = strpos($body, '$product->get_product_url()');
-        $chk_pos = strpos($body, 'is_safe_http_url($fallback_url)');
-        self::assertIsInt($get_pos);
-        self::assertIsInt($chk_pos);
-        self::assertLessThan(
-            $chk_pos,
-            $get_pos,
-            'F-2-001: is_safe_http_url($fallback_url) должен стоять ПОСЛЕ $fallback_url = get_product_url().'
-        );
-
-        // При fail валидации — wp_redirect(home_url(), 302).
-        self::assertMatchesRegularExpression(
-            '/!\s*\$this->is_safe_http_url\s*\(\s*\$fallback_url\s*\)[\s\S]{0,600}wp_redirect\s*\(\s*home_url\s*\(\s*\)\s*,\s*302/',
+            '/!\s*\$this->is_safe_http_url\s*\(\s*\$affiliate_url\s*\)[\s\S]{0,600}wp_redirect\s*\(\s*home_url\s*\(\s*\)\s*,\s*302/',
             $body,
             'F-2-001: при fail валидации должна быть ветка wp_redirect(home_url(), 302) + exit.'
         );
@@ -257,26 +241,13 @@ class WcAffiliateUrlSchemeValidationTest extends TestCase
     }
 
     // =====================================================================
-    // 4. DRY-refactor: 3 call-site используют helper, а не inline in_array
+    // 4. DRY-refactor: оставшиеся call-site используют helper, а не inline in_array
     // =====================================================================
-
-    public function test_build_final_affiliate_url_uses_helper(): void
-    {
-        $body = $this->extract_method('build_final_affiliate_url');
-
-        self::assertMatchesRegularExpression(
-            '/\$this->is_safe_http_url\s*\(/',
-            $body,
-            'F-2-001 DRY: build_final_affiliate_url должен использовать $this->is_safe_http_url вместо inline in_array(...).'
-        );
-
-        // Убеждаемся что inline проверки больше нет.
-        self::assertDoesNotMatchRegularExpression(
-            "/in_array\s*\(\s*\\\$scheme\s*,\s*array\s*\(\s*['\"]http['\"]\s*,\s*['\"]https['\"]\s*\)/",
-            $body,
-            'F-2-001 DRY: inline `in_array($scheme, array(http, https))` должен быть вынесен в helper.'
-        );
-    }
+    //
+    // После group 12 refactor (F-2-001) build_final_affiliate_url удалён —
+    // построение affiliate URL целиком в Cashback_Click_Session_Service::build_affiliate_url.
+    // Scheme-check теперь делается в handle_click_redirect после возврата сервиса
+    // (см. test_handle_click_redirect_validates_affiliate_url).
 
     public function test_handle_activation_page_uses_helper(): void
     {
@@ -302,18 +273,6 @@ class WcAffiliateUrlSchemeValidationTest extends TestCase
     // =====================================================================
     // 5. Regression guards
     // =====================================================================
-
-    public function test_build_final_affiliate_url_still_returns_null_for_unsafe(): void
-    {
-        // Regression: build_final_affiliate_url должен возвращать null при non-http(s) base_url,
-        // чтобы не генерировать URL с партнёрскими параметрами для opaque-scheme target.
-        $body = $this->extract_method('build_final_affiliate_url');
-        self::assertMatchesRegularExpression(
-            '/!\s*\$this->is_safe_http_url[\s\S]{0,100}return\s+null/',
-            $body,
-            'Regression: build_final_affiliate_url должен по-прежнему возвращать null при небезопасной схеме.'
-        );
-    }
 
     public function test_existing_http_redirect_path_preserved(): void
     {

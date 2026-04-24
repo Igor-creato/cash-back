@@ -26,13 +26,6 @@ class Cashback_REST_API {
     private const ACTIVATION_WINDOW     = 30 * MINUTE_IN_SECONDS;
     private const TRANSACTIONS_PER_PAGE = 10;
 
-    // Rate limiting (аналогично WC_Affiliate_URL_Params)
-    private const RATE_PER_PRODUCT_SPAM  = 3;
-    private const RATE_PER_PRODUCT_BLOCK = 10;
-    private const RATE_GLOBAL_SPAM       = 10;
-    private const RATE_GLOBAL_BLOCK      = 60;
-    private const RATE_LIMIT_WINDOW      = 60;
-
     private static ?self $instance = null;
 
     public static function get_instance(): self {
@@ -47,7 +40,8 @@ class Cashback_REST_API {
         add_filter('rest_authentication_errors', array( $this, 'authenticate_extension_cookie' ), 99);
         add_filter('rest_pre_dispatch', array( $this, 'block_user_enumeration' ), 10, 3);
         add_action('template_redirect', array( $this, 'block_author_enumeration' ));
-        add_action('template_redirect', array( $this, 'handle_activation_page' ), 1);
+        // Activation page (cashback_go URL) обрабатывается WC_Affiliate_URL_Params:
+        // единственный handler с F-2-001 hardening (HMAC verify + user_id bind).
         // Защита от кэширования редиректов/ошибок на путях расширения.
         // Инцидент 2026-04-23: браузер закешировал 301 с /wp-json/cashback/v1/me
         // на home_url — расширение было мертво у пользователя до ручной очистки кэша.
@@ -533,44 +527,15 @@ class Cashback_REST_API {
     }
 
     /**
-     * GET /activate — Активация кэшбэка для товара.
+     * POST /activate — Активация кэшбэка для товара.
      *
-     * Генерирует click_id, логирует клик, возвращает redirect URL.
-     * Использует rate limiting аналогично WC_Affiliate_URL_Params.
+     * Thin REST adapter над Cashback_Click_Session_Service: делает idempotency-replay
+     * по client_request_id, вызывает сервис, транслирует структурированный result
+     * в JSON-ответ с правильным HTTP-кодом.
      */
     public function activate_cashback( \WP_REST_Request $request ): \WP_REST_Response {
-        global $wpdb;
-
         $product_id = (int) $request->get_param('product_id');
         $user_id    = (int) get_current_user_id();
-
-        // Проверяем, что товар существует и является external
-        $product = wc_get_product($product_id);
-        if (!$product || $product->get_type() !== 'external') {
-            return new \WP_REST_Response(array(
-                'code'    => 'invalid_product',
-                'message' => 'Товар не найден или не является внешним.',
-            ), 404);
-        }
-
-        $base_url = $product->get_product_url();
-        if (empty($base_url)) {
-            return new \WP_REST_Response(array(
-                'code'    => 'no_url',
-                'message' => 'У товара отсутствует партнёрская ссылка.',
-            ), 400);
-        }
-
-        // Rate limiting
-        $ip_address  = Cashback_Encryption::get_client_ip();
-        $rate_status = $this->get_click_rate_status($ip_address, $product_id);
-
-        if ($rate_status === 'blocked') {
-            return new \WP_REST_Response(array(
-                'code'    => 'rate_limited',
-                'message' => 'Слишком много запросов. Попробуйте позже.',
-            ), 429);
-        }
 
         // 12i-2 ADR (F-10-001): idempotency через client_request_id.
         // Клиент передаёт UUID v4/v7, Cashback_Idempotency::claim сохраняет слот
@@ -595,146 +560,56 @@ class Cashback_REST_API {
             ), 409);
         }
 
-        // CPA-сеть + merchant policy.
-        // Защита от провала расшифровки credentials (напр. пост-rotation, когда
-        // api_credentials в БД зашифрованы retired-ключом): get_network_config()
-        // кидает RuntimeException из Cashback_Encryption::decrypt(). Для /activate
-        // credentials не нужны — нужны только policy/window, которые имеют
-        // fail-safe дефолты. Глотаем исключение, чтобы активация не падала в 500
-        // из-за проблемы ключей, требующей действия администратора.
-        $cpa_network     = $this->get_network_slug($product_id);
-        $merchant_config = null;
-        if ($cpa_network) {
-            try {
-                $merchant_config = Cashback_API_Client::get_instance()->get_network_config($cpa_network);
-            } catch (\Throwable $e) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
-                error_log('[Cashback REST API] get_network_config(' . $cpa_network . ') failed, falling back to defaults: ' . $e->getMessage());
-                $merchant_config = null;
-            }
-        }
-
-        // 12i-2 ADR (F-10-001): fail-safe clamp policy/window — защита от misconfig.
-        $policy_allowlist = array( 'reuse_in_window', 'always_new', 'reuse_per_product' );
-        $policy           = (string) ( $merchant_config['click_session_policy'] ?? 'reuse_in_window' );
-        if (!in_array($policy, $policy_allowlist, true)) {
-            $policy = 'reuse_in_window';
-        }
-        $window = (int) ( $merchant_config['activation_window_seconds'] ?? self::ACTIVATION_WINDOW );
-        if ($window < 60 || $window > 86400) {
-            $window = self::ACTIVATION_WINDOW;
-        }
-        $merchant_id = isset($merchant_config['id']) ? (int) $merchant_config['id'] : 0;
-
         $user_agent = $request->get_header('user_agent');
         $user_agent = $user_agent ? sanitize_text_field($user_agent) : null;
-        $referer    = get_permalink($product_id) ?: null;
-        $spam_flag  = $rate_status === 'spam' ? 1 : 0;
-        $sessions_t = $wpdb->prefix . 'cashback_click_sessions';
 
-        // 12i-2 ADR (F-10-001): TX + SELECT FOR UPDATE на click_sessions.
-        // Параллельные /activate от одного user'а на тот же product получают
-        // одну и ту же сессию через row-lock (без dedup дали бы 2 сессии).
-        $wpdb->query('START TRANSACTION');
-        try {
-            $existing = null;
-            if ($policy !== 'always_new') {
-                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- FOR UPDATE inside TX (Group 8 pattern).
-                $existing = $wpdb->get_row($wpdb->prepare(
-                    "SELECT id, canonical_click_id, affiliate_url, tap_count
-                       FROM %i
-                      WHERE user_id = %d AND product_id = %d
-                        AND status = 'active' AND expires_at > NOW()
-                      ORDER BY created_at DESC LIMIT 1
-                      FOR UPDATE",
-                    $sessions_t,
-                    $user_id,
-                    $product_id
-                ), ARRAY_A);
-            }
+        $result = Cashback_Click_Session_Service::activate(array(
+            'product_id'        => $product_id,
+            'user_id'           => $user_id,
+            'ip_address'        => Cashback_Encryption::get_client_ip(),
+            'user_agent'        => $user_agent,
+            'referer'           => get_permalink($product_id) ?: null,
+            'client_request_id' => $client_request_id,
+        ));
 
-            if (is_array($existing) && !empty($existing['id'])) {
-                // Reuse: inc tap_count + last_tap_at = NOW().
-                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Update inside TX.
-                $wpdb->query($wpdb->prepare(
-                    'UPDATE %i SET tap_count = tap_count + 1, last_tap_at = NOW(6) WHERE id = %d',
-                    $sessions_t,
-                    (int) $existing['id']
-                ));
-
-                $canonical_click_id = (string) $existing['canonical_click_id'];
-                $affiliate_url      = (string) $existing['affiliate_url'];
-                $session_pk         = (int) $existing['id'];
-                $tap_count          = ( (int) $existing['tap_count'] ) + 1;
-                $is_primary         = false;
-                $reused             = true;
-            } else {
-                // New session: canonical_click_id = UUID v7 (time-ordered).
-                $canonical_click_id = cashback_generate_uuid7(false);
-                $affiliate_url      = $this->build_affiliate_url($product_id, $user_id, $canonical_click_id);
-                if (empty($affiliate_url)) {
-                    $affiliate_url = $base_url;
-                }
-
-                $expires_datetime = gmdate('Y-m-d H:i:s.u', time() + $window);
-
-                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Insert inside TX.
-                $wpdb->query($wpdb->prepare(
-                    'INSERT INTO %i
-                        (canonical_click_id, user_id, product_id, merchant_id,
-                         affiliate_url, status, tap_count, expires_at)
-                     VALUES (%s, %d, %d, %d, %s, %s, %d, %s)',
-                    $sessions_t,
-                    $canonical_click_id,
-                    $user_id,
-                    $product_id,
-                    $merchant_id,
-                    $affiliate_url,
-                    'active',
-                    1,
-                    $expires_datetime
-                ));
-                $session_pk = (int) $wpdb->insert_id;
-                $tap_count  = 1;
-                $is_primary = true;
-                $reused     = false;
-            }
-
-            // Tap event: логируем каждый запрос в click_log, даже если сессия reuse.
-            // Для primary тапа click_id == canonical_click_id; для повторов — свой UUID.
-            $tap_click_id = $is_primary ? $canonical_click_id : cashback_generate_uuid7(false);
-            $this->log_click(array(
-                'click_id'           => $tap_click_id,
-                'click_session_id'   => $session_pk,
-                'client_request_id'  => $client_request_id,
-                'is_session_primary' => $is_primary ? 1 : 0,
-                'user_id'            => $user_id,
-                'product_id'         => $product_id,
-                'cpa_network'        => $cpa_network,
-                'affiliate_url'      => $affiliate_url,
-                'ip_address'         => $ip_address,
-                'user_agent'         => $user_agent,
-                'spam_click'         => $spam_flag,
-                'referer'            => $referer,
-            ));
-
-            $wpdb->query('COMMIT');
-        } catch (\Throwable $e) {
-            $wpdb->query('ROLLBACK');
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('[Cashback REST API] activate_cashback TX error: ' . get_class($e) . ' ' . $e->getMessage());
-            return new \WP_REST_Response(array(
-                'code'    => 'activation_failed',
-                'message' => 'Не удалось активировать кешбэк. Попробуйте позже.',
-            ), 500);
+        switch ($result['status']) {
+            case 'invalid_product':
+                return new \WP_REST_Response(array(
+                    'code'    => 'invalid_product',
+                    'message' => 'Товар не найден или не является внешним.',
+                ), 404);
+            case 'no_url':
+                return new \WP_REST_Response(array(
+                    'code'    => 'no_url',
+                    'message' => 'У товара отсутствует партнёрская ссылка.',
+                ), 400);
+            case 'rate_limited':
+                return new \WP_REST_Response(array(
+                    'code'    => 'rate_limited',
+                    'message' => 'Слишком много запросов. Попробуйте позже.',
+                ), 429);
+            case 'error':
+                return new \WP_REST_Response(array(
+                    'code'    => 'activation_failed',
+                    'message' => 'Не удалось активировать кешбэк. Попробуйте позже.',
+                ), 500);
         }
 
-        $expires_at = gmdate('Y-m-d H:i:s', time() + $window);
+        $canonical_click_id = (string) $result['canonical_click_id'];
+        $affiliate_url      = (string) $result['affiliate_url'];
+        $window             = (int) $result['window_seconds'];
+        $expires_at         = gmdate('Y-m-d H:i:s', time() + $window);
 
         // Домен магазина из post_meta (НЕ из affiliate URL, который указывает на CPA-сеть)
         $store_domain = $this->normalize_store_domain(
             (string) get_post_meta($product_id, '_store_domain', true)
         );
+
+        // F-2-001 hardening: HMAC-подпись activation URL с привязкой к user_id.
+        // Защищает от reuse чужого click_id авторизованным юзером: handle_activation_page
+        // отвергает URL, если verify_activation_token(...) возвращает false.
+        $issued_at = time();
+        $token     = Cashback_Encryption::sign_activation_token($canonical_click_id, $user_id, $issued_at);
 
         // Формируем URL активации на базе permalink товара, чтобы CPA-сеть
         // видела Referer: yoursite.com/product/название/ вместо /?cashback_go=1
@@ -743,6 +618,7 @@ class Cashback_REST_API {
             array(
                 'cashback_go' => '1',
                 'click_id'    => $canonical_click_id,
+                't'           => $token,
             ),
             $product_permalink
         );
@@ -753,8 +629,8 @@ class Cashback_REST_API {
             'click_id'            => $canonical_click_id,
             'expires_at'          => $expires_at,
             'domain'              => $store_domain,
-            'reused'              => $reused,
-            'tap_count'           => $tap_count,
+            'reused'              => (bool) $result['reused'],
+            'tap_count'           => (int) $result['tap_count'],
         );
 
         // 12i-2 ADR (F-10-001): store_result для retry-replay в течение TTL.
@@ -924,284 +800,6 @@ class Cashback_REST_API {
         ), 200);
     }
 
-    // ─── Промежуточная страница активации ───
-
-    /**
-     * Промежуточная страница активации кэшбэка.
-     *
-     * Срабатывает на template_redirect (приоритет 1) для URL ?cashback_go=1&click_id=XXXX.
-     * Валидирует click_id, получает affiliate_url из БД, рендерит страницу активации
-     * с использованием шапки/подвала активной темы.
-     *
-     * JS-редирект (window.location.href) гарантирует, что браузер отправит
-     * Referer: [наш сайт] при открытии affiliate URL — что требуется CPA-сетями
-     * для атрибуции перехода через наш сервис.
-     *
-     * HTTP Referer из заголовка запроса (URL магазина, с которого пришёл пользователь)
-     * сохраняется в click_log — клик логируется ранее (в REST API), без referer.
-     */
-    public function handle_activation_page(): void {
-        if (!isset($_GET['cashback_go']) || '1' !== $_GET['cashback_go']) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public activation-page entry point, external URL, nonce not applicable.
-            return;
-        }
-
-        $click_id = isset($_GET['click_id']) ? sanitize_text_field(wp_unslash($_GET['click_id'])) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public activation-page entry point, external URL, nonce not applicable.
-
-        if (empty($click_id) || strlen($click_id) !== 32 || !ctype_xdigit($click_id)) {
-            wp_safe_redirect(home_url(), 302);
-            exit;
-        }
-
-        global $wpdb;
-        $table     = $wpdb->prefix . 'cashback_click_log';
-        $threshold = gmdate('Y-m-d H:i:s', time() - self::ACTIVATION_WINDOW);
-
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
-        $row = $wpdb->get_row(
-            $wpdb->prepare(
-                'SELECT affiliate_url, product_id FROM %i
-                 WHERE click_id = %s AND created_at >= %s LIMIT 1',
-                $table,
-                $click_id,
-                $threshold
-            ),
-            ARRAY_A
-        );
-
-        if (empty($row) || empty($row['affiliate_url'])) {
-            wp_safe_redirect(home_url(), 302);
-            exit;
-        }
-
-        $affiliate_url = $row['affiliate_url'];
-        $product_id    = (int) $row['product_id'];
-
-        // Обновляем referer: в лог клика записываем URL страницы товара на нашем сервисе,
-        // чтобы в логе было видно, что переход совершён именно с нашей страницы партнёра.
-        // (Клик логировался ранее через REST API из service worker — без referer.)
-        $product_page_url = $product_id > 0 ? get_permalink($product_id) : '';
-        if (!empty($product_page_url)) {
-            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
-            $wpdb->update(
-                $table,
-                array( 'referer' => $product_page_url ),
-                array( 'click_id' => $click_id ),
-                array( '%s' ),
-                array( '%s' )
-            );
-        }
-
-        $product    = wc_get_product($product_id);
-        $store_name = ( $product && $product->get_name() ) ? $product->get_name() : 'Магазин';
-        $cb_label   = (string) get_post_meta($product_id, '_cashback_display_label', true);
-        $cb_value   = (string) get_post_meta($product_id, '_cashback_display_value', true);
-
-        if (empty($cb_label)) {
-            $cb_label = 'Кэшбэк';
-        }
-
-        $js_affiliate_url = wp_json_encode($affiliate_url);
-        $js_store_name    = wp_json_encode($store_name);
-        $js_cb_label      = wp_json_encode($cb_label);
-        $js_cb_value      = wp_json_encode($cb_value);
-
-        nocache_headers();
-
-        // Подключаем стили карточки в <head> активной темы
-        $card_styles = $this->get_activation_card_styles();
-        add_action('wp_head', static function () use ( $card_styles ): void {
-            echo '<style id="cashback-go-styles">' . $card_styles . '</style>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-        }, 100);
-
-        // Рендерим страницу с шапкой и подвалом активной темы
-        get_header();
-        $activation_html = $this->render_activation_content(
-            $js_affiliate_url,
-            $js_store_name,
-            $js_cb_label,
-            $js_cb_value
-        );
-        echo $activation_html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- HTML собирается из wp_json_encode значений в render_activation_content().
-        get_footer();
-        exit;
-    }
-
-    /**
-     * Рендерит HTML-блок карточки активации (без обёртки страницы).
-     *
-     * Вставляется между get_header() и get_footer() активной темы,
-     * чтобы страница выглядела нативно в рамках текущего дизайна сайта.
-     *
-     * Все динамические данные передаются ТОЛЬКО через JS-переменные,
-     * закодированные через wp_json_encode() — защита от XSS.
-     * affiliate_url берётся из БД — защита от open redirect.
-     *
-     * @param string $js_affiliate_url  JSON-encoded URL для редиректа
-     * @param string $js_store_name     JSON-encoded название магазина
-     * @param string $js_cb_label       JSON-encoded метка кэшбэка
-     * @param string $js_cb_value       JSON-encoded значение кэшбэка
-     * @return string
-     */
-    private function render_activation_content(
-        string $js_affiliate_url,
-        string $js_store_name,
-        string $js_cb_label,
-        string $js_cb_value
-    ): string {
-        return <<<HTML
-<div class="cashback-go-wrap">
-  <div class="cashback-go-card">
-    <div class="cg-brand">&#128176; Кэшбэк Сервис</div>
-    <div class="cg-store-name" id="js-store-name"></div>
-    <div class="cg-cashback-badge" id="js-cb-badge"></div>
-    <div class="cg-status">&#9989; Кэшбэк активирован!</div>
-    <div class="cg-countdown-text" id="js-countdown">Переход к магазину...</div>
-    <button class="cg-btn-go" id="js-btn-go">Перейти в магазин сейчас &#8594;</button>
-    <div class="cg-notice">Для фиксации кэшбэка совершите покупку в течение 30 минут.</div>
-  </div>
-</div>
-
-<script>
-(function () {
-  'use strict';
-
-  var redirectUrl = {$js_affiliate_url};
-  var storeName   = {$js_store_name};
-  var cbLabel     = {$js_cb_label};
-  var cbValue     = {$js_cb_value};
-
-  document.getElementById('js-store-name').textContent = storeName;
-  document.getElementById('js-cb-badge').textContent   = cbValue
-    ? (cbLabel + ' до ' + cbValue)
-    : cbLabel;
-
-  document.getElementById('js-btn-go').addEventListener('click', function () {
-    window.location.href = redirectUrl;
-  });
-
-  var redirected = false;
-  function go() {
-    if (!redirected) {
-      redirected = true;
-      window.location.href = redirectUrl;
-    }
-  }
-
-  // Слушаем подтверждение от content script браузерного расширения.
-  document.addEventListener('cashback:site:confirmed', go);
-
-  // Сохраняем данные активации в атрибуте DOM — content script читает их при старте,
-  // не зависит от порядка выполнения (inline script всегда опережает document_idle).
-  var clickId = (new URLSearchParams(window.location.search)).get('click_id') || '';
-  var domain  = '';
-  try { domain = new URL(redirectUrl).hostname.replace(/^www\\./, ''); } catch (e) {}
-
-  if (clickId && domain) {
-    document.documentElement.setAttribute(
-      'data-cb-activation',
-      JSON.stringify({ domain: domain, click_id: clickId })
-    );
-  }
-
-  // Fallback: если расширение не установлено или не ответило — редиректим через 1.5с.
-  setTimeout(go, 1500);
-})();
-</script>
-HTML;
-    }
-
-    /**
-     * CSS-стили для карточки активации кэшбэка.
-     *
-     * Инжектируются в <head> темы через wp_head.
-     * Используют нейтральные цвета, не перекрывающие дизайн темы,
-     * стилизуя только компонент .cashback-go-wrap / .cashback-go-card.
-     *
-     * @return string
-     */
-    private function get_activation_card_styles(): string {
-        return '
-.cashback-go-wrap {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 50vh;
-    padding: 40px 20px;
-    box-sizing: border-box;
-}
-.cashback-go-card {
-    max-width: 480px;
-    width: 100%;
-    text-align: center;
-    padding: 40px 48px;
-    border-radius: 16px;
-    border: 1px solid rgba(0,0,0,0.1);
-    box-shadow: 0 4px 32px rgba(0,0,0,0.10);
-    background: #fff;
-    box-sizing: border-box;
-}
-.cg-brand {
-    font-size: 12px;
-    letter-spacing: 0.8px;
-    margin-bottom: 24px;
-    text-transform: uppercase;
-    font-weight: 600;
-    opacity: 0.5;
-}
-.cg-store-name {
-    font-size: 22px;
-    font-weight: 700;
-    margin-bottom: 10px;
-}
-.cg-cashback-badge {
-    display: inline-block;
-    background: linear-gradient(135deg, #3949ab, #1e88e5);
-    color: #fff;
-    font-size: 15px;
-    font-weight: 600;
-    padding: 6px 20px;
-    border-radius: 20px;
-    margin-bottom: 24px;
-}
-.cg-status {
-    font-size: 16px;
-    font-weight: 600;
-    color: #27ae60;
-    margin-bottom: 20px;
-}
-.cg-countdown-text {
-    font-size: 14px;
-    opacity: 0.6;
-    margin-bottom: 10px;
-    min-height: 20px;
-}
-.cg-btn-go {
-    display: inline-block;
-    background: linear-gradient(135deg, #3949ab, #1e88e5);
-    color: #fff !important;
-    font-size: 15px;
-    font-weight: 600;
-    text-decoration: none !important;
-    padding: 14px 32px;
-    border-radius: 10px;
-    cursor: pointer;
-    border: none;
-    transition: opacity 0.2s;
-    box-sizing: border-box;
-}
-.cg-btn-go:hover { opacity: 0.85; }
-.cg-notice {
-    font-size: 12px;
-    opacity: 0.5;
-    margin-top: 18px;
-    line-height: 1.6;
-}
-@media (max-width: 520px) {
-    .cashback-go-card { padding: 28px 20px; }
-}
-        ';
-    }
-
     // ─── Private helpers ───
 
     /**
@@ -1226,163 +824,6 @@ HTML;
     }
 
     /**
-     * Rate limiting (двухуровневый, аналогично WC_Affiliate_URL_Params).
-     *
-     * Группа 7 (шаг 7 ADR): переход с get_transient/set_transient race-паттерна на
-     * атомарный Cashback_Rate_Limiter::counter_backend(). Scope_keys идентичны
-     * wc-affiliate-url-params — это намеренно: клики через WC-кнопку и через REST
-     * endpoint делят один общий счётчик по IP (и IP+product_id), как было раньше.
-     */
-    private function get_click_rate_status( string $ip_address, int $product_id ): string {
-        $window = self::RATE_LIMIT_WINDOW;
-
-        $pp_scope = 'pp_' . substr(sha1($ip_address . '|' . $product_id), 0, 40);
-        $gl_scope = 'gl_' . substr(sha1($ip_address), 0, 40);
-
-        if (!class_exists('Cashback_Rate_Limiter')) {
-            require_once __DIR__ . '/class-cashback-rate-limiter.php';
-        }
-
-        try {
-            $counter = \Cashback_Rate_Limiter::counter_backend();
-            $pp      = $counter->increment($pp_scope, $window, self::RATE_PER_PRODUCT_BLOCK);
-            $gl      = $counter->increment($gl_scope, $window, self::RATE_GLOBAL_BLOCK);
-        } catch (\Throwable $e) {
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Rate-limit backend diagnostic (group 7, step 7).
-            error_log('[cashback-rest-api] rate-limit backend error: ' . $e->getMessage());
-
-            return 'normal';
-        }
-
-        $pp_hits = (int) $pp['hits'];
-        $gl_hits = (int) $gl['hits'];
-
-        if ($pp_hits >= self::RATE_PER_PRODUCT_BLOCK || $gl_hits >= self::RATE_GLOBAL_BLOCK) {
-            return 'blocked';
-        }
-
-        if ($pp_hits > self::RATE_PER_PRODUCT_SPAM || $gl_hits > self::RATE_GLOBAL_SPAM) {
-            return 'spam';
-        }
-
-        return 'normal';
-    }
-
-    /**
-     * Построение affiliate URL с подстановкой параметров.
-     */
-    private function build_affiliate_url( int $product_id, int $user_id, string $click_id ): ?string {
-        global $wpdb;
-
-        $product = wc_get_product($product_id);
-        if (!$product || $product->get_type() !== 'external') {
-            return null;
-        }
-
-        $base_url = $product->get_product_url();
-        if (empty($base_url)) {
-            return null;
-        }
-
-        $network_id = (int) get_post_meta($product_id, '_affiliate_network_id', true);
-        if ($network_id <= 0) {
-            return $base_url;
-        }
-
-        // Сначала загружаем параметры сети
-        $params_table = $wpdb->prefix . 'cashback_affiliate_network_params';
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
-        $network_rows = $wpdb->get_results($wpdb->prepare(
-            'SELECT param_name, param_type
-             FROM %i
-             WHERE network_id = %d
-             ORDER BY id ASC',
-            $params_table,
-            $network_id
-        ), ARRAY_A);
-
-        $merged       = array();
-        $key_to_index = array();
-        foreach ($network_rows as $i => $row) {
-            $merged[ $i ]                       = array(
-                'key'   => $row['param_name'],
-                'value' => $row['param_type'],
-            );
-            $key_to_index[ $row['param_name'] ] = $i;
-        }
-
-        // Мерж индивидуальных параметров товара: переопределяют или дополняют сетевые
-        $product_params = get_post_meta($product_id, '_affiliate_product_params', true);
-        if (is_array($product_params) && !empty($product_params)) {
-            foreach ($product_params as $pp) {
-                if (empty($pp['key'])) {
-                    continue;
-                }
-                if (isset($key_to_index[ $pp['key'] ])) {
-                    $merged[ $key_to_index[ $pp['key'] ] ]['value'] = $pp['value'];
-                } else {
-                    $merged[] = array(
-                        'key'   => $pp['key'],
-                        'value' => $pp['value'],
-                    );
-                }
-            }
-        }
-
-        if (empty($merged)) {
-            return $base_url;
-        }
-
-        // Получаем partner_token (криптографически стойкий, вместо user_id)
-        $partner_token = null;
-        if ($user_id > 0) {
-            $partner_token = Mariadb_Plugin::get_partner_token($user_id);
-        }
-
-        $params = array();
-        foreach ($merged as $param) {
-            if (empty($param['key']) || empty($param['value'])) {
-                continue;
-            }
-
-            $param_type = strtolower(trim($param['value']));
-
-            if ($param_type === 'user') {
-                // partner_token вместо user_id — защита от IDOR и перебора
-                $params[ $param['key'] ] = $partner_token !== null ? $partner_token : 'unregistered';
-            } elseif ($param_type === 'uuid') {
-                $params[ $param['key'] ] = $click_id;
-            } else {
-                $params[ $param['key'] ] = $param['value'];
-            }
-        }
-
-        return add_query_arg($params, $base_url);
-    }
-
-    /**
-     * Получение slug CPA-сети для товара.
-     */
-    private function get_network_slug( int $product_id ): ?string {
-        global $wpdb;
-
-        $network_id = (int) get_post_meta($product_id, '_affiliate_network_id', true);
-        if ($network_id <= 0) {
-            return null;
-        }
-
-        $table = $wpdb->prefix . 'cashback_affiliate_networks';
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
-        $slug = $wpdb->get_var($wpdb->prepare(
-            'SELECT slug FROM %i WHERE id = %d AND is_active = 1',
-            $table,
-            $network_id
-        ));
-
-        return $slug ?: null;
-    }
-
-    /**
      * Нормализация домена магазина: убирает протокол, www., путь.
      */
     private function normalize_store_domain( string $domain ): string {
@@ -1397,52 +838,5 @@ HTML;
     private function get_store_domain( int $product_id ): string {
         $raw = (string) get_post_meta($product_id, '_store_domain', true);
         return $this->normalize_store_domain($raw);
-    }
-
-    /**
-     * Логирование клика в cashback_click_log.
-     */
-    private function log_click( array $data ): bool {
-        global $wpdb;
-
-        $table      = $wpdb->prefix . 'cashback_click_log';
-        $created_at = ( new \DateTimeImmutable('now', new \DateTimeZone('UTC')) )->format('Y-m-d H:i:s.u');
-
-        // 12i-2 ADR (F-10-001): click_session_id / client_request_id / is_session_primary
-        // пишутся явно; legacy-вызовы без этих полей получают NULL/0 (backward-compat).
-        $click_session_id   = isset($data['click_session_id']) ? (int) $data['click_session_id'] : null;
-        $client_request_id  = isset($data['client_request_id']) ? (string) $data['client_request_id'] : null;
-        $is_session_primary = !empty($data['is_session_primary']) ? 1 : 0;
-
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
-        $result = $wpdb->query($wpdb->prepare(
-            'INSERT INTO %i
-                (click_id, click_session_id, client_request_id, is_session_primary,
-                 user_id, product_id, cpa_network, affiliate_url,
-                 ip_address, user_agent, referer, spam_click, created_at)
-             VALUES (%s, %s, %s, %d, %d, %d, %s, %s, %s, %s, %s, %d, %s)',
-            $table,
-            $data['click_id'],
-            $click_session_id !== null ? (string) $click_session_id : null,
-            $client_request_id,
-            $is_session_primary,
-            $data['user_id'],
-            $data['product_id'],
-            $data['cpa_network'] ?? '',
-            $data['affiliate_url'] ?? '',
-            $data['ip_address'] ?? '',
-            $data['user_agent'] ?? '',
-            $data['referer'] ?? '',
-            $data['spam_click'] ?? 0,
-            $created_at
-        ));
-
-        if (false === $result) {
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('[Cashback REST API] Failed to log click: ' . $wpdb->last_error);
-            return false;
-        }
-
-        return true;
     }
 }

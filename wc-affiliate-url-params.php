@@ -19,37 +19,6 @@ class WC_Affiliate_URL_Params {
 
     private const CACHE_GROUP      = 'wc_affiliate_url_params';
     private const CACHE_EXPIRATION = 3600;
-    private const LOGGER_SOURCE    = 'wc-affiliate-url-params';
-
-    /**
-     * Rate limiting: двухуровневые ключи (без User-Agent).
-     *
-     * PER_PRODUCT — счётчик по IP + product_id.
-     *   Ловит накрутку конкретного оффера.
-     *
-     * GLOBAL — счётчик по IP (без product_id).
-     *   Ловит массовое кликание по разным товарам.
-     *   Пороги выше из-за CGNAT (один IP = много пользователей).
-     *
-     * UA НЕ используется в ключах rate limit:
-     *   - Боты меняют UA на каждый запрос → обход лимита.
-     *   - CGNAT: разные UA с одного IP = разные ключи = фрагментация.
-     * Bot detection через is_bot_user_agent() — отдельный слой.
-     *
-     * Три статуса: normal → spam (лог + флаг) → blocked (429, без лога).
-     *
-     * Для production рекомендуется Redis/Memcached object cache.
-     */
-
-    // --- Per-product лимиты (IP + product_id) ---
-    private const RATE_PER_PRODUCT_SPAM  = 3;   // >3 кликов на один товар за 60с → spam
-    private const RATE_PER_PRODUCT_BLOCK = 10;  // >=10 → blocked
-
-    // --- Глобальные лимиты (IP, любые товары) ---
-    private const RATE_GLOBAL_SPAM  = 10;  // >10 кликов суммарно за 60с → spam
-    private const RATE_GLOBAL_BLOCK = 60;  // >=60 → blocked (CGNAT-safe)
-
-    private const RATE_LIMIT_WINDOW_SECONDS = 60;
 
     /**
      * Конструктор класса.
@@ -468,7 +437,8 @@ class WC_Affiliate_URL_Params {
             $key   = trim($param_keys[ $i ]);
             $value = trim($param_values[ $i ]);
 
-            if ($key === '' || !preg_match('/^[a-zA-Z0-9_\-]+$/', $key)) {
+            // F-2-001 п.4: единый whitelist (alpha-num + _/-, 1..32 симв.) через сервис-helper.
+            if ($key === '' || !Cashback_Click_Session_Service::is_valid_affiliate_param_name($key)) {
                 continue;
             }
 
@@ -652,7 +622,8 @@ class WC_Affiliate_URL_Params {
         // Это необходимо для:
         //   1. Логирования клика с уникальным click_id (даже если параметры сети не настроены).
         //   2. Работы перехватчика кликов в браузерном расширении (ищет cashback_click= в href).
-        // build_final_affiliate_url() обработает отсутствие параметров — вернёт исходный URL товара.
+        // handle_click_redirect → Cashback_Click_Session_Service::activate построит финальный URL;
+        // при отсутствии сетевых параметров сервис вернёт исходный base_url.
         return home_url('/?cashback_click=' . $product_id);
     }
 
@@ -765,14 +736,8 @@ class WC_Affiliate_URL_Params {
         nocache_headers();
 
         try {
-            $product = wc_get_product($product_id);
-            if (!$product || $product->get_type() !== 'external') {
-                // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
-                wp_redirect(home_url(), 302);
-                exit;
-            }
-
             // Блокировка кликов для автоматически деактивированных магазинов
+            // (ранний короткий выход до любой работы — до запуска rate-limit/сессии).
             if (get_post_meta($product_id, '_cashback_auto_deactivated', true) === '1') {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log(sprintf(
@@ -784,18 +749,52 @@ class WC_Affiliate_URL_Params {
                 exit;
             }
 
-            $fallback_url = $product->get_product_url();
-            if (empty($fallback_url)) {
-                // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
-                wp_redirect(home_url(), 302);
-                exit;
+            $user_id    = get_current_user_id(); // 0 для гостей
+            $ip_address = Cashback_Encryption::get_client_ip();
+            $user_agent = isset($_SERVER['HTTP_USER_AGENT'])
+                ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT']))
+                : null;
+
+            // Bot detection повышает spam-флаг, но не блокирует редирект.
+            $force_spam = $this->is_bot_user_agent($user_agent ?? '');
+
+            $result = Cashback_Click_Session_Service::activate(array(
+                'product_id' => $product_id,
+                'user_id'    => $user_id,
+                'ip_address' => $ip_address,
+                'user_agent' => $user_agent,
+                // Всегда записываем permalink одиночного товара как referer — в логе кликов
+                // отображается ссылка на страницу товара независимо от источника клика.
+                'referer'    => get_permalink($product_id) ?: null,
+                'force_spam' => $force_spam,
+            ));
+
+            switch ($result['status']) {
+                case 'invalid_product':
+                case 'no_url':
+                    // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
+                    wp_redirect(home_url(), 302);
+                    exit;
+                case 'rate_limited':
+                    // 429 — защита от DDoS и бана CPA (без записи в БД).
+                    status_header(429);
+                    nocache_headers();
+                    exit;
+                case 'error':
+                    // Лучше потерять лог клика, чем потерять пользователя — но НЕ fallback'имся
+                    // на $product->get_product_url() без scheme-check (F-2-001 п.6).
+                    // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to internal home_url() on service error.
+                    wp_redirect(home_url(), 302);
+                    exit;
             }
 
-            // 12h-1 ADR (F-2-001): даже если build_final_affiliate_url вернёт null для
-            // non-http(s) base_url, мы fallback'имся на get_product_url() — сам он тоже
-            // может быть intent:// / market:// / javascript: (admin сохранил без валидации).
-            // Здесь — hard block: reject на safe home_url() + лог для post-mortem.
-            if (!$this->is_safe_http_url($fallback_url)) {
+            $click_id      = (string) $result['canonical_click_id'];
+            $affiliate_url = (string) $result['affiliate_url'];
+
+            // 12h-1 ADR (F-2-001): scheme-check на финальный affiliate URL — последний барьер
+            // перед редиректом. Админ мог сохранить product_url с scheme=intent://
+            // (mobile deeplink), build_affiliate_url вернул бы такой же.
+            if (!$this->is_safe_http_url($affiliate_url)) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Diagnostic logging: grep [wc-affiliate-url-params] Rejected unsafe scheme.
                 error_log(sprintf(
                     '[wc-affiliate-url-params] Rejected unsafe destination scheme for product #%d',
@@ -805,75 +804,6 @@ class WC_Affiliate_URL_Params {
                 wp_redirect(home_url(), 302);
                 exit;
             }
-
-            // Генерация click_id через UUID v7 (time-ordered, лучшая индексация в БД)
-            $click_id = cashback_generate_uuid7(false);
-
-            // Валидация: 32 hex символа
-            if (!ctype_xdigit($click_id) || strlen($click_id) !== 32) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                error_log('[wc-affiliate-url-params] click_id validation failed: ' . $click_id);
-                // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
-                wp_redirect($fallback_url, 302);
-                exit;
-            }
-
-            // Контекст пользователя
-            $user_id    = get_current_user_id(); // 0 для гостей
-            $session_id = $this->get_session_id();
-
-            // Построение финального affiliate URL
-            $affiliate_url = $this->build_final_affiliate_url($product_id, $user_id, $click_id);
-            if (empty($affiliate_url)) {
-                $affiliate_url = $fallback_url;
-            }
-
-            // CPA-сеть
-            $cpa_network = $this->get_network_slug_for_product($product_id);
-
-            // Метаданные запроса
-            $ip_address = Cashback_Encryption::get_client_ip();
-            $user_agent = isset($_SERVER['HTTP_USER_AGENT'])
-                ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT']))
-                : null;
-            // Всегда записываем permalink одиночного товара как referer,
-            // чтобы в логе кликов отображалась ссылка на страницу товара
-            // независимо от того, откуда был клик (каталог, поиск и т.д.).
-            $referer = get_permalink($product_id) ?: null;
-
-            // ─── BOT DETECTION (мягкий режим) ───
-            // Redirect проходит, но клик помечается spam в БД.
-            // Для жёсткого режима (403) — замени на блок ниже.
-            $force_spam = $this->is_bot_user_agent($user_agent ?? '');
-
-            // ─── Rate Limiting: 2 уровня по IP (без UA) ───
-            $rate_status = $this->get_click_rate_status($ip_address, $product_id);
-
-            // Bot detection повышает статус до spam (но не до blocked)
-            if ($force_spam && $rate_status === 'normal') {
-                $rate_status = 'spam';
-            }
-
-            // blocked → 429, защита от DDoS и бана CPA (без записи в БД)
-            if ($rate_status === 'blocked') {
-                status_header(429);
-                nocache_headers();
-                exit;
-            }
-
-            // Логирование клика в БД (ошибка НЕ блокирует редирект)
-            $this->log_click_to_db(array(
-                'click_id'      => $click_id,
-                'user_id'       => $user_id,
-                'session_id'    => $session_id,
-                'product_id'    => $product_id,
-                'cpa_network'   => $cpa_network,
-                'affiliate_url' => $affiliate_url,
-                'ip_address'    => $ip_address,
-                'user_agent'    => $user_agent,
-                'referer'       => $referer,
-                'spam_click'    => $rate_status === 'spam' ? 1 : 0,
-            ));
 
             // Устанавливаем cookie для браузерного расширения.
             // chrome.cookies API расширения читает этот cookie на каждое событие onUpdated
@@ -887,15 +817,18 @@ class WC_Affiliate_URL_Params {
             $dest_domain = strtolower(explode('/', $dest_domain)[0]);
 
             if (!empty($dest_domain)) {
+                // F-2-001 п.7: HMAC-поле sig — additive, не ломает старых читателей.
+                $cookie_ts = time();
                 setcookie(
                     'cb_activation',
                     (string) wp_json_encode(array(
                         'click_id' => $click_id,
                         'domain'   => $dest_domain,
-                        'ts'       => time(),
+                        'ts'       => $cookie_ts,
+                        'sig'      => Cashback_Encryption::sign_cookie_payload($click_id, $dest_domain, $cookie_ts),
                     )),
                     array(
-                        'expires'  => time() + 1800,
+                        'expires'  => $cookie_ts + 1800,
                         'path'     => '/',
                         'secure'   => is_ssl(),
                         'httponly' => false,
@@ -905,7 +838,8 @@ class WC_Affiliate_URL_Params {
             }
 
             // Гости (неавторизованные) — моментальный редирект без промежуточной страницы.
-            // Кешбэк не начисляется, задержка не нужна.
+            // Кешбэк не начисляется, задержка не нужна. HMAC URL-токен для гостей не нужен
+            // (у них нет user_id для биндинга и они не попадают на activation page).
             if ($user_id === 0) {
                 // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
                 wp_redirect($affiliate_url, 302);
@@ -916,32 +850,31 @@ class WC_Affiliate_URL_Params {
             // чтобы браузерное расширение зафиксировало активацию кешбэка.
             // URL через home_url() — НЕ через permalink товара, иначе WooCommerce
             // перехватывает запрос как single product page и ломает standalone HTML.
+            //
+            // F-2-001 п.3: HMAC-токен `t` с привязкой к (click_id, user_id, issued_at).
+            // TTL 5 минут проверяется в handle_activation_page через verify_activation_token.
+            $issued_at           = time();
+            $activation_token    = Cashback_Encryption::sign_activation_token($click_id, $user_id, $issued_at);
             $activation_page_url = add_query_arg(
                 array(
-					'cashback_go' => '1',
-					'click_id'    => $click_id,
-				),
+                    'cashback_go' => '1',
+                    'click_id'    => $click_id,
+                    't'           => $activation_token,
+                ),
                 home_url('/')
             );
             // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
             wp_redirect($activation_page_url, 302);
             exit;
         } catch (\Throwable $e) {
-            // Лучше потерять лог клика, чем потерять пользователя
+            // F-2-001 п.6: безопасный fallback на home_url() — никогда не редиректим
+            // на сохранённый product URL без scheme-check (в _product_url может быть
+            // intent:// / javascript: — см. is_safe_http_url).
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[wc-affiliate-url-params] Redirect error: ' . get_class($e) . ' in ' . basename($e->getFile()) . ':' . $e->getLine());
 
-            try {
-                $product = wc_get_product($product_id);
-                $url     = ( $product && $product->get_type() === 'external' )
-                    ? $product->get_product_url()
-                    : home_url();
-            } catch (\Throwable $e2) {
-                $url = home_url();
-            }
-
-            // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to external partner affiliate URL; wp_safe_redirect would break CPA tracking due to its host allowlist.
-            wp_redirect($url ?: home_url(), 302);
+            // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to internal home_url() on exception fallback.
+            wp_redirect(home_url(), 302);
             exit;
         }
     }
@@ -975,29 +908,20 @@ class WC_Affiliate_URL_Params {
             exit;
         }
 
-        // Гости — моментальный редирект (страница только для авторизованных)
+        // Гости — моментальный редирект (страница только для авторизованных).
+        // Для гостей session создана с user_id=0 (always_new в сервисе).
         if (!is_user_logged_in()) {
             global $wpdb;
 
-            // 12i-3 ADR (F-10-001): primary lookup в cashback_click_sessions.
+            // 12i-3 ADR (F-10-001): lookup в cashback_click_sessions с user_id=0 — защита
+            // от reuse чужого click_id зарегистрированного пользователя через guest-путь.
             $sessions_table = $wpdb->prefix . 'cashback_click_sessions';
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table, no cache needed for single redirect lookup.
             $row = $wpdb->get_var($wpdb->prepare(
-                "SELECT affiliate_url FROM %i WHERE canonical_click_id = %s AND status = 'active' AND expires_at > NOW() LIMIT 1",
+                "SELECT affiliate_url FROM %i WHERE canonical_click_id = %s AND user_id = 0 AND status = 'active' AND expires_at > NOW() LIMIT 1",
                 $sessions_table,
                 $click_id
             ));
-
-            // 12i-3 ADR: fallback на cashback_click_log для legacy rows (до 12i-1 migration).
-            if (!is_string($row) || $row === '') {
-                $click_log_table = $wpdb->prefix . 'cashback_click_log';
-                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table, legacy fallback.
-                $row = $wpdb->get_var($wpdb->prepare(
-                    'SELECT affiliate_url FROM %i WHERE click_id = %s LIMIT 1',
-                    $click_log_table,
-                    $click_id
-                ));
-            }
 
             // 12h-1 ADR (F-2-001): single point of truth scheme check через helper.
             $url = ( is_string($row) && $this->is_safe_http_url($row) )
@@ -1008,30 +932,31 @@ class WC_Affiliate_URL_Params {
             exit;
         }
 
+        // F-2-001 п.3: HMAC-токен с привязкой (click_id, user_id, issued_at).
+        // До lookup — иначе reuse чужого click_id работает через IDOR в БД.
+        $user_id = get_current_user_id();
+        $token   = sanitize_text_field(wp_unslash($_GET['t'] ?? '')); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public activation-page entry point, external URL, nonce not applicable.
+        if ($token === '' || !Cashback_Encryption::verify_activation_token($token, $click_id, $user_id)) {
+            // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- Intentional redirect to home_url() on invalid/expired token.
+            wp_redirect(home_url(), 302);
+            exit;
+        }
+
         nocache_headers();
 
         // phpcs:ignore VariableAnalysis.CodeAnalysis.VariableAnalysis.VariableRedeclaration -- Previous global declaration is inside an if-block that always exits; this path requires its own import.
         global $wpdb;
 
         // 12i-3 ADR (F-10-001): primary lookup в cashback_click_sessions по canonical_click_id.
+        // F-2-001 п.2: привязка AND user_id = %d — double-check после HMAC (defence in depth).
         $sessions_table = $wpdb->prefix . 'cashback_click_sessions';
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table, activation page lookup.
         $click = $wpdb->get_row($wpdb->prepare(
-            "SELECT affiliate_url, product_id FROM %i WHERE canonical_click_id = %s AND status = 'active' AND expires_at > NOW() LIMIT 1",
+            "SELECT affiliate_url, product_id FROM %i WHERE canonical_click_id = %s AND user_id = %d AND status = 'active' AND expires_at > NOW() LIMIT 1",
             $sessions_table,
-            $click_id
+            $click_id,
+            $user_id
         ), ARRAY_A);
-
-        // 12i-3 ADR: fallback на cashback_click_log для legacy rows.
-        if (empty($click)) {
-            $click_log_table = $wpdb->prefix . 'cashback_click_log';
-            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table, legacy fallback.
-            $click = $wpdb->get_row($wpdb->prepare(
-                'SELECT affiliate_url, product_id FROM %i WHERE click_id = %s LIMIT 1',
-                $click_log_table,
-                $click_id
-            ), ARRAY_A);
-        }
 
         $affiliate_url = '';
         if (!empty($click['affiliate_url']) && $this->is_safe_http_url((string) $click['affiliate_url'])) {
@@ -1344,7 +1269,20 @@ HTML;
         }
 
         $url = (string) $product->get_product_url();
-        if ($url === '' || $this->is_safe_http_url($url)) {
+        if ($url === '') {
+            return;
+        }
+
+        $rejected_reason = null;
+        if (!$this->is_safe_http_url($url)) {
+            $rejected_reason = 'unsafe_scheme';
+        } elseif (!$this->is_safe_destination_host($url)) {
+            // F-2-001 п.5: host-валидация на входной границе — отсекает IP-литералы,
+            // single-label (localhost) и reserved-TLD'ы до записи в БД.
+            $rejected_reason = 'unsafe_host';
+        }
+
+        if ($rejected_reason === null) {
             return;
         }
 
@@ -1352,24 +1290,75 @@ HTML;
 
         // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Diagnostic logging: grep [wc-affiliate-url-params] Rejected unsafe product URL on save.
         error_log(sprintf(
-            '[wc-affiliate-url-params] Rejected unsafe product URL on save: product #%d',
+            '[wc-affiliate-url-params] Rejected %s product URL on save: product #%d',
+            $rejected_reason,
             (int) $product->get_id()
         ));
 
         // Admin notice через существующий transient-based pipeline в show_admin_notices().
         $user_id = get_current_user_id();
         if ($user_id > 0) {
+            $message_template = $rejected_reason === 'unsafe_scheme'
+                /* translators: 1: product name, 2: product ID */
+                ? __('URL товара "%1$s" (ID %2$d) имел недопустимую схему. Допустимы только http:// и https://. URL очищен.', 'cashback-plugin')
+                /* translators: 1: product name, 2: product ID */
+                : __('URL товара "%1$s" (ID %2$d) содержит недопустимый хост (IP-литерал, localhost или зарезервированный TLD). URL очищен.', 'cashback-plugin');
+
             set_transient(
                 'cashback_product_url_rejected_' . $user_id,
                 sprintf(
-                    /* translators: 1: product name, 2: product ID */
-                    __('URL товара "%1$s" (ID %2$d) имел недопустимую схему. Допустимы только http:// и https://. URL очищен.', 'cashback-plugin'),
+                    $message_template,
                     (string) $product->get_name(),
                     (int) $product->get_id()
                 ),
                 MINUTE_IN_SECONDS * 5
             );
         }
+    }
+
+    /**
+     * F-2-001 п.5: host-валидация URL на входной границе (admin save).
+     *
+     * Проверяет, что destination не является:
+     *   - пустым или невалидным URL (нет host'а);
+     *   - IPv4-литералом вида `1.2.3.4`;
+     *   - IPv6-литералом (любой host, содержащий `:`);
+     *   - single-label (напр. `localhost`) — нет точки в хосте;
+     *   - TLD из blocklist `['local', 'localhost', 'internal', 'test', 'example', 'invalid']` (reserved / phishing-risk).
+     *
+     * Redirect-путь (runtime) сознательно остаётся scheme-only (см. is_safe_http_url) —
+     * wp_safe_redirect с host allowlist ломает CPA-атрибуцию. Защита на save + runtime
+     * scheme-check = balanced trade-off.
+     */
+    private function is_safe_destination_host( string $url ): bool {
+        $host = wp_parse_url($url, PHP_URL_HOST);
+        if (!is_string($host) || $host === '') {
+            return false;
+        }
+
+        // IPv4-литерал.
+        if (preg_match('/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/', $host)) {
+            return false;
+        }
+
+        // IPv6-литерал (host с ':' — WP parse_url уже снимает обрамляющие `[…]`).
+        if (str_contains($host, ':')) {
+            return false;
+        }
+
+        // Single-label (localhost, intranet, dev-hostnames без точки).
+        if (!str_contains($host, '.')) {
+            return false;
+        }
+
+        $parts = explode('.', $host);
+        $tld   = strtolower(end($parts));
+        $blocked_tlds = array( 'local', 'localhost', 'internal', 'test', 'example', 'invalid' );
+        if (in_array($tld, $blocked_tlds, true)) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -1391,118 +1380,6 @@ HTML;
         }
         $scheme = wp_parse_url($url, PHP_URL_SCHEME);
         return in_array($scheme, array( 'http', 'https' ), true);
-    }
-
-    /**
-     * Построение финального affiliate URL с подстановкой реальных значений параметров.
-     *
-     * @since 3.0.0
-     *
-     * @param int    $product_id ID товара WooCommerce.
-     * @param int    $user_id    ID текущего пользователя (0 для гостей).
-     * @param string $click_id   UUID v7 (time-ordered), сгенерированный на сервере.
-     *
-     * @return string|null Полный affiliate URL или null если товар не найден.
-     */
-    private function build_final_affiliate_url( int $product_id, int $user_id, string $click_id ): ?string {
-        $product = wc_get_product($product_id);
-        if (!$product || $product->get_type() !== 'external') {
-            return null;
-        }
-
-        $base_url = $product->get_product_url();
-        if (empty($base_url)) {
-            return null;
-        }
-
-        // 12h-1 ADR (F-2-001): защита от open redirect — только http/https (см. is_safe_http_url).
-        if (!$this->is_safe_http_url($base_url)) {
-            return null;
-        }
-
-        $affiliate_params = $this->get_affiliate_params($product_id);
-        if (empty($affiliate_params)) {
-            return $base_url;
-        }
-
-        // Получаем partner_token (криптографически стойкий, вместо user_id)
-        $partner_token = null;
-        if ($user_id > 0) {
-            $partner_token = Mariadb_Plugin::get_partner_token($user_id);
-        }
-
-        $params = array();
-        foreach ($affiliate_params as $param) {
-            if (empty($param['key']) || empty($param['value'])) {
-                continue;
-            }
-
-            $param_type = strtolower(trim($param['value']));
-
-            if ($param_type === 'user') {
-                // partner_token вместо user_id — защита от IDOR и перебора
-                $params[ $param['key'] ] = $partner_token !== null ? $partner_token : 'unregistered';
-            } elseif ($param_type === 'uuid') {
-                $params[ $param['key'] ] = $click_id;
-            } else {
-                $params[ $param['key'] ] = $param['value'];
-            }
-        }
-
-        return add_query_arg($params, $base_url);
-    }
-
-    /**
-     * Получение slug CPA-сети для товара.
-     *
-     * @since 3.0.0
-     *
-     * @param int $product_id ID товара.
-     *
-     * @return string|null Slug сети или null.
-     */
-    private function get_network_slug_for_product( int $product_id ): ?string {
-        global $wpdb;
-
-        $network_id = (int) get_post_meta($product_id, '_affiliate_network_id', true);
-        if ($network_id <= 0) {
-            return null;
-        }
-
-        $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
-        $slug           = $wpdb->get_var($wpdb->prepare(
-            'SELECT slug FROM %i WHERE id = %d AND is_active = 1',
-            $networks_table,
-            $network_id
-        ));
-
-        return $slug ?: null;
-    }
-
-    /**
-     * Получение идентификатора сессии для текущего посетителя.
-     *
-     * Для авторизованных пользователей возвращает null (достаточно user_id).
-     * Для гостей используется только WooCommerce session.
-     * PHP session_start() не используется — конфликтует с page cache и object cache.
-     *
-     * @since 3.0.0
-     *
-     * @return string|null Идентификатор WC-сессии или null.
-     */
-    private function get_session_id(): ?string {
-        if (is_user_logged_in()) {
-            return null;
-        }
-
-        if (function_exists('WC') && WC()->session) {
-            $wc_session_id = WC()->session->get_customer_id();
-            if (!empty($wc_session_id)) {
-                return (string) $wc_session_id;
-            }
-        }
-
-        return null;
     }
 
     /**
@@ -1565,122 +1442,6 @@ HTML;
         }
 
         return false;
-    }
-
-    /**
-     * Двухуровневый rate limit без User-Agent.
-     *
-     * Ключи:
-     *   1. per_product: md5(IP + product_id) — ловит накрутку оффера
-     *   2. global:      md5(IP)              — ловит массовый фрод / DDoS
-     *
-     * UA не используется в ключах:
-     *   - Боты меняют UA на каждый запрос → обход.
-     *   - CGNAT: разные UA = разные ключи = один пользователь исчерпает лимит соты.
-     *
-     * Логика:
-     *   - Если ЛЮБОЙ ключ >= BLOCK → 'blocked'
-     *   - Если ЛЮБОЙ ключ > SPAM → 'spam'
-     *   - Иначе → 'normal'
-     *
-     * Оптимизация: если статус уже 'blocked', счётчик НЕ перезаписывается
-     * (экономим запись в wp_options / object cache).
-     *
-     * @since 4.3.0
-     *
-     * @param string $ip_address IP адрес клиента.
-     * @param int    $product_id ID товара.
-     *
-     * @return string 'normal' | 'spam' | 'blocked'
-     */
-    private function get_click_rate_status( string $ip_address, int $product_id ): string {
-        $window = self::RATE_LIMIT_WINDOW_SECONDS;
-
-        // Группа 7 (шаг 6 ADR): атомарный backend заменяет старый get_transient/set_transient
-        // race-паттерн. Каждый scope независим — pp/gl порядковые increment'ы атомарны
-        // на уровне PK(scope_key) в MariaDB.
-        $pp_scope = 'pp_' . substr(sha1($ip_address . '|' . $product_id), 0, 40);
-        $gl_scope = 'gl_' . substr(sha1($ip_address), 0, 40);
-
-        if (!class_exists('Cashback_Rate_Limiter')) {
-            require_once __DIR__ . '/includes/class-cashback-rate-limiter.php';
-        }
-
-        try {
-            $counter = \Cashback_Rate_Limiter::counter_backend();
-            $pp      = $counter->increment($pp_scope, $window, self::RATE_PER_PRODUCT_BLOCK);
-            $gl      = $counter->increment($gl_scope, $window, self::RATE_GLOBAL_BLOCK);
-        } catch (\Throwable $e) {
-            // Fail-open при ошибке backend'а: click-rate не критический путь,
-            // сохраняем availability редиректа на партнёрскую сеть.
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Rate-limit backend diagnostic (group 7, step 6).
-            error_log('[cashback-affiliate] rate-limit backend error: ' . $e->getMessage());
-
-            return 'normal';
-        }
-
-        $pp_hits = (int) $pp['hits'];
-        $gl_hits = (int) $gl['hits'];
-
-        if ($pp_hits >= self::RATE_PER_PRODUCT_BLOCK || $gl_hits >= self::RATE_GLOBAL_BLOCK) {
-            return 'blocked';
-        }
-
-        if ($pp_hits > self::RATE_PER_PRODUCT_SPAM || $gl_hits > self::RATE_GLOBAL_SPAM) {
-            return 'spam';
-        }
-
-        return 'normal';
-    }
-
-    /**
-     * Запись клика в cashback_click_log.
-     *
-     * Без транзакции — одиночный INSERT не требует START TRANSACTION.
-     * Ошибка записи логируется, но не блокирует редирект пользователя.
-     * user_id = 0 для гостей (не NULL), чтобы использовать единый %d плейсхолдер.
-     *
-     * @since 4.2.0
-     *
-     * @param array $data Данные клика (user_id: int, 0 для гостей).
-     *
-     * @return bool true при успехе, false при ошибке.
-     */
-    private function log_click_to_db( array $data ): bool {
-        global $wpdb;
-
-        $table = $wpdb->prefix . 'cashback_click_log';
-
-        // Время в UTC с микросекундами
-        $created_at = ( new \DateTimeImmutable('now', new \DateTimeZone('UTC')) )->format('Y-m-d H:i:s.u');
-
-        $result = $wpdb->query($wpdb->prepare(
-            'INSERT INTO %i (click_id, user_id, session_id, product_id, cpa_network, affiliate_url, ip_address, user_agent, referer, spam_click, created_at)
-             VALUES (%s, %d, %s, %d, %s, %s, %s, %s, %s, %d, %s)',
-            $table,
-            $data['click_id'],
-            absint($data['user_id']),
-            $data['session_id'],
-            $data['product_id'],
-            $data['cpa_network'],
-            $data['affiliate_url'],
-            $data['ip_address'],
-            $data['user_agent'],
-            $data['referer'],
-            absint($data['spam_click'] ?? 0),
-            $created_at
-        ));
-
-        if ($result === false) {
-            $logger = wc_get_logger();
-            $logger->error(
-                sprintf('Ошибка записи клика для товара %d: %s', $data['product_id'], $wpdb->last_error),
-                array( 'source' => self::LOGGER_SOURCE )
-            );
-            return false;
-        }
-
-        return true;
     }
 
     /**

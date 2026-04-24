@@ -814,6 +814,24 @@ class Cashback_Partner_Management_Admin {
             return;
         }
 
+        // F-2-001 п.4: whitelist для param_name (ASCII alpha-num + _/-, 1..32 симв.).
+        // Отсекаем мусорные ключи до старта транзакции — не пускаем в БД.
+        foreach ($param_names as $pn) {
+            if ($pn === '') {
+                continue;
+            }
+            if (!Cashback_Click_Session_Service::is_valid_affiliate_param_name($pn)) {
+                wp_send_json_error(array(
+                    'message' => sprintf(
+                        /* translators: %s: rejected parameter name (truncated) */
+                        __('Название параметра "%s" содержит недопустимые символы. Разрешены только буквы, цифры, _ и - (1..32 символов).', 'cashback-plugin'),
+                        substr($pn, 0, 48)
+                    ),
+                ));
+                return;
+            }
+        }
+
         $new_count = 0;
         foreach ($param_names as $pn) {
             if (!empty($pn)) {
@@ -1067,6 +1085,17 @@ class Cashback_Partner_Management_Admin {
                 Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
             }
             wp_send_json_error(array( 'message' => 'Название параметра обязательно.' ));
+            return;
+        }
+
+        // F-2-001 п.4: whitelist (ASCII alpha-num + _/-, 1..32 симв.).
+        if (!Cashback_Click_Session_Service::is_valid_affiliate_param_name($param_name)) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
+            wp_send_json_error(array(
+                'message' => __('Название параметра содержит недопустимые символы. Разрешены только буквы, цифры, _ и - (1..32 символов).', 'cashback-plugin'),
+            ));
             return;
         }
 

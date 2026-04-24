@@ -6,19 +6,19 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Группа 12i-2 ADR — activate_cashback logic: session dedup + idempotency + row-lock.
+ * Группа 12i-2 ADR — activate flow: session dedup + idempotency + row-lock.
  *
  * Closes F-10-001 logic slice:
- *  - client_request_id param в REST route + Cashback_Idempotency claim/store.
- *  - Resolve merchant policy из БД (click_session_policy, activation_window_seconds)
- *    + fail-safe clamps (allowlist policy, window 60..86400).
- *  - TX + SELECT FOR UPDATE на click_sessions.
- *  - Reuse: tap_count++, last_tap_at=NOW(), вернуть canonical_click_id.
- *  - Create: INSERT session + INSERT click_log с is_session_primary=1.
- *  - Always log tap event в click_log с click_session_id + client_request_id.
- *  - Response: additive поля reused + tap_count.
+ *  - REST /activate: client_request_id param + Cashback_Idempotency claim/store.
+ *  - Session logic (Cashback_Click_Session_Service::activate):
+ *    merchant policy + window clamp, TX + SELECT FOR UPDATE, reuse/new, log_click.
  *
- * Source-grep тесты (поведение проверяется в 12i-4 через integration).
+ * После group 12 refactor SQL/TX логика вынесена в Cashback_Click_Session_Service;
+ * REST-endpoint стал thin adapter. Тесты отражают эту структуру:
+ *  - idempotency/response — проверяются на activate_cashback() body (REST-слой).
+ *  - SQL/TX/policy/clamp — на исходнике сервиса (включая constant-уровень).
+ *
+ * Source-grep тесты. Behavioural integration — в 12i-4 (ActivateSessionDedupIntegrationTest).
  */
 #[Group('security')]
 #[Group('group12')]
@@ -26,18 +26,26 @@ use PHPUnit\Framework\TestCase;
 #[Group('activate-dedup')]
 class ActivateDedupLogicTest extends TestCase
 {
-    private string $source = '';
-    private string $activate_body = '';
+    private string $source          = '';
+    private string $activate_body   = '';
+    private string $service_source  = '';
 
     protected function setUp(): void
     {
         $plugin_root = dirname(__DIR__, 3);
-        $path        = $plugin_root . '/includes/class-cashback-rest-api.php';
+
+        $path = $plugin_root . '/includes/class-cashback-rest-api.php';
         self::assertFileExists($path);
         $content = file_get_contents($path);
         self::assertNotFalse($content);
         $this->source        = $content;
-        $this->activate_body = $this->extract_method('activate_cashback');
+        $this->activate_body = $this->extract_method($this->source, 'activate_cashback');
+
+        $service_path = $plugin_root . '/includes/class-cashback-click-session-service.php';
+        self::assertFileExists($service_path);
+        $service_content = file_get_contents($service_path);
+        self::assertNotFalse($service_content);
+        $this->service_source = $service_content;
     }
 
     // =====================================================================
@@ -105,15 +113,15 @@ class ActivateDedupLogicTest extends TestCase
     }
 
     // =====================================================================
-    // 3. Merchant policy resolution + fail-safe clamps
+    // 3. Merchant policy resolution + fail-safe clamps (в сервисе)
     // =====================================================================
 
     public function test_activate_reads_click_session_policy(): void
     {
         self::assertStringContainsString(
             'click_session_policy',
-            $this->activate_body,
-            '12i-2: activate_cashback должен читать click_session_policy из merchant config.'
+            $this->service_source,
+            '12i-2: click-session сервис должен читать click_session_policy из merchant config.'
         );
     }
 
@@ -121,8 +129,8 @@ class ActivateDedupLogicTest extends TestCase
     {
         self::assertStringContainsString(
             'activation_window_seconds',
-            $this->activate_body,
-            '12i-2: activate_cashback должен читать activation_window_seconds из merchant config.'
+            $this->service_source,
+            '12i-2: click-session сервис должен читать activation_window_seconds из merchant config.'
         );
     }
 
@@ -131,31 +139,31 @@ class ActivateDedupLogicTest extends TestCase
         // Policy должен проверяться по allowlist, невалидное значение → reuse_in_window fallback.
         self::assertMatchesRegularExpression(
             "/['\"]reuse_in_window['\"][\s\S]{0,100}['\"]always_new['\"]|['\"]always_new['\"][\s\S]{0,100}['\"]reuse_in_window['\"]/",
-            $this->activate_body,
+            $this->service_source,
             '12i-2: policy должен быть в allowlist [reuse_in_window, always_new, reuse_per_product] — fail-safe для невалидного значения.'
         );
     }
 
     public function test_activate_window_has_numeric_clamp(): void
     {
-        // Window clamp: 60..86400
+        // Window clamp: 60..86400 (через const WINDOW_MIN/WINDOW_MAX в сервисе).
         self::assertMatchesRegularExpression(
             '/\b60\b[\s\S]{0,200}\b86400\b|\b86400\b[\s\S]{0,200}\b60\b/',
-            $this->activate_body,
+            $this->service_source,
             '12i-2: activation_window_seconds должен clamp\'иться в диапазон 60..86400 (защита от misconfig).'
         );
     }
 
     // =====================================================================
-    // 4. TX + SELECT FOR UPDATE + session reuse/create
+    // 4. TX + SELECT FOR UPDATE + session reuse/create (в сервисе)
     // =====================================================================
 
     public function test_activate_uses_transaction(): void
     {
         self::assertMatchesRegularExpression(
             "/START\s+TRANSACTION/i",
-            $this->activate_body,
-            '12i-2: activate_cashback должен оборачиваться в TX для атомарного session lookup+insert.'
+            $this->service_source,
+            '12i-2: click-session сервис должен оборачивать session lookup+insert в TX.'
         );
     }
 
@@ -163,38 +171,36 @@ class ActivateDedupLogicTest extends TestCase
     {
         self::assertStringContainsString(
             'cashback_click_sessions',
-            $this->activate_body,
-            '12i-2: activate_cashback должен обращаться к cashback_click_sessions.'
+            $this->service_source,
+            '12i-2: сервис должен обращаться к cashback_click_sessions.'
         );
         self::assertMatchesRegularExpression(
             '/FOR\s+UPDATE/i',
-            $this->activate_body,
-            '12i-2: SELECT сессии должен использовать FOR UPDATE — защита от race между параллельными /activate.'
+            $this->service_source,
+            '12i-2: SELECT сессии должен использовать FOR UPDATE — защита от race между параллельными активациями.'
         );
         self::assertMatchesRegularExpression(
             '/\bSELECT\b[\s\S]{0,500}\bFOR\s+UPDATE/i',
-            $this->activate_body,
+            $this->service_source,
             '12i-2: FOR UPDATE должен идти за SELECT в пределах разумного окна (оба в lookup-запросе).'
         );
     }
 
     public function test_activate_inserts_session_on_new(): void
     {
-        // Достаточно что метод (1) ссылается на cashback_click_sessions и
-        // (2) содержит INSERT INTO — два сигнала вместе = сценарий new session.
         self::assertStringContainsString(
             'cashback_click_sessions',
-            $this->activate_body
+            $this->service_source
         );
         self::assertMatchesRegularExpression(
             '/INSERT\s+INTO\s+%i/i',
-            $this->activate_body,
+            $this->service_source,
             '12i-2: должен быть INSERT INTO %i (prepared-паттерн) для создания новой сессии.'
         );
         // canonical_click_id пишется в INSERT сессии (VALUES первый параметр).
         self::assertStringContainsString(
             'canonical_click_id',
-            $this->activate_body,
+            $this->service_source,
             '12i-2: INSERT сессии должен писать canonical_click_id.'
         );
     }
@@ -203,7 +209,7 @@ class ActivateDedupLogicTest extends TestCase
     {
         self::assertMatchesRegularExpression(
             '/tap_count\s*=\s*tap_count\s*\+\s*1/i',
-            $this->activate_body,
+            $this->service_source,
             '12i-2: при reuse сессии tap_count должен инкрементиться (tap_count = tap_count + 1).'
         );
     }
@@ -212,7 +218,7 @@ class ActivateDedupLogicTest extends TestCase
     {
         self::assertStringContainsString(
             'last_tap_at',
-            $this->activate_body,
+            $this->service_source,
             '12i-2: reuse должен обновлять last_tap_at = NOW().'
         );
     }
@@ -221,7 +227,7 @@ class ActivateDedupLogicTest extends TestCase
     {
         self::assertMatchesRegularExpression(
             "/ROLLBACK/i",
-            $this->activate_body,
+            $this->service_source,
             '12i-2: при ошибке должен быть ROLLBACK (не оставляем TX открытой).'
         );
     }
@@ -230,7 +236,7 @@ class ActivateDedupLogicTest extends TestCase
     {
         self::assertMatchesRegularExpression(
             "/COMMIT/",
-            $this->activate_body,
+            $this->service_source,
             '12i-2: успешная ветка должна делать COMMIT.'
         );
     }
@@ -243,17 +249,16 @@ class ActivateDedupLogicTest extends TestCase
     {
         self::assertStringContainsString(
             'click_session_id',
-            $this->activate_body,
+            $this->service_source,
             '12i-2: INSERT в click_log должен включать click_session_id (FK на созданную/переиспользованную сессию).'
         );
     }
 
     public function test_click_log_insert_includes_client_request_id(): void
     {
-        // Подсказка: в теле метода должно быть упоминание client_request_id в контексте log_click/INSERT click_log.
         self::assertStringContainsString(
             'client_request_id',
-            $this->activate_body,
+            $this->service_source,
             '12i-2: tap event должен записываться с client_request_id (для post-mortem-grep по ретраям).'
         );
     }
@@ -262,7 +267,7 @@ class ActivateDedupLogicTest extends TestCase
     {
         self::assertStringContainsString(
             'is_session_primary',
-            $this->activate_body,
+            $this->service_source,
             '12i-2: tap event должен записываться с is_session_primary (1 для первого тапа сессии, 0 для повторов).'
         );
     }
@@ -331,9 +336,10 @@ class ActivateDedupLogicTest extends TestCase
     public function test_existing_rate_limit_preserved(): void
     {
         // Regression: Group 7 rate-limit backend должен оставаться (считает тапы, это OK для антифрода).
+        // После refactor логика rate-limit переехала из Cashback_REST_API в Cashback_Click_Session_Service.
         self::assertStringContainsString(
             'get_click_rate_status',
-            $this->activate_body,
+            $this->service_source,
             'Regression: rate-limiting (Group 7) должен сохраняться — он считает ТАПЫ, не сессии.'
         );
     }
@@ -342,30 +348,30 @@ class ActivateDedupLogicTest extends TestCase
     // Helpers
     // =====================================================================
 
-    private function extract_method( string $name ): string
+    private function extract_method( string $source, string $name ): string
     {
         $pattern = '/(?:public|private|protected)\s+(?:static\s+)?function\s+' . preg_quote($name, '/')
             . '\s*\([^)]*\)(?:\s*:\s*\??[\w\\\\]+)?\s*\{/';
 
-        if (preg_match($pattern, $this->source, $m, PREG_OFFSET_CAPTURE) !== 1) {
-            self::fail('Метод ' . $name . '() не найден в rest-api.');
+        if (preg_match($pattern, $source, $m, PREG_OFFSET_CAPTURE) !== 1) {
+            self::fail('Метод ' . $name . '() не найден.');
         }
 
         $start = (int) $m[0][1];
-        $brace = strpos($this->source, '{', $start);
+        $brace = strpos($source, '{', $start);
         if ($brace === false) {
             self::fail('Нет открывающей скобки у ' . $name);
         }
 
         $depth = 0;
-        $len   = strlen($this->source);
+        $len   = strlen($source);
         for ($i = $brace; $i < $len; $i++) {
-            if ($this->source[$i] === '{') {
+            if ($source[$i] === '{') {
                 $depth++;
-            } elseif ($this->source[$i] === '}') {
+            } elseif ($source[$i] === '}') {
                 $depth--;
                 if ($depth === 0) {
-                    return substr($this->source, $brace, $i - $brace + 1);
+                    return substr($source, $brace, $i - $brace + 1);
                 }
             }
         }

@@ -9,8 +9,8 @@ require_once dirname(__DIR__, 3) . '/includes/rate-limit/interface-cashback-rate
 require_once dirname(__DIR__, 3) . '/includes/class-cashback-rate-limiter.php';
 
 /**
- * Unit-тесты для миграции rest-api /activate click-rate на атомарный backend
- * (Группа 7 ADR, шаг 7).
+ * Unit-тесты для click-rate маппинга в Cashback_Click_Session_Service
+ * (Группа 7 ADR, шаг 7; rate-limit перенесён в сервис в group 12 refactor).
  *
  * Ключевые требования:
  *  - логика маппинга hits→normal/spam/blocked сохранена;
@@ -27,15 +27,14 @@ final class RestApiActivateClickRateTest extends TestCase
         $GLOBALS['_cb_test_transients'] = array();
         $GLOBALS['_cb_test_cache']      = array();
 
-        if (!class_exists('Cashback_REST_API')) {
-            // class-cashback-rest-api.php может зависеть от WP-функций/классов,
-            // не определённых в bootstrap. Подключаем напрямую — если будут ошибки,
-            // skip.
-            $rest_file = dirname(__DIR__, 3) . '/includes/class-cashback-rest-api.php';
-            if (!file_exists($rest_file)) {
-                $this->markTestSkipped('class-cashback-rest-api.php отсутствует');
+        if (!class_exists('Cashback_Click_Session_Service')) {
+            // После group 12 refactor get_click_rate_status живёт в click-session сервисе.
+            // Подключаем файл сервиса напрямую — если будут ошибки, skip.
+            $service_file = dirname(__DIR__, 3) . '/includes/class-cashback-click-session-service.php';
+            if (!file_exists($service_file)) {
+                $this->markTestSkipped('class-cashback-click-session-service.php отсутствует');
             }
-            require_once $rest_file;
+            require_once $service_file;
         }
     }
 
@@ -110,12 +109,10 @@ final class RestApiActivateClickRateTest extends TestCase
 
     private function invoke_click_rate(string $ip, int $product_id): string
     {
-        $reflection = new \ReflectionClass(\Cashback_REST_API::class);
-        $instance   = $reflection->newInstanceWithoutConstructor();
+        // После group 12 refactor метод стал private static в Cashback_Click_Session_Service.
+        $method = new \ReflectionMethod(\Cashback_Click_Session_Service::class, 'get_click_rate_status');
 
-        $method = new \ReflectionMethod(\Cashback_REST_API::class, 'get_click_rate_status');
-
-        return (string) $method->invoke($instance, $ip, $product_id);
+        return (string) $method->invoke(null, $ip, $product_id);
     }
 }
 

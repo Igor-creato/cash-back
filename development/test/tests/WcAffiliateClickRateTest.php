@@ -14,6 +14,10 @@ require_once dirname(__DIR__, 3) . '/includes/class-cashback-rate-limiter.php';
  * Раньше get_click_rate_status() делал get_transient/set_transient подряд (race).
  * Теперь — два независимых increment() через Cashback_Rate_Limiter::counter_backend().
  * Тесты проверяют что маппинг hits → normal/spam/blocked сохраняется.
+ *
+ * После group 12 refactor (F-2-001) метод переехал в Cashback_Click_Session_Service —
+ * wc-affiliate делегирует в общий сервис; этот тест закрывает оригинальную
+ * behavioural регрессию на прежнем callsite, но теперь через новый target.
  */
 #[Group('rate-limit')]
 final class WcAffiliateClickRateTest extends TestCase
@@ -25,8 +29,8 @@ final class WcAffiliateClickRateTest extends TestCase
         $GLOBALS['_cb_test_transients'] = array();
         $GLOBALS['_cb_test_cache']      = array();
 
-        if (!class_exists('WC_Affiliate_URL_Params')) {
-            require_once dirname(__DIR__, 3) . '/wc-affiliate-url-params.php';
+        if (!class_exists('Cashback_Click_Session_Service')) {
+            require_once dirname(__DIR__, 3) . '/includes/class-cashback-click-session-service.php';
         }
     }
 
@@ -158,14 +162,10 @@ final class WcAffiliateClickRateTest extends TestCase
 
     private function invoke_click_rate(string $ip, int $product_id): string
     {
-        // Минуем конструктор — он регистрирует WooCommerce-хуки, которые не нужны
-        // для unit-теста приватного метода.
-        $reflection = new \ReflectionClass(\WC_Affiliate_URL_Params::class);
-        $instance   = $reflection->newInstanceWithoutConstructor();
+        // После group 12 refactor метод стал private static в Cashback_Click_Session_Service.
+        $method = new \ReflectionMethod(\Cashback_Click_Session_Service::class, 'get_click_rate_status');
 
-        $method = new \ReflectionMethod(\WC_Affiliate_URL_Params::class, 'get_click_rate_status');
-
-        return (string) $method->invoke($instance, $ip, $product_id);
+        return (string) $method->invoke(null, $ip, $product_id);
     }
 }
 
