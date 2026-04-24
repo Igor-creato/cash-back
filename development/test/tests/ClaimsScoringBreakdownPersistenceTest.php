@@ -285,6 +285,87 @@ final class ClaimsScoringBreakdownPersistenceTest extends TestCase
     }
 
     // =====================================================================
+    // UX fix: строка «Риск» инвертируется на render (label остаётся «Риск»,
+    // но цифра 0 = чистый юзер, 100 = критический; цвета флипнуты).
+    // Storage в breakdown['risk'] — без изменений (score_risk_factor * 100,
+    // «высокое = чистый», консистентно с остальными 4 факторами в формуле).
+    // =====================================================================
+
+    public function test_risk_row_inverts_display_value(): void
+    {
+        // Source-grep: в render_claim_detail должен быть расчёт вида `100 - ...`
+        // применённый к breakdown['risk'] или к переменной, полученной из него.
+        self::assertMatchesRegularExpression(
+            '/100(?:\.0)?\s*-\s*(?:\(\s*float\s*\)\s*)?\$\w+(?:\s*\[\s*[\'"]risk[\'"]\s*\])?/',
+            $this->claims_admin_source,
+            'render_claim_detail должен инвертировать risk-значение: `100 - $raw` (или аналог).'
+        );
+
+        // Проверяем что инверсия применяется именно к risk-ключу: должна
+        // быть ветка `$key === \'risk\'` (или аналогичная), в которой
+        // появляется выражение `100 -`.
+        self::assertMatchesRegularExpression(
+            '/\$key\s*===?\s*[\'"]risk[\'"]/',
+            $this->claims_admin_source,
+            'Инверсия должна быть ограничена ключом risk (branch по `$key === \'risk\'`).'
+        );
+    }
+
+    public function test_risk_row_uses_inverted_color_thresholds(): void
+    {
+        // В risk-ветке цвет ≥70 должен быть красным #d63638, а не зелёным #2a8f2a.
+        // Ищем: сначала `$key === 'risk'` блок, затем в пределах ~400 символов
+        // после — выражение `>= 70` связанное с красным.
+        if (preg_match(
+            '/\$key\s*===?\s*[\'"]risk[\'"].*?\}/s',
+            $this->claims_admin_source,
+            $m
+        ) !== 1) {
+            self::fail('Не нашёл блок `if ($key === \'risk\')` в render_claim_detail.');
+        }
+        $risk_branch = $m[0];
+
+        self::assertMatchesRegularExpression(
+            '/>=?\s*70[^?]*\?\s*[\'"]#d63638[\'"]/',
+            $risk_branch,
+            'В risk-ветке ≥70 должен соответствовать красному #d63638 (флип цвета).'
+        );
+    }
+
+    public function test_other_rows_keep_standard_color_direction(): void
+    {
+        // В else-ветке (не risk) ≥70 должен оставаться зелёным #2a8f2a — как и раньше.
+        // Ищем любой фрагмент, где >=70 ? '#2a8f2a' (зелёный) — это признак того,
+        // что для non-risk факторов цветовая схема не изменилась.
+        self::assertMatchesRegularExpression(
+            '/>=?\s*70[^?]*\?\s*[\'"]#2a8f2a[\'"]/',
+            $this->claims_admin_source,
+            'Для non-risk факторов ≥70 остаётся зелёным #2a8f2a (схема не меняется).'
+        );
+    }
+
+    public function test_storage_semantics_unchanged_in_scoring(): void
+    {
+        // Regression guard: breakdown['risk'] в class-claims-scoring.php всё ещё
+        // хранится как $risk_score * 100, где $risk_score = 1 - user_risk_score/100
+        // (т.е. high = clean). Инверсия — только на render, storage не тронут.
+        $plugin_root = dirname(__DIR__, 3);
+        $scoring_src = (string) file_get_contents($plugin_root . '/claims/class-claims-scoring.php');
+
+        self::assertMatchesRegularExpression(
+            '/[\'"]risk[\'"]\s*=>\s*round\s*\(\s*\$risk_score\s*\*\s*100/',
+            $scoring_src,
+            'breakdown[\'risk\'] должен оставаться $risk_score * 100 (storage не меняется, инверсия только в render).'
+        );
+
+        self::assertMatchesRegularExpression(
+            '/1(?:\.0)?\s*-\s*\(\s*\$risk\s*\/\s*100(?:\.0)?\s*\)/',
+            $scoring_src,
+            'score_risk_factor должен сохранять формулу 1 - risk/100 (high = clean).'
+        );
+    }
+
+    // =====================================================================
     // Helpers.
     // =====================================================================
 
