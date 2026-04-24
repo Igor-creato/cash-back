@@ -84,13 +84,20 @@ class Cashback_Claims_Manager {
             'comment'           => sanitize_textarea_field($data['comment'] ?? ''),
             'status'            => 'submitted',
             'probability_score' => number_format((float) $scoring['score'], 2, '.', ''),
-            'scoring_breakdown' => wp_json_encode($scoring['breakdown']),
             'is_suspicious'     => $antifraud['suspicious'] ? 1 : 0,
             'ip_address'        => $ip,
             'user_agent'        => $ua,
         );
 
-        $insert_format = array( '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s' );
+        $insert_format = array( '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s' );
+
+        // F-20-002: scoring_breakdown добавляется только если колонка реально
+        // существует (защита на случай, если миграция ещё не прошла / упала
+        // silently). has_scoring_breakdown_column() кэширует результат на request.
+        if (Cashback_Claims_DB::has_scoring_breakdown_column()) {
+            $insert_data['scoring_breakdown'] = wp_json_encode($scoring['breakdown']);
+            $insert_format[]                  = '%s';
+        }
 
         $merchant_id = $eligibility['data']['merchant_id'] ?? 0;
         if ($merchant_id > 0) {

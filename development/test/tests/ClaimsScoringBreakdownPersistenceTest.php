@@ -122,6 +122,78 @@ final class ClaimsScoringBreakdownPersistenceTest extends TestCase
         );
     }
 
+    public function test_migration_uses_raw_query_not_prepare_with_i_placeholder(): void
+    {
+        // Bug fix: $wpdb->prepare('ALTER TABLE %i ...') отвергается wpdb-валидатором
+        // на некоторых WP версиях с длинными COMMENT + non-ASCII. Рабочие миграции
+        // (migrate_f22_003_attribution_model, create_tables) используют raw query
+        // с инлайн-интерполяцией $wpdb->prefix.
+        $method = $this->extract_method($this->claims_db_source, 'migrate_add_scoring_breakdown');
+
+        // ALTER TABLE не должен оборачиваться в $wpdb->prepare (избегаем %i-рантайм-отвержения).
+        self::assertDoesNotMatchRegularExpression(
+            '/\$wpdb->prepare\s*\(\s*[\'"]ALTER\s+TABLE\s+%i/i',
+            $method,
+            'ALTER TABLE должен быть raw query (без prepare/%i) — см. migrate_f22_003 pattern.'
+        );
+
+        // ALTER TABLE должен быть raw SQL с backticks (инлайн или через промежуточную
+        // переменную) — pattern migrate_f22_003: "ALTER TABLE `{$table}` ADD COLUMN ...".
+        self::assertMatchesRegularExpression(
+            '/[\'"]ALTER\s+TABLE\s+`/i',
+            $method,
+            'ALTER TABLE должен использовать raw SQL с backticks вокруг $table (migrate_f22_003 pattern).'
+        );
+
+        // $wpdb->query() должен вызываться где-то в методе (строка или переменная).
+        self::assertMatchesRegularExpression(
+            '/\$wpdb->query\s*\(/',
+            $method,
+            'Миграция должна вызывать $wpdb->query() для ALTER TABLE.'
+        );
+    }
+
+    public function test_migration_post_verifies_column_presence(): void
+    {
+        // Bug fix: error_log("added") не должен срабатывать, если ALTER реально не
+        // создал колонку. Нужен второй SHOW COLUMNS после ALTER для проверки.
+        $method = $this->extract_method($this->claims_db_source, 'migrate_add_scoring_breakdown');
+
+        $count = preg_match_all('/SHOW\s+COLUMNS\s+FROM/i', $method);
+        self::assertGreaterThanOrEqual(
+            2,
+            $count,
+            'migrate_add_scoring_breakdown должна post-verify: 1-й SHOW COLUMNS = guard, 2-й = проверка что ALTER реально прошёл.'
+        );
+    }
+
+    public function test_has_scoring_breakdown_column_helper_exists(): void
+    {
+        $plugin_root = dirname(__DIR__, 3);
+        if (!class_exists('Cashback_Claims_DB')) {
+            require_once $plugin_root . '/claims/class-claims-db.php';
+        }
+
+        self::assertTrue(
+            method_exists('Cashback_Claims_DB', 'has_scoring_breakdown_column'),
+            'Cashback_Claims_DB должен экспонировать has_scoring_breakdown_column(): bool.'
+        );
+    }
+
+    public function test_create_is_tolerant_to_missing_column(): void
+    {
+        // Defense-in-depth: если миграция не прошла (например, DDL silently failed
+        // на старой WP версии), create() не должен падать. scoring_breakdown
+        // добавляется в insert_data ТОЛЬКО если колонка существует.
+        $method = $this->extract_method($this->claims_mgr_source, 'create');
+
+        self::assertMatchesRegularExpression(
+            '/Cashback_Claims_DB::has_scoring_breakdown_column\s*\(\s*\)/',
+            $method,
+            'create() должен проверять наличие колонки через has_scoring_breakdown_column() перед добавлением в insert_data.'
+        );
+    }
+
     public function test_migration_wired_in_activate_and_runtime(): void
     {
         // Вызов на activate() — чтобы новые установки получали колонку сразу.
@@ -150,18 +222,19 @@ final class ClaimsScoringBreakdownPersistenceTest extends TestCase
 
     public function test_create_includes_scoring_breakdown_in_insert(): void
     {
-        // Ищем в create() поле 'scoring_breakdown' в insert_data с wp_json_encode.
+        // Ищем в create() поле scoring_breakdown с wp_json_encode($scoring[breakdown]).
+        // Поддерживаем оба синтаксиса: array-literal (=>) и index-assign ([...] = ...),
+        // т.к. conditional include (см. test_create_is_tolerant_to_missing_column)
+        // использует второй.
         $method = $this->extract_method($this->claims_mgr_source, 'create');
 
         self::assertMatchesRegularExpression(
-            '/[\'"]scoring_breakdown[\'"]\s*=>\s*wp_json_encode\s*\(\s*\$scoring\s*\[\s*[\'"]breakdown[\'"]\s*\]/',
+            '/(?:[\'"]scoring_breakdown[\'"]\s*=>|\[\s*[\'"]scoring_breakdown[\'"]\s*\]\s*=)\s*wp_json_encode\s*\(\s*\$scoring\s*\[\s*[\'"]breakdown[\'"]\s*\]/',
             $method,
             'create() должен сохранять $scoring[breakdown] через wp_json_encode в поле scoring_breakdown.'
         );
 
         // format для scoring_breakdown — '%s' (TEXT column).
-        // Проверяем что количество '%s' / '%d' записей в массиве форматов совпадает
-        // с количеством полей — менее брутально чем точная проверка порядка.
         self::assertMatchesRegularExpression(
             '/insert_format\s*\[\s*\]\s*=\s*[\'"]%s[\'"]/',
             $method,
