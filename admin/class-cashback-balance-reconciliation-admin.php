@@ -36,6 +36,63 @@ class Cashback_Balance_Reconciliation_Admin {
 		add_action( 'admin_menu', array( __CLASS__, 'register_admin_page' ) );
 		add_action( 'admin_post_cashback_reconcil_manual_run', array( __CLASS__, 'handle_manual_run' ) );
 		add_action( 'cashback_overview_widgets', array( __CLASS__, 'render_overview_widget' ) );
+		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_assets' ) );
+	}
+
+	/**
+	 * Подключает JS/CSS модала корректировки + ref на MIN_ADJUST_REASON_LENGTH
+	 * из users-management. Активируется только на подстранице сверки.
+	 */
+	public static function enqueue_assets( string $hook ): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only slug-detect для enqueue.
+		$page_query = isset( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
+		if ( strpos( $hook, self::ADMIN_PAGE_SLUG ) === false && $page_query !== self::ADMIN_PAGE_SLUG ) {
+			return;
+		}
+
+		$ver              = defined( 'CASHBACK_PLUGIN_VERSION' ) ? CASHBACK_PLUGIN_VERSION : '1.3.0';
+		$min_reason_len   = class_exists( 'Cashback_Users_Management_Admin' )
+			? Cashback_Users_Management_Admin::MIN_ADJUST_REASON_LENGTH
+			: 20;
+
+		wp_enqueue_style(
+			'cashback-admin-balance-adjust',
+			plugins_url( 'assets/css/admin-balance-adjust.css', dirname( __FILE__ ) . '/../cashback-plugin.php' ),
+			array(),
+			$ver
+		);
+		wp_enqueue_script(
+			'cashback-admin-balance-adjust',
+			plugins_url( 'assets/js/admin-balance-adjust.js', dirname( __FILE__ ) . '/../cashback-plugin.php' ),
+			array(),
+			$ver,
+			true
+		);
+		wp_localize_script( 'cashback-admin-balance-adjust', 'cashbackBalanceAdjust', array(
+			'ajaxUrl'          => admin_url( 'admin-ajax.php' ),
+			'nonce'            => wp_create_nonce( 'cashback_adjust_balance_nonce' ),
+			'minReasonLength'  => $min_reason_len,
+			'amountPlaceholder'=> '+100.00 или -50.25',
+			'i18n'             => array(
+				'title'          => __( 'Ручная корректировка баланса', 'cashback-plugin' ),
+				'forUser'        => __( 'Пользователь ID:', 'cashback-plugin' ),
+				'amountLabel'    => __( 'Сумма корректировки', 'cashback-plugin' ),
+				'amountHint'     => __( 'Знак +/- обязателен. Не более 2 знаков после точки.', 'cashback-plugin' ),
+				'reasonLabel'    => sprintf(
+					/* translators: %d: минимум символов. */
+					__( 'Причина (минимум %d символов)', 'cashback-plugin' ),
+					$min_reason_len
+				),
+				'confirm'        => __( 'Я понимаю, что это запись в ledger с немедленным эффектом.', 'cashback-plugin' ),
+				'cancel'         => __( 'Отмена', 'cashback-plugin' ),
+				'apply'          => __( 'Применить', 'cashback-plugin' ),
+				'invalidAmount'  => __( 'Введите сумму в формате +100.00 или -50.25.', 'cashback-plugin' ),
+				'reasonTooShort' => __( 'Причина должна быть минимум {n} символов.', 'cashback-plugin' ),
+				'success'        => __( 'Корректировка применена. Новый баланс: {b}.', 'cashback-plugin' ),
+				'genericError'   => __( 'Ошибка применения корректировки.', 'cashback-plugin' ),
+				'networkError'   => __( 'Ошибка сети. Повторите.', 'cashback-plugin' ),
+			),
+		) );
 	}
 
 	/**
