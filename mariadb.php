@@ -76,6 +76,7 @@ class Mariadb_Plugin {
             $instance->initialize_existing_users();
             $instance->migrate_rate_history_enum();
             $instance->migrate_ledger_ban_enum();
+            $instance->migrate_backfill_ledger_accruals();
             $instance->migrate_drop_notification_triggers();
             $instance->migrate_add_transaction_reference_id();
             $instance->migrate_unregistered_reference_id_prefix();
@@ -2193,6 +2194,108 @@ class Mariadb_Plugin {
         if ($wpdb->last_error) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Cashback] Failed to migrate rate_history ENUM: ' . $wpdb->last_error);
+        }
+    }
+
+    /**
+     * Миграция: safety-backfill ledger.accrual для исторических transactions.
+     *
+     * Группа 14 (шаг G): если в прошлом были случаи, когда transactions с
+     * processed_at IS NOT NULL не получили парной accrual_{id} в ledger
+     * (раннее состояние плагина / прерванный batch в process_ready_transactions),
+     * миграция восстанавливает соответствие.
+     *
+     * Идемпотентность: ON DUPLICATE KEY UPDATE id=id по UNIQUE idempotency_key,
+     * плюс option-флаг cashback_ledger_accrual_backfill_v1 для fast-path.
+     */
+    public function migrate_backfill_ledger_accruals(): void {
+        if ( get_option( 'cashback_ledger_accrual_backfill_v1' ) === 'done' ) {
+            return;
+        }
+
+        global $wpdb;
+
+        $tx_table     = $wpdb->prefix . 'cashback_transactions';
+        $ledger_table = $wpdb->prefix . 'cashback_balance_ledger';
+
+        // Guard: обе таблицы должны существовать.
+        $have_both = (int) $wpdb->get_var( $wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (%s, %s)',
+            $tx_table,
+            $ledger_table
+        ) );
+        if ( $have_both < 2 ) {
+            return;
+        }
+
+        $inserted_total = 0;
+        $batch_size     = 500;
+
+        for ( $i = 0; $i < 1000; $i++ ) {
+            // Находим transactions с processed_at IS NOT NULL и cashback>0,
+            // у которых НЕТ парной записи accrual_{id} в ledger.
+            $rows = $wpdb->get_results( $wpdb->prepare(
+                "SELECT t.id, t.user_id, t.cashback
+                 FROM %i t
+                 LEFT JOIN %i l
+                   ON l.transaction_id = t.id AND l.type = 'accrual'
+                 WHERE t.processed_at IS NOT NULL
+                   AND t.cashback IS NOT NULL
+                   AND t.cashback > 0
+                   AND l.id IS NULL
+                 ORDER BY t.id ASC
+                 LIMIT %d",
+                $tx_table,
+                $ledger_table,
+                $batch_size
+            ), ARRAY_A );
+
+            if ( empty( $rows ) ) {
+                break;
+            }
+
+            $values_sql = array();
+            $args       = array( $ledger_table );
+            foreach ( $rows as $row ) {
+                $values_sql[] = '(%d, %s, %s, %d, %s)';
+                $args[]       = (int) $row['user_id'];
+                $args[]       = 'accrual';
+                $args[]       = number_format( (float) $row['cashback'], 2, '.', '' );
+                $args[]       = (int) $row['id'];
+                $args[]       = 'accrual_' . (int) $row['id'];
+            }
+
+            $values_sql_joined = implode( ', ', $values_sql );
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $values_sql_joined — статичная последовательность placeholders '(%d, %s, %s, %d, %s)'; args передаются через prepare(), sniffer не считает через spread.
+            $result = $wpdb->query( $wpdb->prepare(
+                "INSERT INTO %i
+                    (user_id, type, amount, transaction_id, idempotency_key)
+                 VALUES {$values_sql_joined}
+                 ON DUPLICATE KEY UPDATE id = id",
+                ...$args
+            ) );
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+
+            if ( $result === false ) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log( '[Cashback Backfill] ledger.accrual insert failed: ' . $wpdb->last_error );
+                break;
+            }
+
+            $inserted_total += (int) $wpdb->rows_affected;
+
+            // Если вставок было меньше batch — значит долг догнан.
+            if ( count( $rows ) < $batch_size ) {
+                break;
+            }
+        }
+
+        update_option( 'cashback_ledger_accrual_backfill_v1', 'done', false );
+
+        if ( $inserted_total > 0 ) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log( sprintf( '[Cashback Backfill] ledger accruals backfilled: %d rows', $inserted_total ) );
         }
     }
 
