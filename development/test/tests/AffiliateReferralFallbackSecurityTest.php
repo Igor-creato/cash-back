@@ -205,14 +205,15 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
         $body = substr($src, $m[0][1], 3000);
 
         // При наличии $existing с другим referrer_id — пишем collision=true + confidence_override='low'
+        // Допускаем оба стиля: array-access assignment или array-literal в merge.
         $this->assertMatchesRegularExpression(
-            '/\[\s*[\'"]collision[\'"]\s*\]\s*=\s*true\b/',
+            '/\[\s*[\'"]collision[\'"]\s*\]\s*=\s*true\b|[\'"]collision[\'"]\s*=>\s*true\b/',
             $body,
             'store_referral_transient() при NAT-коллизии должен ставить collision=true на существующую запись.'
         );
 
         $this->assertMatchesRegularExpression(
-            '/[\'"]confidence_override[\'"]\s*=>?\s*[\'"]low[\'"]/',
+            '/\[\s*[\'"]confidence_override[\'"]\s*\]\s*=\s*[\'"]low[\'"]|[\'"]confidence_override[\'"]\s*=>\s*[\'"]low[\'"]/',
             $body,
             'store_referral_transient() при NAT-коллизии должен ставить confidence_override=\'low\'.'
         );
