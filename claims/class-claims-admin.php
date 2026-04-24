@@ -543,6 +543,41 @@ class Cashback_Claims_Admin {
                     <tr><th><?php esc_html_e('Дата заказа', 'cashback-plugin'); ?></th><td><?php echo esc_html(gmdate('d.m.Y', strtotime($claim['order_date']))); ?></td></tr>
                     <tr><th><?php esc_html_e('Вероятность', 'cashback-plugin'); ?></th><td><?php echo esc_html(number_format_i18n((float) $claim['probability_score'], 1)); ?>%</td></tr>
                     <tr><th><?php esc_html_e('Статус', 'cashback-plugin'); ?></th><td><span class="claim-status claim-status--<?php echo esc_attr($claim['status']); ?>"><?php echo esc_html($this->get_status_label($claim['status'])); ?></span></td></tr>
+                    <?php
+                    // F-20-002: разложение probability_score по 5 факторам.
+                    // Legacy-строки (до миграции) имеют NULL — скрываем секцию.
+                    $breakdown = isset($claim['scoring_breakdown']) && is_string($claim['scoring_breakdown']) && $claim['scoring_breakdown'] !== ''
+                        ? json_decode((string) $claim['scoring_breakdown'], true)
+                        : null;
+                    if (is_array($breakdown)) :
+                        $factor_labels = array(
+                            'time'        => __('Время', 'cashback-plugin'),
+                            'merchant'    => __('Мерчант', 'cashback-plugin'),
+                            'user'        => __('Юзер', 'cashback-plugin'),
+                            'consistency' => __('Консистентность', 'cashback-plugin'),
+                            'risk'        => __('Риск', 'cashback-plugin'),
+                        );
+                        ?>
+                        <tr><th colspan="2"><?php esc_html_e('Разложение скоринга', 'cashback-plugin'); ?></th></tr>
+                        <?php
+                        foreach ($factor_labels as $key => $label) :
+                            $value = isset($breakdown[ $key ]) ? (float) $breakdown[ $key ] : null;
+                            if ($value === null) {
+                                continue;
+                            }
+                            $color = $value >= 70 ? '#2a8f2a' : ( $value >= 40 ? '#b8860b' : '#d63638' );
+                        ?>
+                            <tr>
+                                <th><?php echo esc_html($label); ?></th>
+                                <td>
+                                    <span style="display:inline-block;width:120px;height:8px;background:#eee;border-radius:4px;vertical-align:middle;overflow:hidden;">
+                                        <span style="display:block;height:100%;width:<?php echo esc_attr((string) max(0, min(100, $value))); ?>%;background:<?php echo esc_attr($color); ?>;"></span>
+                                    </span>
+                                    <span style="margin-left:8px;color:<?php echo esc_attr($color); ?>;"><?php echo esc_html(number_format_i18n($value, 1)); ?></span>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                     <tr><th><?php esc_html_e('Подозрительная', 'cashback-plugin'); ?></th><td><?php echo (int) $claim['is_suspicious'] ? '<span style="color:#d63638;">' . esc_html__('Да', 'cashback-plugin') . '</span>' : esc_html__('Нет', 'cashback-plugin'); ?></td></tr>
                     <tr><th><?php esc_html_e('Click ID', 'cashback-plugin'); ?></th><td><code><?php echo esc_html($claim['click_id'] ?? '—'); ?></code></td></tr>
                     <tr><th><?php esc_html_e('IP', 'cashback-plugin'); ?></th><td><?php echo esc_html($claim['ip_address']); ?></td></tr>
