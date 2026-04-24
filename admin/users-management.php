@@ -14,13 +14,24 @@ if (!defined('ABSPATH')) {
 
 class Cashback_Users_Management_Admin {
 
+    /**
+     * Минимум символов в reason для ручной корректировки баланса (Группа 15, S2.A).
+     * Смысл: короткий reason не помогает в аудите. Длина 20 — компромисс между UX
+     * и обязательным пояснением причины списания/зачисления.
+     */
+    public const MIN_ADJUST_REASON_LENGTH = 20;
+
     private string $table_name;
     private string $profile_table_name;
+    private string $user_balance_table;
+    private string $ledger_table;
 
     public function __construct() {
         global $wpdb;
         $this->table_name         = $wpdb->prefix . 'users';
         $this->profile_table_name = $wpdb->prefix . 'cashback_user_profile';
+        $this->user_balance_table = $wpdb->prefix . 'cashback_user_balance';
+        $this->ledger_table       = $wpdb->prefix . 'cashback_balance_ledger';
 
         // Регистрируем хук для добавления пункта меню
         add_action('admin_menu', array( $this, 'add_admin_menu' ));
@@ -29,6 +40,9 @@ class Cashback_Users_Management_Admin {
         add_action('wp_ajax_update_user_profile', array( $this, 'handle_update_user_profile' ));
         add_action('wp_ajax_get_user_profile', array( $this, 'handle_get_user_profile' ));
         add_action('wp_ajax_bulk_update_cashback_rate', array( $this, 'handle_bulk_update_cashback_rate' ));
+
+        // Группа 15, S2: ручная корректировка баланса через ledger (type=adjustment).
+        add_action('wp_ajax_cashback_adjust_balance', array( $this, 'handle_adjust_balance' ));
 
         // Подключение скриптов
         add_action('admin_enqueue_scripts', array( $this, 'enqueue_admin_scripts' ));
@@ -1036,6 +1050,251 @@ class Cashback_Users_Management_Admin {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Unban error for user ' . $user_id . ': ' . $e->getMessage());
             return false;
+        }
+    }
+
+    /**
+     * AJAX: ручная корректировка баланса пользователя (Группа 15, S2.A).
+     *
+     * Контракт:
+     *  - nonce = cashback_adjust_balance_nonce.
+     *  - capability = manage_options.
+     *  - server-side дедуп request_id через Cashback_Idempotency::claim
+     *    (scope = admin_balance_adjust).
+     *  - amount валидируется через Cashback_Money::from_string (Группа 10 ADR),
+     *    zero отклоняется.
+     *  - reason ≥ MIN_ADJUST_REASON_LENGTH символов.
+     *  - INSERT в cashback_balance_ledger (type=adjustment, reference_type=manual)
+     *    с UNIQUE idempotency_key; ON DUPLICATE KEY UPDATE id=id.
+     *  - UPDATE cashback_user_balance с GREATEST(0.00, ...) clamp для списаний
+     *    больше текущего available_balance (защита от отрицательного баланса
+     *    при нестыковке кеша с ledger — ledger остаётся source of truth).
+     *  - version инкремент (optimistic locking).
+     *  - write_audit_log action=balance_manual_adjustment с deталями
+     *    (amount, reason, idempotency_key, new_available_balance).
+     */
+    public function handle_adjust_balance(): void {
+        // Nonce
+        if (!isset($_POST['nonce']) || !wp_verify_nonce(
+            sanitize_text_field(wp_unslash((string) $_POST['nonce'])),
+            'cashback_adjust_balance_nonce'
+        )) {
+            wp_send_json_error(array( 'message' => 'Неверный токен безопасности.' ), 403);
+            return;
+        }
+
+        // Capability
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array( 'message' => 'Недостаточно прав.' ), 403);
+            return;
+        }
+
+        // Server-side дедуп request_id (scope admin_balance_adjust, паттерн из admin/transactions.php).
+        $idem_scope      = 'admin_balance_adjust';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => 'Запрос уже обрабатывается. Повторите через несколько секунд.',
+                ), 409);
+                return;
+            }
+        }
+
+        // Валидация user_id.
+        $user_id = isset($_POST['user_id']) ? absint($_POST['user_id']) : 0;
+        if ($user_id <= 0) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
+            wp_send_json_error(array( 'message' => 'Некорректный ID пользователя.' ));
+            return;
+        }
+
+        // Валидация amount через Cashback_Money VO (Группа 10 ADR).
+        $raw_amount = isset($_POST['amount']) ? (string) wp_unslash((string) $_POST['amount']) : '';
+        $raw_amount = trim($raw_amount);
+        // Разрешаем "+" префикс для явного положительного значения — вырезаем до валидатора.
+        if ($raw_amount !== '' && $raw_amount[0] === '+') {
+            $raw_amount = substr($raw_amount, 1);
+        }
+        try {
+            $amount = Cashback_Money::from_string($raw_amount);
+        } catch (\InvalidArgumentException $e) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
+            wp_send_json_error(array( 'message' => 'Неверный формат суммы. Используйте число с точкой, например +100.00 или -50.25.' ));
+            return;
+        }
+        if ($amount->is_zero()) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
+            wp_send_json_error(array( 'message' => 'Сумма корректировки не может быть нулевой.' ));
+            return;
+        }
+
+        // Валидация reason.
+        $reason = isset($_POST['reason'])
+            ? sanitize_textarea_field(wp_unslash((string) $_POST['reason']))
+            : '';
+        $reason = trim($reason);
+        if (mb_strlen($reason) < self::MIN_ADJUST_REASON_LENGTH) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
+            wp_send_json_error(array(
+                'message' => sprintf(
+                    'Причина корректировки должна быть не короче %d символов.',
+                    self::MIN_ADJUST_REASON_LENGTH
+                ),
+            ));
+            return;
+        }
+
+        global $wpdb;
+        $admin_id = (int) get_current_user_id();
+
+        // Idempotency key: seed включает user_id, admin_id, reason, amount, time().
+        // UNIQUE на level таблицы + ON DUPLICATE KEY UPDATE id=id предотвращает
+        // дубликаты при race'ах. Коллизия по time() в одной секунде крайне маловероятна
+        // — admin не кликает быстрее; retry в окне 5 мин ловится Idempotency::claim выше.
+        $idempotency_key = 'adjust_' . sha1(
+            $user_id . '_' . $admin_id . '_' . $reason . '_' . $amount->to_string() . '_' . time()
+        );
+
+        $wpdb->query('START TRANSACTION');
+
+        try {
+            // Lock-row в кеше баланса перед проверкой и UPDATE.
+            $balance_row = $wpdb->get_row($wpdb->prepare(
+                'SELECT available_balance, version
+                 FROM %i
+                 WHERE user_id = %d
+                 FOR UPDATE',
+                $this->user_balance_table,
+                $user_id
+            ), ARRAY_A);
+
+            if (!$balance_row) {
+                throw new \RuntimeException('Запись баланса пользователя не найдена.');
+            }
+
+            $current_available_raw = (string) $balance_row['available_balance'];
+            try {
+                $current_available = Cashback_Money::from_db_value($current_available_raw);
+            } catch (\InvalidArgumentException $e) {
+                throw new \RuntimeException('DECIMAL из БД не canonical: ' . $current_available_raw);
+            }
+
+            // При списании (amount<0) предупреждаем, если abs(amount) > available_balance.
+            // Не блокируем: ledger — source of truth, и отрицательный кэш допустим как
+            // временный индикатор (GREATEST clamp в UPDATE не даст уйти в минус в cache).
+            // Но если списание больше баланса — мы не отказываем, admin знает, что делает
+            // (reason ≥20 символов и audit-log фиксируют намерение).
+            $projected = $current_available->add($amount);
+            $would_go_negative = $projected->is_negative();
+
+            // INSERT ledger: amount может быть отрицательным (DB DECIMAL(18,2) signed).
+            $ledger_result = $wpdb->query($wpdb->prepare(
+                'INSERT INTO %i (user_id, type, amount, reference_type, idempotency_key)
+                 VALUES (%d, %s, %s, %s, %s)
+                 ON DUPLICATE KEY UPDATE id = id',
+                $this->ledger_table,
+                $user_id,
+                'adjustment',
+                $amount->to_db_value(),
+                'manual',
+                $idempotency_key
+            ));
+
+            if ($ledger_result === false) {
+                // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- diagnostic DB error, surfaced to admin only.
+                throw new \RuntimeException('Ledger INSERT failed: ' . $wpdb->last_error);
+            }
+
+            $ledger_entry_id = (int) $wpdb->insert_id;
+
+            // UPDATE cache: GREATEST(0.00, ...) защищает от ухода кеша в минус при
+            // списании больше текущего available (source of truth — ledger).
+            $update_result = $wpdb->query($wpdb->prepare(
+                'UPDATE %i
+                 SET available_balance = GREATEST(0.00, available_balance + %s),
+                     version = version + 1
+                 WHERE user_id = %d',
+                $this->user_balance_table,
+                $amount->to_db_value(),
+                $user_id
+            ));
+
+            if ($update_result === false) {
+                // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- diagnostic DB error.
+                throw new \RuntimeException('Balance cache UPDATE failed: ' . $wpdb->last_error);
+            }
+
+            $new_balance_row = $wpdb->get_row($wpdb->prepare(
+                'SELECT available_balance FROM %i WHERE user_id = %d',
+                $this->user_balance_table,
+                $user_id
+            ), ARRAY_A);
+
+            $new_available = $new_balance_row ? (string) $new_balance_row['available_balance'] : '0.00';
+
+            // Audit-log: фиксируем admin_id, amount, reason, idempotency_key, новый баланс.
+            if (class_exists('Cashback_Encryption')) {
+                Cashback_Encryption::write_audit_log(
+                    'balance_manual_adjustment',
+                    $admin_id,
+                    'user',
+                    $user_id,
+                    array(
+                        'amount'                => $amount->to_string(),
+                        'reason'                => $reason,
+                        'idempotency_key'       => $idempotency_key,
+                        'ledger_entry_id'       => $ledger_entry_id,
+                        'previous_available'    => $current_available->to_string(),
+                        'new_available'         => $new_available,
+                        'would_go_negative'     => $would_go_negative,
+                    )
+                );
+            }
+
+            $wpdb->query('COMMIT');
+
+            $response = array(
+                'new_available_balance' => $new_available,
+                'ledger_entry_id'       => $ledger_entry_id,
+                'message'               => 'Корректировка применена.',
+            );
+
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response);
+            }
+
+            wp_send_json_success($response);
+        } catch (\Throwable $e) {
+            $wpdb->query('ROLLBACK');
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- diagnostic logging.
+            error_log('[cashback_adjust_balance] ' . $e->getMessage());
+            wp_send_json_error(array(
+                'message' => 'Ошибка применения корректировки: ' . $e->getMessage(),
+            ), 500);
         }
     }
 }
