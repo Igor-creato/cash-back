@@ -20,6 +20,17 @@ class Cashback_Affiliate_Service {
     const COOKIE_NAME     = 'cashback_ref';
     const COOKIE_SIG_NAME = 'cashback_ref_sig';
 
+    /**
+     * TTL серверного transient fallback (F-22-003). Decoupled от cookie TTL
+     * — fallback предназначен для пути click→signup в одной browser-сессии.
+     * Больше 5 минут не нужно (click→registration обычно секунды-минута),
+     * меньше — риск false negative на медленной регистрации.
+     *
+     * Literal (не option): политика безопасности — чтобы админ не мог случайно
+     * ослабить её через настройку.
+     */
+    const FALLBACK_TTL_SECONDS = 300;
+
     public static function get_instance(): self {
         if (null === self::$instance) {
             self::$instance = new self();
@@ -229,24 +240,78 @@ class Cashback_Affiliate_Service {
      * ═══════════════════════════════════════ */
 
     /**
-     * Сохранение реферальных данных в transient (fallback при отсутствии cookie).
-     * Ключ: IP адрес посетителя. TTL синхронизирован с cookie_ttl из настроек.
+     * Сохранение реферальных данных в transient (F-22-003).
+     *
+     * Ключ composite: subnet + ua_family + ua_major + accept_language (см. Шаг 3).
+     * TTL = FALLBACK_TTL_SECONDS (5 минут, decoupled от cookie TTL).
+     *
+     * NAT collision policy (keep-first + downgrade):
+     *   • Если для ключа уже есть запись с другим referrer_id — первого
+     *     оставляем, но помечаем collision=true и confidence_override='low'
+     *     (понижаем его уверенность как sign of ambiguity). Повторно
+     *     аудируем каждого отвергнутого кандидата — иначе разбирать споры
+     *     по NAT-конфликтам невозможно.
+     *   • Если запись уже collision — новые distinct referrer'ы только
+     *     продолжают генерировать audit-trail, не перезаписывая стату.
+     *   • Пустой ключ (malformed IP) — не сохраняем (fail-closed).
      */
     private function store_referral_transient( int $referrer_id, string $click_id, string $ip ): void {
-        $hdr = self::collect_request_headers_for_key();
-        $key = self::get_referral_transient_key($ip, $hdr['ua'], $hdr['al']);
-        $ttl = Cashback_Affiliate_DB::get_cookie_ttl_days();
+        if (self::extract_subnet($ip) === '') {
+            // Malformed IP → не пишем transient, слишком слабый ключ.
+            return;
+        }
+
+        $hdr      = self::collect_request_headers_for_key();
+        $key      = self::get_referral_transient_key($ip, $hdr['ua'], $hdr['al']);
+        $existing = get_transient($key);
+
+        if (is_array($existing) && isset($existing['referrer_id'])) {
+            $existing_rid = (int) $existing['referrer_id'];
+
+            if ($existing_rid !== $referrer_id) {
+                // NAT-collision: keep first, downgrade его confidence, отклоняем кандидата.
+                $existing = array_merge($existing, array(
+                    'collision'           => true,
+                    'confidence_override' => 'low',
+                ));
+                set_transient($key, $existing, self::FALLBACK_TTL_SECONDS);
+
+                if (class_exists('Cashback_Affiliate_Audit')) {
+                    Cashback_Affiliate_Audit::log('nat_collision_rejected_candidate', array(
+                        'rejected_referrer_id' => $referrer_id,
+                        'kept_referrer_id'     => $existing_rid,
+                        'click_id'             => $click_id,
+                        'key_hash'             => hash('sha256', $key),
+                        'ip_subnet_hash'       => hash('sha256', self::extract_subnet($ip)),
+                        'ua_hash'              => hash('sha256', $hdr['ua']),
+                        'reason'               => 'second_distinct_referrer_in_ttl',
+                    ));
+                }
+            }
+
+            // Для same-referrer повторных кликов не переписываем timestamp
+            // (сохраняем исходный момент первого клика как reference point
+            // для суспишес-тайминга в антифроде).
+            return;
+        }
+
+        // Свежий ключ — записываем.
         set_transient($key, array(
             'referrer_id' => $referrer_id,
             'click_id'    => $click_id,
             'timestamp'   => time(),
-        ), $ttl * DAY_IN_SECONDS);
+            'collision'   => false,
+        ), self::FALLBACK_TTL_SECONDS);
     }
 
     /**
-     * Чтение реферальных данных из transient (fallback).
+     * Чтение реферальных данных из transient (F-22-003).
      *
-     * @return array{referrer_id: int, click_id: string, timestamp: int}|null
+     * TTL = FALLBACK_TTL_SECONDS (5 минут). Возвращает также флаги
+     * collision / confidence_override, чтобы bind-путь мог понизить
+     * confidence первой записи при NAT-коллизии.
+     *
+     * @return array{referrer_id:int, click_id:string, timestamp:int, collision:bool, confidence_override:?string}|null
      */
     private static function read_referral_transient( string $ip ): ?array {
         $hdr  = self::collect_request_headers_for_key();
@@ -257,17 +322,18 @@ class Cashback_Affiliate_Service {
             return null;
         }
 
-        // Проверка TTL cookie (transient TTL может быть длиннее)
-        $ttl = Cashback_Affiliate_DB::get_cookie_ttl_days();
-        if (time() - $data['timestamp'] > $ttl * DAY_IN_SECONDS) {
+        // TTL отвязан от cookie — серверный fallback всегда короткий.
+        if (time() - (int) $data['timestamp'] > self::FALLBACK_TTL_SECONDS) {
             delete_transient($key);
             return null;
         }
 
         return array(
-            'referrer_id' => (int) $data['referrer_id'],
-            'click_id'    => sanitize_text_field($data['click_id']),
-            'timestamp'   => (int) $data['timestamp'],
+            'referrer_id'         => (int) $data['referrer_id'],
+            'click_id'            => sanitize_text_field($data['click_id']),
+            'timestamp'           => (int) $data['timestamp'],
+            'collision'           => !empty($data['collision']),
+            'confidence_override' => isset($data['confidence_override']) ? (string) $data['confidence_override'] : null,
         );
     }
 
