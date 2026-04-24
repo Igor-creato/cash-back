@@ -838,7 +838,8 @@ class Cashback_Support_DB {
     }
 
     /**
-     * Префикс для темы тикета, сгенерированный по привязке: "[Покупка #TX-XXXXXXXX]".
+     * Префикс для темы тикета, сгенерированный по привязке: "[Покупка TX-XXXXXXXX]",
+     * "[Покупка TU-XXXXXXXX]" (unregistered) или "[Выплата WD-XXXXXXXX]".
      */
     public static function format_related_prefix( string $type, array $entity ): string {
         $label = self::get_related_type_label($type);

@@ -665,6 +665,7 @@ class CashbackPlugin {
             try {
                 $instance = Mariadb_Plugin::get_instance();
                 $instance->migrate_add_transaction_reference_id();
+                $instance->migrate_unregistered_reference_id_prefix();
                 $instance->recreate_triggers();
             } catch (\Throwable $e) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
@@ -679,10 +680,30 @@ class CashbackPlugin {
                 try {
                     $instance = Mariadb_Plugin::get_instance();
                     $instance->migrate_add_transaction_reference_id();
+                    $instance->migrate_unregistered_reference_id_prefix();
                     $instance->recreate_triggers();
                 } catch (\Throwable $e) {
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log('[Cashback] Auto-migration backfill failed: ' . $e->getMessage());
+                }
+            } else {
+                // Колонка и TX- backfill в порядке, но может быть старый TX- префикс в unregistered-таблице
+                // от установок до смены префикса на TU-. Миграция идемпотентна (fast-path при отсутствии TX-*).
+                $legacy_tx_in_unreg = (int) $wpdb->get_var(
+                    $wpdb->prepare(
+                        "SELECT COUNT(*) FROM `{$wpdb->prefix}cashback_unregistered_transactions` WHERE reference_id LIKE %s",
+                        'TX-%'
+                    )
+                );
+                if ($legacy_tx_in_unreg > 0) {
+                    try {
+                        $instance = Mariadb_Plugin::get_instance();
+                        $instance->migrate_unregistered_reference_id_prefix();
+                        $instance->recreate_triggers();
+                    } catch (\Throwable $e) {
+                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                        error_log('[Cashback] Auto-migration TX->TU failed: ' . $e->getMessage());
+                    }
                 }
             }
         }
