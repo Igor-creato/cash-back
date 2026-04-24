@@ -275,4 +275,153 @@ final class BalanceAdjustAjaxTest extends TestCase
             'S2.A: response должен содержать ledger_entry_id'
         );
     }
+
+    // =========================================================================
+    // S2.B — модал (JS/CSS) + кнопка в users-management
+    // =========================================================================
+
+    public function test_balance_adjust_js_asset_exists(): void
+    {
+        $path = dirname(__DIR__, 3) . '/assets/js/admin-balance-adjust.js';
+        $this->assertFileExists($path, 'S2.B: JS модала должен существовать');
+    }
+
+    public function test_balance_adjust_css_asset_exists(): void
+    {
+        $path = dirname(__DIR__, 3) . '/assets/css/admin-balance-adjust.css';
+        $this->assertFileExists($path, 'S2.B: CSS модала должен существовать');
+    }
+
+    public function test_balance_adjust_js_exposes_open_api(): void
+    {
+        $src = $this->source('assets/js/admin-balance-adjust.js');
+        $this->assertStringContainsString(
+            'window.CashbackBalanceAdjust',
+            $src,
+            'S2.B: глобальный API window.CashbackBalanceAdjust обязателен (переиспользование в S3)'
+        );
+        $this->assertMatchesRegularExpression(
+            '/open\s*:\s*openModal/',
+            $src,
+            'S2.B: CashbackBalanceAdjust.open должен публиковаться'
+        );
+    }
+
+    public function test_balance_adjust_js_posts_to_correct_ajax_action(): void
+    {
+        $src = $this->source('assets/js/admin-balance-adjust.js');
+        $this->assertStringContainsString(
+            "'cashback_adjust_balance'",
+            $src,
+            'S2.B: fetch должен отправлять action=cashback_adjust_balance'
+        );
+        $this->assertMatchesRegularExpression(
+            '/body\.append\(\s*[\'"]nonce[\'"]/',
+            $src,
+            'S2.B: FormData должен включать nonce'
+        );
+        $this->assertMatchesRegularExpression(
+            '/body\.append\(\s*[\'"]request_id[\'"]/',
+            $src,
+            'S2.B: FormData должен включать request_id для server-side дедупа'
+        );
+    }
+
+    public function test_balance_adjust_js_has_focus_trap_and_escape(): void
+    {
+        $src = $this->source('assets/js/admin-balance-adjust.js');
+        $this->assertStringContainsString(
+            "role', 'dialog'",
+            $src,
+            'S2.B: модал должен иметь role=dialog'
+        );
+        $this->assertStringContainsString(
+            "aria-modal",
+            $src,
+            'S2.B: модал должен иметь aria-modal=true'
+        );
+        $this->assertStringContainsString(
+            "'Escape'",
+            $src,
+            'S2.B: Escape должен закрывать модал'
+        );
+        $this->assertStringContainsString(
+            'trapFocus',
+            $src,
+            'S2.B: Tab-focus-trap должен быть реализован'
+        );
+    }
+
+    public function test_balance_adjust_js_disables_apply_until_confirm_checked(): void
+    {
+        $src = $this->source('assets/js/admin-balance-adjust.js');
+        $this->assertMatchesRegularExpression(
+            '/applyBtn\.disabled\s*=\s*!\s*confirmInput\.checked/',
+            $src,
+            'S2.B: Apply-кнопка должна быть disabled пока checkbox подтверждения не включён'
+        );
+    }
+
+    public function test_users_management_enqueues_balance_adjust_assets(): void
+    {
+        $src = $this->source('admin/users-management.php');
+        $this->assertStringContainsString(
+            "'cashback-admin-balance-adjust'",
+            $src,
+            'S2.B: enqueue handle должен быть cashback-admin-balance-adjust'
+        );
+        $this->assertStringContainsString(
+            'admin-balance-adjust.js',
+            $src,
+            'S2.B: enqueue должен указывать на admin-balance-adjust.js'
+        );
+        $this->assertStringContainsString(
+            'admin-balance-adjust.css',
+            $src,
+            'S2.B: enqueue должен указывать на admin-balance-adjust.css'
+        );
+    }
+
+    public function test_users_management_localizes_nonce_and_min_length(): void
+    {
+        $src = $this->source('admin/users-management.php');
+        $this->assertStringContainsString(
+            "wp_create_nonce('cashback_adjust_balance_nonce')",
+            $src,
+            'S2.B: wp_localize_script должен передавать nonce cashback_adjust_balance_nonce'
+        );
+        $this->assertMatchesRegularExpression(
+            '/minReasonLength[\'"]\s*=>\s*self::MIN_ADJUST_REASON_LENGTH/',
+            $src,
+            'S2.B: localize должен передавать minReasonLength из серверной константы'
+        );
+    }
+
+    public function test_users_management_renders_adjust_button_with_data_user_id(): void
+    {
+        $src = $this->source('admin/users-management.php');
+        $this->assertStringContainsString(
+            'cashback-adjust-balance-btn',
+            $src,
+            'S2.B: action-кнопка должна иметь class cashback-adjust-balance-btn'
+        );
+        // Кнопка рендерится внутри цикла пользователей с data-user-id=$user[ID].
+        $this->assertMatchesRegularExpression(
+            '/class="button button-secondary cashback-adjust-balance-btn"[\s\S]{0,200}data-user-id=/',
+            $src,
+            'S2.B: кнопка должна иметь data-user-id'
+        );
+    }
+
+    public function test_reconciliation_admin_enqueues_balance_adjust_assets(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        // Подстраница расхождений тоже должна подключать модал — кнопка «Корректировка»
+        // в таблице расхождений (S1.B) использует тот же window.CashbackBalanceAdjust.
+        $this->assertStringContainsString(
+            'admin-balance-adjust.js',
+            $src,
+            'S2.B: reconciliation-admin должна enqueue-ить модал для кнопки из таблицы расхождений'
+        );
+    }
 }
