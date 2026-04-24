@@ -77,6 +77,7 @@ class Mariadb_Plugin {
             $instance->migrate_rate_history_enum();
             $instance->migrate_drop_notification_triggers();
             $instance->migrate_add_transaction_reference_id();
+            $instance->migrate_unregistered_reference_id_prefix();
             $instance->migrate_add_frozen_balance_buckets();
             $instance->migrate_schema_idempotency_v1();
             $instance->migrate_add_click_sessions_v1();
@@ -304,7 +305,7 @@ class Mariadb_Plugin {
             `idempotency_key` varchar(64) DEFAULT NULL COMMENT 'Ключ идемпотентности для предотвращения дублирования транзакций',
             `spam_click` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = транзакция из подозрительного клика, кэшбэк только после ручной проверки',
             `funds_ready` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = CPA-сеть подтвердила готовность средств к снятию (Admitad: processed=1, EPN: status=approved)',
-            `reference_id` varchar(11) NOT NULL DEFAULT '' COMMENT 'Публичный ID транзакции формата TX-XXXXXXXX',
+            `reference_id` varchar(11) NOT NULL DEFAULT '' COMMENT 'Публичный ID транзакции формата TU-XXXXXXXX (unregistered). Префикс TU- обеспечивает кросс-табличную уникальность с cashback_transactions (TX-)',
             `created_at` timestamp NULL DEFAULT current_timestamp(),
             `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
             PRIMARY KEY (`id`),
@@ -976,13 +977,14 @@ class Mariadb_Plugin {
             "CREATE TRIGGER `{$safe_prefix}calculate_cashback_before_insert_unregistered`
             BEFORE INSERT ON `{$safe_prefix}cashback_unregistered_transactions`
             FOR EACH ROW
-            --  'Рассчитывает кэшбэк и генерирует reference_id для незарегистрированных пользователей'
+            --  'Рассчитывает кэшбэк и генерирует reference_id (TU-XXXXXXXX) для незарегистрированных пользователей'
             BEGIN
                 SET NEW.cashback = ROUND(NEW.comission * 0.6, 2);
 
-                -- Генерация уникального публичного ID транзакции (TX-XXXXXXXX)
+                -- Генерация уникального публичного ID транзакции (TU-XXXXXXXX).
+                -- Префикс TU- обеспечивает кросс-табличную уникальность с cashback_transactions (TX-).
                 IF NEW.reference_id IS NULL OR NEW.reference_id = '' THEN
-                    SET NEW.reference_id = CONCAT('TX-', UPPER(LEFT(MD5(CONCAT(UUID(), RAND(), NOW(6))), 8)));
+                    SET NEW.reference_id = CONCAT('TU-', UPPER(LEFT(MD5(CONCAT(UUID(), RAND(), NOW(6))), 8)));
                 END IF;
             END;",
 
@@ -2200,18 +2202,27 @@ class Mariadb_Plugin {
 
     /**
      * Миграция: добавление reference_id к таблицам транзакций и бэкфилл существующих записей.
-     * Формат: TX-XXXXXXXX (8 hex-символов из MD5(UUID()+RAND())).
+     * Форматы: TX-XXXXXXXX для cashback_transactions, TU-XXXXXXXX для cashback_unregistered_transactions
+     * (8 hex-символов из MD5(UUID()+RAND())). Префиксы разные → кросс-табличная уникальность по конструкции.
      * Идемпотентная — проверяет наличие колонки/индекса через INFORMATION_SCHEMA.
      */
     public function migrate_add_transaction_reference_id(): void {
         global $wpdb;
 
+        $unregistered_table = $wpdb->prefix . 'cashback_unregistered_transactions';
+
         $tables = array(
             $wpdb->prefix . 'cashback_transactions' => 'uk_tx_reference_id',
-            $wpdb->prefix . 'cashback_unregistered_transactions' => 'uk_utx_reference_id',
+            $unregistered_table                     => 'uk_utx_reference_id',
         );
 
         foreach ($tables as $table => $uk_name) {
+            $is_unregistered = ( $table === $unregistered_table );
+            $ref_prefix      = $is_unregistered ? 'TU-' : 'TX-';
+            $ddl_comment     = $is_unregistered
+                ? 'Public transaction ID, format TU-XXXXXXXX (unregistered)'
+                : 'Public transaction ID, format TX-XXXXXXXX';
+
             $column_exists = $wpdb->get_var(
                 $wpdb->prepare(
                     "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = 'reference_id'",
@@ -2221,8 +2232,9 @@ class Mariadb_Plugin {
 
             if (! $column_exists) {
                 $wpdb->query($wpdb->prepare(
-                    "ALTER TABLE %i ADD COLUMN `reference_id` varchar(11) NOT NULL DEFAULT '' COMMENT 'Public transaction ID, format TX-XXXXXXXX'",
-                    $table
+                    "ALTER TABLE %i ADD COLUMN `reference_id` varchar(11) NOT NULL DEFAULT '' COMMENT %s",
+                    $table,
+                    $ddl_comment
                 ));
                 if ($wpdb->last_error) {
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
@@ -2259,13 +2271,13 @@ class Mariadb_Plugin {
 
                     $cases = array();
                     foreach ($ids as $id) {
-                        $ref     = 'TX-' . strtoupper(substr(md5(wp_generate_uuid4() . wp_rand()), 0, 8));
+                        $ref     = $ref_prefix . strtoupper(substr(md5(wp_generate_uuid4() . wp_rand()), 0, 8));
                         $cases[] = $wpdb->prepare('WHEN %d THEN %s', (int) $id, $ref);
                     }
 
                     $ids_list = implode(',', array_map('intval', $ids));
                     $case_sql = implode(' ', $cases);
-                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $case_sql is pre-prepared WHEN/THEN pairs (integer ids + TX-XXXXXXXX strings), $ids_list is intval-cast list.
+                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $case_sql is pre-prepared WHEN/THEN pairs (integer ids + TX-/TU- 11-char strings), $ids_list is intval-cast list.
                     $wpdb->query($wpdb->prepare("UPDATE %i SET reference_id = CASE id {$case_sql} END WHERE id IN ({$ids_list})", $table));
 
                     if ($wpdb->last_error) {
@@ -2295,6 +2307,89 @@ class Mariadb_Plugin {
                 }
             }
         }
+    }
+
+    /**
+     * Миграция: перегенерация старых TX- reference_id в cashback_unregistered_transactions на TU-.
+     *
+     * Причина: до этой миграции обе таблицы транзакций использовали префикс TX- независимо,
+     * с UNIQUE-индексами только в пределах таблицы. Смена префикса unregistered-таблицы на
+     * TU- (по конструкции) обеспечивает кросс-табличную уникальность и читаемость источника.
+     *
+     * Идемпотентна: если TX-записей нет — возвращается сразу. Обновляет пакетами по 500,
+     * ретраит при UNIQUE-коллизии (практически невозможной: 16^8 = 4.3 млрд комбинаций).
+     */
+    public function migrate_unregistered_reference_id_prefix(): void {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cashback_unregistered_transactions';
+
+        // Fast-path: колонка должна существовать (миграция add_transaction_reference_id должна быть выполнена первой).
+        $column_exists = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = 'reference_id'",
+                $table
+            )
+        );
+        if (! $column_exists) {
+            return;
+        }
+
+        // Fast-path: нет TX- записей — миграция уже выполнена.
+        $tx_count = (int) $wpdb->get_var(
+            $wpdb->prepare('SELECT COUNT(*) FROM %i WHERE reference_id LIKE %s', $table, 'TX-%')
+        );
+        if ($tx_count === 0) {
+            return;
+        }
+
+        // Отключаем триггер валидации статусов — он блокирует UPDATE записей с order_status='balance'.
+        // Пересоздаётся в recreate_triggers() (вызывается в caller после миграции).
+        $status_trigger = $wpdb->prefix . 'cashback_tr_validate_status_transition_unregistered';
+        $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS %i', $status_trigger));
+
+        $total_updated = 0;
+
+        for ($batch = 0; $batch < 10000; $batch++) {
+            $ids = $wpdb->get_col(
+                $wpdb->prepare('SELECT id FROM %i WHERE reference_id LIKE %s LIMIT 500', $table, 'TX-%')
+            );
+
+            if (empty($ids)) {
+                break;
+            }
+
+            foreach ($ids as $id) {
+                $id = (int) $id;
+                for ($attempt = 0; $attempt < 3; $attempt++) {
+                    $new_ref = 'TU-' . strtoupper(substr(md5(wp_generate_uuid4() . wp_rand()), 0, 8));
+                    $result  = $wpdb->query($wpdb->prepare(
+                        'UPDATE %i SET reference_id = %s WHERE id = %d AND reference_id LIKE %s',
+                        $table,
+                        $new_ref,
+                        $id,
+                        'TX-%'
+                    ));
+
+                    if ($result !== false) {
+                        $total_updated++;
+                        break;
+                    }
+
+                    // UNIQUE-коллизия — ретраим с новым suffix.
+                    if (stripos((string) $wpdb->last_error, 'uk_utx_reference_id') === false
+                        && stripos((string) $wpdb->last_error, 'reference_id') === false) {
+                        // Неизвестная ошибка — прерываемся, логируем.
+                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                        error_log("[Cashback Migration] TX->TU update error on id={$id}: " . $wpdb->last_error);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+        error_log("[Cashback Migration] Unregistered reference_id TX->TU: updated {$total_updated} rows");
     }
 
     /**
