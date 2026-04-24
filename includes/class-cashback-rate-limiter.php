@@ -144,6 +144,14 @@ class Cashback_Rate_Limiter {
         'update_network_param'                      => 'admin',
         'cashback_admin_save_notification_settings' => 'admin',
         'fraud_save_bot_settings'                   => 'admin',
+
+        // F-22-003 (Группа 12): referral entry-points. Не admin-AJAX, но проходят
+        // через Cashback_Rate_Limiter::check() на handle_referral_visit и
+        // bind_referral_on_registration. 'affiliate_click' = write tier
+        // (публичный ref-клик). 'affiliate_signup' = critical (bind per signup,
+        // meaningful лимит per subnet+ua_family — передаётся в $ip-параметре).
+        'affiliate_click'                           => 'write',
+        'affiliate_signup'                          => 'critical',
     );
 
     /**
