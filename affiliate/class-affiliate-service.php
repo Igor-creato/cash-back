@@ -700,12 +700,18 @@ class Cashback_Affiliate_Service {
         }
 
         // Находим у кого из этих пользователей есть активный реферер
+        // (F-22-003): SELECT расширен снэпшотом attribution-полей профиля —
+        // source/confidence/collision/review_status/signals копируются в
+        // accrual при INSERT (immutable historical quality).
         $profiles_table     = $prefix . 'cashback_affiliate_profiles';
         $user_profile_table = $prefix . 'cashback_user_profile';
         $id_placeholders    = implode(',', array_fill(0, count($user_ids), '%d'));
         // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $id_placeholders из array_fill('%d').
         $referrals = $wpdb->get_results($wpdb->prepare(
-            "SELECT ap.user_id, ap.referred_by_user_id
+            "SELECT ap.user_id, ap.referred_by_user_id,
+                    ap.attribution_source, ap.attribution_confidence,
+                    ap.collision_detected, ap.review_status, ap.antifraud_signals,
+                    ap.referral_reward_eligible
              FROM %i ap
              INNER JOIN %i rp
                  ON rp.user_id = ap.referred_by_user_id
@@ -726,10 +732,28 @@ class Cashback_Affiliate_Service {
             return $result;
         }
 
-        // Карта: referred_user_id → referrer_id
-        $referral_map = array();
+        // Карта referred_user_id → referrer_id + profile_attrs snapshot.
+        // Профили с referral_reward_eligible=0 (manual_rejected или антифрод)
+        // полностью исключаются — accrual не создаётся.
+        $referral_map  = array();
+        $profile_attrs = array();
         foreach ($referrals as $row) {
-            $referral_map[ (int) $row['user_id'] ] = (int) $row['referred_by_user_id'];
+            if ((int) ($row['referral_reward_eligible'] ?? 1) === 0) {
+                continue; // ineligible — skip entirely
+            }
+            $uid               = (int) $row['user_id'];
+            $referral_map[$uid]  = (int) $row['referred_by_user_id'];
+            $profile_attrs[$uid] = array(
+                'source'        => isset($row['attribution_source']) ? (string) $row['attribution_source'] : null,
+                'confidence'    => isset($row['attribution_confidence']) ? (string) $row['attribution_confidence'] : null,
+                'collision'     => (int) ($row['collision_detected'] ?? 0),
+                'review_status' => isset($row['review_status']) ? (string) $row['review_status'] : 'none',
+                'signals'       => isset($row['antifraud_signals']) ? (string) $row['antifraud_signals'] : null,
+            );
+        }
+
+        if (empty($referral_map)) {
+            return $result;
         }
 
         // Кешируем ставки рефереров
@@ -737,12 +761,60 @@ class Cashback_Affiliate_Service {
         $rates_cache  = self::batch_get_rates($referrer_ids);
         $global_rate  = Cashback_Affiliate_DB::get_global_rate();
 
+        $accruals_table = $prefix . 'cashback_affiliate_accruals';
+        $ledger_table   = $prefix . 'cashback_balance_ledger';
+        $balance_table  = $prefix . 'cashback_user_balance';
+
+        // F-22-003: предварительно читаем существующие accruals, чтобы не
+        // перезаписать их status/snapshot (immutable quality) и принять
+        // gate-решение по ИХ snapshot, а не по текущему профилю.
+        $candidate_tx_ids = array_map('intval', array_column($candidates, 'id'));
+        $existing_accruals = array();
+        if (!empty($candidate_tx_ids)) {
+            $tx_ph = implode(',', array_fill(0, count($candidate_tx_ids), '%d'));
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $tx_ph из array_fill('%d').
+            $rows = $wpdb->get_results($wpdb->prepare(
+                "SELECT transaction_id, status,
+                        attribution_confidence, review_status_at_creation
+                 FROM %i
+                 WHERE transaction_id IN ({$tx_ph})",
+                $accruals_table,
+                ...$candidate_tx_ids
+            ), ARRAY_A);
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+            if (is_array($rows)) {
+                foreach ($rows as $r) {
+                    $existing_accruals[ (int) $r['transaction_id'] ] = array(
+                        'status'                    => (string) $r['status'],
+                        'attribution_confidence'    => $r['attribution_confidence'] ?? null,
+                        'review_status_at_creation' => $r['review_status_at_creation'] ?? null,
+                    );
+                }
+            }
+        }
+
+        // Gate: вернуть 'available' или 'pending' по snapshot.
+        // Legacy (NULL confidence — pre-F-22-003) → available (backward-compat).
+        $compute_gate_status = static function ( ?string $confidence, ?string $review_status ): string {
+            if ($confidence === null) {
+                return 'available'; // legacy row, no snapshot
+            }
+            if ($confidence === 'high') {
+                return 'available';
+            }
+            if (in_array($review_status, array( 'none', 'manual_approved', 'auto_approved' ), true)) {
+                return 'available';
+            }
+            return 'pending';
+        };
+
         // Формируем accruals и ledger entries
-        $accrual_values = array();
-        $accrual_args   = array();
-        $ledger_values  = array();
-        $ledger_args    = array();
-        $balance_deltas = array(); // referrer_id → total commission
+        $accrual_values      = array();
+        $accrual_args        = array();
+        $accrual_actions     = array(); // per-index: 'update' | 'insert' | 'skip'
+        $ledger_values       = array();
+        $ledger_args         = array();
+        $balance_deltas      = array(); // referrer_id → total commission
 
         foreach ($candidates as $tx) {
             $user_id  = (int) $tx['user_id'];
@@ -766,45 +838,76 @@ class Cashback_Affiliate_Service {
                 continue;
             }
 
-            // Reference ID с retry при коллизии (в batch просто генерируем уникальные)
+            $snapshot = $profile_attrs[ $user_id ];
+
+            // F-22-003: решаем accrual-status по нужному snapshot.
+            //   - existing accrual → его собственный snapshot (immutable)
+            //   - new accrual → current profile snapshot
+            if (isset($existing_accruals[ $tx_id ])) {
+                $ex = $existing_accruals[ $tx_id ];
+                // Если accrual уже в terminal-статусе — не трогаем.
+                if (in_array($ex['status'], array( 'available', 'frozen', 'paid' ), true)) {
+                    continue;
+                }
+                $status = $compute_gate_status(
+                    $ex['attribution_confidence'] ?? null,
+                    $ex['review_status_at_creation'] ?? null
+                );
+                if ($status === 'pending') {
+                    // Существующий pending + gate держит pending → ledger/balance не трогаем.
+                    continue;
+                }
+                $action = 'update';
+            } else {
+                $status = $compute_gate_status(
+                    $snapshot['confidence'] ?? null,
+                    $snapshot['review_status'] ?? null
+                );
+                $action = 'insert';
+            }
+
             $reference_id = Cashback_Affiliate_DB::generate_affiliate_reference_id();
 
-            // Accrual — все money-поля уже canonical decimal-string.
-            $accrual_values[] = '(%s, %d, %d, %d, %s, %s, %s, %s, %s)';
-            $accrual_args[]   = $reference_id;
-            $accrual_args[]   = $referrer_id;
-            $accrual_args[]   = $user_id;
-            $accrual_args[]   = $tx_id;
-            $accrual_args[]   = number_format($cashback, 2, '.', '');
-            $accrual_args[]   = number_format((float) $rate, 2, '.', '');
-            $accrual_args[]   = $commission;
-            $accrual_args[]   = 'available';
-            $accrual_args[]   = $idempotency_key;
+            // Accrual — 14 полей: 9 базовых + 5 snapshot (F-22-003).
+            $accrual_values[]  = '(%s, %d, %d, %d, %s, %s, %s, %s, %s, %s, %s, %d, %s, %s)';
+            $accrual_args[]    = $reference_id;
+            $accrual_args[]    = $referrer_id;
+            $accrual_args[]    = $user_id;
+            $accrual_args[]    = $tx_id;
+            $accrual_args[]    = number_format($cashback, 2, '.', '');
+            $accrual_args[]    = number_format((float) $rate, 2, '.', '');
+            $accrual_args[]    = $commission;
+            $accrual_args[]    = $status;
+            $accrual_args[]    = $idempotency_key;
+            // Snapshot:
+            $accrual_args[]    = $snapshot['source']        ?? null;
+            $accrual_args[]    = $snapshot['confidence']    ?? null;
+            $accrual_args[]    = $snapshot['collision']     ?? 0;
+            $accrual_args[]    = $snapshot['review_status'] ?? 'none';
+            $accrual_args[]    = $snapshot['signals']       ?? null;
+            $accrual_actions[] = $action;
 
-            // Ledger (единый cashback_balance_ledger)
-            $ledger_values[] = '(%d, %s, %s, %d, %s, %d, %s)';
-            $ledger_args[]   = $referrer_id;
-            $ledger_args[]   = 'affiliate_accrual';
-            $ledger_args[]   = $commission;
-            $ledger_args[]   = $tx_id;
-            $ledger_args[]   = 'affiliate_accrual';  // reference_type
-            $ledger_args[]   = $tx_id;               // reference_id = transaction_id
-            $ledger_args[]   = $idempotency_key;
+            if ($status === 'available') {
+                // Ledger — только для available. Pending не проводят delta до promotion.
+                $ledger_values[] = '(%d, %s, %s, %d, %s, %d, %s)';
+                $ledger_args[]   = $referrer_id;
+                $ledger_args[]   = 'affiliate_accrual';
+                $ledger_args[]   = $commission;
+                $ledger_args[]   = $tx_id;
+                $ledger_args[]   = 'affiliate_accrual';
+                $ledger_args[]   = $tx_id;
+                $ledger_args[]   = $idempotency_key;
 
-            // Balance delta
-            if (!isset($balance_deltas[ $referrer_id ])) {
-                $balance_deltas[ $referrer_id ] = 0.0;
+                if (!isset($balance_deltas[ $referrer_id ])) {
+                    $balance_deltas[ $referrer_id ] = 0.0;
+                }
+                $balance_deltas[ $referrer_id ] += $commission;
             }
-            $balance_deltas[ $referrer_id ] += $commission;
         }
 
         if (empty($accrual_values)) {
             return $result;
         }
-
-        $accruals_table = $prefix . 'cashback_affiliate_accruals';
-        $ledger_table   = $prefix . 'cashback_balance_ledger';
-        $balance_table  = $prefix . 'cashback_user_balance';
 
         $owns_tx = !$in_transaction;
         if ($owns_tx) {
@@ -825,35 +928,47 @@ class Cashback_Affiliate_Service {
                 // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
             }
 
-            // Сначала пробуем UPDATE pending → available (accruals могли быть созданы sync_pending_accruals)
+            // F-22-003: UPDATE (промоция существующего) использует target status
+            // из predetermined snapshot-gate; INSERT несёт все 14 полей (9 +
+            // 5 attribution snapshot). Per-item action известен из $accrual_actions.
             $updated_count         = 0;
             $insert_accrual_values = array();
             $insert_accrual_args   = array();
 
             foreach ($accrual_values as $idx => $value_tpl) {
-                $offset = $idx * 9;
-                $tx_id  = $accrual_args[ $offset + 3 ];
+                $offset    = $idx * 14;
+                $tx_id     = $accrual_args[ $offset + 3 ];
+                $target_status = (string) $accrual_args[ $offset + 7 ];
+                $action    = $accrual_actions[ $idx ] ?? 'insert';
 
-                $upd = $wpdb->query($wpdb->prepare(
-                    "UPDATE %i
-                     SET status = 'available',
-                         cashback_amount   = %s,
-                         commission_rate   = %s,
-                         commission_amount = %s
-                     WHERE transaction_id = %d AND status IN ('pending','declined')
-                     LIMIT 1",
-                    $accruals_table,
-                    $accrual_args[ $offset + 4 ],
-                    $accrual_args[ $offset + 5 ],
-                    $accrual_args[ $offset + 6 ],
-                    $tx_id
-                ));
+                if ($action === 'update') {
+                    // Promote existing pending/declined → available (gate уже разрешил).
+                    $upd = $wpdb->query($wpdb->prepare(
+                        "UPDATE %i
+                         SET status            = %s,
+                             cashback_amount   = %s,
+                             commission_rate   = %s,
+                             commission_amount = %s
+                         WHERE transaction_id = %d AND status IN ('pending','declined')
+                         LIMIT 1",
+                        $accruals_table,
+                        $target_status,
+                        $accrual_args[ $offset + 4 ],
+                        $accrual_args[ $offset + 5 ],
+                        $accrual_args[ $offset + 6 ],
+                        $tx_id
+                    ));
 
-                if ($upd > 0) {
-                    ++$updated_count;
+                    if ($upd > 0) {
+                        ++$updated_count;
+                    } else {
+                        // TOCTOU: записи уже нет / перешла в terminal между SELECT и UPDATE.
+                        // Не фолбэчим в INSERT — idempotency_key conflict был бы ожидаем.
+                    }
                 } else {
+                    // New accrual — 14 полей с snapshot-ом.
                     $insert_accrual_values[] = $value_tpl;
-                    for ($i = 0; $i < 9; $i++) {
+                    for ($i = 0; $i < 14; $i++) {
                         $insert_accrual_args[] = $accrual_args[ $offset + $i ];
                     }
                 }
@@ -862,15 +977,20 @@ class Cashback_Affiliate_Service {
             if (!empty($insert_accrual_values)) {
                 $accrual_sql = implode(', ', $insert_accrual_values);
                 // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $accrual_sql из array_fill-шаблонов.
+                // ON DUPLICATE KEY UPDATE: status берём из VALUES() (gate-решение
+                // caller-а), НЕ хардкодим 'available'. Snapshot immutable — не
+                // переписываем attribution_* полями из VALUES.
                 $accrual_result = $wpdb->query($wpdb->prepare(
                     "INSERT INTO %i
                          (reference_id, referrer_id, referred_user_id, transaction_id,
-                          cashback_amount, commission_rate, commission_amount, status, idempotency_key)
+                          cashback_amount, commission_rate, commission_amount, status, idempotency_key,
+                          attribution_source, attribution_confidence, collision_detected,
+                          review_status_at_creation, antifraud_signals)
                      VALUES {$accrual_sql}
                      ON DUPLICATE KEY UPDATE
-                         status = 'available',
-                         cashback_amount = VALUES(cashback_amount),
-                         commission_rate = VALUES(commission_rate),
+                         status            = VALUES(status),
+                         cashback_amount   = VALUES(cashback_amount),
+                         commission_rate   = VALUES(commission_rate),
                          commission_amount = VALUES(commission_amount)",
                     $accruals_table,
                     ...$insert_accrual_args
