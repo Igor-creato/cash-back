@@ -339,6 +339,7 @@ class CashbackPlugin {
             Cashback_Claims_DB::create_tables();
             Cashback_Claims_DB::migrate_add_is_read();
             Cashback_Claims_DB::migrate_add_is_read_admin();
+            Cashback_Claims_DB::migrate_add_scoring_breakdown();
         }
 
         // Создание таблицы уведомлений
@@ -695,6 +696,17 @@ class CashbackPlugin {
             } catch (\Throwable $e) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback] F-22-003 auto-migration failed: ' . $e->getMessage());
+            }
+        }
+
+        // F-20-002 follow-up: scoring_breakdown колонка в cashback_claims.
+        // SHOW COLUMNS guard + is_known_ddl_error — идемпотентно для existing installs.
+        if (class_exists('Cashback_Claims_DB')) {
+            try {
+                Cashback_Claims_DB::migrate_add_scoring_breakdown();
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] F-20-002 scoring_breakdown auto-migration failed: ' . $e->getMessage());
             }
         }
     }

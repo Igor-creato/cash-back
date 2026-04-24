@@ -127,6 +127,7 @@ class Cashback_Claims_DB {
             `evidence_urls` text DEFAULT NULL COMMENT 'JSON массив URL доказательств',
             `status` enum('draft','submitted','sent_to_network','approved','declined') NOT NULL DEFAULT 'draft',
             `probability_score` decimal(5,2) NOT NULL DEFAULT 0.00 COMMENT 'Вероятность одобрения 0-100',
+            `scoring_breakdown` text DEFAULT NULL COMMENT 'JSON разложение probability_score по 5 факторам (F-20-002)',
             `is_suspicious` tinyint(1) NOT NULL DEFAULT 0,
             `suspicious_reasons` text DEFAULT NULL COMMENT 'JSON массив причин',
             `ip_address` varchar(45) NOT NULL COMMENT 'IP при создании заявки',
@@ -284,6 +285,37 @@ class Cashback_Claims_DB {
 
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('[Claims] Migration: added is_read_admin column to claim_events');
+        }
+    }
+
+    /**
+     * Add scoring_breakdown column if missing (F-20-002 follow-up).
+     *
+     * Хранит JSON-разложение probability_score по 5 факторам
+     * (time/merchant/user/consistency/risk) — чтобы админ в detail-карточке
+     * видел, почему заявка получила такую цифру. Legacy-строки остаются
+     * с NULL (admin UI их обрабатывает gracefully).
+     */
+    public static function migrate_add_scoring_breakdown(): void {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cashback_claims';
+
+        $col = $wpdb->get_results( $wpdb->prepare( 'SHOW COLUMNS FROM %i LIKE %s', $table, 'scoring_breakdown' ) );
+
+        if (empty($col)) {
+            // 12f ADR (F-20-001): классифицируем DDL-ошибки через is_known_ddl_error,
+            // непредвиденные эскалируем через report_migration_error.
+            $wpdb->query( $wpdb->prepare(
+                "ALTER TABLE %i ADD COLUMN `scoring_breakdown` text DEFAULT NULL COMMENT 'JSON разложение probability_score по 5 факторам (F-20-002)' AFTER `probability_score`",
+                $table
+            ) );
+            if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
+                self::report_migration_error('migrate_add_scoring_breakdown:add_column', $wpdb->last_error);
+            }
+
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Claims] Migration: added scoring_breakdown column to cashback_claims');
         }
     }
 
