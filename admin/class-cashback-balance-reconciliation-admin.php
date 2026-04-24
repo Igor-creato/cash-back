@@ -45,8 +45,10 @@ class Cashback_Balance_Reconciliation_Admin {
 	 */
 	public static function enqueue_assets( string $hook ): void {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only slug-detect для enqueue.
-		$page_query = isset( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
-		if ( strpos( $hook, self::ADMIN_PAGE_SLUG ) === false && $page_query !== self::ADMIN_PAGE_SLUG ) {
+		$page_query     = isset( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
+		$on_recon_page  = strpos( $hook, self::ADMIN_PAGE_SLUG ) !== false || $page_query === self::ADMIN_PAGE_SLUG;
+		$on_overview    = $page_query === 'cashback-overview';
+		if ( ! $on_recon_page && ! $on_overview ) {
 			return;
 		}
 
@@ -54,6 +56,21 @@ class Cashback_Balance_Reconciliation_Admin {
 		$min_reason_len   = class_exists( 'Cashback_Users_Management_Admin' )
 			? Cashback_Users_Management_Admin::MIN_ADJUST_REASON_LENGTH
 			: 20;
+
+		// CSS для раскрывающейся ячейки «Расхождение» и виджета на overview —
+		// нужен на обеих страницах (recon-page + overview).
+		wp_enqueue_style(
+			'cashback-admin-balance-reconciliation',
+			plugins_url( '../assets/css/admin-balance-reconciliation.css', __FILE__ ),
+			array(),
+			$ver
+		);
+
+		// Модал корректировки кнопки «Корректировка» нужен только на recon-page
+		// (на overview виджет кнопок не имеет).
+		if ( ! $on_recon_page ) {
+			return;
+		}
 
 		wp_enqueue_style(
 			'cashback-admin-balance-adjust',
@@ -447,9 +464,9 @@ class Cashback_Balance_Reconciliation_Admin {
 			<thead>
 				<tr>
 					<th style="width:160px"><?php esc_html_e( 'Дата', 'cashback-plugin' ); ?></th>
-					<th style="width:100px"><?php esc_html_e( 'User ID', 'cashback-plugin' ); ?></th>
-					<th><?php esc_html_e( 'Issues', 'cashback-plugin' ); ?></th>
-					<th style="width:260px"><?php esc_html_e( 'Действия', 'cashback-plugin' ); ?></th>
+					<th style="width:100px"><?php esc_html_e( 'User', 'cashback-plugin' ); ?></th>
+					<th><?php esc_html_e( 'Расхождение', 'cashback-plugin' ); ?></th>
+					<th style="width:180px"><?php esc_html_e( 'Действия', 'cashback-plugin' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
@@ -462,10 +479,22 @@ class Cashback_Balance_Reconciliation_Admin {
 					$created_at  = (string) ( $row['created_at'] ?? '' );
 					$raw_details = (string) ( $row['details'] ?? '' );
 					$decoded     = $raw_details !== '' ? json_decode( $raw_details, true ) : null;
-					$issues      = array();
-					if ( is_array( $decoded ) && isset( $decoded['issues'] ) && is_array( $decoded['issues'] ) ) {
-						$issues = $decoded['issues'];
+					$details_arr = is_array( $decoded ) ? $decoded : array();
+					$issues      = is_array( $details_arr['issues'] ?? null ) ? $details_arr['issues'] : array();
+
+					// Короткая сводка для <summary>: первый переведённый issue + «+N ещё».
+					$summary_parts = array();
+					if ( ! empty( $issues ) && class_exists( 'Cashback_Balance_Issue_Renderer' ) ) {
+						$summary_parts[] = Cashback_Balance_Issue_Renderer::translate_issue( (string) $issues[0] );
+					} elseif ( ! empty( $issues ) ) {
+						$summary_parts[] = (string) $issues[0];
 					}
+					$extra = count( $issues ) - 1;
+					if ( $extra > 0 ) {
+						$summary_parts[] = '+ ещё ' . $extra;
+					}
+					$summary_text = implode( ' · ', $summary_parts );
+
 					$user_link = add_query_arg(
 						array( 'page' => 'cashback-users', 's' => $uid ),
 						admin_url( 'admin.php' )
@@ -475,25 +504,31 @@ class Cashback_Balance_Reconciliation_Admin {
 						<td><?php echo esc_html( $created_at ); ?></td>
 						<td>
 							<a href="<?php echo esc_url( $user_link ); ?>">
-								<?php echo esc_html( (string) $uid ); ?>
+								#<?php echo esc_html( (string) $uid ); ?>
 							</a>
 						</td>
 						<td>
 							<?php if ( empty( $issues ) ) : ?>
 								—
 							<?php else : ?>
-								<ul class="cashback-reconcil-issues">
-									<?php foreach ( $issues as $issue ) : ?>
-										<li><code><?php echo esc_html( (string) $issue ); ?></code></li>
-									<?php endforeach; ?>
-								</ul>
+								<details class="cashback-reconcil-details">
+									<summary><?php echo esc_html( $summary_text ); ?></summary>
+									<div class="cashback-reconcil-details-body">
+										<?php
+										if ( class_exists( 'Cashback_Balance_Issue_Renderer' ) ) {
+											// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render_mismatch_details_html сам выполняет esc_html/esc_attr для всех динамических значений.
+											echo Cashback_Balance_Issue_Renderer::render_mismatch_details_html( $details_arr );
+										}
+										?>
+										<details class="cashback-reconcil-raw-details">
+											<summary><?php esc_html_e( 'Показать raw JSON (для разработчика)', 'cashback-plugin' ); ?></summary>
+											<pre class="cashback-reconcil-json"><?php echo esc_html( $raw_details ); ?></pre>
+										</details>
+									</div>
+								</details>
 							<?php endif; ?>
 						</td>
 						<td>
-							<details class="cashback-reconcil-details">
-								<summary><?php esc_html_e( 'Показать JSON', 'cashback-plugin' ); ?></summary>
-								<pre class="cashback-reconcil-json"><?php echo esc_html( $raw_details ); ?></pre>
-							</details>
 							<button
 								type="button"
 								class="button button-secondary cashback-reconcil-adjust-btn"

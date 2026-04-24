@@ -1,0 +1,196 @@
+/*
+ * Cashback admin — подстраница «Сверка баланса» (Группа 15, S1 + follow-up UX).
+ * Стили для раскрывающейся ячейки «Расхождение» с таблицей бакетов и разбивкой операций.
+ */
+
+.cashback-reconcil-details[open] > summary {
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.cashback-reconcil-details > summary {
+	cursor: pointer;
+	padding: 4px 0;
+	line-height: 1.5;
+}
+
+.cashback-reconcil-details > summary::marker {
+	color: #2271b1;
+}
+
+.cashback-reconcil-details-body {
+	margin: 8px 0 4px;
+	padding: 12px;
+	background: #fff;
+	border-left: 3px solid #2271b1;
+	border-radius: 0 3px 3px 0;
+}
+
+/* Таблица сравнения бакетов: По журналу / В кэше / Разница */
+table.cashback-reconcil-buckets {
+	width: 100%;
+	margin: 0 0 14px;
+	border-collapse: collapse;
+}
+
+table.cashback-reconcil-buckets th,
+table.cashback-reconcil-buckets td {
+	padding: 6px 10px;
+	border-bottom: 1px solid #e6e7ea;
+	font-size: 13px;
+}
+
+table.cashback-reconcil-buckets th {
+	background: #f6f7f7;
+	text-align: left;
+	font-weight: 600;
+}
+
+table.cashback-reconcil-buckets th.num,
+table.cashback-reconcil-buckets td.num {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	font-feature-settings: "tnum";
+	white-space: nowrap;
+}
+
+table.cashback-reconcil-buckets tr.mismatch td {
+	background: #fff3f3;
+}
+
+table.cashback-reconcil-buckets tr.total td {
+	background: #f0f0f1;
+	border-top: 2px solid #1d2327;
+}
+
+table.cashback-reconcil-buckets tr.total.mismatch td {
+	background: #fbe8e8;
+}
+
+/* Список issues — что именно не сошлось */
+.cashback-reconcil-issues-section h4,
+.cashback-reconcil-operations-section h4 {
+	margin: 14px 0 8px;
+	font-size: 13px;
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.cashback-reconcil-issues-list {
+	margin: 0 0 14px;
+	padding-left: 20px;
+	list-style: disc;
+}
+
+.cashback-reconcil-issues-list li {
+	margin: 4px 0;
+	font-size: 13px;
+	line-height: 1.4;
+	color: #3c434a;
+}
+
+/* Журнал операций — разбивка по группам */
+.cashback-reconcil-ops-group {
+	margin: 0 0 10px;
+}
+
+.cashback-reconcil-ops-group-title {
+	font-weight: 600;
+	font-size: 13px;
+	margin: 6px 0 4px;
+	color: #1d2327;
+}
+
+.cashback-reconcil-ops-income .cashback-reconcil-ops-group-title {
+	color: #1f7a2d;
+}
+
+.cashback-reconcil-ops-outflow .cashback-reconcil-ops-group-title {
+	color: #8c2323;
+}
+
+.cashback-reconcil-ops-list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.cashback-reconcil-ops-list li {
+	display: grid;
+	grid-template-columns: 1fr auto auto;
+	gap: 12px;
+	padding: 3px 0;
+	border-bottom: 1px dotted #e6e7ea;
+	font-size: 13px;
+}
+
+.cashback-reconcil-ops-list li:last-child {
+	border-bottom: none;
+}
+
+.cashback-reconcil-ops-list .op-count {
+	color: #646970;
+	font-size: 12px;
+	white-space: nowrap;
+}
+
+.cashback-reconcil-ops-list .op-sum {
+	font-variant-numeric: tabular-nums;
+	font-feature-settings: "tnum";
+	white-space: nowrap;
+	font-weight: 600;
+}
+
+.cashback-reconcil-ops-income .op-sum {
+	color: #1f7a2d;
+}
+
+.cashback-reconcil-ops-outflow .op-sum {
+	color: #8c2323;
+}
+
+/* Raw JSON — collapsed по умолчанию */
+.cashback-reconcil-raw-details {
+	margin-top: 12px;
+	padding-top: 10px;
+	border-top: 1px dashed #dcdcde;
+}
+
+.cashback-reconcil-raw-details > summary {
+	font-size: 12px;
+	color: #646970;
+	cursor: pointer;
+}
+
+.cashback-reconcil-raw-details pre.cashback-reconcil-json {
+	max-height: 280px;
+	overflow: auto;
+	margin: 6px 0 0;
+	padding: 8px;
+	background: #f6f7f7;
+	border: 1px solid #dcdcde;
+	font-size: 11px;
+	line-height: 1.35;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+/* Summary/виджет/другие secции — старые из S1.A, оставляю без изменений */
+.cashback-reconcil-summary.has-mismatches {
+	border-left: 4px solid #d63638;
+	padding-left: 12px;
+	background: #fff3f3;
+}
+
+.cashback-reconcil-summary-list li.mismatches-warning strong {
+	color: #d63638;
+}
+
+/* Виджет на cashback-overview dashboard */
+.cashback-overview-reconcil-widget.has-problems {
+	border-left: 4px solid #d63638;
+}
+
+.cashback-overview-reconcil-widget.all-clear {
+	border-left: 4px solid #1f7a2d;
+}
