@@ -89,10 +89,13 @@ final class RestApiActivateClickRateTest extends TestCase
 
     public function test_scope_keys_match_wc_affiliate_for_shared_counter(): void
     {
-        // Критично: REST /activate и wc-affiliate клики от одного IP+product_id
+        // Критично: REST /activate и wc-affiliate клики от одного subject+product_id
         // должны использовать ОДИН scope_key — иначе злоумышленник удвоит лимит,
         // чередуя точки входа.
+        // Группа 13 NAT-safety: subject для гостя = "n:<subnet>|<ua_family>".
+        // Iter-3: добавлен hard subnet-only bucket 'gh_' (keyed h:<subnet>).
         $backend = new Rest_Activate_Fake_Backend(array(
+            array( 'hits' => 1, 'allowed' => true, 'reset_at' => time() + 60 ),
             array( 'hits' => 1, 'allowed' => true, 'reset_at' => time() + 60 ),
             array( 'hits' => 1, 'allowed' => true, 'reset_at' => time() + 60 ),
         ));
@@ -100,19 +103,40 @@ final class RestApiActivateClickRateTest extends TestCase
 
         $this->invoke_click_rate('1.2.3.4', 100);
 
-        $expected_pp = 'pp_' . substr(sha1('1.2.3.4|100'), 0, 40);
-        $expected_gl = 'gl_' . substr(sha1('1.2.3.4'), 0, 40);
+        $subject     = 'n:1.2.3.0/24|Chrome';
+        $expected_pp = 'pp_' . substr(sha1($subject . '|100'), 0, 40);
+        $expected_gl = 'gl_' . substr(sha1($subject), 0, 40);
+        $expected_gh = 'gh_' . substr(sha1('h:1.2.3.0/24'), 0, 40);
 
         $this->assertSame($expected_pp, $backend->scope_keys[0]);
         $this->assertSame($expected_gl, $backend->scope_keys[1]);
+        $this->assertSame($expected_gh, $backend->scope_keys[2]);
     }
 
-    private function invoke_click_rate(string $ip, int $product_id): string
+    public function test_logged_in_user_scope_key_is_user_primary_nat_safe(): void
     {
-        // После group 12 refactor метод стал private static в Cashback_Click_Session_Service.
+        // Группа 13: для залогиненного ключ по user_id, IP игнорируется — NAT-safe.
+        $backend = new Rest_Activate_Fake_Backend(array(
+            array( 'hits' => 1, 'allowed' => true, 'reset_at' => time() + 60 ),
+            array( 'hits' => 1, 'allowed' => true, 'reset_at' => time() + 60 ),
+            array( 'hits' => 2, 'allowed' => true, 'reset_at' => time() + 60 ),
+            array( 'hits' => 2, 'allowed' => true, 'reset_at' => time() + 60 ),
+        ));
+        \Cashback_Rate_Limiter::set_backend($backend);
+
+        $this->invoke_click_rate('1.2.3.4', 100, 42);
+        $this->invoke_click_rate('198.51.100.9', 100, 42); // другой IP, тот же user
+
+        $this->assertSame($backend->scope_keys[0], $backend->scope_keys[2]);
+        $this->assertSame($backend->scope_keys[1], $backend->scope_keys[3]);
+    }
+
+    private function invoke_click_rate(string $ip, int $product_id, int $user_id = 0, string $ua = 'Mozilla/5.0 Chrome/120'): string
+    {
+        // Группа 13: signature (user_id, ip, ua, product_id).
         $method = new \ReflectionMethod(\Cashback_Click_Session_Service::class, 'get_click_rate_status');
 
-        return (string) $method->invoke(null, $ip, $product_id);
+        return (string) $method->invoke(null, $user_id, $ip, $ua, $product_id);
     }
 }
 

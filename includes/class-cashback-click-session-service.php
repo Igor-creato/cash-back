@@ -36,6 +36,13 @@ final class Cashback_Click_Session_Service {
     private const RATE_GLOBAL_SPAM       = 10;
     private const RATE_GLOBAL_BLOCK      = 60;
 
+    // Группа 13 iter-3: hard subnet-only cap для гостей. Защита от UA-rotation:
+    // основной guest-bucket keyed по (subnet+UA-family), что attacker обходит
+    // перебором Chrome/Firefox/Edge/Safari/Opera/YandexBrowser. Этот cap не шардится
+    // и ловит sustained rotation. Threshold = 2.5× per-family block, чтобы не
+    // сжимать легитимные cross-browser NAT-пулы ниже обычного уровня.
+    private const RATE_GLOBAL_HARD_BLOCK_GUEST = 150;
+
     private const POLICY_ALLOWLIST = array( 'reuse_in_window', 'always_new', 'reuse_per_product' );
     private const POLICY_DEFAULT   = 'reuse_in_window';
     private const WINDOW_MIN       = 60;
@@ -117,7 +124,7 @@ final class Cashback_Click_Session_Service {
             return array( 'status' => 'no_url' );
         }
 
-        $rate_status = self::get_click_rate_status($ip_address, $product_id);
+        $rate_status = self::get_click_rate_status($user_id, $ip_address, (string) ( $user_agent ?? '' ), $product_id);
         if ($rate_status === 'blocked') {
             return array(
                 'status'      => 'rate_limited',
@@ -277,18 +284,34 @@ final class Cashback_Click_Session_Service {
     }
 
     /**
-     * Rate-limit статус для пары (IP, product_id).
+     * Rate-limit статус (NAT-safe, Группа 13).
      *
-     * 2 уровня: по IP+product (узкий) и глобально по IP (широкий).
-     * Использует shared backend из Cashback_Rate_Limiter (transient | object cache).
+     * 2 уровня: узкий (subject+product) и глобальный (subject). Subject:
+     *   - Авторизованный ($user_id>0): user_id → квота персональная (NAT-safe).
+     *   - Гость: /24 (IPv4) или /64 (IPv6) + UA-family → NAT-пул делит bucket,
+     *     разные браузерные семейства изолированы. Fallback на raw IP если
+     *     extract_subnet() вернул пусто (невалидный IP).
      *
      * @return 'normal'|'spam'|'blocked'
      */
-    private static function get_click_rate_status( string $ip_address, int $product_id ): string {
+    private static function get_click_rate_status( int $user_id, string $ip_address, string $user_agent, int $product_id ): string {
         $window = self::RATE_LIMIT_WINDOW;
 
-        $pp_scope = 'pp_' . substr(sha1($ip_address . '|' . $product_id), 0, 40);
-        $gl_scope = 'gl_' . substr(sha1($ip_address), 0, 40);
+        $hard_subnet = '';
+        if ($user_id > 0) {
+            $subject = 'u:' . $user_id;
+        } else {
+            $hard_subnet = class_exists('Cashback_Affiliate_Service')
+                ? \Cashback_Affiliate_Service::extract_subnet($ip_address)
+                : '';
+            $family = class_exists('Cashback_Affiliate_Service')
+                ? \Cashback_Affiliate_Service::normalize_ua($user_agent)['family']
+                : 'unknown';
+            $subject = ($hard_subnet !== '') ? ('n:' . $hard_subnet . '|' . $family) : ('r:' . $ip_address . '|' . $family);
+        }
+
+        $pp_scope = 'pp_' . substr(sha1($subject . '|' . $product_id), 0, 40);
+        $gl_scope = 'gl_' . substr(sha1($subject), 0, 40);
 
         if (!class_exists('Cashback_Rate_Limiter')) {
             require_once __DIR__ . '/class-cashback-rate-limiter.php';
@@ -298,6 +321,15 @@ final class Cashback_Click_Session_Service {
             $counter = \Cashback_Rate_Limiter::counter_backend();
             $pp      = $counter->increment($pp_scope, $window, self::RATE_PER_PRODUCT_BLOCK);
             $gl      = $counter->increment($gl_scope, $window, self::RATE_GLOBAL_BLOCK);
+
+            // Hard subnet-only cap для гостей — defeats UA-rotation bypass (iter-3).
+            // Неделится по UA-family: attacker'а, перебирающего Chrome/FF/Edge/…, ловит общий cap.
+            // Для залогиненных не нужен — scope уже `u:<uid>`, один бюджет на человека.
+            $hard = null;
+            if ($user_id === 0 && $hard_subnet !== '') {
+                $hard_scope = 'gh_' . substr(sha1('h:' . $hard_subnet), 0, 40);
+                $hard       = $counter->increment($hard_scope, $window, self::RATE_GLOBAL_HARD_BLOCK_GUEST);
+            }
         } catch (\Throwable $e) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Rate-limit backend diagnostic (group 7, step 7).
             error_log('[cashback-click-session] rate-limit backend error: ' . $e->getMessage());
@@ -305,10 +337,14 @@ final class Cashback_Click_Session_Service {
             return 'normal';
         }
 
-        $pp_hits = (int) $pp['hits'];
-        $gl_hits = (int) $gl['hits'];
+        $pp_hits   = (int) $pp['hits'];
+        $gl_hits   = (int) $gl['hits'];
+        $hard_hits = is_array($hard) ? (int) $hard['hits'] : 0;
 
-        if ($pp_hits >= self::RATE_PER_PRODUCT_BLOCK || $gl_hits >= self::RATE_GLOBAL_BLOCK) {
+        if ($pp_hits >= self::RATE_PER_PRODUCT_BLOCK
+            || $gl_hits >= self::RATE_GLOBAL_BLOCK
+            || $hard_hits >= self::RATE_GLOBAL_HARD_BLOCK_GUEST
+        ) {
             return 'blocked';
         }
 
