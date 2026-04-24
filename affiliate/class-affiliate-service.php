@@ -509,8 +509,20 @@ class Cashback_Affiliate_Service {
      * ═══════════════════════════════════════ */
 
     /**
-     * Привязка реферала при регистрации пользователя.
+     * Привязка реферала при регистрации пользователя (F-22-003).
      * Вызывается из user_register hook (priority 20).
+     *
+     * Записывает attribution snapshot в profile:
+     *   • attribution_source (cookie | transient)
+     *   • attribution_confidence (high | medium | low)
+     *   • collision_detected (bool из read_referral_transient)
+     *   • review_status (none если confidence=high, иначе pending)
+     *   • antifraud_signals (JSON-сериализованный список сигналов)
+     *
+     * Антифрод-решение делегирует validate_referral() (передаёт source,
+     * cookie_valid, collision_detected). Hard-block → профиль создаётся
+     * без реферера, audit multi_signal_block / invalid_* уже записан внутри
+     * validate_referral().
      */
     public function bind_referral_on_registration( int $user_id ): void {
         if (!Cashback_Affiliate_DB::is_module_enabled()) {
@@ -522,33 +534,40 @@ class Cashback_Affiliate_Service {
             // phpcs:ignore WordPressVIPMinimum.Variables.ServerVariables.UserControlledHeaders,WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__REMOTE_ADDR__ -- REMOTE_ADDR set by webserver from TCP connection, not client-controlled; per-request only.
             : ( isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '0.0.0.0' );
 
-        // Приоритет: cookie → серверный transient (fallback по IP)
-        $cookie = self::read_referral_cookie();
-        $source = 'cookie';
+        // Приоритет: signed cookie → серверный transient fallback.
+        $cookie       = self::read_referral_cookie();
+        $cookie_valid = ($cookie !== null);
+        $source       = 'cookie';
+        $collision    = false;
 
         if (!$cookie) {
             $cookie = self::read_referral_transient($ip);
             $source = 'transient';
+            if (is_array($cookie)) {
+                $collision = !empty($cookie['collision']);
+            }
         }
 
         if (!$cookie) {
-            // Убеждаемся что профиль есть (без реферера)
+            // Профиль создаётся для всех юзеров, с или без реферера.
             Cashback_Affiliate_DB::ensure_profile($user_id);
             return;
         }
 
-        $referrer_id = $cookie['referrer_id'];
-        $click_id    = $cookie['click_id'];
+        $referrer_id = (int) $cookie['referrer_id'];
+        $click_id    = (string) $cookie['click_id'];
 
         // Антифрод проверки
         $check = Cashback_Affiliate_Antifraud::validate_referral(
             $referrer_id,
             $user_id,
             $ip,
-            $click_id
+            $click_id,
+            $source,
+            $cookie_valid,
+            $collision
         );
 
-        // Создаём профиль в любом случае
         Cashback_Affiliate_DB::ensure_profile($user_id);
 
         if (!$check['allowed']) {
@@ -557,12 +576,18 @@ class Cashback_Affiliate_Service {
                 '[Affiliate] bind_referral BLOCKED: user=%d, referrer=%d, reason=%s',
                 $user_id,
                 $referrer_id,
-                $check['reason']
+                (string) ($check['reason'] ?? '')
             ));
             self::clear_referral_cookie();
             self::clear_referral_transient($ip);
             return;
         }
+
+        $confidence    = (string) $check['confidence'];
+        $review_status = ($confidence === 'high') ? 'none' : 'pending';
+        $signals_json  = !empty($check['signals'])
+            ? (string) wp_json_encode(array_values($check['signals']))
+            : null;
 
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_affiliate_profiles';
@@ -570,13 +595,23 @@ class Cashback_Affiliate_Service {
         // Атомарная привязка (UPDATE WHERE referred_by_user_id IS NULL — immutable)
         $updated = $wpdb->query($wpdb->prepare(
             'UPDATE %i
-             SET referred_by_user_id = %d,
-                 referral_click_id   = %s,
-                 referred_at         = NOW()
+             SET referred_by_user_id    = %d,
+                 referral_click_id      = %s,
+                 referred_at            = NOW(),
+                 attribution_source     = %s,
+                 attribution_confidence = %s,
+                 collision_detected     = %d,
+                 review_status          = %s,
+                 antifraud_signals      = %s
              WHERE user_id = %d AND referred_by_user_id IS NULL',
             $table,
             $referrer_id,
             $click_id,
+            $source,
+            $confidence,
+            $collision ? 1 : 0,
+            $review_status,
+            $signals_json,
             $user_id
         ));
 
@@ -599,19 +634,21 @@ class Cashback_Affiliate_Service {
             // Уведомление рефереру о новом реферале
             do_action('cashback_notification_affiliate_referral', $referrer_id, $user_id);
 
-            // Аудит
-            if (class_exists('Cashback_Encryption')) {
-                Cashback_Encryption::write_audit_log(
-                    'affiliate_referral_bound',
-                    0,
-                    'user',
-                    $user_id,
-                    array(
-                        'referrer_id' => $referrer_id,
-                        'click_id'    => $click_id,
-                        'source'      => $source,
-                    )
-                );
+            // Affiliate-specific audit (не write_audit_log — нужны confidence/signals).
+            if (class_exists('Cashback_Affiliate_Audit')) {
+                Cashback_Affiliate_Audit::log('referral_bound', array(
+                    'target_user_id' => $user_id,
+                    'referrer_id'    => $referrer_id,
+                    'click_id'       => $click_id,
+                    'confidence'     => $confidence,
+                    'signals'        => $check['signals'] ?? array(),
+                    'payload'        => array(
+                        'source'        => $source,
+                        'collision'     => $collision,
+                        'review_status' => $review_status,
+                        'cookie_valid'  => $cookie_valid,
+                    ),
+                ));
             }
         }
 
