@@ -168,3 +168,73 @@
     gap: 8px;
     justify-content: flex-end;
 }
+
+/* F-22-003 review queue */
+.cashback-moderation-table .cashback-confidence-high {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #d4edda;
+    color: #155724;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.cashback-moderation-table .cashback-confidence-medium {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #fff3cd;
+    color: #856404;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.cashback-moderation-table .cashback-confidence-low {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #f8d7da;
+    color: #721c24;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.cashback-moderation-table .cashback-signal-chip {
+    display: inline-block;
+    padding: 1px 6px;
+    margin: 1px 2px 1px 0;
+    background: #e2e3e5;
+    color: #383d41;
+    border-radius: 3px;
+    font-size: 11px;
+    font-family: Consolas, Monaco, monospace;
+    white-space: nowrap;
+}
+
+.cashback-moderation-table td code {
+    background: transparent;
+    padding: 0;
+    color: #555;
+    font-size: 11px;
+}
+
+/* Badge-счётчик в admin-menu / tab */
+.nav-tab .awaiting-mod {
+    display: inline-block;
+    vertical-align: top;
+    box-sizing: border-box;
+    margin: 1px 0 0 2px;
+    padding: 0 5px;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    background-color: #d63638;
+    color: #fff;
+    font-size: 11px;
+    line-height: 1.6;
+    text-align: center;
+}

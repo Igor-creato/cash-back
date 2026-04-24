@@ -35,16 +35,39 @@ class Cashback_Affiliate_Admin {
     }
 
     public function add_admin_menu(): void {
+        // F-22-003 badge: счётчик pending-привязок в sidebar-меню.
+        $pending_count = self::count_pending_review();
+        $menu_title    = __(self::LABEL_PAGE_TITLE, 'cashback-plugin'); // phpcs:ignore WordPress.WP.I18n.NonSingularStringLiteralText
+        if ($pending_count > 0) {
+            $menu_title .= ' <span class="awaiting-mod">' . esc_html((string) $pending_count) . '</span>';
+        }
+
         add_submenu_page(
             'cashback-overview',
             // phpcs:ignore WordPress.WP.I18n.NonSingularStringLiteralText -- Class constant holding a single translatable literal.
             __(self::LABEL_PAGE_TITLE, 'cashback-plugin'),
-            // phpcs:ignore WordPress.WP.I18n.NonSingularStringLiteralText -- Class constant holding a single translatable literal.
-            __(self::LABEL_PAGE_TITLE, 'cashback-plugin'),
+            $menu_title,
             'manage_options',
             'cashback-affiliate',
             array( $this, 'render_page' )
         );
+    }
+
+    /**
+     * Количество привязок, ожидающих ручной модерации (F-22-003).
+     * Используется для badge-счётчика в sidebar-меню.
+     */
+    public static function count_pending_review(): int {
+        global $wpdb;
+        if (!isset($wpdb) || !is_object($wpdb)) {
+            return 0;
+        }
+        $table = $wpdb->prefix . 'cashback_affiliate_profiles';
+        $count = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM %i WHERE review_status = 'pending'",
+            $table
+        ));
+        return (int) $count;
     }
 
     public function enqueue_admin_scripts( string $hook ): void {
@@ -86,6 +109,8 @@ class Cashback_Affiliate_Admin {
             'detailsNonce'     => wp_create_nonce('affiliate_get_partner_details_nonce'),
             'bulkRateNonce'    => wp_create_nonce('affiliate_bulk_update_commission_rate_nonce'),
             'editAccrualNonce' => wp_create_nonce('affiliate_edit_accrual_nonce'),
+            // F-22-003 review queue
+            'reviewNonce'      => wp_create_nonce('affiliate_review_nonce'),
         ));
     }
 
@@ -126,11 +151,17 @@ class Cashback_Affiliate_Admin {
 
         // Tabs
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin tab routing, allowlist-validated below.
-        $current_tab = isset($_GET['tab']) ? sanitize_text_field(wp_unslash($_GET['tab'])) : 'settings';
-        $tabs        = array(
-            'settings' => __('Настройки', 'cashback-plugin'),
-            'accruals' => __('Начисления', 'cashback-plugin'),
-            'partners' => __('Партнёры', 'cashback-plugin'),
+        $current_tab      = isset($_GET['tab']) ? sanitize_text_field(wp_unslash($_GET['tab'])) : 'settings';
+        $pending_count    = self::count_pending_review();
+        $moderation_label = __('Модерация', 'cashback-plugin');
+        if ($pending_count > 0) {
+            $moderation_label .= ' <span class="awaiting-mod">' . esc_html((string) $pending_count) . '</span>';
+        }
+        $tabs = array(
+            'settings'   => __('Настройки', 'cashback-plugin'),
+            'accruals'   => __('Начисления', 'cashback-plugin'),
+            'partners'   => __('Партнёры', 'cashback-plugin'),
+            'moderation' => $moderation_label,
         );
 
         echo '<nav class="nav-tab-wrapper">';
@@ -140,7 +171,9 @@ class Cashback_Affiliate_Admin {
 				'tab'  => $slug,
 			), admin_url('admin.php'));
             $active = $slug === $current_tab ? ' nav-tab-active' : '';
-            echo '<a href="' . esc_url($url) . '" class="nav-tab' . esc_attr($active) . '">' . esc_html($label) . '</a>';
+            // F-22-003: $label может содержать HTML <span class="awaiting-mod">N</span>
+            // для badge-счётчика (контент сгенерирован через esc_html, безопасно).
+            echo '<a href="' . esc_url($url) . '" class="nav-tab' . esc_attr($active) . '">' . wp_kses($label, array( 'span' => array( 'class' => array() ) )) . '</a>';
         }
         echo '</nav>';
 
@@ -151,6 +184,9 @@ class Cashback_Affiliate_Admin {
                 break;
             case 'partners':
                 $this->render_partners_tab();
+                break;
+            case 'moderation':
+                $this->render_moderation_tab();
                 break;
             default:
                 $this->render_settings_tab();
@@ -1344,6 +1380,234 @@ class Cashback_Affiliate_Admin {
     /* ═══════════════════════════════════════
      *  F-22-003 — Low-confidence review queue (Step 12)
      * ═══════════════════════════════════════ */
+
+    /**
+     * Рендер вкладки «Модерация» — список привязок в review_status='pending'
+     * с кнопками Approve / Reject. AJAX-обработчики — ниже в этом же классе.
+     */
+    private function render_moderation_tab(): void {
+        global $wpdb;
+
+        $prefix         = $wpdb->prefix;
+        $profiles_table = $prefix . 'cashback_affiliate_profiles';
+        $accruals_table = $prefix . 'cashback_affiliate_accruals';
+        $users_table    = $wpdb->users;
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing filter, allowlist-validated.
+        $filter_conf = isset($_GET['confidence']) ? sanitize_text_field(wp_unslash($_GET['confidence'])) : '';
+        if (!in_array($filter_conf, array( 'low', 'medium' ), true)) {
+            $filter_conf = '';
+        }
+
+        $where = array( "ap.review_status = 'pending'" );
+        $args  = array();
+        if ($filter_conf !== '') {
+            $where[] = 'ap.attribution_confidence = %s';
+            $args[]  = $filter_conf;
+        }
+        $where_sql = 'WHERE ' . implode(' AND ', $where);
+
+        // Пагинация
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only paged param.
+        $current_page = isset($_GET['paged']) ? max(1, (int) $_GET['paged']) : 1;
+        $per_page     = self::PER_PAGE;
+        $offset       = ($current_page - 1) * $per_page;
+
+        $count_query_args = array( $profiles_table );
+        $count_query_args = array_merge($count_query_args, $args);
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql из allowlist + связанные аргументы через prepare.
+        $total = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM %i ap {$where_sql}",
+            $count_query_args
+        ));
+
+        $list_args = array( $profiles_table, $users_table, $users_table, $accruals_table );
+        $list_args = array_merge($list_args, $args, array( $per_page, $offset ));
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT ap.user_id,
+                    ap.referred_by_user_id,
+                    ap.attribution_source,
+                    ap.attribution_confidence,
+                    ap.collision_detected,
+                    ap.antifraud_signals,
+                    ap.referred_at,
+                    u_ref.display_name AS referred_name,
+                    u_ref.user_email   AS referred_email,
+                    u_by.display_name  AS referrer_name,
+                    u_by.user_email    AS referrer_email,
+                    COALESCE(pending_sum.amount, '0.00') AS pending_amount,
+                    COALESCE(pending_sum.cnt, 0)          AS pending_count
+             FROM %i ap
+             LEFT JOIN %i u_ref ON u_ref.ID = ap.user_id
+             LEFT JOIN %i u_by  ON u_by.ID  = ap.referred_by_user_id
+             LEFT JOIN (
+                 SELECT referred_user_id,
+                        SUM(commission_amount) AS amount,
+                        COUNT(*)               AS cnt
+                 FROM %i
+                 WHERE status = 'pending'
+                 GROUP BY referred_user_id
+             ) pending_sum ON pending_sum.referred_user_id = ap.user_id
+             {$where_sql}
+             ORDER BY ap.referred_at ASC
+             LIMIT %d OFFSET %d",
+            $list_args
+        ), ARRAY_A);
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+
+        $total_pages = (int) ceil($total / $per_page);
+
+        // Фильтры UI
+        echo '<div class="tablenav top">';
+        echo '<form method="get" action="' . esc_url(admin_url('admin.php')) . '" style="display:inline-block;">';
+        echo '<input type="hidden" name="page" value="cashback-affiliate">';
+        echo '<input type="hidden" name="tab" value="moderation">';
+        echo '<select name="confidence">';
+        echo '<option value="">' . esc_html__('Все уровни', 'cashback-plugin') . '</option>';
+        foreach (array(
+            'low'    => 'Низкий (low)',
+            'medium' => 'Средний (medium)',
+        ) as $val => $lbl) {
+            echo '<option value="' . esc_attr($val) . '"' . selected($filter_conf, $val, false) . '>' . esc_html($lbl) . '</option>';
+        }
+        echo '</select> ';
+        echo '<button type="submit" class="button">' . esc_html__('Фильтр', 'cashback-plugin') . '</button>';
+        if ($filter_conf !== '') {
+            $reset_url = add_query_arg(array(
+                'page' => 'cashback-affiliate',
+                'tab'  => 'moderation',
+            ), admin_url('admin.php'));
+            echo ' <a href="' . esc_url($reset_url) . '" class="button">' . esc_html__('Сбросить', 'cashback-plugin') . '</a>';
+        }
+        echo '</form>';
+        echo '</div>';
+
+        // Пояснение
+        echo '<p class="description" style="margin:8px 0 16px;">'
+            . esc_html__('Привязки с пониженным доверием (confidence=low или medium) ждут решения админа. ', 'cashback-plugin')
+            . esc_html__('Одобрение разблокирует pending-начисления и реферер получит выплату. ', 'cashback-plugin')
+            . esc_html__('Отклонение переводит начисления в declined и навсегда помечает юзера как ineligible для реф-выплат. ', 'cashback-plugin')
+            . esc_html__('Через 14 дней без жалоб/rate-limit-событий cron автоматически одобрит привязку.', 'cashback-plugin')
+            . '</p>';
+
+        // Таблица
+        echo '<table class="wp-list-table widefat fixed striped cashback-moderation-table">';
+        echo '<thead><tr>';
+        echo '<th style="width:180px;">' . esc_html__('Приглашённый', 'cashback-plugin') . '</th>';
+        echo '<th style="width:180px;">' . esc_html__('Реферер', 'cashback-plugin') . '</th>';
+        echo '<th style="width:80px;">'  . esc_html__('Источник', 'cashback-plugin') . '</th>';
+        echo '<th style="width:80px;">'  . esc_html__('Доверие', 'cashback-plugin') . '</th>';
+        echo '<th>' . esc_html__('Сигналы', 'cashback-plugin') . '</th>';
+        echo '<th style="width:90px;">'  . esc_html__('Коллизия', 'cashback-plugin') . '</th>';
+        echo '<th style="width:110px;">' . esc_html__('К выплате', 'cashback-plugin') . '</th>';
+        echo '<th style="width:140px;">' . esc_html__('Привязан', 'cashback-plugin') . '</th>';
+        echo '<th style="width:200px;">' . esc_html__('Действия', 'cashback-plugin') . '</th>';
+        echo '</tr></thead><tbody>';
+
+        if (empty($rows)) {
+            echo '<tr><td colspan="9">' . esc_html__('Очередь пуста — все привязки обработаны.', 'cashback-plugin') . '</td></tr>';
+        } else {
+            foreach ($rows as $r) {
+                $uid            = (int) $r['user_id'];
+                $rid            = (int) $r['referred_by_user_id'];
+                $source         = (string) ($r['attribution_source']     ?? '');
+                $confidence     = (string) ($r['attribution_confidence'] ?? '');
+                $collision      = (int)    ($r['collision_detected']     ?? 0) === 1;
+                $signals_raw    = (string) ($r['antifraud_signals']      ?? '');
+                $signals        = array();
+                if ($signals_raw !== '') {
+                    $decoded = json_decode($signals_raw, true);
+                    if (is_array($decoded)) {
+                        $signals = $decoded;
+                    }
+                }
+                $referred_name  = (string) ($r['referred_name'] ?? ( 'ID ' . $uid ));
+                $referred_email = (string) ($r['referred_email'] ?? '');
+                $referrer_name  = (string) ($r['referrer_name'] ?? ( 'ID ' . $rid ));
+                $referrer_email = (string) ($r['referrer_email'] ?? '');
+                $pending_amount = (string) ($r['pending_amount'] ?? '0.00');
+                $pending_count  = (int)    ($r['pending_count']  ?? 0);
+                $referred_at    = (string) ($r['referred_at'] ?? '');
+
+                echo '<tr data-user-id="' . esc_attr((string) $uid) . '">';
+
+                // Приглашённый
+                echo '<td>';
+                echo '<strong>' . esc_html($referred_name) . '</strong>';
+                if ($referred_email !== '') {
+                    echo '<br><span class="description">' . esc_html($referred_email) . '</span>';
+                }
+                echo '</td>';
+
+                // Реферер
+                echo '<td>';
+                echo '<strong>' . esc_html($referrer_name) . '</strong>';
+                if ($referrer_email !== '') {
+                    echo '<br><span class="description">' . esc_html($referrer_email) . '</span>';
+                }
+                echo '</td>';
+
+                // Источник
+                echo '<td><code>' . esc_html($source !== '' ? $source : '—') . '</code></td>';
+
+                // Confidence badge
+                $conf_class = 'cashback-confidence-' . preg_replace('/[^a-z]/', '', strtolower($confidence));
+                echo '<td><span class="' . esc_attr($conf_class) . '">' . esc_html($confidence !== '' ? $confidence : '—') . '</span></td>';
+
+                // Сигналы
+                echo '<td>';
+                if (empty($signals)) {
+                    echo '<span class="description">—</span>';
+                } else {
+                    foreach ($signals as $sig) {
+                        echo '<span class="cashback-signal-chip">' . esc_html((string) $sig) . '</span> ';
+                    }
+                }
+                echo '</td>';
+
+                // Коллизия
+                echo '<td>' . ( $collision ? '<strong style="color:#b32d2e;">Да</strong>' : '<span class="description">Нет</span>' ) . '</td>';
+
+                // К выплате
+                echo '<td>';
+                if ($pending_count > 0) {
+                    echo '<strong>' . esc_html(number_format((float) $pending_amount, 2, '.', ' ')) . ' ₽</strong>';
+                    /* translators: %d is pending accruals count */
+                    echo '<br><span class="description">' . esc_html(sprintf(_n('%d начисление', '%d начислений', $pending_count, 'cashback-plugin'), $pending_count)) . '</span>';
+                } else {
+                    echo '<span class="description">—</span>';
+                }
+                echo '</td>';
+
+                // Привязан
+                echo '<td>' . esc_html($referred_at !== '' ? $referred_at : '—') . '</td>';
+
+                // Действия
+                echo '<td>';
+                echo '<button type="button" class="button button-primary cashback-approve-low-conf" data-user-id="' . esc_attr((string) $uid) . '">' . esc_html__('Подтвердить', 'cashback-plugin') . '</button> ';
+                echo '<button type="button" class="button cashback-reject-low-conf" data-user-id="' . esc_attr((string) $uid) . '">' . esc_html__('Отклонить', 'cashback-plugin') . '</button>';
+                echo '</td>';
+
+                echo '</tr>';
+            }
+        }
+
+        echo '</tbody></table>';
+
+        if (class_exists('Cashback_Pagination')) {
+            Cashback_Pagination::render(array(
+                'total_items'  => $total,
+                'per_page'     => $per_page,
+                'current_page' => $current_page,
+                'total_pages'  => $total_pages,
+                'page_slug'    => 'cashback-affiliate',
+                'add_args'     => array(
+                    'tab'        => 'moderation',
+                    'confidence' => $filter_conf,
+                ),
+            ));
+        }
+    }
 
     /**
      * AJAX: Admin одобряет low-confidence привязку.
