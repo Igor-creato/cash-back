@@ -1174,7 +1174,11 @@ class Cashback_Users_Management_Admin {
         }
 
         // Валидация amount через Cashback_Money VO (Группа 10 ADR).
-        $raw_amount = isset($_POST['amount']) ? (string) wp_unslash((string) $_POST['amount']) : '';
+        // Money-ввод: sanitize_text_field safe для canonical decimal (только digits/./+/-);
+        // финальная валидация формата — strict regex в Cashback_Money::from_string ниже.
+        $raw_amount = isset($_POST['amount'])
+            ? sanitize_text_field(wp_unslash((string) $_POST['amount']))
+            : '';
         $raw_amount = trim($raw_amount);
         // Разрешаем "+" префикс для явного положительного значения — вырезаем до валидатора.
         if ($raw_amount !== '' && $raw_amount[0] === '+') {

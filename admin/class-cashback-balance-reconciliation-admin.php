@@ -57,13 +57,13 @@ class Cashback_Balance_Reconciliation_Admin {
 
 		wp_enqueue_style(
 			'cashback-admin-balance-adjust',
-			plugins_url( 'assets/css/admin-balance-adjust.css', dirname( __FILE__ ) . '/../cashback-plugin.php' ),
+			plugins_url( '../assets/css/admin-balance-adjust.css', __FILE__ ),
 			array(),
 			$ver
 		);
 		wp_enqueue_script(
 			'cashback-admin-balance-adjust',
-			plugins_url( 'assets/js/admin-balance-adjust.js', dirname( __FILE__ ) . '/../cashback-plugin.php' ),
+			plugins_url( '../assets/js/admin-balance-adjust.js', __FILE__ ),
 			array(),
 			$ver,
 			true
@@ -272,7 +272,7 @@ class Cashback_Balance_Reconciliation_Admin {
 
 			for ( $i = 0; $i < self::MANUAL_RUN_MAX_BATCHES; $i++ ) {
 				$result = Cashback_Balance_Reconciliation::run();
-				$iterations++;
+				++$iterations;
 				$mismatches += (int) ( $result['mismatches'] ?? 0 );
 				$scanned    += (int) ( $result['scanned'] ?? 0 );
 
