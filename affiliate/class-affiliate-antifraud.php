@@ -312,9 +312,9 @@ class Cashback_Affiliate_Antifraud {
         // IPv6 /64: expand и взять 4 группы
         if (preg_match('#^(.+)/64$#', $subnet, $m)) {
             $addr = $m[1];
-            // Разворачиваем "::" для LIKE-paттерна. inet_pton/ntop даёт
+            // Разворачиваем "::" для LIKE-паттерна. inet_pton/ntop даёт
             // сжатую форму; для LIKE нужна expanded.
-            $packed = @inet_pton($addr);
+            $packed = inet_pton($addr);
             if ($packed === false || strlen($packed) !== 16) {
                 return array();
             }

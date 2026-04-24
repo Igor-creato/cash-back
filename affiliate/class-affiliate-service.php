@@ -383,19 +383,21 @@ class Cashback_Affiliate_Service {
      *                Пустая строка, если IP некорректен.
      */
     public static function extract_subnet( string $ip ): string {
-        $packed = @inet_pton($ip);
+        // inet_pton возвращает false на malformed IP без warnings в PHP 8+.
+        // Аналогично inet_ntop на некорректный payload.
+        $packed = inet_pton($ip);
         if ($packed === false) {
             return '';
         }
         if (strlen($packed) === 4) {
             // IPv4: обнуляем последний октет → /24.
             $packed_subnet = substr($packed, 0, 3) . "\x00";
-            $ntop          = @inet_ntop($packed_subnet);
+            $ntop          = inet_ntop($packed_subnet);
             return is_string($ntop) ? $ntop . '/24' : '';
         }
         // IPv6: обнуляем последние 8 байт → /64.
         $packed_subnet = substr($packed, 0, 8) . str_repeat("\x00", 8);
-        $ntop          = @inet_ntop($packed_subnet);
+        $ntop          = inet_ntop($packed_subnet);
         return is_string($ntop) ? $ntop . '/64' : '';
     }
 
@@ -1020,11 +1022,11 @@ class Cashback_Affiliate_Service {
                         $tx_id
                     ));
 
+                    // TOCTOU note: если $upd === 0, запись уже в terminal-
+                    // статусе между SELECT и UPDATE — не фолбэчим в INSERT
+                    // (idempotency_key conflict был бы ожидаем).
                     if ($upd > 0) {
                         ++$updated_count;
-                    } else {
-                        // TOCTOU: записи уже нет / перешла в terminal между SELECT и UPDATE.
-                        // Не фолбэчим в INSERT — idempotency_key conflict был бы ожидаем.
                     }
                 } else {
                     // New accrual — 14 полей с snapshot-ом.

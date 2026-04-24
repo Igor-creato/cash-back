@@ -18,6 +18,9 @@
     <arg name="parallel" value="8"/>
 
     <!-- WordPress core + extras (security/db/xss/nonce sniffs live here). -->
+    <!-- Формат-only sniffs исключены: не ловят реальные баги, только стиль -->
+    <!-- (выравнивание =, пробелы в скобках, многострочные массивы). Семантика -->
+    <!-- и безопасность (EmptyStatement, NoSilencedErrors, Security, DB) активны. -->
     <rule ref="WordPress">
         <exclude name="Generic.Commenting.DocComment.MissingShort"/>
         <exclude name="Squiz.Commenting"/>
@@ -26,6 +29,18 @@
         <exclude name="WordPress.WhiteSpace"/>
         <exclude name="Generic.WhiteSpace.ScopeIndent"/>
         <exclude name="PEAR.Functions.FunctionCallSignature"/>
+        <!-- Formatting-only: выравнивание = в массивах/присваиваниях -->
+        <exclude name="WordPress.Arrays.MultipleStatementAlignment"/>
+        <exclude name="Generic.Formatting.MultipleStatementAlignment"/>
+        <!-- Formatting-only: один элемент на строку, ключи со spaces -->
+        <exclude name="WordPress.Arrays.ArrayDeclarationSpacing.AssociativeArrayFound"/>
+        <exclude name="WordPress.Arrays.ArrayDeclarationSpacing.ArrayItemNoNewLine"/>
+        <exclude name="WordPress.Arrays.ArrayKeySpacingRestrictions"/>
+        <exclude name="Generic.Arrays.ArrayIndent"/>
+        <!-- Formatting-only: пробелы в произвольных скобках (array access и т.п.) -->
+        <exclude name="Generic.WhiteSpace.ArbitraryParenthesesSpacing"/>
+        <!-- Formatting-only: CRLF vs LF (кодовая база исторически на CRLF) -->
+        <exclude name="Generic.Files.LineEndings"/>
     </rule>
 
     <rule ref="WordPress-Extra">
