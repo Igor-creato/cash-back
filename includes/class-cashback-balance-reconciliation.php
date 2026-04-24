@@ -192,8 +192,12 @@ class Cashback_Balance_Reconciliation {
             return 0;
         }
 
+        // ВАЖНО: wp_cashback_claims PK называется claim_id (не id),
+        // сумма заказа — order_value (не amount). См. claims/class-claims-db.php.
+        // Баг из Группы 14: раньше здесь были c.id/c.amount → AS-job валился
+        // на этом запросе и никогда не писал claim_approved_no_transaction.
         $rows = $wpdb->get_results( $wpdb->prepare(
-            'SELECT c.id, c.user_id, c.click_id, c.merchant_name, c.amount, c.updated_at
+            'SELECT c.claim_id, c.user_id, c.click_id, c.merchant_name, c.order_value, c.updated_at
              FROM %i c
              LEFT JOIN %i t ON t.user_id = c.user_id AND t.click_id = c.click_id
              WHERE c.status = %s
@@ -216,12 +220,12 @@ class Cashback_Balance_Reconciliation {
                     'claim_approved_no_transaction',
                     0, // system actor
                     'claim',
-                    (int) $row['id'],
+                    (int) $row['claim_id'],
                     array(
                         'user_id'       => (int) $row['user_id'],
                         'click_id'      => (string) $row['click_id'],
                         'merchant_name' => (string) $row['merchant_name'],
-                        'amount'        => (string) $row['amount'],
+                        'amount'        => (string) $row['order_value'],
                         'approved_at'   => (string) $row['updated_at'],
                         'days_stale'    => '>=14',
                     )

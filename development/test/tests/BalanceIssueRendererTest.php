@@ -116,6 +116,19 @@ final class BalanceIssueRendererTest extends TestCase
         $this->assertStringContainsString( 'блокиров', mb_strtolower( $out ) );
     }
 
+    public function test_translates_payout_cancel_without_hold(): void
+    {
+        $out = Cashback_Balance_Issue_Renderer::translate_issue(
+            'payout_cancel without payout_hold: 4 cancels, total 61232.73'
+        );
+        // Должна быть человеческая фраза с количеством, суммой и
+        // объяснением, почему «в ожидании выплаты» уходит в минус.
+        $this->assertStringContainsString( 'отмен', mb_strtolower( $out ) );
+        $this->assertStringContainsString( 'блокиров', mb_strtolower( $out ) );
+        $this->assertStringContainsString( '61', $out );
+        $this->assertStringContainsString( 'в ожидании', mb_strtolower( $out ) );
+    }
+
     public function test_translate_issue_falls_back_to_raw_for_unknown_pattern(): void
     {
         $raw = 'some future unknown issue: blah blah';

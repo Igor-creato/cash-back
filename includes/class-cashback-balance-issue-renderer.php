@@ -124,6 +124,18 @@ final class Cashback_Balance_Issue_Renderer {
 			);
 		}
 
+		// 10. payout_cancel without payout_hold — legacy-отмены без parent-холда.
+		if ( preg_match( '/^payout_cancel without payout_hold: (\d+) cancels, total ([\d.\-]+)/', $issue, $m ) ) {
+			$n     = (int) $m[1];
+			$total = (string) $m[2];
+			return sprintf(
+				'Обнаружено %d %s без парной блокировки средств — возвратов на общую сумму %s ₽ (payout_cancel без payout_hold; типично для legacy-выплат, созданных до ledger-first). Из-за этого баланс «в ожидании выплаты» в журнале уходит в минус.',
+				$n,
+				self::russian_plural( $n, 'отмена выплаты', 'отмены выплаты', 'отмен выплат' ),
+				self::format_money( $total )
+			);
+		}
+
 		// Неизвестный паттерн — возвращаем as-is, caller escape'ит.
 		return $issue;
 	}

@@ -1975,6 +1975,38 @@ class Mariadb_Plugin {
             $issues[] = sprintf('payout_complete without payout_hold: %d payouts', $payouts_without_hold);
         }
 
+        // 7. Отменённые payout (payout_cancel) без парного hold — зеркало п.6.
+        // Формула ledger_pending = |hold| - |complete| - |declined| - cancel
+        // предполагает, что каждый cancel имеет parent hold. При legacy-данных
+        // (до Группы 14) hold мог не писаться в ledger → формула даёт отрицательный
+        // pending. Эта проверка даёт админу чёткий сигнал о причине.
+        $cancels_without_hold_info = $wpdb->get_row($wpdb->prepare(
+            "SELECT COUNT(DISTINCT l.payout_request_id) AS cnt, COALESCE(SUM(l.amount), 0) AS sum_amount
+             FROM %i l
+             WHERE l.user_id = %d
+               AND l.type = 'payout_cancel'
+               AND l.payout_request_id IS NOT NULL
+               AND l.payout_request_id NOT IN (
+                   SELECT payout_request_id
+                   FROM %i
+                   WHERE user_id = %d AND type = 'payout_hold' AND payout_request_id IS NOT NULL
+               )",
+            $ledger_table,
+            $user_id,
+            $ledger_table,
+            $user_id
+        ), ARRAY_A);
+
+        $cancels_without_hold       = (int) ( $cancels_without_hold_info['cnt'] ?? 0 );
+        $cancels_without_hold_total = (string) ( $cancels_without_hold_info['sum_amount'] ?? '0.00' );
+        if ($cancels_without_hold > 0) {
+            $issues[] = sprintf(
+                'payout_cancel without payout_hold: %d cancels, total %s',
+                $cancels_without_hold,
+                $cancels_without_hold_total
+            );
+        }
+
         return array(
             'consistent' => empty($issues),
             'details'    => array(
