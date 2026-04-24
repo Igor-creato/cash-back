@@ -522,6 +522,26 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
         );
     }
 
+    public function test_bind_applies_transient_confidence_override(): void
+    {
+        $src = $this->read(self::SERVICE_FILE);
+
+        if (!preg_match('/function\s+bind_referral_on_registration\s*\([^)]*\)[^{]*\{/', $src, $m, PREG_OFFSET_CAPTURE)) {
+            $this->fail('bind_referral_on_registration() not found');
+        }
+        $body = substr($src, $m[0][1], 10000);
+
+        // При наличии confidence_override='low' из transient (NAT collision),
+        // итоговый confidence должен принудительно понижаться до 'low' —
+        // важно для случая выключенного антифрод-toggle, чтобы NAT коллизия
+        // всё равно downgrade-ила привязку.
+        $this->assertMatchesRegularExpression(
+            "/confidence_override.{0,200}['\"]low['\"]|confidence_override.{0,200}\\\$confidence\s*=\s*['\"]low['\"]/s",
+            $body,
+            'bind_referral_on_registration() должен применять \$cookie[\'confidence_override\']=\'low\' из transient — иначе NAT коллизия при выключенном антифроде не понижает confidence.'
+        );
+    }
+
     // ════════════════════════════════════════════════════════════════
     // 6. Антифрод — N-of-M signals + subnet + timing
     // ════════════════════════════════════════════════════════════════

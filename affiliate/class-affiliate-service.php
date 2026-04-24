@@ -646,6 +646,21 @@ class Cashback_Affiliate_Service {
             $confidence = (string) $check['confidence'];
         }
 
+        // F-22-003: transient-level confidence_override (NAT collision) применяется
+        // ПОСЛЕ antifraud-расчёта. Это закрывает edge case: при выключенной
+        // галке антифрода validate_referral() возвращает medium, но сам факт
+        // NAT-коллизии уже зафиксирован в transient на уровне store_referral_transient
+        // — downgrade'им до low и явно добавляем signal для аудит-трейла.
+        if ($source === 'transient'
+            && isset($cookie['confidence_override'])
+            && $cookie['confidence_override'] === 'low'
+        ) {
+            $confidence = 'low';
+            if (!in_array('nat_collision_detected', $signals_list, true)) {
+                $signals_list[] = 'nat_collision_detected';
+            }
+        }
+
         $review_status = ($confidence === 'high') ? 'none' : 'pending';
         $signals_json  = !empty($signals_list)
             ? (string) wp_json_encode($signals_list)
