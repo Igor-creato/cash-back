@@ -561,11 +561,24 @@ class Cashback_Claims_Admin {
                         <tr><th colspan="2"><?php esc_html_e('Разложение скоринга', 'cashback-plugin'); ?></th></tr>
                         <?php
                         foreach ($factor_labels as $key => $label) :
-                            $value = isset($breakdown[ $key ]) ? (float) $breakdown[ $key ] : null;
-                            if ($value === null) {
+                            $raw = isset($breakdown[ $key ]) ? (float) $breakdown[ $key ] : null;
+                            if ($raw === null) {
                                 continue;
                             }
-                            $color = $value >= 70 ? '#2a8f2a' : ( $value >= 40 ? '#b8860b' : '#d63638' );
+                            // F-20-002 UX: строка «Риск» визуально инвертируется.
+                            // Storage breakdown['risk'] = score_risk_factor * 100,
+                            // т.е. «чистота юзера» (high = хорошо) — консистентно
+                            // с остальными 4 факторами внутри формулы. Но label
+                            // «Риск» читается интуитивно как «уровень риска», поэтому
+                            // в UI показываем 100-raw и флипаем цвета ТОЛЬКО для
+                            // этой строки. Формула probability_score не затрагивается.
+                            if ($key === 'risk') {
+                                $value = 100.0 - $raw;
+                                $color = $value >= 70 ? '#d63638' : ( $value >= 40 ? '#b8860b' : '#2a8f2a' );
+                            } else {
+                                $value = $raw;
+                                $color = $value >= 70 ? '#2a8f2a' : ( $value >= 40 ? '#b8860b' : '#d63638' );
+                            }
                         ?>
                             <tr>
                                 <th><?php echo esc_html($label); ?></th>
