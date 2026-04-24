@@ -547,8 +547,9 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
     {
         $src = $this->read(self::ANTIFRAUD_FILE);
 
+        // Параметры могут иметь default-значения (backward-compatible caller transition).
         $this->assertMatchesRegularExpression(
-            '/function\s+validate_referral\s*\(\s*int\s+\$referrer_id\s*,\s*int\s+\$new_user_id\s*,\s*string\s+\$ip\s*,\s*string\s+\$click_id\s*,\s*string\s+\$source\s*,\s*bool\s+\$cookie_valid\s*,\s*bool\s+\$collision_detected\s*\)/',
+            '/function\s+validate_referral\s*\(\s*int\s+\$referrer_id\b[^)]*\bstring\s+\$source\b[^)]*\bbool\s+\$cookie_valid\b[^)]*\bbool\s+\$collision_detected\b[^)]*\)/s',
             $src,
             'validate_referral() должен принимать source + cookie_valid + collision_detected.'
         );
@@ -634,7 +635,7 @@ final class AffiliateReferralFallbackSecurityTest extends TestCase
         $src = $this->read(self::ANTIFRAUD_FILE);
 
         $this->assertMatchesRegularExpression(
-            '/function\s+is_suspicious_timing\s*\(\s*string\s+\$click_id\s*,\s*bool\s+\$cookie_valid\s*\)/',
+            '/function\s+is_suspicious_timing\s*\(\s*string\s+\$click_id\b[^)]*\bbool\s+\$cookie_valid\b[^)]*\)/s',
             $src,
             'is_suspicious_timing() должен принимать (string $click_id, bool $cookie_valid) — 2–5 сек signal только без cookie.'
         );
