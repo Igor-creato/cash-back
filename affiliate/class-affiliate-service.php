@@ -359,7 +359,7 @@ class Cashback_Affiliate_Service {
      * @return string Каноническая строка "X.Y.Z.0/24" либо "addr::/64".
      *                Пустая строка, если IP некорректен.
      */
-    private static function extract_subnet( string $ip ): string {
+    public static function extract_subnet( string $ip ): string {
         $packed = @inet_pton($ip);
         if ($packed === false) {
             return '';
