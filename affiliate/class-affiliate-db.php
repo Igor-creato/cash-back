@@ -259,41 +259,9 @@ class Cashback_Affiliate_DB {
         // в едином cashback_balance_ledger (типы: affiliate_accrual, affiliate_freeze, affiliate_unfreeze).
 
         // 4. Audit-лог affiliate-модуля (F-22-003 — Группа 12).
-        // Типизированные поля (не generic JSON) — быстрый query по event_type/target/referrer
-        // без JSON_EXTRACT. LONGTEXT для signals/payload (MariaDB JSON = alias LONGTEXT,
-        // валидация на уровне PHP). Без UNIQUE на (event_type,target,click_id) —
-        // retry/admin actions могут легитимно повторяться.
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- DDL: $prefix/$charset_collate из $wpdb.
-        $wpdb->query(
-            "CREATE TABLE IF NOT EXISTS `{$prefix}cashback_affiliate_audit` (
-                `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-                `event_type` varchar(64) NOT NULL,
-                `actor_user_id` bigint(20) unsigned DEFAULT NULL COMMENT 'Админ при manual_*',
-                `target_user_id` bigint(20) unsigned DEFAULT NULL COMMENT 'Invited user',
-                `referrer_id` bigint(20) unsigned DEFAULT NULL,
-                `rejected_referrer_id` bigint(20) unsigned DEFAULT NULL COMMENT 'NAT collision: отвергнутый кандидат',
-                `kept_referrer_id` bigint(20) unsigned DEFAULT NULL COMMENT 'NAT collision: сохранённый первый',
-                `click_id` char(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
-                `partner_token_hash` char(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
-                `ip_hash` char(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
-                `ip_subnet_hash` char(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
-                `ua_hash` char(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
-                `key_hash` char(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
-                `confidence` enum('high','medium','low') DEFAULT NULL,
-                `reason` varchar(64) DEFAULT NULL,
-                `signals` LONGTEXT DEFAULT NULL COMMENT 'JSON array, валидируется в PHP',
-                `payload` LONGTEXT DEFAULT NULL COMMENT 'JSON object, валидируется в PHP',
-                `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (`id`),
-                KEY `idx_event_type` (`event_type`, `created_at`),
-                KEY `idx_target_user` (`target_user_id`, `created_at`),
-                KEY `idx_referrer` (`referrer_id`, `created_at`)
-            ) ENGINE=InnoDB {$charset_collate} COMMENT='Affiliate audit log — F-22-003';"
-        );
-        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-        if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
-            self::report_migration_error('create_tables:audit_table', $wpdb->last_error);
-        }
+        // DDL вынесен в ensure_audit_table() чтобы его можно было идемпотентно
+        // вызвать и из миграционного пути (для инсталляций, обновлённых без activation).
+        self::ensure_audit_table();
 
         // Фаза 2: FK constraints (ошибки подавляются — constraint может уже существовать)
         $suppress = $wpdb->suppress_errors(true);
@@ -368,6 +336,53 @@ class Cashback_Affiliate_DB {
     }
 
     /**
+     * F-22-003 — audit-таблица. Идемпотентное CREATE TABLE IF NOT EXISTS.
+     * Вызывается из create_tables() (activation) и из migrate_f22_003_*
+     * (runtime init для обновлённых инсталляций).
+     */
+    public static function ensure_audit_table(): void {
+        global $wpdb;
+        $prefix          = $wpdb->prefix;
+        $charset_collate = $wpdb->get_charset_collate();
+
+        // Типизированные поля (не generic JSON) — быстрый query по event_type/target/referrer
+        // без JSON_EXTRACT. LONGTEXT для signals/payload (MariaDB JSON = alias LONGTEXT,
+        // валидация на уровне PHP). Без UNIQUE на (event_type,target,click_id) —
+        // retry/admin actions могут легитимно повторяться.
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- DDL: $prefix/$charset_collate из $wpdb.
+        $wpdb->query(
+            "CREATE TABLE IF NOT EXISTS `{$prefix}cashback_affiliate_audit` (
+                `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+                `event_type` varchar(64) NOT NULL,
+                `actor_user_id` bigint(20) unsigned DEFAULT NULL COMMENT 'Админ при manual_*',
+                `target_user_id` bigint(20) unsigned DEFAULT NULL COMMENT 'Invited user',
+                `referrer_id` bigint(20) unsigned DEFAULT NULL,
+                `rejected_referrer_id` bigint(20) unsigned DEFAULT NULL COMMENT 'NAT collision: отвергнутый кандидат',
+                `kept_referrer_id` bigint(20) unsigned DEFAULT NULL COMMENT 'NAT collision: сохранённый первый',
+                `click_id` char(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+                `partner_token_hash` char(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+                `ip_hash` char(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+                `ip_subnet_hash` char(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+                `ua_hash` char(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+                `key_hash` char(32) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+                `confidence` enum('high','medium','low') DEFAULT NULL,
+                `reason` varchar(64) DEFAULT NULL,
+                `signals` LONGTEXT DEFAULT NULL COMMENT 'JSON array, валидируется в PHP',
+                `payload` LONGTEXT DEFAULT NULL COMMENT 'JSON object, валидируется в PHP',
+                `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                KEY `idx_event_type` (`event_type`, `created_at`),
+                KEY `idx_target_user` (`target_user_id`, `created_at`),
+                KEY `idx_referrer` (`referrer_id`, `created_at`)
+            ) ENGINE=InnoDB {$charset_collate} COMMENT='Affiliate audit log — F-22-003';"
+        );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
+            self::report_migration_error('ensure_audit_table', $wpdb->last_error);
+        }
+    }
+
+    /**
      * F-22-003 — Referral Attribution Hardening.
      *
      * Добавляет:
@@ -390,7 +405,12 @@ class Cashback_Affiliate_DB {
         $profiles_table   = $prefix . 'cashback_affiliate_profiles';
         $accruals_table   = $prefix . 'cashback_affiliate_accruals';
 
-        // Fast-path: если db_version уже ≥ 1.2 — пропускаем все DDL.
+        // Audit-таблица создаётся ДО fast-path: install'ы, где db_version
+        // уже 1.2 (миграция прогналась без create_tables), могли остаться
+        // без audit-таблицы. CREATE TABLE IF NOT EXISTS — дешёвый noop.
+        self::ensure_audit_table();
+
+        // Fast-path: если db_version уже ≥ 1.2 — пропускаем все DDL профилей/accruals.
         $current_version = (string) get_option('cashback_affiliate_db_version', '1.0');
         if (version_compare($current_version, '1.2', '>=')) {
             return;
