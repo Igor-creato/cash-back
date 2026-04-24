@@ -590,6 +590,11 @@ class CashbackPlugin {
         // Группа 14: ежедневная сверка ledger vs кэш баланса.
         $this->require_file('includes/class-cashback-balance-reconciliation.php');
 
+        // Группа 15: UI-помощник для расшифровки результатов проверки
+        // (перевод issue + бухгалтерский HTML-блок). Используется в
+        // Cashback_Balance_Reconciliation_Admin и admin/payouts.php (DRY).
+        $this->require_file('includes/class-cashback-balance-issue-renderer.php');
+
         // Группа 15: admin-UI поверх сверки (подстраница + Summary + таблицы + ручной запуск).
         $this->require_file('admin/class-cashback-balance-reconciliation-admin.php');
 

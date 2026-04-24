@@ -2285,6 +2285,14 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
      * @return string Понятное описание на русском
      */
     private function translate_balance_issue( string $issue ): string {
+        // Группа 15 follow-up: перевод вынесен в shared-helper
+        // includes/class-cashback-balance-issue-renderer.php для DRY
+        // (переиспользуется в Cashback_Balance_Reconciliation_Admin).
+        if ( class_exists( 'Cashback_Balance_Issue_Renderer' ) ) {
+            return Cashback_Balance_Issue_Renderer::translate_issue( $issue );
+        }
+
+        // Fallback inline-перевод на случай нестандартного autoload-порядка.
         // total balance mismatch
         if (preg_match('/^total balance mismatch: ledger=([\d.\-]+), cache=([\d.\-]+)/', $issue, $m)) {
             $diff = number_format(abs((float) $m[1] - (float) $m[2]), 2, '.', ' ');
