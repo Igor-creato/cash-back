@@ -5,8 +5,8 @@
  * Подстраница `cashback-overview` → «Сверка баланса».
  * Показывает:
  *  - Summary последнего reconciliation-round'а (option cashback_balance_reconciliation_last_summary).
- *  - Таблицу расхождений (audit_log action='balance_consistency_mismatch') — S1.B.
- *  - Таблицу зависших approved claims (action='claim_approved_no_transaction') — S1.B.
+ *  - Таблицу расхождений (audit_log action='balance_consistency_mismatch') — пагинация Cashback_Pagination.
+ *  - Таблицу зависших approved claims (action='claim_approved_no_transaction') — LIMIT 100 последних.
  *  - Кнопку «Запустить сейчас» — S1.C (admin_post + single-lock).
  *
  * Capability: manage_options.
@@ -25,6 +25,9 @@ class Cashback_Balance_Reconciliation_Admin {
 	public const ADMIN_PAGE_SLUG  = 'cashback-balance-reconciliation';
 	public const PARENT_MENU_SLUG = 'cashback-overview';
 
+	public const MISMATCHES_PER_PAGE = 20;
+	public const STUCK_CLAIMS_LIMIT  = 100;
+
 	public static function init(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'register_admin_page' ) );
 	}
@@ -38,6 +41,71 @@ class Cashback_Balance_Reconciliation_Admin {
 			self::ADMIN_PAGE_SLUG,
 			array( __CLASS__, 'render_page' )
 		);
+	}
+
+	/**
+	 * SELECT страницы расхождений из cashback_audit_log.
+	 *
+	 * @return array{rows: array<int,array<string,mixed>>, total: int, total_pages: int}
+	 */
+	public static function get_mismatches( int $page ): array {
+		global $wpdb;
+
+		$page   = max( 1, $page );
+		$offset = ( $page - 1 ) * self::MISMATCHES_PER_PAGE;
+		$table  = $wpdb->prefix . 'cashback_audit_log';
+
+		$total = (int) $wpdb->get_var( $wpdb->prepare(
+			'SELECT COUNT(*) FROM %i WHERE action = %s',
+			$table,
+			'balance_consistency_mismatch'
+		) );
+
+		if ( $total === 0 ) {
+			return array( 'rows' => array(), 'total' => 0, 'total_pages' => 0 );
+		}
+
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			'SELECT id, entity_id, details, created_at
+			 FROM %i
+			 WHERE action = %s
+			 ORDER BY created_at DESC, id DESC
+			 LIMIT %d OFFSET %d',
+			$table,
+			'balance_consistency_mismatch',
+			self::MISMATCHES_PER_PAGE,
+			$offset
+		), ARRAY_A );
+
+		return array(
+			'rows'        => is_array( $rows ) ? $rows : array(),
+			'total'       => $total,
+			'total_pages' => (int) max( 1, (int) ceil( $total / self::MISMATCHES_PER_PAGE ) ),
+		);
+	}
+
+	/**
+	 * SELECT последних зависших approved claims (LIMIT 100) из audit_log.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function get_stuck_claims(): array {
+		global $wpdb;
+
+		$table = $wpdb->prefix . 'cashback_audit_log';
+
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			'SELECT id, entity_id, details, created_at
+			 FROM %i
+			 WHERE action = %s
+			 ORDER BY created_at DESC, id DESC
+			 LIMIT %d',
+			$table,
+			'claim_approved_no_transaction',
+			self::STUCK_CLAIMS_LIMIT
+		), ARRAY_A );
+
+		return is_array( $rows ) ? $rows : array();
 	}
 
 	public static function render_page(): void {
@@ -54,6 +122,12 @@ class Cashback_Balance_Reconciliation_Admin {
 		$total_scanned  = (int) ( $summary['total_scanned'] ?? 0 );
 		$total_mis      = (int) ( $summary['total_mismatches'] ?? 0 );
 		$stale_claims   = (int) ( $summary['stale_approved_claims'] ?? 0 );
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination (?paged=N).
+		$current_page = isset( $_GET['paged'] ) ? max( 1, min( absint( $_GET['paged'] ), 1000 ) ) : 1;
+
+		$mismatches_page = self::get_mismatches( $current_page );
+		$stuck_claims    = self::get_stuck_claims();
 
 		?>
 		<div class="wrap cashback-balance-reconciliation">
@@ -87,14 +161,173 @@ class Cashback_Balance_Reconciliation_Admin {
 
 			<div class="cashback-reconcil-mismatches">
 				<h2><?php esc_html_e( 'Расхождения баланса', 'cashback-plugin' ); ?></h2>
-				<p><?php esc_html_e( 'Таблица будет добавлена в следующем шаге.', 'cashback-plugin' ); ?></p>
+				<?php self::render_mismatches_table( $mismatches_page, $current_page ); ?>
 			</div>
 
 			<div class="cashback-reconcil-stuck-claims">
 				<h2><?php esc_html_e( 'Зависшие approved claims', 'cashback-plugin' ); ?></h2>
-				<p><?php esc_html_e( 'Таблица будет добавлена в следующем шаге.', 'cashback-plugin' ); ?></p>
+				<p class="description">
+					<?php
+					echo esc_html( sprintf(
+						/* translators: %d: максимальное количество записей. */
+						__( 'Показаны до %d последних записей. Claims старше 14 дней без парной transaction в cashback_transactions.', 'cashback-plugin' ),
+						self::STUCK_CLAIMS_LIMIT
+					) );
+					?>
+				</p>
+				<?php self::render_stuck_claims_table( $stuck_claims ); ?>
 			</div>
 		</div>
+		<?php
+	}
+
+	/**
+	 * @param array{rows: array<int,array<string,mixed>>, total: int, total_pages: int} $mismatches
+	 */
+	private static function render_mismatches_table( array $mismatches, int $current_page ): void {
+		$rows  = $mismatches['rows'];
+		$total = $mismatches['total'];
+		?>
+		<table class="wp-list-table widefat fixed striped cashback-reconcil-mismatches-table">
+			<thead>
+				<tr>
+					<th style="width:160px"><?php esc_html_e( 'Дата', 'cashback-plugin' ); ?></th>
+					<th style="width:100px"><?php esc_html_e( 'User ID', 'cashback-plugin' ); ?></th>
+					<th><?php esc_html_e( 'Issues', 'cashback-plugin' ); ?></th>
+					<th style="width:260px"><?php esc_html_e( 'Действия', 'cashback-plugin' ); ?></th>
+				</tr>
+			</thead>
+			<tbody>
+			<?php if ( empty( $rows ) ) : ?>
+				<tr><td colspan="4"><?php esc_html_e( 'Расхождений не найдено.', 'cashback-plugin' ); ?></td></tr>
+			<?php else : ?>
+				<?php foreach ( $rows as $row ) : ?>
+					<?php
+					$uid         = (int) ( $row['entity_id'] ?? 0 );
+					$created_at  = (string) ( $row['created_at'] ?? '' );
+					$raw_details = (string) ( $row['details'] ?? '' );
+					$decoded     = $raw_details !== '' ? json_decode( $raw_details, true ) : null;
+					$issues      = array();
+					if ( is_array( $decoded ) && isset( $decoded['issues'] ) && is_array( $decoded['issues'] ) ) {
+						$issues = $decoded['issues'];
+					}
+					$user_link = add_query_arg(
+						array( 'page' => 'cashback-users', 's' => $uid ),
+						admin_url( 'admin.php' )
+					);
+					?>
+					<tr>
+						<td><?php echo esc_html( $created_at ); ?></td>
+						<td>
+							<a href="<?php echo esc_url( $user_link ); ?>">
+								<?php echo esc_html( (string) $uid ); ?>
+							</a>
+						</td>
+						<td>
+							<?php if ( empty( $issues ) ) : ?>
+								—
+							<?php else : ?>
+								<ul class="cashback-reconcil-issues">
+									<?php foreach ( $issues as $issue ) : ?>
+										<li><code><?php echo esc_html( (string) $issue ); ?></code></li>
+									<?php endforeach; ?>
+								</ul>
+							<?php endif; ?>
+						</td>
+						<td>
+							<details class="cashback-reconcil-details">
+								<summary><?php esc_html_e( 'Показать JSON', 'cashback-plugin' ); ?></summary>
+								<pre class="cashback-reconcil-json"><?php echo esc_html( $raw_details ); ?></pre>
+							</details>
+							<button
+								type="button"
+								class="button button-secondary cashback-reconcil-adjust-btn"
+								data-user-id="<?php echo esc_attr( (string) $uid ); ?>"
+							>
+								<?php esc_html_e( 'Корректировка', 'cashback-plugin' ); ?>
+							</button>
+						</td>
+					</tr>
+				<?php endforeach; ?>
+			<?php endif; ?>
+			</tbody>
+		</table>
+
+		<?php
+		if ( $total > 0 && class_exists( 'Cashback_Pagination' ) ) {
+			Cashback_Pagination::render( array(
+				'mode'         => 'link',
+				'total_items'  => $total,
+				'current_page' => $current_page,
+				'total_pages'  => (int) $mismatches['total_pages'],
+				'page_slug'    => self::ADMIN_PAGE_SLUG,
+				'add_args'     => array(),
+			) );
+		}
+	}
+
+	/**
+	 * @param array<int,array<string,mixed>> $rows
+	 */
+	private static function render_stuck_claims_table( array $rows ): void {
+		?>
+		<table class="wp-list-table widefat fixed striped cashback-reconcil-stuck-claims-table">
+			<thead>
+				<tr>
+					<th style="width:160px"><?php esc_html_e( 'Дата фиксации', 'cashback-plugin' ); ?></th>
+					<th style="width:100px"><?php esc_html_e( 'User ID', 'cashback-plugin' ); ?></th>
+					<th style="width:100px"><?php esc_html_e( 'Claim ID', 'cashback-plugin' ); ?></th>
+					<th><?php esc_html_e( 'Merchant', 'cashback-plugin' ); ?></th>
+					<th style="width:110px"><?php esc_html_e( 'Cashback', 'cashback-plugin' ); ?></th>
+					<th style="width:150px"><?php esc_html_e( 'Approved', 'cashback-plugin' ); ?></th>
+					<th style="width:200px"><?php esc_html_e( 'Действие', 'cashback-plugin' ); ?></th>
+				</tr>
+			</thead>
+			<tbody>
+			<?php if ( empty( $rows ) ) : ?>
+				<tr><td colspan="7"><?php esc_html_e( 'Зависших claims не найдено.', 'cashback-plugin' ); ?></td></tr>
+			<?php else : ?>
+				<?php foreach ( $rows as $row ) : ?>
+					<?php
+					$created_at  = (string) ( $row['created_at'] ?? '' );
+					$claim_id    = (int) ( $row['entity_id'] ?? 0 );
+					$raw_details = (string) ( $row['details'] ?? '' );
+					$decoded     = $raw_details !== '' ? json_decode( $raw_details, true ) : null;
+
+					$uid        = is_array( $decoded ) ? (int) ( $decoded['user_id'] ?? 0 ) : 0;
+					$merchant   = is_array( $decoded ) ? (string) ( $decoded['merchant_name'] ?? '' ) : '';
+					$amount     = is_array( $decoded ) ? (string) ( $decoded['amount'] ?? '' ) : '';
+					$approved   = is_array( $decoded ) ? (string) ( $decoded['approved_at'] ?? '' ) : '';
+
+					$add_tx_url = add_query_arg(
+						array(
+							'page'                => 'cashback-transactions',
+							'action'              => 'add',
+							'prefill_user_id'     => $uid,
+							'prefill_merchant'    => rawurlencode( $merchant ),
+							'prefill_cashback'    => $amount,
+							'prefill_from_claim'  => $claim_id,
+						),
+						admin_url( 'admin.php' )
+					);
+					?>
+					<tr>
+						<td><?php echo esc_html( $created_at ); ?></td>
+						<td><?php echo esc_html( (string) $uid ); ?></td>
+						<td><?php echo esc_html( (string) $claim_id ); ?></td>
+						<td><?php echo esc_html( $merchant ); ?></td>
+						<td><?php echo esc_html( $amount ); ?></td>
+						<td><?php echo esc_html( $approved ); ?></td>
+						<td>
+							<a href="<?php echo esc_url( $add_tx_url ); ?>" class="button button-secondary">
+								<?php esc_html_e( 'Создать транзакцию вручную', 'cashback-plugin' ); ?>
+							</a>
+						</td>
+					</tr>
+				<?php endforeach; ?>
+			<?php endif; ?>
+			</tbody>
+		</table>
 		<?php
 	}
 }

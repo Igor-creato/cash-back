@@ -136,4 +136,84 @@ final class BalanceReconciliationAdminTest extends TestCase
             'Cashback_Balance_Reconciliation_Admin::init() должен вызываться в is_admin()-ветке'
         );
     }
+
+    // =========================================================================
+    // S1.B — таблицы расхождений + stuck claims + Pagination
+    // =========================================================================
+
+    public function test_admin_class_queries_mismatches_from_audit_log(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        $this->assertStringContainsString(
+            "cashback_audit_log",
+            $src,
+            'S1.B: класс должен читать расхождения из cashback_audit_log'
+        );
+        $this->assertStringContainsString(
+            "'balance_consistency_mismatch'",
+            $src,
+            'S1.B: фильтр по action=balance_consistency_mismatch обязателен'
+        );
+    }
+
+    public function test_admin_class_queries_stuck_claims_from_audit_log(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        $this->assertStringContainsString(
+            "'claim_approved_no_transaction'",
+            $src,
+            'S1.B: фильтр по action=claim_approved_no_transaction обязателен для stuck-claims'
+        );
+    }
+
+    public function test_admin_class_uses_table_placeholder_for_audit_log_select(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        // Безопасность: SELECT должен использовать %i для имени таблицы, не конкатенацию в SQL.
+        $this->assertMatchesRegularExpression(
+            '/SELECT[\s\S]{0,200}FROM\s+%i/',
+            $src,
+            'S1.B: SELECT из audit_log должен использовать %i placeholder'
+        );
+    }
+
+    public function test_admin_class_uses_cashback_pagination_render(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        $this->assertStringContainsString(
+            'Cashback_Pagination::render',
+            $src,
+            'S1.B: таблицы должны использовать Cashback_Pagination (переиспользуемый helper)'
+        );
+    }
+
+    public function test_admin_class_selects_mismatches_with_order_by_created_at_desc(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        $this->assertMatchesRegularExpression(
+            '/ORDER\s+BY\s+created_at\s+DESC/i',
+            $src,
+            'S1.B: SELECT должен сортировать расхождения по created_at DESC'
+        );
+    }
+
+    public function test_admin_class_uses_prepare_for_audit_log_select(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        $this->assertMatchesRegularExpression(
+            '/\$wpdb->prepare\s*\(/',
+            $src,
+            'S1.B: SELECT с user-input (page offset, action string) должен использовать prepare'
+        );
+    }
+
+    public function test_admin_class_renders_mismatch_table_header(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        $this->assertStringContainsString(
+            'wp-list-table',
+            $src,
+            'S1.B: таблица расхождений должна использовать WP-native класс wp-list-table'
+        );
+    }
 }
