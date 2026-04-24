@@ -35,6 +35,73 @@ class Cashback_Balance_Reconciliation_Admin {
 	public static function init(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'register_admin_page' ) );
 		add_action( 'admin_post_cashback_reconcil_manual_run', array( __CLASS__, 'handle_manual_run' ) );
+		add_action( 'cashback_overview_widgets', array( __CLASS__, 'render_overview_widget' ) );
+	}
+
+	/**
+	 * Компактный виджет на главном dashboard'е плагина.
+	 *
+	 * Подписан на do_action('cashback_overview_widgets') из admin/statistics.php.
+	 * Показывает: N расхождений + «часов назад» от последней проверки + ссылка на S1.
+	 */
+	public static function render_overview_widget(): void {
+		$summary = get_option( Cashback_Balance_Reconciliation::LAST_SUMMARY_OPT, array() );
+		if ( ! is_array( $summary ) ) {
+			$summary = array();
+		}
+
+		$total_mis    = (int) ( $summary['total_mismatches'] ?? 0 );
+		$stale_claims = (int) ( $summary['stale_approved_claims'] ?? 0 );
+		$finished_at  = (string) ( $summary['finished_at'] ?? '' );
+
+		$hours_ago = null;
+		if ( $finished_at !== '' ) {
+			$ts = strtotime( $finished_at );
+			if ( $ts !== false ) {
+				$hours_ago = (int) floor( max( 0, time() - $ts ) / HOUR_IN_SECONDS );
+			}
+		}
+
+		$has_problems = ( $total_mis > 0 ) || ( $stale_claims > 0 );
+		$page_url     = admin_url( 'admin.php?page=' . self::ADMIN_PAGE_SLUG );
+
+		?>
+		<div class="cashback-overview-reconcil-widget postbox <?php echo $has_problems ? 'has-problems' : 'all-clear'; ?>">
+			<h2 class="hndle"><span><?php esc_html_e( 'Сверка баланса', 'cashback-plugin' ); ?></span></h2>
+			<div class="inside">
+				<?php if ( $finished_at === '' ) : ?>
+					<p><?php esc_html_e( 'Сверка ещё не проводилась. Ежедневная AS-job запускается через час после деплоя.', 'cashback-plugin' ); ?></p>
+				<?php else : ?>
+					<p>
+						<?php
+						echo esc_html( sprintf(
+							/* translators: 1: расхождений, 2: зависших claims. */
+							__( 'Расхождений: %1$d · Зависших approved claims: %2$d', 'cashback-plugin' ),
+							$total_mis,
+							$stale_claims
+						) );
+						?>
+					</p>
+					<?php if ( $hours_ago !== null ) : ?>
+						<p class="description">
+							<?php
+							echo esc_html( sprintf(
+								/* translators: %d: часов назад. */
+								_n( 'Последняя проверка: %d час назад', 'Последняя проверка: %d часов назад', $hours_ago, 'cashback-plugin' ),
+								$hours_ago
+							) );
+							?>
+						</p>
+					<?php endif; ?>
+				<?php endif; ?>
+				<p>
+					<a href="<?php echo esc_url( $page_url ); ?>" class="button button-secondary">
+						<?php esc_html_e( 'Подробнее →', 'cashback-plugin' ); ?>
+					</a>
+				</p>
+			</div>
+		</div>
+		<?php
 	}
 
 	public static function register_admin_page(): void {
