@@ -7,23 +7,37 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Claims Scoring Engine
+ * Claims Scoring Engine — industry-aligned prioritisation signal.
  *
- * Calculates the probability of claim approval based on 4 factors:
- * 1. Time between click and order (weight: 0.25)
- * 2. Merchant historical approval rate (weight: 0.35)
- * 3. User's claim history (weight: 0.20)
- * 4. Data consistency (weight: 0.20)
+ * Рассчитывает probability_score 0–100 как подсказку админу для приоритизации
+ * очереди заявок. Автоматических решений НЕ делает: все transitions
+ * (submitted → sent_to_network → approved|declined) остаются ручными через
+ * admin handler'ы + партнёрскую верификацию.
  *
- * Formula: score = (time * 0.25) + (merchant * 0.35) + (user * 0.20) + (consistency * 0.20)
- * Normalized to 0–100.
+ * 5 факторов (сумма весов = 1.0):
+ * 1. Time between click and order   (0.20) — non-linear, штраф за <5 min
+ *                                           (TUNE/24metrics/Chargebacks911
+ *                                           cookie-stuffing red flag).
+ * 2. Merchant historical approval   (0.20) — per-claim сигнал слабый.
+ * 3. User claim history             (0.20) — approval + suspicious rate.
+ * 4. Data consistency               (0.15) — click/order/IP совпадения.
+ * 5. User risk (antifraud composite) (0.25) — инверсия из Cashback_Fraud_Detector
+ *                                             ::calculate_user_risk_score()
+ *                                             (сам агрегирует 8 сигналов:
+ *                                             shared IP/device/fingerprint/payment,
+ *                                             cancellation rate, withdrawal
+ *                                             velocity, amount anomaly,
+ *                                             new-account withdrawal).
+ *
+ * Closes F-20-002 (Group 12 ADR).
  */
 class Cashback_Claims_Scoring {
 
-    private const WEIGHT_TIME        = 0.25;
-    private const WEIGHT_MERCHANT    = 0.35;
+    private const WEIGHT_TIME        = 0.20;
+    private const WEIGHT_MERCHANT    = 0.20;
     private const WEIGHT_USER        = 0.20;
-    private const WEIGHT_CONSISTENCY = 0.20;
+    private const WEIGHT_CONSISTENCY = 0.15;
+    private const WEIGHT_RISK        = 0.25;
 
     /**
      * Calculate probability score for a claim.
@@ -42,11 +56,13 @@ class Cashback_Claims_Scoring {
         $merchant_score    = self::score_merchant_factor($merchant_id);
         $user_score        = self::score_user_factor($user_id);
         $consistency_score = self::score_consistency_factor($claim_data);
+        $risk_score        = self::score_risk_factor($user_id);
 
         $raw = ( $time_score * self::WEIGHT_TIME )
             + ( $merchant_score * self::WEIGHT_MERCHANT )
             + ( $user_score * self::WEIGHT_USER )
-            + ( $consistency_score * self::WEIGHT_CONSISTENCY );
+            + ( $consistency_score * self::WEIGHT_CONSISTENCY )
+            + ( $risk_score * self::WEIGHT_RISK );
 
         $score = round(max(0, min(100, $raw * 100)), 2);
 
@@ -58,13 +74,18 @@ class Cashback_Claims_Scoring {
                 'merchant'    => round($merchant_score * 100, 2),
                 'user'        => round($user_score * 100, 2),
                 'consistency' => round($consistency_score * 100, 2),
+                'risk'        => round($risk_score * 100, 2),
             ),
         );
     }
 
     /**
-     * Score based on time between click and order.
-     * Optimal: 1–24 hours after click.
+     * Score based on time between click and order — non-linear curve.
+     *
+     * Peak: 1–24h (typical purchase decision cycle).
+     * Short-latency penalty <5 min: cookie-stuffing / бот red flag
+     * (TUNE, 24metrics, Chargebacks911). Раньше этот интервал получал
+     * максимум 1.0 — стимулировал сверхбыстрые подозрительные заявки.
      *
      * @param string $click_id
      * @param string $order_date
@@ -93,26 +114,41 @@ class Cashback_Claims_Scoring {
             return 0.0;
         }
 
-        $diff_hours = ( $order_time - $click_time ) / 3600;
+        $diff_seconds = $order_time - $click_time;
 
-        if ($diff_hours <= 1) {
+        // <5 min: short-latency penalty (cookie-stuffing / бот).
+        if ($diff_seconds < 5 * MINUTE_IN_SECONDS) {
+            return 0.2;
+        }
+
+        // 5–15 min: короткий, но возможен реальный.
+        if ($diff_seconds < 15 * MINUTE_IN_SECONDS) {
+            return 0.6;
+        }
+
+        // 15 min – 1h: нормальный.
+        if ($diff_seconds < HOUR_IN_SECONDS) {
+            return 0.95;
+        }
+
+        // 1–24h: peak — типичный decision cycle.
+        if ($diff_seconds <= DAY_IN_SECONDS) {
             return 1.0;
         }
 
-        if ($diff_hours <= 24) {
-            return 0.9;
+        // 24–72h.
+        if ($diff_seconds <= 3 * DAY_IN_SECONDS) {
+            return 0.85;
         }
 
-        if ($diff_hours <= 72) {
+        // 72h – 7d.
+        if ($diff_seconds <= 7 * DAY_IN_SECONDS) {
             return 0.7;
         }
 
-        if ($diff_hours <= 168) {
-            return 0.5;
-        }
-
-        if ($diff_hours <= 720) {
-            return 0.3;
+        // 7–30d.
+        if ($diff_seconds <= 30 * DAY_IN_SECONDS) {
+            return 0.4;
         }
 
         return 0.1;
@@ -182,6 +218,31 @@ class Cashback_Claims_Scoring {
         $score = $approval_rate * 0.7 + ( 1 - $suspicious_rate ) * 0.3;
 
         return max(0.1, min(1.0, $score));
+    }
+
+    /**
+     * Score based on user's composite antifraud risk.
+     *
+     * Инверсия Cashback_Fraud_Detector::calculate_user_risk_score() — сам
+     * агрегат из 8 сигналов (shared IP/device/fingerprint/payment,
+     * cancellation rate, withdrawal velocity, amount anomaly, new-account
+     * withdrawal). Чистый юзер = 1.0, критический (∑ 100) = 0.0.
+     *
+     * @param int $user_id
+     * @return float 0–1
+     */
+    private static function score_risk_factor( int $user_id ): float {
+        if ($user_id <= 0) {
+            return 0.5;
+        }
+
+        if (!class_exists('Cashback_Fraud_Detector')) {
+            return 0.5;
+        }
+
+        $risk = Cashback_Fraud_Detector::calculate_user_risk_score($user_id);
+
+        return max(0.0, min(1.0, 1.0 - ( $risk / 100.0 )));
     }
 
     /**
