@@ -25,11 +25,16 @@ class Cashback_Balance_Reconciliation_Admin {
 	public const ADMIN_PAGE_SLUG  = 'cashback-balance-reconciliation';
 	public const PARENT_MENU_SLUG = 'cashback-overview';
 
-	public const MISMATCHES_PER_PAGE = 20;
-	public const STUCK_CLAIMS_LIMIT  = 100;
+	public const MISMATCHES_PER_PAGE    = 20;
+	public const STUCK_CLAIMS_LIMIT     = 100;
+	public const MANUAL_RUN_ACTION      = 'cashback_reconcil_manual_run';
+	public const MANUAL_RUN_NONCE       = 'cashback_reconcil_manual_nonce';
+	public const MANUAL_RUN_LOCK        = 'cashback_reconcil_manual';
+	public const MANUAL_RUN_MAX_BATCHES = 20;
 
 	public static function init(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'register_admin_page' ) );
+		add_action( 'admin_post_cashback_reconcil_manual_run', array( __CLASS__, 'handle_manual_run' ) );
 	}
 
 	public static function register_admin_page(): void {
@@ -108,6 +113,97 @@ class Cashback_Balance_Reconciliation_Admin {
 		return is_array( $rows ) ? $rows : array();
 	}
 
+	/**
+	 * admin_post handler для кнопки «Запустить сейчас».
+	 *
+	 * Крутит reconciliation::run() до `completed_round=true` (макс MANUAL_RUN_MAX_BATCHES
+	 * итераций — защита от таймаута на больших таблицах). Параллельные нажатия
+	 * блокируются через GET_LOCK(, 0) — вторая кнопка сразу увидит flash-ошибку.
+	 */
+	public static function handle_manual_run(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Недостаточно прав.', 'cashback-plugin' ) );
+		}
+		check_admin_referer( self::MANUAL_RUN_NONCE );
+
+		global $wpdb;
+
+		// Lock-имя — константа класса, user-input не участвует; прямой SQL безопасен и
+		// совпадает с формулировкой плана: GET_LOCK('cashback_reconcil_manual', 0).
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.NotPrepared -- static lock name.
+		$lock = (int) $wpdb->get_var( "SELECT GET_LOCK('cashback_reconcil_manual', 0)" );
+		if ( $lock !== 1 ) {
+			self::redirect_with_flash(
+				'error',
+				__( 'Сверка уже запущена другим администратором. Дождитесь её завершения.', 'cashback-plugin' )
+			);
+			return; // phpcs:ignore PHPCompatibility.FunctionUse.RemovedFunctions.no_argumentFound -- unreachable after redirect-exit.
+		}
+
+		try {
+			$completed    = false;
+			$iterations   = 0;
+			$mismatches   = 0;
+			$scanned      = 0;
+
+			for ( $i = 0; $i < self::MANUAL_RUN_MAX_BATCHES; $i++ ) {
+				$result = Cashback_Balance_Reconciliation::run();
+				$iterations++;
+				$mismatches += (int) ( $result['mismatches'] ?? 0 );
+				$scanned    += (int) ( $result['scanned'] ?? 0 );
+
+				if ( ! empty( $result['completed_round'] ) ) {
+					$completed = true;
+					break;
+				}
+			}
+
+			if ( $completed ) {
+				$message = sprintf(
+					/* translators: 1: итераций, 2: расхождений, 3: проверено. */
+					__( 'Сверка завершена: %1$d батч(ей), расхождений %2$d, проверено пользователей %3$d.', 'cashback-plugin' ),
+					$iterations,
+					$mismatches,
+					$scanned
+				);
+				self::redirect_with_flash( 'success', $message );
+			} else {
+				$message = sprintf(
+					/* translators: 1: батчей, 2: промежуточно расхождений. */
+					__( 'Выполнено %1$d батчей, round ещё не завершён (промежуточно расхождений: %2$d). Ежедневная AS-job дойдёт до конца автоматически.', 'cashback-plugin' ),
+					$iterations,
+					$mismatches
+				);
+				self::redirect_with_flash( 'warning', $message );
+			}
+		} finally {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.PreparedSQL.NotPrepared -- static lock name.
+			$wpdb->query( "SELECT RELEASE_LOCK('cashback_reconcil_manual')" );
+		}
+	}
+
+	private static function redirect_with_flash( string $level, string $message ): void {
+		set_transient( 'cashback_reconcil_flash_' . (int) get_current_user_id(), array(
+			'level'   => $level,
+			'message' => $message,
+		), 60 );
+		wp_safe_redirect( admin_url( 'admin.php?page=' . self::ADMIN_PAGE_SLUG ) );
+		exit;
+	}
+
+	private static function consume_flash(): ?array {
+		$key   = 'cashback_reconcil_flash_' . (int) get_current_user_id();
+		$flash = get_transient( $key );
+		if ( ! is_array( $flash ) || ! isset( $flash['level'], $flash['message'] ) ) {
+			return null;
+		}
+		delete_transient( $key );
+		return array(
+			'level'   => (string) $flash['level'],
+			'message' => (string) $flash['message'],
+		);
+	}
+
 	public static function render_page(): void {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( esc_html__( 'Недостаточно прав.', 'cashback-plugin' ) );
@@ -129,9 +225,44 @@ class Cashback_Balance_Reconciliation_Admin {
 		$mismatches_page = self::get_mismatches( $current_page );
 		$stuck_claims    = self::get_stuck_claims();
 
+		$flash = self::consume_flash();
+
 		?>
 		<div class="wrap cashback-balance-reconciliation">
 			<h1><?php esc_html_e( 'Сверка баланса', 'cashback-plugin' ); ?></h1>
+
+			<?php if ( $flash !== null ) : ?>
+				<?php
+				$notice_class = 'notice-info';
+				if ( $flash['level'] === 'success' ) {
+					$notice_class = 'notice-success';
+				} elseif ( $flash['level'] === 'error' ) {
+					$notice_class = 'notice-error';
+				} elseif ( $flash['level'] === 'warning' ) {
+					$notice_class = 'notice-warning';
+				}
+				?>
+				<div class="notice <?php echo esc_attr( $notice_class ); ?> is-dismissible">
+					<p><?php echo esc_html( $flash['message'] ); ?></p>
+				</div>
+			<?php endif; ?>
+
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="cashback-reconcil-manual-run-form">
+				<input type="hidden" name="action" value="<?php echo esc_attr( self::MANUAL_RUN_ACTION ); ?>" />
+				<?php wp_nonce_field( self::MANUAL_RUN_NONCE ); ?>
+				<button type="submit" class="button button-primary">
+					<?php esc_html_e( 'Запустить сверку сейчас', 'cashback-plugin' ); ?>
+				</button>
+				<span class="description">
+					<?php
+					echo esc_html( sprintf(
+						/* translators: %d: max batches. */
+						__( 'Максимум %d батчей по 500 пользователей за один клик. Параллельные запуски блокируются.', 'cashback-plugin' ),
+						self::MANUAL_RUN_MAX_BATCHES
+					) );
+					?>
+				</span>
+			</form>
 
 			<div class="cashback-reconcil-summary <?php echo $has_mismatches ? 'has-mismatches' : ''; ?>">
 				<h2><?php esc_html_e( 'Последняя сверка', 'cashback-plugin' ); ?></h2>
