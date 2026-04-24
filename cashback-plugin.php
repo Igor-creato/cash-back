@@ -582,6 +582,9 @@ class CashbackPlugin {
         $this->require_file('includes/class-cashback-api-client.php');
         $this->require_file('includes/class-cashback-api-cron.php');
 
+        // --- Click-session service (12i-2 ADR) — общий сервис для /activate и ?cashback_click= ---
+        $this->require_file('includes/class-cashback-click-session-service.php');
+
         // --- REST API для браузерного расширения ---
         $this->require_file('includes/class-cashback-rest-api.php');
 

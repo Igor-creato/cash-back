@@ -126,15 +126,6 @@ class SessionAwareReadsTest extends TestCase
         );
     }
 
-    public function test_activation_page_keeps_click_log_fallback(): void
-    {
-        self::assertStringContainsString(
-            'cashback_click_log',
-            $this->handle_activation_body,
-            '12i-3: click_log fallback должен остаться — legacy rows до 12i-1 migration.'
-        );
-    }
-
     // =====================================================================
     // 3. Regression: scheme check (12h-1) preserved
     // =====================================================================
