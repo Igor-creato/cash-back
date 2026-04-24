@@ -233,7 +233,8 @@ class Cashback_Affiliate_Service {
      * Ключ: IP адрес посетителя. TTL синхронизирован с cookie_ttl из настроек.
      */
     private function store_referral_transient( int $referrer_id, string $click_id, string $ip ): void {
-        $key = self::get_referral_transient_key($ip);
+        $hdr = self::collect_request_headers_for_key();
+        $key = self::get_referral_transient_key($ip, $hdr['ua'], $hdr['al']);
         $ttl = Cashback_Affiliate_DB::get_cookie_ttl_days();
         set_transient($key, array(
             'referrer_id' => $referrer_id,
@@ -248,7 +249,8 @@ class Cashback_Affiliate_Service {
      * @return array{referrer_id: int, click_id: string, timestamp: int}|null
      */
     private static function read_referral_transient( string $ip ): ?array {
-        $key  = self::get_referral_transient_key($ip);
+        $hdr  = self::collect_request_headers_for_key();
+        $key  = self::get_referral_transient_key($ip, $hdr['ua'], $hdr['al']);
         $data = get_transient($key);
 
         if (!is_array($data) || !isset($data['referrer_id'], $data['click_id'], $data['timestamp'])) {
@@ -273,14 +275,117 @@ class Cashback_Affiliate_Service {
      * Удаление реферального transient.
      */
     private static function clear_referral_transient( string $ip ): void {
-        delete_transient(self::get_referral_transient_key($ip));
+        $hdr = self::collect_request_headers_for_key();
+        delete_transient(self::get_referral_transient_key($ip, $hdr['ua'], $hdr['al']));
+    }
+
+    /* ═══════════════════════════════════════
+     *  F-22-003 HELPERS — subnet + UA-family key
+     * ═══════════════════════════════════════ */
+
+    /**
+     * Извлечение /24 (IPv4) или /64 (IPv6) через inet_pton.
+     *
+     * Почему inet_pton, а не explode(':'): IPv6 "::" (all-zero groups) ломает
+     * explode — "::1" даст неверный split. inet_pton канонизирует адрес,
+     * после чего обнуление хвостовых байт даёт корректный subnet.
+     *
+     * @return string Каноническая строка "X.Y.Z.0/24" либо "addr::/64".
+     *                Пустая строка, если IP некорректен.
+     */
+    private static function extract_subnet( string $ip ): string {
+        $packed = @inet_pton($ip);
+        if ($packed === false) {
+            return '';
+        }
+        if (strlen($packed) === 4) {
+            // IPv4: обнуляем последний октет → /24.
+            $packed_subnet = substr($packed, 0, 3) . "\x00";
+            $ntop          = @inet_ntop($packed_subnet);
+            return is_string($ntop) ? $ntop . '/24' : '';
+        }
+        // IPv6: обнуляем последние 8 байт → /64.
+        $packed_subnet = substr($packed, 0, 8) . str_repeat("\x00", 8);
+        $ntop          = @inet_ntop($packed_subnet);
+        return is_string($ntop) ? $ntop . '/64' : '';
     }
 
     /**
-     * Ключ transient: sha256 от IP (безопасный формат ключа).
+     * Нормализация UA → {family, major}. Мы НЕ делаем полный fingerprint
+     * (это persisted tracking, consent-sensitive). Берём только типовой
+     * маркер: имя браузера + мажорная версия, устойчивое к минорным
+     * обновлениям и к мусорным полям UA.
+     *
+     * @return array{family: string, major: string}
      */
-    private static function get_referral_transient_key( string $ip ): string {
-        return 'cb_aff_ref_' . substr(hash('sha256', $ip), 0, 16);
+    private static function normalize_ua( string $raw_ua ): array {
+        $family = 'unknown';
+        $major  = '0';
+
+        if (preg_match('#Edg/(\d+)#', $raw_ua, $m)) {
+            $family = 'Edge';
+            $major  = $m[1];
+        } elseif (preg_match('#OPR/(\d+)#', $raw_ua, $m)) {
+            $family = 'Opera';
+            $major  = $m[1];
+        } elseif (preg_match('#YaBrowser/(\d+)#', $raw_ua, $m)) {
+            $family = 'YandexBrowser';
+            $major  = $m[1];
+        } elseif (preg_match('#(SamsungBrowser|MiuiBrowser|UCBrowser|HuaweiBrowser)/(\d+)#', $raw_ua, $m)) {
+            $family = $m[1];
+            $major  = $m[2];
+        } elseif (preg_match('#Firefox/(\d+)#', $raw_ua, $m)) {
+            $family = 'Firefox';
+            $major  = $m[1];
+        } elseif (preg_match('#Chrome/(\d+)#', $raw_ua, $m)) {
+            $family = 'Chrome';
+            $major  = $m[1];
+        } elseif (preg_match('#Version/(\d+)[^/]*Safari#', $raw_ua, $m)) {
+            $family = 'Safari';
+            $major  = $m[1];
+        }
+
+        return array(
+            'family' => $family,
+            'major'  => $major,
+        );
+    }
+
+    /**
+     * Ключ transient: sha256 от (ip_subnet_hash | ua_family | ua_major | accept_language).
+     *
+     * Subnet вместо точного IP — устойчивость к смене IP внутри одной NAT.
+     * UA-family/major вместо raw UA — устойчивость к микроизменениям строки UA,
+     * сохраняя защиту от разных браузеров на одном IP (разделяет коллизии).
+     * Accept-Language — доп. различитель для NAT'ов с mixed-locale юзерами.
+     *
+     * Все компоненты — нечувствительные к fingerprinting-грейзоне сигналы
+     * (subnet/family/lang публично очевидны из любого запроса).
+     */
+    private static function get_referral_transient_key( string $ip, string $raw_ua, string $accept_language ): string {
+        $subnet      = self::extract_subnet($ip);
+        $ua          = self::normalize_ua($raw_ua);
+        $al          = substr($accept_language, 0, 32);
+        $subnet_hash = hash('sha256', $subnet);
+        $payload     = $subnet_hash . '|' . $ua['family'] . '|' . $ua['major'] . '|' . $al;
+        return 'cb_aff_ref_' . substr(hash('sha256', $payload), 0, 16);
+    }
+
+    /**
+     * Собирает (raw_ua, accept_language) из $_SERVER для call-site'ов, которые
+     * не передают эти значения вручную. Вынесено, чтобы не дублировать.
+     *
+     * @return array{ua: string, al: string}
+     */
+    private static function collect_request_headers_for_key(): array {
+        // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__HTTP_USER_AGENT__ -- UA используется только для per-request composite-ключа, не для кеширования.
+        $raw_ua = isset($_SERVER['HTTP_USER_AGENT'])
+            ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT']))
+            : '';
+        $al     = isset($_SERVER['HTTP_ACCEPT_LANGUAGE'])
+            ? sanitize_text_field(wp_unslash($_SERVER['HTTP_ACCEPT_LANGUAGE']))
+            : '';
+        return array( 'ua' => $raw_ua, 'al' => $al );
     }
 
     /**
