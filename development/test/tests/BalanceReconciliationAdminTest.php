@@ -322,4 +322,49 @@ final class BalanceReconciliationAdminTest extends TestCase
             'S1.C: форма должна содержать wp_nonce_field'
         );
     }
+
+    // =========================================================================
+    // S1.D — dashboard-виджет на cashback-overview
+    // =========================================================================
+
+    public function test_overview_page_fires_widget_action_hook(): void
+    {
+        $src = $this->source('admin/statistics.php');
+        $this->assertStringContainsString(
+            "do_action( 'cashback_overview_widgets' )",
+            $src,
+            'S1.D: admin/statistics.php должен emit-ить do_action cashback_overview_widgets'
+        );
+    }
+
+    public function test_admin_class_subscribes_to_overview_widget_hook(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        $this->assertMatchesRegularExpression(
+            "/add_action\s*\(\s*'cashback_overview_widgets'\s*,/",
+            $src,
+            'S1.D: init() должен подписаться на cashback_overview_widgets'
+        );
+    }
+
+    public function test_admin_class_has_render_overview_widget_method(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        $this->assertMatchesRegularExpression(
+            '/public\s+static\s+function\s+render_overview_widget\s*\(\s*\)\s*:\s*void/',
+            $src,
+            'S1.D: render_overview_widget должен быть public static function(): void'
+        );
+    }
+
+    public function test_overview_widget_links_to_admin_subpage(): void
+    {
+        $src = $this->source('admin/class-cashback-balance-reconciliation-admin.php');
+        // Ссылка «Подробнее →» должна вести на ADMIN_PAGE_SLUG.
+        $this->assertMatchesRegularExpression(
+            '/render_overview_widget\s*\([\s\S]+?self::ADMIN_PAGE_SLUG/',
+            $src,
+            'S1.D: виджет должен содержать ссылку на self::ADMIN_PAGE_SLUG'
+        );
+    }
 }

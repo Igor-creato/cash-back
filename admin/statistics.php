@@ -196,6 +196,13 @@ class Cashback_Statistics_Admin {
                 </div>
             </div>
 
+            <?php
+            // Группа 15: виджеты из других admin-модулей могут подписаться
+            // на этот хук и отрисовать свой блок на cashback-overview.
+            // Сверка баланса (Cashback_Balance_Reconciliation_Admin) — первый клиент.
+            do_action( 'cashback_overview_widgets' );
+            ?>
+
             <!-- Транзакции по статусам -->
             <div class="cashback-stats-section">
                 <div class="postbox">
