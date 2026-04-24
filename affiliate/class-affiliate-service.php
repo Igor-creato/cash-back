@@ -53,6 +53,11 @@ class Cashback_Affiliate_Service {
         // который вызывает wp_insert_user() → user_register. Но на случай если
         // плагины/темы перехватывают процесс, дублируем через woocommerce_created_customer.
         add_action('woocommerce_created_customer', array( $this, 'bind_referral_on_registration' ), 20);
+
+        // F-22-003: daily cron — auto-promote low-confidence рефералов после
+        // 14 дней без disputes/rejects/rate-limit events. Статический callback —
+        // не зависит от singleton instance на момент фиринга.
+        add_action('cashback_affiliate_auto_promote', array( self::class, 'auto_promote_low_confidence' ));
     }
 
     /* ═══════════════════════════════════════
@@ -1846,5 +1851,173 @@ class Cashback_Affiliate_Service {
             'total_pending'   => $total_pending,
             'total_declined'  => $total_declined,
         );
+    }
+
+    /* ═══════════════════════════════════════
+     *  F-22-003 — CRON auto-promote (Step 11)
+     * ═══════════════════════════════════════ */
+
+    /**
+     * Количество дней без disputes/rejects/rate-limit events для
+     * auto-promote low-confidence привязки. Literal (не option) — политика
+     * безопасности, не настройка.
+     */
+    const AUTO_PROMOTE_DAYS = 14;
+
+    /**
+     * Batch limit на один cron-прогон — защищаем DB от long transaction
+     * и покрываем типичный объём очереди за день. Если кандидатов больше —
+     * следующий запуск (через сутки) добьёт остальных.
+     */
+    const AUTO_PROMOTE_BATCH = 500;
+
+    /**
+     * Ежедневный cron: auto-promote low-confidence привязок после
+     * AUTO_PROMOTE_DAYS дней без негативных сигналов.
+     *
+     * ВАЖНО: меняется ТОЛЬКО review_status (none/pending → auto_approved).
+     * attribution_confidence НЕ трогаем — это историческое качество
+     * evidence, нельзя «улучшить временем».
+     *
+     * Criteria:
+     *   • review_status = 'pending'
+     *   • collision_detected = 0
+     *   • referred_at <= NOW() - INTERVAL 14 DAY
+     *   • antifraud_signals IS NULL OR JSON_LENGTH(antifraud_signals) = 0
+     *   • нет declined accruals по этому referred_user
+     *   • нет rate-limit events по этому referred_user / referrer
+     *
+     * Idempotency: повторный запуск матчит меньше кандидатов (те, кто уже
+     * auto_approved — пропускаются в WHERE review_status='pending').
+     *
+     * Per-row audit: 'auto_promoted' с confidence (снят с профиля),
+     * payload{previous_review_status, referred_at}.
+     *
+     * После promotion — вызываем process_affiliate_commissions() с
+     * $in_transaction=false: pending accruals этого юзера идут в available
+     * (accrual-level gate теперь разрешён, см. Шаг 8).
+     */
+    public static function auto_promote_low_confidence(): void {
+        global $wpdb;
+        if (!isset($wpdb) || !is_object($wpdb)) {
+            return;
+        }
+        if (!class_exists('Cashback_Affiliate_DB') || !Cashback_Affiliate_DB::is_module_enabled()) {
+            return;
+        }
+
+        $prefix         = $wpdb->prefix;
+        $profiles_table = $prefix . 'cashback_affiliate_profiles';
+        $accruals_table = $prefix . 'cashback_affiliate_accruals';
+        $audit_table    = $prefix . 'cashback_affiliate_audit';
+
+        // 1. Выборка кандидатов batch LIMIT 500.
+        //    LEFT JOIN declined-accruals + LEFT JOIN rate-limit audit-events —
+        //    отсекаем юзеров с любым негативным следом.
+        $candidates = $wpdb->get_results($wpdb->prepare(
+            "SELECT ap.user_id,
+                    ap.referred_by_user_id,
+                    ap.attribution_confidence,
+                    ap.review_status    AS previous_review_status,
+                    ap.referred_at
+             FROM %i ap
+             LEFT JOIN %i acc
+                 ON acc.referred_user_id = ap.user_id
+                AND acc.status = 'declined'
+             LEFT JOIN %i aud
+                 ON ( aud.target_user_id = ap.user_id
+                      OR aud.referrer_id = ap.referred_by_user_id )
+                AND aud.event_type IN (
+                      'rate_limit_blocked_click',
+                      'rate_limit_downgrade_bind',
+                      'multi_signal_block'
+                )
+                AND aud.created_at >= ap.referred_at
+             WHERE ap.review_status = 'pending'
+               AND ap.collision_detected = 0
+               AND ap.referred_at <= DATE_SUB(NOW(), INTERVAL 14 DAY)
+               AND ( ap.antifraud_signals IS NULL
+                     OR JSON_LENGTH(ap.antifraud_signals) = 0 )
+               AND acc.id IS NULL
+               AND aud.id IS NULL
+             GROUP BY ap.user_id
+             LIMIT 500",
+            $profiles_table,
+            $accruals_table,
+            $audit_table
+        ), ARRAY_A);
+
+        if (!is_array($candidates) || empty($candidates)) {
+            return;
+        }
+
+        // 2. Per-row UPDATE + audit + re-process pending accruals.
+        foreach ($candidates as $row) {
+            $uid = (int) $row['user_id'];
+            if ($uid <= 0) {
+                continue;
+            }
+
+            // Атомарное изменение review_status с guard на текущее 'pending'
+            // — устраняет TOCTOU с admin-approve / admin-reject, случившимся
+            // параллельно с cron-прогоном.
+            $updated = $wpdb->query($wpdb->prepare(
+                "UPDATE %i
+                 SET review_status = 'auto_approved'
+                 WHERE user_id = %d AND review_status = 'pending'
+                 LIMIT 1",
+                $profiles_table,
+                $uid
+            ));
+
+            if ($updated !== 1) {
+                continue; // admin успел либо approve, либо reject — пропускаем.
+            }
+
+            // Promote pending accruals этого юзера — их review_status_at_creation
+            // переносится в auto_approved (ок, snapshot тоже обновляется как
+            // accrual's own historical review_status).
+            $wpdb->query($wpdb->prepare(
+                "UPDATE %i
+                 SET review_status_at_creation = 'auto_approved'
+                 WHERE referred_user_id = %d
+                   AND status = 'pending'
+                   AND review_status_at_creation = 'pending'",
+                $accruals_table,
+                $uid
+            ));
+
+            // Audit per-row (обязательно для spot-check'а cron-прогонов).
+            if (class_exists('Cashback_Affiliate_Audit')) {
+                Cashback_Affiliate_Audit::log('auto_promoted', array(
+                    'target_user_id' => $uid,
+                    'referrer_id'    => (int) $row['referred_by_user_id'],
+                    'confidence'     => $row['attribution_confidence'],
+                    'reason'         => 'clean_' . self::AUTO_PROMOTE_DAYS . '_days',
+                    'payload'        => array(
+                        'previous_review_status' => $row['previous_review_status'],
+                        'referred_at'            => $row['referred_at'],
+                    ),
+                ));
+            }
+
+            // Промоция pending → available через существующий pipeline.
+            // Восстанавливаем candidate'ов из ledger'а транзакций, которые
+            // имеют pending accrual для этого user_id.
+            $promote_txs = $wpdb->get_results($wpdb->prepare(
+                "SELECT acc.transaction_id AS id, acc.referred_user_id AS user_id, acc.cashback_amount AS cashback
+                 FROM %i acc
+                 WHERE acc.referred_user_id = %d
+                   AND acc.status = 'pending'
+                   AND acc.review_status_at_creation = 'auto_approved'",
+                $accruals_table,
+                $uid
+            ), ARRAY_A);
+
+            if (is_array($promote_txs) && !empty($promote_txs)) {
+                // В отдельной TX: process_affiliate_commissions откроет свою.
+                self::process_affiliate_commissions($promote_txs, false);
+            }
+        }
     }
 }
