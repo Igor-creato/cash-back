@@ -69,6 +69,51 @@ class Cashback_Transactions_Admin {
             'getNonce'      => wp_create_nonce('get_transaction_nonce'),
             'transferNonce' => wp_create_nonce('transfer_unregistered_nonce'),
         ));
+
+        // Группа 15, S3: подключаем модал S2 для обработки already_accrued —
+        // когда admin пытается править транзакцию с ledger-записью, JS предлагает
+        // создать корректирующую запись через window.CashbackBalanceAdjust.open().
+        if (class_exists('Cashback_Users_Management_Admin')) {
+            $ver = defined('CASHBACK_PLUGIN_VERSION') ? CASHBACK_PLUGIN_VERSION : '1.3.0';
+            wp_enqueue_style(
+                'cashback-admin-balance-adjust',
+                plugins_url('../assets/css/admin-balance-adjust.css', __FILE__),
+                array(),
+                $ver
+            );
+            wp_enqueue_script(
+                'cashback-admin-balance-adjust',
+                plugins_url('../assets/js/admin-balance-adjust.js', __FILE__),
+                array(),
+                $ver,
+                true
+            );
+            wp_localize_script('cashback-admin-balance-adjust', 'cashbackBalanceAdjust', array(
+                'ajaxUrl'          => admin_url('admin-ajax.php'),
+                'nonce'            => wp_create_nonce('cashback_adjust_balance_nonce'),
+                'minReasonLength'  => Cashback_Users_Management_Admin::MIN_ADJUST_REASON_LENGTH,
+                'amountPlaceholder'=> '+100.00 или -50.25',
+                'i18n'             => array(
+                    'title'          => __('Ручная корректировка баланса', 'cashback-plugin'),
+                    'forUser'        => __('Пользователь ID:', 'cashback-plugin'),
+                    'amountLabel'    => __('Сумма корректировки', 'cashback-plugin'),
+                    'amountHint'     => __('Знак +/- обязателен. Не более 2 знаков после точки.', 'cashback-plugin'),
+                    'reasonLabel'    => sprintf(
+                        /* translators: %d: минимум символов. */
+                        __('Причина (минимум %d символов)', 'cashback-plugin'),
+                        Cashback_Users_Management_Admin::MIN_ADJUST_REASON_LENGTH
+                    ),
+                    'confirm'        => __('Я понимаю, что это запись в ledger с немедленным эффектом.', 'cashback-plugin'),
+                    'cancel'         => __('Отмена', 'cashback-plugin'),
+                    'apply'          => __('Применить', 'cashback-plugin'),
+                    'invalidAmount'  => __('Введите сумму в формате +100.00 или -50.25.', 'cashback-plugin'),
+                    'reasonTooShort' => __('Причина должна быть минимум {n} символов.', 'cashback-plugin'),
+                    'success'        => __('Корректировка применена. Новый баланс: {b}.', 'cashback-plugin'),
+                    'genericError'   => __('Ошибка применения корректировки.', 'cashback-plugin'),
+                    'networkError'   => __('Ошибка сети. Повторите.', 'cashback-plugin'),
+                ),
+            ));
+        }
     }
 
     public function render_page(): void {
@@ -261,6 +306,7 @@ class Cashback_Transactions_Admin {
                         <?php foreach ($transactions as $tx) : ?>
                             <?php $is_editable = ( $tx['order_status'] !== 'balance' ); ?>
                             <tr data-transaction-id="<?php echo esc_attr($tx['id']); ?>"
+                                data-user-id="<?php echo esc_attr($tx['user_id']); ?>"
                                 data-tab="<?php echo esc_attr($current_tab); ?>">
                                 <td><?php echo esc_html($tx['id']); ?></td>
                                 <td><code><?php echo esc_html($tx['reference_id'] ?? ''); ?></code></td>

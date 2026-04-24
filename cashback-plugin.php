@@ -590,6 +590,9 @@ class CashbackPlugin {
         // Группа 14: ежедневная сверка ledger vs кэш баланса.
         $this->require_file('includes/class-cashback-balance-reconciliation.php');
 
+        // Группа 15: admin-UI поверх сверки (подстраница + Summary + таблицы + ручной запуск).
+        $this->require_file('admin/class-cashback-balance-reconciliation-admin.php');
+
         // --- Click-session service (12i-2 ADR) — общий сервис для /activate и ?cashback_click= ---
         $this->require_file('includes/class-cashback-click-session-service.php');
 
@@ -857,6 +860,11 @@ class CashbackPlugin {
         // --- Группа 14: ежедневная сверка баланса (AS-job ledger vs cache) ---
         if (class_exists('Cashback_Balance_Reconciliation')) {
             Cashback_Balance_Reconciliation::init();
+        }
+
+        // --- Группа 15: admin-UI поверх сверки (подстраница + Summary + manual run) ---
+        if (is_admin() && class_exists('Cashback_Balance_Reconciliation_Admin')) {
+            Cashback_Balance_Reconciliation_Admin::init();
         }
 
         // --- REST API для браузерного расширения ---
