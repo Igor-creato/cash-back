@@ -39,6 +39,61 @@ class Cashback_Legal_Registration_Checkboxes {
         add_action('woocommerce_register_form', array( __CLASS__, 'render_checkboxes' ), 21);
         add_filter('woocommerce_registration_errors', array( __CLASS__, 'validate_checkboxes' ), 11, 3);
         add_action('woocommerce_created_customer', array( __CLASS__, 'save_consents_on_registration' ), 11, 1);
+
+        // UX-валидация (красная подсветка + сообщение под чекбоксом).
+        // Defense-in-depth: серверная validate_checkboxes остаётся, JS только улучшает UX.
+        add_action('wp_enqueue_scripts', array( __CLASS__, 'enqueue_validation_assets' ));
+    }
+
+    /**
+     * Подключение JS-валидации только на страницах с формой регистрации
+     * (My Account / shortcode). Гость (!is_user_logged_in) — обязательное условие,
+     * иначе формы регистрации просто нет.
+     */
+    public static function enqueue_validation_assets(): void {
+        if (!function_exists('is_user_logged_in') || is_user_logged_in()) {
+            return;
+        }
+        // is_account_page() покрывает /my-account/ (login+register на одной странице)
+        // и checkout-страницу WC. На прочих страницах не подключаем.
+        if (!function_exists('is_account_page')) {
+            return;
+        }
+        if (!is_account_page() && !( function_exists('is_checkout') && is_checkout() )) {
+            return;
+        }
+
+        if (class_exists('Cashback_Legal_Bootstrap')) {
+            Cashback_Legal_Bootstrap::register_common_assets();
+        }
+        if (!function_exists('wp_enqueue_style') || !function_exists('wp_enqueue_script')) {
+            return;
+        }
+
+        wp_enqueue_style('cashback-consent-validate');
+        wp_enqueue_script('cashback-consent-validate');
+
+        $plugin_root_file = dirname(__DIR__) . '/cashback-plugin.php';
+        $js_path          = dirname(__DIR__) . '/assets/js/cashback-legal-registration-validate.js';
+        $js_url           = plugins_url('assets/js/cashback-legal-registration-validate.js', $plugin_root_file);
+        $js_ver           = file_exists($js_path) ? (string) filemtime($js_path) : '1.7.0';
+
+        wp_register_script(
+            'cashback-legal-registration-validate',
+            $js_url,
+            array( 'cashback-consent-validate' ),
+            $js_ver,
+            true
+        );
+        wp_localize_script(
+            'cashback-legal-registration-validate',
+            'cashbackLegalRegistrationI18n',
+            array(
+                'pdRequiredMessage'    => esc_html__('Необходимо согласие на обработку персональных данных (152-ФЗ ст. 9).', 'cashback-plugin'),
+                'offerRequiredMessage' => esc_html__('Необходимо принятие Пользовательского соглашения (публичной оферты).', 'cashback-plugin'),
+            )
+        );
+        wp_enqueue_script('cashback-legal-registration-validate');
     }
 
     /**

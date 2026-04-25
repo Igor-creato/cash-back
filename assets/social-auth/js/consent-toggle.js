@@ -37,23 +37,42 @@
         });
     }
 
+    function findCheckboxForButton(btn) {
+        var container = btn.closest('.cashback-social-buttons');
+        if (!container) {
+            return null;
+        }
+        return container.querySelector('[data-cashback-social-consent]');
+    }
+
     function init() {
         var checkboxes = document.querySelectorAll('[data-cashback-social-consent]');
         if (!checkboxes.length) {
             return;
         }
 
+        var i18n = window.cashbackSocialConsentI18n || {};
+        var consentMessage = i18n.consentRequiredMessage || 'Поставьте отметку, чтобы продолжить.';
+        var validator = window.CashbackConsentValidate || null;
+
         checkboxes.forEach(function (checkbox) {
             // Начальное состояние: синхронизируем сразу, чтобы disabled-статус
             // отражал текущее значение чекбокса (с учётом восстановления формы браузером).
             syncButtonsFromCheckbox(checkbox);
+
+            if (validator) {
+                validator.bindAutoClear(checkbox);
+            }
 
             checkbox.addEventListener('change', function () {
                 syncButtonsFromCheckbox(checkbox);
             });
         });
 
-        // Перехват клика на отключённой кнопке — блокируем переход.
+        // Перехват клика на отключённой кнопке — блокируем переход и показываем
+        // явное сообщение об ошибке + красная рамка вокруг чекбокса. Иначе
+        // пользователь не понимает, почему «Зарегистрироваться через Яндекс ID»
+        // ничего не делает.
         document.addEventListener('click', function (e) {
             var btn = e.target && e.target.closest ? e.target.closest('.cashback-social-btn') : null;
             if (!btn) {
@@ -63,6 +82,15 @@
                 || btn.classList.contains('cashback-social-btn--disabled')
                 || btn.getAttribute('href') === '#') {
                 e.preventDefault();
+                var checkbox = findCheckboxForButton(btn);
+                if (checkbox && validator) {
+                    validator.showError(checkbox, consentMessage);
+                    try {
+                        checkbox.focus({ preventScroll: false });
+                    } catch (_e) {
+                        checkbox.focus();
+                    }
+                }
             }
         });
     }

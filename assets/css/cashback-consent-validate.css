@@ -1,0 +1,32 @@
+/**
+ * Cashback Legal — единый стиль ошибки UX-валидации чекбоксов согласий.
+ *
+ * Подключается на формах: WC-регистрация, форма вывода, контактная форма,
+ * social-auth кнопки. Палитра совпадает с .cb-field-error / .cb-msg-error.
+ *
+ * @since 1.7.0
+ */
+
+.cashback-consent-error {
+    padding: 8px 12px;
+    border: 1px solid #e2401c;
+    border-radius: 4px;
+    background: #fef0ed;
+}
+
+.cashback-consent-error-message {
+    display: block;
+    margin-top: 6px;
+    color: #a82b10;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+/* На формах WC чекбокс рендерится в <p class="form-row ..."> — добавляем
+   небольшой gap, чтобы рамка не липла к соседним полям. */
+.cashback-legal-consent.cashback-consent-error,
+.cashback-legal-payment-consent.cashback-consent-error,
+.cb-contact-legal-consent.cashback-consent-error,
+.cashback-social-consent.cashback-consent-error {
+    margin: 6px 0;
+}

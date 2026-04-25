@@ -76,12 +76,25 @@ class Cashback_Social_Auth_Renderer {
         $js_url     = plugins_url('assets/social-auth/js/consent-toggle.js', $plugin_root_file);
         $js_version = file_exists($js_path) ? (string) filemtime($js_path) : '1.0.0';
 
+        // Общий хелпер UX-валидации (показывает сообщение/рамку при клике
+        // на disabled-кнопку без отметки).
+        if (class_exists('Cashback_Legal_Bootstrap')) {
+            Cashback_Legal_Bootstrap::register_common_assets();
+        }
+
         wp_register_script(
             'cashback-social-consent',
             $js_url,
-            array(),
+            array( 'cashback-consent-validate' ),
             $js_version,
             true
+        );
+        wp_localize_script(
+            'cashback-social-consent',
+            'cashbackSocialConsentI18n',
+            array(
+                'consentRequiredMessage' => esc_html__('Поставьте отметку, чтобы продолжить.', 'cashback-plugin'),
+            )
         );
     }
 
@@ -94,6 +107,7 @@ class Cashback_Social_Auth_Renderer {
         }
         self::register_assets();
         wp_enqueue_style('cashback-social-buttons');
+        wp_enqueue_style('cashback-consent-validate');
         wp_enqueue_script('cashback-social-consent');
     }
 
@@ -106,6 +120,7 @@ class Cashback_Social_Auth_Renderer {
         }
         self::register_assets();
         wp_enqueue_style('cashback-social-buttons');
+        wp_enqueue_style('cashback-consent-validate');
         wp_enqueue_script('cashback-social-consent');
     }
 
@@ -165,6 +180,9 @@ class Cashback_Social_Auth_Renderer {
         self::register_assets();
         if (function_exists('wp_style_is') && !wp_style_is('cashback-social-buttons', 'enqueued')) {
             wp_enqueue_style('cashback-social-buttons');
+        }
+        if (function_exists('wp_style_is') && !wp_style_is('cashback-consent-validate', 'enqueued')) {
+            wp_enqueue_style('cashback-consent-validate');
         }
         if (function_exists('wp_script_is') && !wp_script_is('cashback-social-consent', 'enqueued')) {
             wp_enqueue_script('cashback-social-consent');
