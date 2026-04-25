@@ -21,10 +21,15 @@ if (!defined('ABSPATH')) {
 class Cashback_Legal_Admin {
 
     public const PAGE_SLUG_OPERATOR = 'cashback-legal-operator';
+    public const PAGE_SLUG_VERSIONS = 'cashback-legal-versions';
+    public const PAGE_SLUG_JOURNAL  = 'cashback-legal-journal';
 
     public const ACTION_SAVE_OPERATOR = 'cashback_legal_save_operator';
+    public const ACTION_BUMP_VERSION  = 'cashback_legal_bump_version';
+    public const ACTION_BUMP_BATCH    = 'cashback_legal_bump_batch';
 
     public const NONCE_SAVE_OPERATOR = 'cashback_legal_save_operator_nonce';
+    public const NONCE_BUMP_VERSION  = 'cashback_legal_bump_version_nonce';
 
     public static function init(): void {
         if (!is_admin()) {
@@ -32,6 +37,8 @@ class Cashback_Legal_Admin {
         }
         add_action('admin_menu', array( __CLASS__, 'register_menu' ), 30);
         add_action('admin_post_' . self::ACTION_SAVE_OPERATOR, array( __CLASS__, 'handle_save_operator' ));
+        add_action('admin_post_' . self::ACTION_BUMP_VERSION, array( __CLASS__, 'handle_bump_version' ));
+        add_action(self::ACTION_BUMP_BATCH, array( __CLASS__, 'run_bump_batch' ), 10, 2);
         add_action('admin_notices', array( __CLASS__, 'admin_notice_not_configured' ));
     }
 
@@ -43,6 +50,22 @@ class Cashback_Legal_Admin {
             'manage_options',
             self::PAGE_SLUG_OPERATOR,
             array( __CLASS__, 'render_operator_page' )
+        );
+        add_submenu_page(
+            'cashback-overview',
+            __('Документы и версии', 'cashback-plugin'),
+            __('Документы и версии', 'cashback-plugin'),
+            'manage_options',
+            self::PAGE_SLUG_VERSIONS,
+            array( __CLASS__, 'render_versions_page' )
+        );
+        add_submenu_page(
+            'cashback-overview',
+            __('Журнал согласий', 'cashback-plugin'),
+            __('Журнал согласий', 'cashback-plugin'),
+            'manage_options',
+            self::PAGE_SLUG_JOURNAL,
+            array( __CLASS__, 'render_journal_page' )
         );
     }
 
@@ -336,5 +359,290 @@ class Cashback_Legal_Admin {
         $url = admin_url('admin.php?page=' . self::PAGE_SLUG_OPERATOR . '&cashback_legal_flash=' . $flash);
         wp_safe_redirect($url);
         exit;
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // Phase 5: Версии документов + bump major
+    // ────────────────────────────────────────────────────────────
+
+    public static function render_versions_page(): void {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Недостаточно прав.', 'cashback-plugin'), '', array( 'response' => 403 ));
+        }
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only flash через query var.
+        $flash = isset($_GET['cashback_legal_flash']) ? sanitize_key((string) $_GET['cashback_legal_flash']) : '';
+
+        ?>
+        <div class="wrap cashback-legal-admin">
+            <h1><?php esc_html_e('Документы и версии', 'cashback-plugin'); ?></h1>
+
+            <div class="cashback-legal-warning notice notice-warning" style="border-left-width:4px;">
+                <p>
+                    <strong><?php esc_html_e('Bump major-версии — необратимое действие.', 'cashback-plugin'); ?></strong>
+                    <?php esc_html_e('Все ранее данные согласия по этому документу будут помечены как superseded. При следующем входе пользователю покажется модал с обновлёнными чекбоксами; до акцепта доступ ограничен личным кабинетом и логаутом.', 'cashback-plugin'); ?>
+                </p>
+                <p><?php esc_html_e('Делайте bump только после фактической правки текста шаблона и согласования с юристом.', 'cashback-plugin'); ?></p>
+            </div>
+
+            <?php if ($flash === 'bumped') : ?>
+                <div class="notice notice-success is-dismissible"><p><?php esc_html_e('Версия увеличена. Запущена фоновая задача superseded для всех ранее согласовавших.', 'cashback-plugin'); ?></p></div>
+            <?php elseif ($flash === 'invalid_type') : ?>
+                <div class="notice notice-error is-dismissible"><p><?php esc_html_e('Неизвестный тип документа.', 'cashback-plugin'); ?></p></div>
+            <?php endif; ?>
+
+            <table class="widefat striped">
+                <thead>
+                    <tr>
+                        <th><?php esc_html_e('Документ', 'cashback-plugin'); ?></th>
+                        <th><?php esc_html_e('Текущая версия', 'cashback-plugin'); ?></th>
+                        <th><?php esc_html_e('Hash', 'cashback-plugin'); ?></th>
+                        <th><?php esc_html_e('Действия', 'cashback-plugin'); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php
+                    echo self::render_versions_rows(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- HTML собран через esc_attr/esc_html/esc_url в render_versions_rows.
+                    ?>
+                </tbody>
+            </table>
+        </div>
+        <?php
+    }
+
+    /**
+     * Сборка строк таблицы versions (вынесено для соблюдения Squiz.PHP.EmbeddedPhp).
+     */
+    private static function render_versions_rows(): string {
+        $out = '';
+        foreach (Cashback_Legal_Documents::all_types() as $type) {
+            $meta       = Cashback_Legal_Documents::get_meta($type);
+            $title      = isset($meta['title']) ? (string) $meta['title'] : $type;
+            $version    = Cashback_Legal_Documents::get_active_version($type);
+            $hash       = Cashback_Legal_Documents::compute_hash($type);
+            $hash_short = $hash !== '' ? substr($hash, 0, 12) . '…' : '—';
+
+            $confirm_msg = esc_js(__('Bump major действительно нужен? Все ранее согласовавшие пройдут re-consent.', 'cashback-plugin'));
+
+            $out .= '<tr>'
+                . '<td><strong>' . esc_html($title) . '</strong><br /><code>' . esc_html($type) . '</code></td>'
+                . '<td><code>' . esc_html($version) . '</code></td>'
+                . '<td><code title="' . esc_attr($hash) . '">' . esc_html($hash_short) . '</code></td>'
+                . '<td>'
+                . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" '
+                . 'onsubmit="return confirm(\'' . $confirm_msg . '\');">'
+                . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION_BUMP_VERSION) . '" />'
+                . '<input type="hidden" name="consent_type" value="' . esc_attr($type) . '" />'
+                . wp_nonce_field(self::NONCE_BUMP_VERSION, '_wpnonce', true, false)
+                . '<button type="submit" class="button button-secondary">'
+                . esc_html__('Bump major →', 'cashback-plugin')
+                . '</button>'
+                . '</form>'
+                . '</td>'
+                . '</tr>';
+        }
+        return $out;
+    }
+
+    /**
+     * POST-handler bump major-версии. Increments active version + ставит
+     * async-задачу superseded через wp_schedule_single_event.
+     */
+    public static function handle_bump_version(): void {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Недостаточно прав.', 'cashback-plugin'), '', array( 'response' => 403 ));
+        }
+        check_admin_referer(self::NONCE_BUMP_VERSION);
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- check_admin_referer выше проверяет nonce.
+        $type = isset($_POST['consent_type']) ? sanitize_key((string) $_POST['consent_type']) : '';
+
+        if (!in_array($type, Cashback_Legal_Documents::all_types(), true)) {
+            $url = admin_url('admin.php?page=' . self::PAGE_SLUG_VERSIONS . '&cashback_legal_flash=invalid_type');
+            wp_safe_redirect($url);
+            exit;
+        }
+
+        $old_version = Cashback_Legal_Documents::get_active_version($type);
+        $new_version = Cashback_Legal_Documents::bump_major($type);
+
+        // async batch superseded — через wp_schedule_single_event (как cron-pattern плагина),
+        // не AS, чтобы не вводить новую зависимость на этом этапе.
+        if (function_exists('wp_schedule_single_event')) {
+            wp_schedule_single_event(
+                time() + 30,
+                self::ACTION_BUMP_BATCH,
+                array( $type, $new_version )
+            );
+        }
+
+        if (class_exists('Cashback_Encryption')) {
+            Cashback_Encryption::write_audit_log(
+                'legal_version_bumped',
+                get_current_user_id(),
+                'legal_document',
+                null,
+                array(
+                    'consent_type' => $type,
+                    'from_version' => $old_version,
+                    'to_version'   => $new_version,
+                )
+            );
+        }
+
+        $url = admin_url('admin.php?page=' . self::PAGE_SLUG_VERSIONS . '&cashback_legal_flash=bumped');
+        wp_safe_redirect($url);
+        exit;
+    }
+
+    /**
+     * Cron-callback: пишет superseded для всех ранее granted-юзеров с
+     * document_version меньше bumped_to_version.
+     */
+    public static function run_bump_batch( string $type, string $bumped_to_version ): void {
+        if (!class_exists('Cashback_Legal_Consent_Manager')) {
+            return;
+        }
+        Cashback_Legal_Consent_Manager::mark_superseded_for_type($type, $bumped_to_version);
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // Phase 5: Журнал согласий
+    // ────────────────────────────────────────────────────────────
+
+    public static function render_journal_page(): void {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Недостаточно прав.', 'cashback-plugin'), '', array( 'response' => 403 ));
+        }
+
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- read-only фильтры.
+        $filter_user_id = isset($_GET['user_id']) ? (int) $_GET['user_id'] : 0;
+        $filter_type    = isset($_GET['consent_type']) ? sanitize_key((string) $_GET['consent_type']) : '';
+        $filter_action  = isset($_GET['log_action']) ? sanitize_key((string) $_GET['log_action']) : '';
+        $filter_from    = isset($_GET['date_from']) ? sanitize_text_field(wp_unslash((string) $_GET['date_from'])) : '';
+        $filter_to      = isset($_GET['date_to']) ? sanitize_text_field(wp_unslash((string) $_GET['date_to'])) : '';
+        $page_num       = isset($_GET['paged']) ? max(1, (int) $_GET['paged']) : 1;
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+        $per_page = 50;
+        $offset   = ( $page_num - 1 ) * $per_page;
+
+        $filters = array();
+        if ($filter_user_id > 0) {
+            $filters['user_id'] = $filter_user_id;
+        }
+        if ($filter_type !== '' && in_array($filter_type, Cashback_Legal_Documents::all_types(), true)) {
+            $filters['consent_type'] = $filter_type;
+        }
+        if (in_array($filter_action, array( 'granted', 'revoked', 'superseded' ), true)) {
+            $filters['action'] = $filter_action;
+        }
+        if ($filter_from !== '') {
+            $filters['date_from'] = $filter_from;
+        }
+        if ($filter_to !== '') {
+            $filters['date_to'] = $filter_to;
+        }
+
+        $rows = Cashback_Legal_DB::query_log($filters, $per_page, $offset);
+
+        ?>
+        <div class="wrap cashback-legal-admin">
+            <h1><?php esc_html_e('Журнал согласий', 'cashback-plugin'); ?></h1>
+
+            <form method="get" class="cashback-legal-journal-filters" style="margin-bottom:16px;">
+                <input type="hidden" name="page" value="<?php echo esc_attr(self::PAGE_SLUG_JOURNAL); ?>" />
+
+                <label><?php esc_html_e('User ID', 'cashback-plugin'); ?>:
+                    <input type="number" name="user_id" value="<?php echo esc_attr((string) $filter_user_id); ?>" style="width:100px;" />
+                </label>
+
+                <label style="margin-left:12px;"><?php esc_html_e('Тип', 'cashback-plugin'); ?>:
+                    <select name="consent_type">
+                        <option value=""><?php esc_html_e('— любой —', 'cashback-plugin'); ?></option>
+                        <?php foreach (Cashback_Legal_Documents::all_types() as $type) : ?>
+                            <option value="<?php echo esc_attr($type); ?>" <?php selected($filter_type, $type); ?>><?php echo esc_html($type); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+
+                <label style="margin-left:12px;"><?php esc_html_e('Action', 'cashback-plugin'); ?>:
+                    <select name="log_action">
+                        <option value=""><?php esc_html_e('— любое —', 'cashback-plugin'); ?></option>
+                        <?php foreach (array( 'granted', 'revoked', 'superseded' ) as $a) : ?>
+                            <option value="<?php echo esc_attr($a); ?>" <?php selected($filter_action, $a); ?>><?php echo esc_html($a); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+
+                <label style="margin-left:12px;"><?php esc_html_e('С', 'cashback-plugin'); ?>:
+                    <input type="datetime-local" name="date_from" value="<?php echo esc_attr($filter_from); ?>" />
+                </label>
+
+                <label style="margin-left:12px;"><?php esc_html_e('По', 'cashback-plugin'); ?>:
+                    <input type="datetime-local" name="date_to" value="<?php echo esc_attr($filter_to); ?>" />
+                </label>
+
+                <button type="submit" class="button" style="margin-left:12px;"><?php esc_html_e('Применить', 'cashback-plugin'); ?></button>
+            </form>
+
+            <?php if (empty($rows)) : ?>
+                <p><?php esc_html_e('Записи не найдены.', 'cashback-plugin'); ?></p>
+            <?php else : ?>
+                <table class="widefat striped">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th><?php esc_html_e('User', 'cashback-plugin'); ?></th>
+                            <th><?php esc_html_e('Тип', 'cashback-plugin'); ?></th>
+                            <th><?php esc_html_e('Action', 'cashback-plugin'); ?></th>
+                            <th><?php esc_html_e('Версия', 'cashback-plugin'); ?></th>
+                            <th><?php esc_html_e('Источник', 'cashback-plugin'); ?></th>
+                            <th><?php esc_html_e('IP', 'cashback-plugin'); ?></th>
+                            <th><?php esc_html_e('Дата (UTC)', 'cashback-plugin'); ?></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($rows as $row) : ?>
+                        <tr>
+                            <td><?php echo esc_html((string) $row['id']); ?></td>
+                            <td><?php echo $row['user_id'] === null ? '<em>guest</em>' : esc_html((string) $row['user_id']); ?></td>
+                            <td><code><?php echo esc_html((string) $row['consent_type']); ?></code></td>
+                            <td><?php echo esc_html((string) $row['action']); ?></td>
+                            <td><code><?php echo esc_html((string) $row['document_version']); ?></code></td>
+                            <td><?php echo esc_html((string) $row['source']); ?></td>
+                            <td><?php echo esc_html((string) ( $row['ip_address'] ?? '' )); ?></td>
+                            <td><?php echo esc_html((string) $row['granted_at']); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+
+                <p style="margin-top:16px;">
+                    <?php
+                    $base = admin_url('admin.php?page=' . self::PAGE_SLUG_JOURNAL);
+                    $build = static function ( int $p ) use ( $base, $filter_user_id, $filter_type, $filter_action, $filter_from, $filter_to ): string {
+                        $args = array_filter(array(
+                            'user_id'      => $filter_user_id > 0 ? $filter_user_id : null,
+                            'consent_type' => $filter_type !== '' ? $filter_type : null,
+                            'log_action'   => $filter_action !== '' ? $filter_action : null,
+                            'date_from'    => $filter_from !== '' ? $filter_from : null,
+                            'date_to'      => $filter_to !== '' ? $filter_to : null,
+                            'paged'        => $p,
+                        ), static fn( $v ): bool => $v !== null );
+                        return add_query_arg($args, $base);
+                    };
+                    if ($page_num > 1) :
+                        ?>
+                        <a class="button" href="<?php echo esc_url($build($page_num - 1)); ?>">← <?php esc_html_e('Предыдущая', 'cashback-plugin'); ?></a>
+                    <?php endif; ?>
+                    <span style="margin:0 12px;"><?php echo esc_html(sprintf('%s %d', __('Страница', 'cashback-plugin'), $page_num)); ?></span>
+                    <?php if (count($rows) === $per_page) : ?>
+                        <a class="button" href="<?php echo esc_url($build($page_num + 1)); ?>"><?php esc_html_e('Следующая', 'cashback-plugin'); ?> →</a>
+                    <?php endif; ?>
+                </p>
+            <?php endif; ?>
+        </div>
+        <?php
     }
 }

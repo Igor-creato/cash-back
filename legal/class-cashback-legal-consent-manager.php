@@ -225,6 +225,84 @@ class Cashback_Legal_Consent_Manager {
     }
 
     /**
+     * Batch-обновление: пишет строки action='superseded' для всех ранее
+     * granted-юзеров по типу $type с document_version < $bumped_to_version.
+     * Каждая superseded-строка получает уникальный request_id (UNIQUE constraint).
+     *
+     * Идемпотентно: повторный вызов после bump'а не плодит дубликаты —
+     * мы выбираем юзеров с last granted < bumped_version, и после первого
+     * прохода у них last granted либо остался прежний (но появилась
+     * следующая запись superseded), либо нет — повторный SELECT пропустит
+     * их через нашу проверку «нет superseded после granted».
+     *
+     * @return int количество вставленных superseded-строк
+     */
+    public static function mark_superseded_for_type( string $type, string $bumped_to_version ): int {
+        if (!self::is_valid_consent_type($type)) {
+            return 0;
+        }
+        global $wpdb;
+        $table = Cashback_Legal_DB::table_name();
+
+        // Берём id юзеров, у которых последний granted имеет version < bumped.
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+        $candidate_ids = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT DISTINCT user_id FROM %i
+                 WHERE consent_type = %s AND action = 'granted' AND user_id IS NOT NULL",
+                $table,
+                $type
+            )
+        );
+
+        if (!is_array($candidate_ids) || empty($candidate_ids)) {
+            return 0;
+        }
+
+        $count = 0;
+        foreach ($candidate_ids as $uid_raw) {
+            $uid = (int) $uid_raw;
+            if ($uid <= 0) {
+                continue;
+            }
+            $last = self::get_last_granted($uid, $type);
+            if ($last === null) {
+                continue;
+            }
+            $granted_version = isset($last['document_version']) ? (string) $last['document_version'] : '0.0.0';
+            if (version_compare($granted_version, $bumped_to_version, '>=')) {
+                continue;
+            }
+
+            $rid = self::generate_request_id();
+            $now = gmdate('Y-m-d H:i:s');
+            $row = array(
+                'user_id'          => $uid,
+                'consent_type'     => $type,
+                'action'           => self::ACTION_SUPERSEDED,
+                'document_version' => $granted_version,
+                'document_hash'    => isset($last['document_hash']) ? (string) $last['document_hash'] : '',
+                'document_url'     => isset($last['document_url']) ? (string) $last['document_url'] : null,
+                'ip_address'       => null,
+                'user_agent'       => null,
+                'request_id'       => $rid,
+                'source'           => 'admin_bump',
+                'granted_at'       => $now,
+                'revoked_at'       => null,
+                'extra_meta'       => wp_json_encode(array(
+                    'bumped_to' => $bumped_to_version,
+                )),
+            );
+            $inserted = Cashback_Legal_DB::insert_log_row($row);
+            if ($inserted !== false) {
+                ++$count;
+                self::clear_reconsent_cache($uid);
+            }
+        }
+        return $count;
+    }
+
+    /**
      * Проверка известного типа согласия (защита от инъекции через POST).
      */
     public static function is_valid_consent_type( string $type ): bool {

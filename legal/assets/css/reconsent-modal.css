@@ -1,0 +1,143 @@
+/**
+ * Cashback Legal — Reconsent modal.
+ */
+
+.cashback-legal-reconsent-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.cashback-legal-reconsent-modal.is-hidden {
+    display: none;
+}
+
+.cashback-legal-reconsent-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.7);
+    backdrop-filter: blur(4px);
+}
+
+.cashback-legal-reconsent-modal__dialog {
+    position: relative;
+    z-index: 1;
+    max-width: 560px;
+    width: 100%;
+    background: #ffffff;
+    color: #1f2937;
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.32);
+    font-size: 15px;
+    line-height: 1.55;
+}
+
+.cashback-legal-reconsent-modal__title {
+    margin: 0 0 12px;
+    font-size: 22px;
+    font-weight: 600;
+}
+
+.cashback-legal-reconsent-modal__message {
+    margin: 0 0 16px;
+    color: #4b5563;
+}
+
+.cashback-legal-reconsent-modal__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.cashback-legal-reconsent-modal__row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: #f3f4f6;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.cashback-legal-reconsent-modal__row input[type="checkbox"] {
+    flex: 0 0 auto;
+}
+
+.cashback-legal-reconsent-modal__row-label {
+    flex: 1 1 auto;
+}
+
+.cashback-legal-reconsent-modal__link {
+    color: #2271b1;
+    text-decoration: underline;
+    font-size: 13px;
+}
+
+.cashback-legal-reconsent-modal__actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+.cashback-legal-reconsent-modal__btn {
+    appearance: none;
+    border: 1px solid transparent;
+    padding: 10px 18px;
+    border-radius: 4px;
+    cursor: pointer;
+    font: inherit;
+    text-decoration: none;
+    text-align: center;
+}
+
+.cashback-legal-reconsent-modal__btn--primary {
+    background: #2271b1;
+    color: #ffffff;
+    border-color: #2271b1;
+}
+
+.cashback-legal-reconsent-modal__btn--primary:disabled {
+    background: #9ca3af;
+    border-color: #9ca3af;
+    cursor: not-allowed;
+}
+
+.cashback-legal-reconsent-modal__btn--primary:hover:enabled,
+.cashback-legal-reconsent-modal__btn--primary:focus-visible:enabled {
+    background: #135e96;
+    border-color: #135e96;
+}
+
+.cashback-legal-reconsent-modal__btn--secondary {
+    background: transparent;
+    color: #1f2937;
+    border-color: #d1d5db;
+}
+
+.cashback-legal-reconsent-modal__btn--secondary:hover,
+.cashback-legal-reconsent-modal__btn--secondary:focus-visible {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+    outline: none;
+}
+
+@media (max-width: 480px) {
+    .cashback-legal-reconsent-modal__dialog {
+        padding: 18px;
+    }
+
+    .cashback-legal-reconsent-modal__actions {
+        flex-direction: column-reverse;
+    }
+
+    .cashback-legal-reconsent-modal__btn {
+        width: 100%;
+    }
+}
