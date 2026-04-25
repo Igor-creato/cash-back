@@ -1290,7 +1290,7 @@ class CashbackWithdrawal {
                 'cashback-withdrawal-js',
                 plugins_url('assets/js/cashback-withdrawal.js', __FILE__),
                 array( 'jquery' ),
-                '1.5.0',
+                '1.6.0',
                 true
             );
 
