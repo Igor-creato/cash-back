@@ -177,6 +177,10 @@ class Cashback_Claims_Frontend {
                     }
 ?>
 
+                    <p class="cashback-legal-remark" style="font-size:12px;color:#666;margin:6px 0 12px;">
+                        <?php esc_html_e('Отправляя заявку, вы подтверждаете согласие на обработку персональных данных, ранее данное при регистрации (152-ФЗ).', 'cashback-plugin'); ?>
+                    </p>
+
                     <p class="form-row">
                         <button type="submit" class="button alt" id="claim-submit-btn" disabled>
                             <?php esc_html_e('Отправить заявку', 'cashback-plugin'); ?>
