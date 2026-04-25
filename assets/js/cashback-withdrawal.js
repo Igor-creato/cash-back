@@ -85,6 +85,15 @@ jQuery(document).ready(function ($) {
       idempotency_key: withdrawalIdempotencyKey,
     };
 
+    // Юр. чекбокс согласия на обработку платёжных данных (161-ФЗ).
+    // Передаётся только если присутствует на форме (рендерится при первом
+    // обращении пользователя — Cashback_Legal_Payout_Consent::render_checkbox).
+    var $legalConsent = $('#withdrawal-form input[name="cashback_legal_payment_pd_consent"]');
+    if ($legalConsent.length) {
+      data.cashback_legal_payment_pd_consent = $legalConsent.is(':checked') ? '1' : '0';
+      data.cashback_legal_payment_pd_request_id = $('#withdrawal-form input[name="cashback_legal_payment_pd_request_id"]').val() || '';
+    }
+
     // Отправляем AJAX запрос
     $.ajax({
       url: cashback_ajax.ajax_url,
@@ -775,17 +784,25 @@ jQuery(document).ready(function ($) {
 
     // iter-32 F-32-002: отправка AJAX без debug-логирования (URL/body/response/xhr содержат PII и nonce).
 
+    // Юр. чекбокс согласия на обработку платёжных данных (161-ФЗ).
+    var settingsData = {
+      action: 'save_payout_settings',
+      payout_method_id: payoutMethodId,
+      payout_account: payoutAccount,
+      bank_id: bankRequired === 0 ? 0 : bankId,
+      security: nonce,
+    };
+    var $settingsLegal = $('#payout-settings-form input[name="cashback_legal_payment_pd_consent"]');
+    if ($settingsLegal.length) {
+      settingsData.cashback_legal_payment_pd_consent = $settingsLegal.is(':checked') ? '1' : '0';
+      settingsData.cashback_legal_payment_pd_request_id = $('#payout-settings-form input[name="cashback_legal_payment_pd_request_id"]').val() || '';
+    }
+
     // Отправляем AJAX-запрос
     $.ajax({
       url: cashback_ajax.ajax_url,
       type: 'POST',
-      data: {
-        action: 'save_payout_settings',
-        payout_method_id: payoutMethodId,
-        payout_account: payoutAccount,
-        bank_id: bankRequired === 0 ? 0 : bankId,
-        security: nonce,
-      },
+      data: settingsData,
       beforeSend: function () {
         $('#save_payout_settings_btn').prop('disabled', true).text('Сохранение...');
       },
