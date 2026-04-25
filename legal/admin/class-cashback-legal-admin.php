@@ -23,6 +23,7 @@ class Cashback_Legal_Admin {
     public const PAGE_SLUG_OPERATOR = 'cashback-legal-operator';
     public const PAGE_SLUG_VERSIONS = 'cashback-legal-versions';
     public const PAGE_SLUG_JOURNAL  = 'cashback-legal-journal';
+    public const PAGE_SLUG_AUDIT    = 'cashback-legal-audit';
 
     public const ACTION_SAVE_OPERATOR = 'cashback_legal_save_operator';
     public const ACTION_BUMP_VERSION  = 'cashback_legal_bump_version';
@@ -40,6 +41,7 @@ class Cashback_Legal_Admin {
         add_action('admin_post_' . self::ACTION_BUMP_VERSION, array( __CLASS__, 'handle_bump_version' ));
         add_action(self::ACTION_BUMP_BATCH, array( __CLASS__, 'run_bump_batch' ), 10, 2);
         add_action('admin_notices', array( __CLASS__, 'admin_notice_not_configured' ));
+        add_action('admin_notices', array( __CLASS__, 'admin_notice_third_party' ));
     }
 
     public static function register_menu(): void {
@@ -66,6 +68,14 @@ class Cashback_Legal_Admin {
             'manage_options',
             self::PAGE_SLUG_JOURNAL,
             array( __CLASS__, 'render_journal_page' )
+        );
+        add_submenu_page(
+            'cashback-overview',
+            __('Аудит сторонних форм', 'cashback-plugin'),
+            __('Аудит сторонних форм', 'cashback-plugin'),
+            'manage_options',
+            self::PAGE_SLUG_AUDIT,
+            array( __CLASS__, 'render_audit_page' )
         );
     }
 
@@ -644,5 +654,262 @@ class Cashback_Legal_Admin {
             <?php endif; ?>
         </div>
         <?php
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // Phase 6: Аудит сторонних форм
+    // ────────────────────────────────────────────────────────────
+
+    /**
+     * Runtime-детект сторонних форм сбора ПД. Каждая запись:
+     *   - id    (уникальный slug)
+     *   - title (отображаемое имя)
+     *   - status: 'active' | 'inactive' | 'manual_check'
+     *   - risk  (краткое описание)
+     *   - recommendation
+     *
+     * @return array<int, array<string, string>>
+     */
+    public static function audit_third_party_forms(): array {
+        return array(
+            self::probe_woodmart_waitlist(),
+            self::probe_woodmart_price_tracker(),
+            self::probe_woodmart_social_auth(),
+            self::probe_contact_form_7(),
+            self::probe_elementor_pro_forms(),
+            self::probe_wc_guest_reviews(),
+        );
+    }
+
+    /**
+     * Есть ли среди стороних форм хотя бы одна active — тогда показываем
+     * глобальный admin_notice.
+     */
+    public static function has_active_third_party_forms(): bool {
+        foreach (self::audit_third_party_forms() as $row) {
+            if (isset($row['status']) && $row['status'] === 'active') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static function render_audit_page(): void {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Недостаточно прав.', 'cashback-plugin'), '', array( 'response' => 403 ));
+        }
+
+        $rows = self::audit_third_party_forms();
+
+        ?>
+        <div class="wrap cashback-legal-admin">
+            <h1><?php esc_html_e('Аудит сторонних форм сбора персональных данных', 'cashback-plugin'); ?></h1>
+
+            <p>
+                <?php esc_html_e('Юр.чекбоксы плагина встроены только в формы самого Cashback Plugin (регистрация WC, вывод средств, контактная форма, social-auth). Сторонние модули темы Woodmart и других плагинов могут собирать ПД самостоятельно — этот раздел отслеживает их статус.', 'cashback-plugin'); ?>
+            </p>
+
+            <table class="widefat striped">
+                <thead>
+                    <tr>
+                        <th><?php esc_html_e('Модуль', 'cashback-plugin'); ?></th>
+                        <th><?php esc_html_e('Статус', 'cashback-plugin'); ?></th>
+                        <th><?php esc_html_e('Риск по 152-ФЗ', 'cashback-plugin'); ?></th>
+                        <th><?php esc_html_e('Рекомендация', 'cashback-plugin'); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php
+                    echo self::render_audit_rows($rows); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- HTML собран через esc_html в render_audit_rows.
+                    ?>
+                </tbody>
+            </table>
+
+            <h2><?php esc_html_e('Что делать, если модуль активен', 'cashback-plugin'); ?></h2>
+            <ol>
+                <li><?php esc_html_e('Зарегистрировать активацию в backlog как отдельную задачу (Phase 6.4-XXX).', 'cashback-plugin'); ?></li>
+                <li><?php esc_html_e('Добавить чекбокс согласия в форму через хуки соответствующего модуля и записать факт в журнал согласий через Cashback_Legal_Consent_Manager::record_consent().', 'cashback-plugin'); ?></li>
+                <li><?php esc_html_e('Не модифицировать файлы стороннего плагина/темы — обновления перетрут изменения.', 'cashback-plugin'); ?></li>
+            </ol>
+        </div>
+        <?php
+    }
+
+    /**
+     * Глобальный admin_notice: если хотя бы одна сторонняя форма active —
+     * предупреждаем на всех admin-страницах.
+     */
+    public static function admin_notice_third_party(): void {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        $screen   = function_exists('get_current_screen') ? get_current_screen() : null;
+        $on_page  = $screen && isset($screen->id) && strpos((string) $screen->id, self::PAGE_SLUG_AUDIT) !== false;
+        if ($on_page) {
+            return;
+        }
+        if (!self::has_active_third_party_forms()) {
+            return;
+        }
+        $url = admin_url('admin.php?page=' . self::PAGE_SLUG_AUDIT);
+        printf(
+            '<div class="notice notice-warning"><p><strong>%s</strong> %s <a href="%s">%s</a>.</p></div>',
+            esc_html__('Cashback:', 'cashback-plugin'),
+            esc_html__('Обнаружены сторонние формы сбора ПД, не покрытые юр.чекбоксами плагина.', 'cashback-plugin'),
+            esc_url($url),
+            esc_html__('Открыть аудит', 'cashback-plugin')
+        );
+    }
+
+    /**
+     * @param array<int, array<string, string>> $rows
+     */
+    private static function render_audit_rows( array $rows ): string {
+        $out = '';
+        foreach ($rows as $row) {
+            $status = isset($row['status']) ? (string) $row['status'] : 'manual_check';
+            $color  = 'manual_check' === $status ? '#856404' : ( 'active' === $status ? '#842029' : '#0f5132' );
+            $bg     = 'manual_check' === $status ? '#fff3cd' : ( 'active' === $status ? '#f8d7da' : '#d1e7dd' );
+            $label  = self::status_label($status);
+
+            $out .= '<tr>'
+                . '<td><strong>' . esc_html((string) $row['title']) . '</strong><br /><code>' . esc_html((string) $row['id']) . '</code></td>'
+                . '<td><span style="display:inline-block;padding:2px 8px;border-radius:3px;background:' . esc_attr($bg) . ';color:' . esc_attr($color) . ';font-weight:600;">'
+                . esc_html($label)
+                . '</span></td>'
+                . '<td>' . esc_html((string) ( $row['risk'] ?? '' )) . '</td>'
+                . '<td>' . esc_html((string) ( $row['recommendation'] ?? '' )) . '</td>'
+                . '</tr>';
+        }
+        return $out;
+    }
+
+    private static function status_label( string $status ): string {
+        switch ($status) {
+            case 'active':
+                return __('активно — требует чекбокса', 'cashback-plugin');
+            case 'manual_check':
+                return __('проверьте вручную', 'cashback-plugin');
+            case 'inactive':
+            default:
+                return __('неактивно', 'cashback-plugin');
+        }
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // Phase 6: probe-функции (детект статуса)
+    // ────────────────────────────────────────────────────────────
+
+    /**
+     * @return array<string, string>
+     */
+    private static function probe_woodmart_waitlist(): array {
+        $status = 'manual_check';
+        if (function_exists('woodmart_get_opt')) {
+            $status = (bool) woodmart_get_opt('waitlist') ? 'active' : 'inactive';
+        }
+        return array(
+            'id'             => 'woodmart_waitlist',
+            'title'          => 'Woodmart Waitlist (Back-in-Stock)',
+            'status'         => $status,
+            'risk'           => __('Гостевой email-сбор через wp_ajax_nopriv_woodmart_add_to_waitlist; данные хранятся отдельно от WP Users.', 'cashback-plugin'),
+            'recommendation' => __('При активации добавить чекбокс согласия в форму waitlist + AJAX-handler.', 'cashback-plugin'),
+        );
+    }
+
+    private static function probe_woodmart_price_tracker(): array {
+        $status = 'manual_check';
+        if (function_exists('woodmart_get_opt')) {
+            $status = (bool) woodmart_get_opt('price_tracker') ? 'active' : 'inactive';
+        }
+        return array(
+            'id'             => 'woodmart_price_tracker',
+            'title'          => 'Woodmart Price Tracker',
+            'status'         => $status,
+            'risk'           => __('Гостевой email-сбор через wp_ajax_nopriv_woodmart_add_to_price_tracker.', 'cashback-plugin'),
+            'recommendation' => __('При активации добавить чекбокс согласия в форму price-tracker.', 'cashback-plugin'),
+        );
+    }
+
+    private static function probe_woodmart_social_auth(): array {
+        $providers = array();
+        if (function_exists('woodmart_get_opt')) {
+            foreach (array( 'login_facebook', 'login_google', 'login_vkontakte' ) as $key) {
+                if ((bool) woodmart_get_opt($key)) {
+                    $providers[] = $key;
+                }
+            }
+        }
+        $status = empty($providers) ? 'inactive' : 'active';
+        if (!function_exists('woodmart_get_opt')) {
+            $status = 'manual_check';
+        }
+        return array(
+            'id'             => 'woodmart_social_auth',
+            'title'          => 'Woodmart Social Auth (Facebook/Google/VK)',
+            'status'         => $status,
+            'risk'           => __('OAuth обходит стандартный woocommerce_register_form; user_register создаётся без отметки чекбоксов плагина.', 'cashback-plugin'),
+            'recommendation' => __('Перенаправлять активный OAuth-callback через нашу ветку social-auth (cash-back плагин), либо перехватить user_register для записи pd_consent + terms_offer.', 'cashback-plugin'),
+        );
+    }
+
+    private static function probe_contact_form_7(): array {
+        if (!function_exists('is_plugin_active')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+        $plugin_active = function_exists('is_plugin_active') && is_plugin_active('contact-form-7/wp-contact-form-7.php');
+        if (!$plugin_active) {
+            return array(
+                'id'             => 'contact_form_7',
+                'title'          => 'Contact Form 7',
+                'status'         => 'inactive',
+                'risk'           => __('Любые поля — email/имя/телефон.', 'cashback-plugin'),
+                'recommendation' => __('Плагин не активен.', 'cashback-plugin'),
+            );
+        }
+        $count = function_exists('wp_count_posts') ? wp_count_posts('wpcf7_contact_form') : null;
+        $forms_published = is_object($count) && isset($count->publish) ? (int) $count->publish : 0;
+        return array(
+            'id'             => 'contact_form_7',
+            'title'          => 'Contact Form 7',
+            'status'         => $forms_published > 0 ? 'active' : 'inactive',
+            'risk'           => __('Любые поля — email/имя/телефон.', 'cashback-plugin'),
+            'recommendation' => $forms_published > 0
+                ? __('Найдено опубликованных форм: ', 'cashback-plugin') . $forms_published . '. ' . __('Добавить юр.чекбокс в каждую форму через [acceptance] tag или хук wpcf7_form_elements + валидацию через wpcf7_validate.', 'cashback-plugin')
+                : __('Плагин активен, но опубликованных форм нет.', 'cashback-plugin'),
+        );
+    }
+
+    private static function probe_elementor_pro_forms(): array {
+        $active = class_exists('\\ElementorPro\\Modules\\Forms\\Module');
+        return array(
+            'id'             => 'elementor_pro_forms',
+            'title'          => 'Elementor Pro Forms',
+            'status'         => $active ? 'active' : 'inactive',
+            'risk'           => __('Любые поля собираются через elementor_pro/forms/process.', 'cashback-plugin'),
+            'recommendation' => $active
+                ? __('Подключиться к хуку elementor_pro/forms/validation для требования чекбокса; рекомендация — добавить отдельное Acceptance-поле в каждую форму вручную.', 'cashback-plugin')
+                : __('Не установлено.', 'cashback-plugin'),
+        );
+    }
+
+    private static function probe_wc_guest_reviews(): array {
+        $registration_required = (int) get_option('comment_registration', 0);
+        if ($registration_required === 1) {
+            return array(
+                'id'             => 'wc_guest_reviews',
+                'title'          => 'WooCommerce Reviews',
+                'status'         => 'inactive',
+                'risk'           => __('Гости не могут оставлять отзывы — согласие даётся при регистрации.', 'cashback-plugin'),
+                'recommendation' => __('Только text-remark под формой отзыва (Cashback_Legal_Reviews_Notice).', 'cashback-plugin'),
+            );
+        }
+        return array(
+            'id'             => 'wc_guest_reviews',
+            'title'          => 'WooCommerce Guest Reviews',
+            'status'         => 'active',
+            'risk'           => __('Гости вводят имя+email при отзыве — это сбор ПД без чекбокса согласия.', 'cashback-plugin'),
+            'recommendation' => __('Включите Settings → Discussion → "Users must be registered…" либо реализуйте гостевой чекбокс (Phase 6.4-WC-Reviews).', 'cashback-plugin'),
+        );
     }
 }
