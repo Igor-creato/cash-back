@@ -149,7 +149,7 @@ class Cashback_Trigger_Fallbacks {
      * @param array $data Данные для UPDATE (по ссылке)
      */
     public static function set_banned_at( array &$data ): void {
-        $data['banned_at'] = current_time('mysql');
+        $data['banned_at'] = Cashback_Time::now_mysql();
     }
 
     /**

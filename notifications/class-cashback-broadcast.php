@@ -328,7 +328,7 @@ class Cashback_Broadcast {
             wp_send_json_error(array( 'message' => __('По выбранным фильтрам не нашлось ни одного получателя.', 'cashback-plugin') ));
         }
 
-        $now = current_time('mysql');
+        $now = Cashback_Time::now_mysql();
 
         // iter-24 F-24-001 + F-24-002: атомарное создание кампании и очереди под row-lock.
         // Блокирующая проверка «одна активная кампания» + INSERT campaign + INSERT queue batches — всё в одной транзакции.
@@ -501,7 +501,7 @@ class Cashback_Broadcast {
             "UPDATE %i SET status = 'failed', error = 'cancelled', processed_at = %s
               WHERE campaign_id = %d AND status = 'pending'",
             self::table_queue(),
-            current_time('mysql'),
+            Cashback_Time::now_mysql(),
             $campaign_id
         ));
 
@@ -522,7 +522,7 @@ class Cashback_Broadcast {
                 'status'       => 'cancelled',
                 'failed_count' => $failed_total,
                 'sent_count'   => $sent_total,
-                'completed_at' => current_time('mysql'),
+                'completed_at' => Cashback_Time::now_mysql(),
             ),
             array( 'id' => $campaign_id ),
             array( '%s', '%d', '%d', '%s' ),
@@ -621,7 +621,7 @@ class Cashback_Broadcast {
 
         $batch_size = self::batch_size();
         $max_att    = self::MAX_ATTEMPTS;
-        $now_sql    = current_time('mysql');
+        $now_sql    = Cashback_Time::now_mysql();
 
         // iter-24 F-24-003: recovery застрявших 'processing' (воркер упал до финализации).
         // Только строки, не обновлявшие processed_at > 10 минут — это точно brошенные.
@@ -631,7 +631,7 @@ class Cashback_Broadcast {
             "UPDATE %i SET status = 'pending', processing_token = NULL
               WHERE campaign_id = %d
                 AND status = 'processing'
-                AND (processed_at IS NULL OR processed_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE))",
+                AND (processed_at IS NULL OR processed_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 MINUTE))",
             self::table_queue(),
             $campaign_id
         ));
@@ -832,7 +832,7 @@ class Cashback_Broadcast {
                 "UPDATE %i SET status = 'failed', processed_at = %s
                   WHERE campaign_id = %d AND status = 'pending' AND attempts >= %d",
                 self::table_queue(),
-                current_time('mysql'),
+                Cashback_Time::now_mysql(),
                 $campaign_id,
                 $max_att
             ));
@@ -855,7 +855,7 @@ class Cashback_Broadcast {
                     'status'       => 'done',
                     'sent_count'   => $sent_total,
                     'failed_count' => $failed_total,
-                    'completed_at' => current_time('mysql'),
+                    'completed_at' => Cashback_Time::now_mysql(),
                 ),
                 array( 'id' => $campaign_id ),
                 array( '%s', '%d', '%d', '%s' ),

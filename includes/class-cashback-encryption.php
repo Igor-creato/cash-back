@@ -888,7 +888,7 @@ class Cashback_Encryption {
                 'ip_address'  => self::get_client_ip(),
                 'user_agent'  => isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : null,
                 'details'     => $extra_details ? wp_json_encode(self::redact_audit_details($extra_details), JSON_UNESCAPED_UNICODE) : null,
-                'created_at'  => current_time('mysql'),
+                'created_at'  => Cashback_Time::now_mysql(),
             ),
             array( '%s', '%d', '%s', '%d', '%s', '%s', '%s', '%s' )
         );

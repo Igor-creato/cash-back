@@ -334,7 +334,7 @@ class Cashback_Claims_Frontend {
                             <?php echo esc_html($click['product_name']); ?>
                         </td>
                         <td data-title="<?php esc_attr_e('Дата перехода', 'cashback-plugin'); ?>">
-                            <?php echo esc_html(gmdate('d.m.Y H:i', strtotime($click['created_at']))); ?>
+                            <?php echo esc_html(Cashback_Time::display((string) $click['created_at'], 'd.m.Y H:i')); ?>
                         </td>
                         <td data-title="<?php esc_attr_e('Кэшбэк', 'cashback-plugin'); ?>">
                             <?php if ((int) $click['has_cashback']) : ?>
@@ -428,7 +428,7 @@ class Cashback_Claims_Frontend {
                                 <strong><?php esc_html_e('История:', 'cashback-plugin'); ?></strong>
                                 <?php foreach ($events as $event) : ?>
                                     <div class="claim-event-item <?php echo $event['actor_type'] !== 'user' && (int) $event['is_read'] === 0 ? 'claim-event-unread' : ''; ?>">
-                                        <span class="claim-event-date"><?php echo esc_html(gmdate('d.m.Y H:i', strtotime($event['created_at']))); ?></span>
+                                        <span class="claim-event-date"><?php echo esc_html(Cashback_Time::display((string) $event['created_at'], 'd.m.Y H:i')); ?></span>
                                         <span class="claim-event-actor">
                                         <?php
                                             if ($event['actor_type'] === 'admin') {

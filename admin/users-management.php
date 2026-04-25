@@ -549,7 +549,7 @@ class Cashback_Users_Management_Admin {
             }
 
             // Добавляем дату обновления
-            $update_data['updated_at'] = current_time('mysql');
+            $update_data['updated_at'] = Cashback_Time::now_mysql();
             $update_formats[]          = '%s';
 
             // Группа 14 (ledger-first): пишем ban_unfreeze в ledger ДО UPDATE profile.
@@ -846,7 +846,7 @@ class Cashback_Users_Management_Admin {
                     'UPDATE %i SET cashback_rate = %s, updated_at = %s WHERE cashback_rate != %s',
                     $this->profile_table_name,
                     $new_rate,
-                    current_time('mysql'),
+                    Cashback_Time::now_mysql(),
                     $new_rate
                 ));
             } else {
@@ -854,7 +854,7 @@ class Cashback_Users_Management_Admin {
                     'UPDATE %i SET cashback_rate = %s, updated_at = %s WHERE cashback_rate = %s',
                     $this->profile_table_name,
                     $new_rate,
-                    current_time('mysql'),
+                    Cashback_Time::now_mysql(),
                     $old_rate_raw
                 ));
             }
@@ -952,7 +952,7 @@ class Cashback_Users_Management_Admin {
                     array(
                         'status'      => 'declined',
                         'fail_reason' => '(Аккаунт забанен)',
-                        'updated_at'  => current_time('mysql'),
+                        'updated_at'  => Cashback_Time::now_mysql(),
                     ),
                     array( 'id' => $request->id ),
                     array( '%s', '%s', '%s' ),

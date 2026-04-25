@@ -161,8 +161,8 @@ class Cashback_Balance_Reconciliation_Admin {
 
 		$hours_ago = null;
 		if ( $finished_at !== '' ) {
-			$ts = strtotime( $finished_at );
-			if ( $ts !== false ) {
+			$ts = Cashback_Time::parse( $finished_at );
+			if ( $ts > 0 ) {
 				$hours_ago = (int) floor( max( 0, time() - $ts ) / HOUR_IN_SECONDS );
 			}
 		}

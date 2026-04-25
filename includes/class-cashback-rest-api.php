@@ -699,7 +699,7 @@ class Cashback_REST_API {
             if ($click) {
                 // Домен из _store_domain meta (не из affiliate_url, который указывает на CPA-сеть)
                 $dest_domain = $this->get_store_domain((int) $click['product_id']);
-                $click_time  = strtotime($click['created_at']);
+                $click_time  = Cashback_Time::parse((string) $click['created_at']);
                 $expires_at  = gmdate('Y-m-d H:i:s', $click_time + self::ACTIVATION_WINDOW);
 
                 return new \WP_REST_Response(array(
@@ -783,7 +783,7 @@ class Cashback_REST_API {
 
         if ($click) {
             $activated_at = $click['created_at'];
-            $click_time   = strtotime($activated_at);
+            $click_time   = Cashback_Time::parse((string) $activated_at);
             $expires_at   = gmdate('Y-m-d H:i:s', $click_time + self::ACTIVATION_WINDOW);
 
             return new \WP_REST_Response(array(

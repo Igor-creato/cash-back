@@ -682,7 +682,7 @@ class Cashback_Affiliate_Service {
             'UPDATE %i
              SET referred_by_user_id    = %d,
                  referral_click_id      = %s,
-                 referred_at            = NOW(),
+                 referred_at            = UTC_TIMESTAMP(),
                  attribution_source     = %s,
                  attribution_confidence = %s,
                  collision_detected     = %d,
@@ -706,7 +706,7 @@ class Cashback_Affiliate_Service {
                 $wpdb->prefix . 'cashback_affiliate_clicks',
                 array(
                     'registered_user_id' => $user_id,
-                    'registered_at'      => current_time('mysql'),
+                    'registered_at'      => Cashback_Time::now_mysql(),
                 ),
                 array( 'click_id' => $click_id ),
                 array( '%d', '%s' ),
@@ -1470,7 +1470,7 @@ class Cashback_Affiliate_Service {
                 'UPDATE %i
                  SET affiliate_status = \'disabled\',
                      affiliate_frozen_amount = %s,
-                     disabled_at = NOW()
+                     disabled_at = UTC_TIMESTAMP()
                  WHERE user_id = %d',
                 $profiles_table,
                 number_format($freeze_amount, 2, '.', ''),
@@ -1907,7 +1907,7 @@ class Cashback_Affiliate_Service {
      * Criteria:
      *   • review_status = 'pending'
      *   • collision_detected = 0
-     *   • referred_at <= NOW() - INTERVAL 14 DAY
+     *   • referred_at <= UTC_TIMESTAMP() - INTERVAL 14 DAY
      *   • antifraud_signals IS NULL OR JSON_LENGTH(antifraud_signals) = 0
      *   • нет declined accruals по этому referred_user
      *   • нет rate-limit events по этому referred_user / referrer
@@ -1960,7 +1960,7 @@ class Cashback_Affiliate_Service {
                 AND aud.created_at >= ap.referred_at
              WHERE ap.review_status = 'pending'
                AND ap.collision_detected = 0
-               AND ap.referred_at <= DATE_SUB(NOW(), INTERVAL 14 DAY)
+               AND ap.referred_at <= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)
                AND ( ap.antifraud_signals IS NULL
                      OR JSON_LENGTH(ap.antifraud_signals) = 0 )
                AND acc.id IS NULL

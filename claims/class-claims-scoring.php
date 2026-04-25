@@ -103,8 +103,8 @@ class Cashback_Claims_Scoring {
             return 0.0;
         }
 
-        $click_time = strtotime($click['created_at']);
-        $order_time = strtotime($order_date);
+        $click_time = Cashback_Time::parse((string) $click['created_at']);
+        $order_time = Cashback_Time::parse($order_date);
 
         if (!$click_time || !$order_time) {
             return 0.0;

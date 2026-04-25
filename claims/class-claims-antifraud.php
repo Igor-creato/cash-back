@@ -212,7 +212,7 @@ class Cashback_Claims_Antifraud {
 
         $recent_claims_same_ip = (int) $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM `{$wpdb->prefix}cashback_claims`
-             WHERE ip_address = %s AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)",
+             WHERE ip_address = %s AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)",
             $ip_address
         ));
 

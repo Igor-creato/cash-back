@@ -9,6 +9,12 @@
 
 declare(strict_types=1);
 
+// Принудительно UTC — соответствует production-инфре (ADR utc-everywhere).
+// Без этой строки тесты, использующие time()/date()/strtotime(), читают
+// зону Apache PHP (Europe/Moscow в продакшене, MSK на WAMP), что даёт
+// расхождение с prod-окружением и flaky-тесты на границе суток.
+date_default_timezone_set('UTC');
+
 // ============================================================
 // Определяем базовые WordPress константы
 // ============================================================
@@ -125,7 +131,29 @@ if (!function_exists('wp_unslash')) {
 if (!function_exists('current_time')) {
     function current_time(string $type, bool $gmt = false): string
     {
-        return date('Y-m-d H:i:s');
+        // После ADR utc-everywhere production использует Cashback_Time::now_mysql() (UTC).
+        // current_time() в тестах оставлен как backward-compat для сторонних мокаемых
+        // путей; всегда возвращаем UTC, независимо от $type/$gmt — гарантирует, что
+        // unit-тест не различает 'mysql' / 'mysql', true.
+        if ($type === 'timestamp' || $type === 'U') {
+            return (string) time();
+        }
+        if ($type === 'mysql') {
+            return gmdate('Y-m-d H:i:s');
+        }
+        return gmdate($type);
+    }
+}
+
+if (!function_exists('wp_date')) {
+    function wp_date(string $format, ?int $timestamp = null, $timezone = null): string
+    {
+        // В тестах timezone_string не настроен → возвращаем UTC. Production-поведение
+        // (зона сайта Europe/Moscow) проверяется отдельным интеграционным тестом.
+        if ($timestamp === null) {
+            $timestamp = time();
+        }
+        return gmdate($format, $timestamp);
     }
 }
 
@@ -956,6 +984,10 @@ if (!function_exists('sprintf')) {
 //        чтобы избежать "Cannot declare class ... already in use"
 // ============================================================
 $plugin_root = dirname(__DIR__, 2);
+
+// Time helper (ADR utc-everywhere) — подключаем РАНО, многие классы
+// используют Cashback_Time::now_mysql() в статических полях/методах.
+require_once $plugin_root . '/includes/class-cashback-time.php';
 
 // Шифрование
 require_once $plugin_root . '/includes/class-cashback-encryption.php';

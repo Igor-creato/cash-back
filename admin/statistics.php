@@ -95,11 +95,13 @@ class Cashback_Statistics_Admin {
             }
         }
 
-        // По умолчанию — текущий месяц (с 1-го числа до сегодня)
+        // По умолчанию — текущий месяц (с 1-го числа до сегодня) в зоне сайта.
+        // wp_date() (а не gmdate) — чтобы у админа в Europe/Moscow «сегодня» означало
+        // его сегодня, а не UTC-сегодня (различаются первые 3 часа суток).
         $is_default_period = empty($filter_date_from) && empty($filter_date_to);
         if ($is_default_period) {
-            $filter_date_from = gmdate('Y-m-01');
-            $filter_date_to   = gmdate('Y-m-d');
+            $filter_date_from = wp_date('Y-m-01');
+            $filter_date_to   = wp_date('Y-m-d');
         }
 
         $has_date_filter = true;

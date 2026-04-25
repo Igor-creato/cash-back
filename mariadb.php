@@ -1142,7 +1142,7 @@ class Mariadb_Plugin {
             --  'Обновляет поле banned_at текущей датой и временем при изменении статуса на ''banned'''
             BEGIN
                 IF OLD.status != 'banned' AND NEW.status = 'banned' THEN
-                    SET NEW.banned_at = NOW();
+                    SET NEW.banned_at = UTC_TIMESTAMP();
                 END IF;
             END;",
 
@@ -1265,7 +1265,7 @@ class Mariadb_Plugin {
             ON COMPLETION NOT PRESERVE
             ENABLE
             DO DELETE FROM `{$safe_prefix}cashback_webhooks`
-            WHERE received_at < NOW() - INTERVAL 6 MONTH
+            WHERE received_at < UTC_TIMESTAMP() - INTERVAL 6 MONTH
             LIMIT 100000",
 
             // Событие ежедневно удаляет записи кликов старше 90 дней
@@ -1275,7 +1275,7 @@ class Mariadb_Plugin {
             ON COMPLETION NOT PRESERVE
             ENABLE
             DO DELETE FROM `{$safe_prefix}cashback_click_log`
-            WHERE created_at < NOW() - INTERVAL 6 MONTH
+            WHERE created_at < UTC_TIMESTAMP() - INTERVAL 6 MONTH
             LIMIT 100000",
 
             // Событие ежедневно проверяет и помечает неактивные профили если неактивны больше 6 месяцев
@@ -1292,9 +1292,9 @@ class Mariadb_Plugin {
                     WHERE
                         status = 'active'
                         AND (
-                            (last_active_at IS NOT NULL AND last_active_at < DATE_SUB(NOW(), INTERVAL 6 MONTH))
+                            (last_active_at IS NOT NULL AND last_active_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 6 MONTH))
                             OR
-                            (last_active_at IS NULL AND created_at < DATE_SUB(NOW(), INTERVAL 6 MONTH))
+                            (last_active_at IS NULL AND created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 6 MONTH))
                         )
                     LIMIT 1000;
                     DO RELEASE_LOCK('cashback_inactive_profiles_lock');
@@ -1396,7 +1396,7 @@ class Mariadb_Plugin {
             // Защита от race condition
             $partner_token = self::generate_partner_token();
             $result        = $wpdb->query($wpdb->prepare(
-                "INSERT IGNORE INTO %i (user_id, partner_token, status, created_at) VALUES (%d, %s, 'active', NOW())",
+                "INSERT IGNORE INTO %i (user_id, partner_token, status, created_at) VALUES (%d, %s, 'active', UTC_TIMESTAMP())",
                 $table_name,
                 $user_id,
                 $partner_token
@@ -1445,7 +1445,7 @@ class Mariadb_Plugin {
         $result = $wpdb->query($wpdb->prepare(
             'INSERT IGNORE INTO %i
             (user_id, available_balance, pending_balance, paid_balance, frozen_balance, version, updated_at)
-            VALUES (%d, 0.00, 0.00, 0.00, 0.00, 0, NOW())',
+            VALUES (%d, 0.00, 0.00, 0.00, 0.00, 0, UTC_TIMESTAMP())',
             $table_name,
             $user_id
         ));
@@ -1604,7 +1604,7 @@ class Mariadb_Plugin {
                    AND t.spam_click = 0";
             $candidates_args = array( $tx_table, $profile_table );
             if ($delay_days > 0) {
-                $candidates_sql   .= ' AND t.updated_at <= DATE_SUB(NOW(), INTERVAL %d DAY)';
+                $candidates_sql   .= ' AND t.updated_at <= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)';
                 $candidates_args[] = $delay_days;
             }
             $candidates_sql .= ' FOR UPDATE';
@@ -1657,7 +1657,7 @@ class Mariadb_Plugin {
                 // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $id_placeholders is '%d,%d,...' from array_fill(), ids passed as %d args via prepare(); sniff cannot count placeholders inside $id_placeholders/spread.
                 $step3 = $wpdb->query($wpdb->prepare(
                     "UPDATE %i
-                     SET processed_at = NOW(), processed_batch_id = %s
+                     SET processed_at = UTC_TIMESTAMP(), processed_batch_id = %s
                      WHERE id IN ({$id_placeholders}) AND processed_at IS NULL",
                     $tx_table,
                     $batch_id,

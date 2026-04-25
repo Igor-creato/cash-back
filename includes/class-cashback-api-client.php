@@ -2731,7 +2731,7 @@ class Cashback_API_Client {
             'new_status'     => $status,
             'api_payment'    => $api_payment,
             'sync_type'      => 'cron',
-            'synced_at'      => current_time('mysql'),
+            'synced_at'      => Cashback_Time::now_mysql(),
         ));
     }
 
@@ -2782,7 +2782,7 @@ class Cashback_API_Client {
              FROM %i
              WHERE order_status IN ('waiting', 'hold', 'completed')
                AND click_id IS NOT NULL AND click_id != ''
-               AND updated_at < DATE_SUB(NOW(), INTERVAL %d DAY)
+               AND updated_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)
                AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))
              ORDER BY created_at ASC",
             $this->transactions_table,
@@ -2796,7 +2796,7 @@ class Cashback_API_Client {
              FROM %i
              WHERE order_status IN ('waiting', 'hold', 'completed')
                AND click_id IS NOT NULL AND click_id != ''
-               AND updated_at < DATE_SUB(NOW(), INTERVAL %d DAY)
+               AND updated_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)
                AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))
              ORDER BY created_at ASC",
             $this->unregistered_table,
@@ -3116,7 +3116,7 @@ class Cashback_API_Client {
             'new_status'     => 'declined',
             'api_payment'    => $commission,
             'sync_type'      => 'auto_decline',
-            'synced_at'      => current_time('mysql'),
+            'synced_at'      => Cashback_Time::now_mysql(),
         ));
     }
 
@@ -3146,7 +3146,7 @@ class Cashback_API_Client {
 
         $data['user_id']      = $user_id;
         $data['network_slug'] = $network_slug;
-        $data['validated_at'] = current_time('mysql');
+        $data['validated_at'] = Cashback_Time::now_mysql();
         $data['validated_by'] = get_current_user_id() ?: 0;
 
         $existing = $this->get_checkpoint($user_id, $network_slug);
@@ -3472,7 +3472,7 @@ class Cashback_API_Client {
             'old_status'     => $old_status,
             'new_status'     => $new_status,
             'api_payment'    => $api_payment,
-            'synced_at'      => current_time('mysql'),
+            'synced_at'      => Cashback_Time::now_mysql(),
         ));
     }
 
@@ -3656,7 +3656,7 @@ class Cashback_API_Client {
 
             // Сохраняем снимок статусов кампаний для админки
             update_option("cashback_campaign_status_{$slug}", array(
-                'timestamp' => current_time('mysql'),
+                'timestamp' => Cashback_Time::now_mysql(),
                 'total'     => count($campaign_result['campaigns']),
                 'active'    => count(array_filter($campaign_result['campaigns'], fn( $c ) => $c['is_active'])),
                 'inactive'  => count(array_filter($campaign_result['campaigns'], fn( $c ) => !$c['is_active'])),
@@ -3715,7 +3715,7 @@ class Cashback_API_Client {
 
         update_post_meta($product_id, '_cashback_auto_deactivated', '1');
         update_post_meta($product_id, '_cashback_deactivation_reason', $reason);
-        update_post_meta($product_id, '_cashback_deactivated_at', current_time('mysql'));
+        update_post_meta($product_id, '_cashback_deactivated_at', Cashback_Time::now_mysql());
         update_post_meta($product_id, '_cashback_deactivated_network', $network_slug);
 
         // Аудит-лог
@@ -3805,7 +3805,7 @@ class Cashback_API_Client {
 
         $dump  = "Отчёт о статусах кампаний CPA-сетей\n";
         $dump .= str_repeat('=', 50) . "\n";
-        $dump .= sprintf("Дата: %s\n\n", current_time('mysql'));
+        $dump .= sprintf("Дата: %s\n\n", Cashback_Time::now_mysql());
 
         foreach ($results as $network => $result) {
             if (!( $result['success'] ?? false )) {

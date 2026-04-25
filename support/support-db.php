@@ -864,7 +864,7 @@ class Cashback_Support_DB {
         $wpdb->query('START TRANSACTION');
 
         $ticket_ids = $wpdb->get_col($wpdb->prepare(
-            "SELECT id FROM %i WHERE status = 'closed' AND closed_at IS NOT NULL AND closed_at < DATE_SUB(NOW(), INTERVAL 1 MONTH) FOR UPDATE",
+            "SELECT id FROM %i WHERE status = 'closed' AND closed_at IS NOT NULL AND closed_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 MONTH) FOR UPDATE",
             $table
         ));
 
@@ -874,7 +874,7 @@ class Cashback_Support_DB {
         }
 
         $deleted = $wpdb->query($wpdb->prepare(
-            "DELETE FROM %i WHERE status = 'closed' AND closed_at IS NOT NULL AND closed_at < DATE_SUB(NOW(), INTERVAL 1 MONTH)",
+            "DELETE FROM %i WHERE status = 'closed' AND closed_at IS NOT NULL AND closed_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 MONTH)",
             $table
         ));
 

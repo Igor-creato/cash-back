@@ -1092,7 +1092,7 @@ echo 'style="display:none"';}
             'SELECT sl.*, ct.user_id, ct.order_number
              FROM %i sl
              LEFT JOIN %i ct ON sl.transaction_id = ct.id
-             WHERE sl.synced_at >= DATE_SUB(NOW(), INTERVAL %d DAY)
+             WHERE sl.synced_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)
              ORDER BY sl.synced_at DESC
              LIMIT 500',
             $sync_log_table,

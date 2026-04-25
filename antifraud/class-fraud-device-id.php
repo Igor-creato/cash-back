@@ -138,7 +138,7 @@ class Cashback_Fraud_Device_Id {
         }
 
         $table = self::table();
-        $now   = current_time('mysql');
+        $now   = Cashback_Time::now_mysql();
 
         // FOR UPDATE требует транзакции; SELECT-then-UPDATE/INSERT защищён от race.
         // Дедупликация: одна запись на сутки для тройки (device_id, visitor_id, ip_address).
@@ -149,7 +149,7 @@ class Cashback_Fraud_Device_Id {
              WHERE device_id = %s
              AND ((visitor_id = %s) OR (visitor_id IS NULL AND %s = ''))
              AND ip_address = %s
-             AND last_seen >= DATE_SUB(NOW(), INTERVAL 1 DAY)
+             AND last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 DAY)
              ORDER BY id DESC
              LIMIT 1
              FOR UPDATE",
@@ -407,7 +407,7 @@ class Cashback_Fraud_Device_Id {
             'SELECT COUNT(DISTINCT user_id) FROM %i
              WHERE device_id = %s
              AND user_id IS NOT NULL
-             AND last_seen >= DATE_SUB(NOW(), INTERVAL %d DAY)',
+             AND last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)',
             self::table(),
             $device_id,
             $days
@@ -431,7 +431,7 @@ class Cashback_Fraud_Device_Id {
             'SELECT ip_address AS ip, MAX(asn) AS asn, MAX(last_seen) AS last_seen
              FROM %i
              WHERE device_id = %s
-             AND last_seen >= DATE_SUB(NOW(), INTERVAL %d HOUR)
+             AND last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d HOUR)
              GROUP BY ip_address
              ORDER BY last_seen DESC',
             self::table(),
@@ -468,7 +468,7 @@ class Cashback_Fraud_Device_Id {
         $retention_days = max(1, (int) $retention_days);
 
         $deleted = $wpdb->query($wpdb->prepare(
-            'DELETE FROM %i WHERE last_seen < DATE_SUB(NOW(), INTERVAL %d DAY)',
+            'DELETE FROM %i WHERE last_seen < DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)',
             self::table(),
             $retention_days
         ));

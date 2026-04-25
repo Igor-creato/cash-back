@@ -124,7 +124,7 @@ final class Cashback_Admin_Outbound_Allowlist {
         $entry    = array(
             'host'     => $host,
             'added_by' => $actor_id,
-            'added_at' => current_time('mysql'),
+            'added_at' => Cashback_Time::now_mysql(),
             'reason'   => $reason,
         );
 
@@ -346,7 +346,7 @@ final class Cashback_Admin_Outbound_Allowlist {
             /* translators: %s — initiator IP */
             sprintf(__('IP инициатора: %s', 'cashback-plugin'), $ip !== '' ? $ip : 'unknown'),
             /* translators: %s — timestamp */
-            sprintf(__('Время: %s', 'cashback-plugin'), current_time('mysql')),
+            sprintf(__('Время: %s', 'cashback-plugin'), Cashback_Time::now_mysql()),
         );
         if ($reason !== '') {
             /* translators: %s — free-form reason supplied by admin */

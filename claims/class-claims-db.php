@@ -278,7 +278,7 @@ class Cashback_Claims_DB {
             }
 
             // Mark user-authored events from the last 30 days as unread; older ones stay read
-            $wpdb->query( $wpdb->prepare( 'UPDATE %i SET `is_read_admin` = 0 WHERE `actor_type` = %s AND `created_at` >= (NOW() - INTERVAL 30 DAY)', $table, 'user' ) );
+            $wpdb->query( $wpdb->prepare( 'UPDATE %i SET `is_read_admin` = 0 WHERE `actor_type` = %s AND `created_at` >= (UTC_TIMESTAMP() - INTERVAL 30 DAY)', $table, 'user' ) );
             if ($wpdb->last_error) {
                 self::report_migration_error('migrate_add_is_read_admin:backfill', $wpdb->last_error);
             }

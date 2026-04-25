@@ -58,7 +58,7 @@ final class Cashback_Fraud_Consent_Test_Runner {
      */
     private function setup_required_after(): void {
         if (get_option(Cashback_Fraud_Consent::OPTION_REQUIRED_AFTER, null) === null) {
-            add_option(Cashback_Fraud_Consent::OPTION_REQUIRED_AFTER, current_time('mysql'));
+            add_option(Cashback_Fraud_Consent::OPTION_REQUIRED_AFTER, Cashback_Time::now_mysql());
         }
     }
 

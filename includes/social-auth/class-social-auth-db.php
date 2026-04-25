@@ -211,7 +211,7 @@ class Cashback_Social_Auth_DB {
             'email_at_link_time' => null,
             'display_name'       => null,
             'avatar_url'         => null,
-            'linked_at'          => current_time('mysql'),
+            'linked_at'          => Cashback_Time::now_mysql(),
             'last_login_at'      => null,
             'link_ip'            => null,
             'link_user_agent'    => null,
@@ -242,7 +242,7 @@ class Cashback_Social_Auth_DB {
             return;
         }
 
-        $data    = array( 'last_login_at' => current_time('mysql') );
+        $data    = array( 'last_login_at' => Cashback_Time::now_mysql() );
         $formats = array( '%s' );
 
         if ($ip !== '') {
@@ -332,7 +332,7 @@ class Cashback_Social_Auth_DB {
         }
 
         $token      = bin2hex(random_bytes(32));
-        $now        = current_time('mysql');
+        $now        = Cashback_Time::now_mysql();
         $expires_at = gmdate('Y-m-d H:i:s', time() + ( $ttl_minutes * MINUTE_IN_SECONDS ));
 
         // Encrypt + INSERT в одной транзакции. SELECT ... FOR UPDATE здесь N/A — INSERT
@@ -413,7 +413,7 @@ class Cashback_Social_Auth_DB {
             return null;
         }
 
-        if (strtotime((string) $row['expires_at']) < time()) {
+        if (Cashback_Time::parse((string) $row['expires_at']) < time()) {
             return null;
         }
 
@@ -428,7 +428,7 @@ class Cashback_Social_Auth_DB {
             $wpdb->prepare(
                 // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix.
                 "UPDATE {$table} SET consumed_at = %s WHERE id = %d AND consumed_at IS NULL AND expires_at >= %s",
-                current_time('mysql'),
+                Cashback_Time::now_mysql(),
                 (int) $row['id'],
                 $now_utc
             )

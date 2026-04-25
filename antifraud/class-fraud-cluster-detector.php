@@ -136,7 +136,7 @@ class Cashback_Fraud_Cluster_Detector {
             }
         }
 
-        $now           = current_time('mysql');
+        $now           = Cashback_Time::now_mysql();
         $found_uids    = array();
         $stats_new     = 0;
         $stats_updated = 0;
@@ -214,7 +214,7 @@ class Cashback_Fraud_Cluster_Detector {
                 "DELETE FROM %i
                  WHERE status = 'open'
                  AND cluster_uid NOT IN ($placeholders)
-                 AND detected_at < DATE_SUB(NOW(), INTERVAL %d DAY)",
+                 AND detected_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)",
                 $params
             );
             $deleted_rows = $wpdb->query($sql_stale);
@@ -225,7 +225,7 @@ class Cashback_Fraud_Cluster_Detector {
             $deleted_rows  = $wpdb->query($wpdb->prepare(
                 "DELETE FROM %i
                  WHERE status = 'open'
-                 AND detected_at < DATE_SUB(NOW(), INTERVAL %d DAY)",
+                 AND detected_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)",
                 $table,
                 self::STALE_OPEN_DAYS
             ));
@@ -386,7 +386,7 @@ class Cashback_Fraud_Cluster_Detector {
                 'status'      => $status,
                 'review_note' => $note !== '' ? $note : null,
                 'reviewed_by' => $reviewer_id,
-                'reviewed_at' => current_time('mysql'),
+                'reviewed_at' => Cashback_Time::now_mysql(),
             ),
             array( 'id' => $cluster_id ),
             array( '%s', '%s', '%d', '%s' ),
@@ -410,7 +410,7 @@ class Cashback_Fraud_Cluster_Detector {
             'SELECT device_id, GROUP_CONCAT(DISTINCT user_id ORDER BY user_id) AS user_ids
              FROM %i
              WHERE user_id IS NOT NULL
-               AND last_seen >= DATE_SUB(NOW(), INTERVAL %d DAY)
+               AND last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)
              GROUP BY device_id
              HAVING COUNT(DISTINCT user_id) > 1',
             $table,
@@ -433,7 +433,7 @@ class Cashback_Fraud_Cluster_Detector {
              WHERE visitor_id IS NOT NULL
                AND visitor_id != %s
                AND user_id IS NOT NULL
-               AND last_seen >= DATE_SUB(NOW(), INTERVAL %d DAY)
+               AND last_seen >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)
              GROUP BY visitor_id
              HAVING COUNT(DISTINCT user_id) > 1',
             $table,
