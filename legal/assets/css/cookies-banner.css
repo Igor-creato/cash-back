@@ -1,0 +1,114 @@
+/**
+ * Cashback Legal — Cookies banner.
+ *
+ * Fixed bottom banner, мобильно-адаптивный. Кнопки одинакового веса
+ * (требование РКН — нельзя выделять «Принять» агрессивнее «Отклонить»).
+ */
+
+.cashback-legal-cookies-banner {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 99999;
+    background: #1f2937;
+    color: #f9fafb;
+    padding: 14px 20px;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
+    font-size: 14px;
+    line-height: 1.5;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.cashback-legal-cookies-banner.is-hidden {
+    display: none;
+}
+
+.cashback-legal-cookies-banner__inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+    justify-content: space-between;
+}
+
+.cashback-legal-cookies-banner__message {
+    flex: 1 1 320px;
+    margin: 0;
+    color: inherit;
+}
+
+.cashback-legal-cookies-banner__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.cashback-legal-cookies-banner__btn {
+    appearance: none;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    background: transparent;
+    color: #f9fafb;
+    font: inherit;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    min-width: 110px;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.cashback-legal-cookies-banner__btn:hover,
+.cashback-legal-cookies-banner__btn:focus-visible {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.7);
+    outline: none;
+}
+
+.cashback-legal-cookies-banner__btn--primary {
+    background: #2271b1;
+    border-color: #2271b1;
+}
+
+.cashback-legal-cookies-banner__btn--primary:hover,
+.cashback-legal-cookies-banner__btn--primary:focus-visible {
+    background: #135e96;
+    border-color: #135e96;
+}
+
+.cashback-legal-cookies-banner__btn--secondary {
+    background: transparent;
+    border-color: rgba(255, 255, 255, 0.45);
+}
+
+.cashback-legal-cookies-banner__link {
+    color: #f9fafb;
+    text-decoration: underline;
+    font-size: inherit;
+    padding: 8px 8px;
+    line-height: 1;
+}
+
+.cashback-legal-cookies-banner__link:hover,
+.cashback-legal-cookies-banner__link:focus-visible {
+    color: #ffffff;
+    outline: none;
+}
+
+@media (max-width: 600px) {
+    .cashback-legal-cookies-banner__inner {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    .cashback-legal-cookies-banner__actions {
+        justify-content: space-between;
+    }
+
+    .cashback-legal-cookies-banner__btn {
+        flex: 1 1 auto;
+    }
+}
