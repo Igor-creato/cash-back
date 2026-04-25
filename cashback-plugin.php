@@ -662,6 +662,12 @@ class CashbackPlugin {
 
         // Legal module (юр. документы, согласия по 152-ФЗ/38-ФЗ/161-ФЗ/ГК 437) — bootstrap.
         $this->require_file('legal/class-cashback-legal-bootstrap.php');
+
+        // FAQ module — публичная страница «Вопросы и ответы» + шорткод [cashback_faq].
+        $this->require_file('faq/class-cashback-faq-bootstrap.php');
+        if (class_exists('Cashback_Faq_Bootstrap')) {
+            Cashback_Faq_Bootstrap::init();
+        }
     }
 
     /**
