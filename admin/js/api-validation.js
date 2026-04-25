@@ -247,7 +247,7 @@
             {
                 let thead = '<tr>';
                 if (showNetCol) thead += '<th>Сеть</th>';
-                thead += '<th>Local ID</th><th>Uniq ID</th><th>Click ID</th><th>Статус</th><th>Комиссия</th><th>Сумма заказа</th><th>Создано</th><th>Действия</th></tr>';
+                thead += '<th>Local ID</th><th>Uniq ID</th><th>Click ID</th><th>Статус</th><th>Комиссия</th><th>Сумма заказа</th><th>Создано</th><th>Добавлена админом</th><th>Действия</th></tr>';
                 html += setupPaginatedTable('tab-missing-api', data.missing_api || [], thead, renderMissingApiRow, showNetCol, 'Все локальные транзакции найдены в API.');
             }
             html += '</div>';
@@ -968,6 +968,12 @@
     function renderMissingApiRow(m, showNetCol) {
         let row = '<tr data-local-id="' + m.local_id + '">';
         if (showNetCol) row += '<td>' + escHtml(m.network || '') + '</td>';
+        // Колонка «Добавлена админом»: зелёным жирным «Да» для tx, созданных
+        // админом вручную (Сверка баланса → зависший claim). Для остальных —
+        // прочерк, чтобы строка не рассыпалась визуально.
+        const adminCell = (parseInt(m.created_by_admin, 10) === 1)
+            ? '<td class="cashback-tx-admin-yes" style="color:#1f8f3a;font-weight:bold;">Да</td>'
+            : '<td>—</td>';
         row += '<td>#' + m.local_id + '</td>'
             + '<td><code>' + escHtml(m.uniq_id || '\u2014') + '</code></td>'
             + '<td><code>' + escHtml(m.click_id || '\u2014') + '</code></td>'
@@ -975,6 +981,7 @@
             + '<td class="editable-cell" data-field="comission" data-value="' + m.commission + '">' + formatMoney(m.commission) + '</td>'
             + '<td class="editable-cell" data-field="sum_order" data-value="' + (m.sum_order || 0) + '">' + formatMoney(m.sum_order) + '</td>'
             + '<td>' + escHtml(m.created) + '</td>'
+            + adminCell
             + '<td class="validation-actions">'
             + '<button type="button" class="button button-small cashback-edit-tx-btn"'
             + ' data-local-id="' + m.local_id + '">Редактировать</button>'
