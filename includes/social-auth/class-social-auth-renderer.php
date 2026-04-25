@@ -188,6 +188,21 @@ class Cashback_Social_Auth_Renderer {
      * До тика кнопки отключены и их href=# (см. render_single_button + consent-toggle.js).
      * account_link-контекст (привязка второго аккаунта уже залогиненному юзеру) чекбокс
      * не показывает — consent уже был записан при первой регистрации.
+     *
+     * Phase 3 (2026-04-25): текст расширен для покрытия требований 152-ФЗ
+     * (обработка ПД), ГК ст. 437 (акцепт оферты) и сохранения существующего
+     * согласия на обработку технических данных. JS (consent-toggle.js)
+     * по-прежнему ждёт отметку одного чекбокса; запись в consent_log
+     * отдельными типами (pd_consent + terms_offer) выполняется в
+     * Cashback_Social_Auth_Account_Manager после создания пользователя.
+     *
+     * Trade-off: РКН с 01.09.2025 рекомендует отдельные чекбоксы для разных
+     * согласий. Social-flow со сторонним OAuth-провайдером существенно
+     * усложняется при разделении (pre-flight bundle несёт всё в state).
+     * Здесь применяется единый чекбокс с явным текстом-перечислением
+     * («…даю согласие на обработку ПД, принимаю условия оферты, согласен
+     * с обработкой технических данных…») — каждый юр. факт фиксируется
+     * отдельной строкой в журнале.
      */
     private function render_consent_checkbox( string $context ): string {
         if ($context === 'account_link') {
@@ -195,21 +210,65 @@ class Cashback_Social_Auth_Renderer {
         }
 
         $unique_id = 'cashback-social-consent-' . wp_generate_uuid4();
-        $label     = esc_html__(
-            'Я согласен на обработку технических данных устройства (fingerprint, device ID, IP, User-Agent) для защиты от мошенничества согласно ст. 9 № 152-ФЗ.',
-            'cashback-plugin'
-        );
+
+        $pd_url    = self::get_legal_doc_url('pd_consent');
+        $offer_url = self::get_legal_doc_url('terms_offer');
+
+        $label_html = esc_html__('Я даю', 'cashback-plugin') . ' ';
+        $label_html .= self::link_or_text($pd_url, __('согласие на обработку персональных данных', 'cashback-plugin'));
+        $label_html .= ', ' . esc_html__('принимаю условия', 'cashback-plugin') . ' ';
+        $label_html .= self::link_or_text($offer_url, __('Пользовательского соглашения (публичной оферты)', 'cashback-plugin'));
+        $label_html .= ' ' . esc_html__('и согласен на обработку технических данных устройства (152-ФЗ ст. 9).', 'cashback-plugin');
 
         $html  = '<div class="cashback-social-consent">';
         $html .= '<input type="checkbox" class="cashback-social-consent__checkbox"';
         $html .= ' id="' . esc_attr($unique_id) . '"';
         $html .= ' data-cashback-social-consent>';
         $html .= '<label for="' . esc_attr($unique_id) . '" class="cashback-social-consent__label">';
-        $html .= $label;
+        $html .= wp_kses(
+            $label_html,
+            array(
+                'a' => array(
+                    'href'   => true,
+                    'target' => true,
+                    'rel'    => true,
+                ),
+            )
+        );
         $html .= '</label>';
         $html .= '</div>';
 
         return $html;
+    }
+
+    /**
+     * URL публичной страницы юр. документа (с graceful fallback).
+     */
+    private static function get_legal_doc_url( string $type_const_suffix ): string {
+        if (!class_exists('Cashback_Legal_Pages_Installer') || !class_exists('Cashback_Legal_Documents')) {
+            return '';
+        }
+        $type_map = array(
+            'pd_consent'  => Cashback_Legal_Documents::TYPE_PD_CONSENT,
+            'terms_offer' => Cashback_Legal_Documents::TYPE_TERMS_OFFER,
+        );
+        $type = $type_map[ $type_const_suffix ] ?? '';
+        if ($type === '') {
+            return '';
+        }
+        return Cashback_Legal_Pages_Installer::get_url_for_type($type);
+    }
+
+    private static function link_or_text( string $url, string $text ): string {
+        $text_escaped = esc_html($text);
+        if ($url === '') {
+            return $text_escaped;
+        }
+        return sprintf(
+            '<a href="%s" target="_blank" rel="noopener noreferrer">%s</a>',
+            esc_url($url),
+            $text_escaped
+        );
     }
 
     /**

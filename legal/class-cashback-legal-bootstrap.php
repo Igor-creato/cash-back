@@ -43,6 +43,8 @@ class Cashback_Legal_Bootstrap {
         return array(
             'class-cashback-legal-pages-installer.php',
             'class-cashback-legal-shortcodes.php',
+            'class-cashback-legal-registration-checkboxes.php',
+            'class-cashback-legal-payout-consent.php',
         );
     }
 
@@ -98,6 +100,9 @@ class Cashback_Legal_Bootstrap {
         }
         if (class_exists('Cashback_Legal_Shortcodes')) {
             Cashback_Legal_Shortcodes::init();
+        }
+        if (class_exists('Cashback_Legal_Registration_Checkboxes')) {
+            Cashback_Legal_Registration_Checkboxes::init();
         }
         if (class_exists('Cashback_Legal_Admin')) {
             Cashback_Legal_Admin::init();

@@ -641,6 +641,36 @@ class Cashback_Social_Auth_Account_Manager {
             Cashback_Fraud_Consent::record_consent($user_id, $ip);
         }
 
+        // Phase 3 (legal): отметка единого social-чекбокса покрывает
+        // pd_consent + terms_offer (renderer перечисляет оба в подписи).
+        // Запись в журнал согласий — отдельными строками с уникальными
+        // request_id для UNIQUE constraint в cashback_consent_log.
+        if ($consent_given && class_exists('Cashback_Legal_Consent_Manager') && class_exists('Cashback_Legal_Documents')) {
+            $base_request_id = Cashback_Legal_Consent_Manager::generate_request_id();
+            $extra           = array(
+                'ip_address' => $ip,
+                'user_agent' => $user_agent,
+                'extra_meta' => array( 'provider' => $provider_id ),
+            );
+            $type_request = static function ( string $suffix ) use ( $base_request_id ): string {
+                return substr($base_request_id, 0, 24) . $suffix;
+            };
+            Cashback_Legal_Consent_Manager::record_consent(
+                $user_id,
+                Cashback_Legal_Documents::TYPE_PD_CONSENT,
+                'social_auth',
+                $type_request('00000001'),
+                $extra
+            );
+            Cashback_Legal_Consent_Manager::record_consent(
+                $user_id,
+                Cashback_Legal_Documents::TYPE_TERMS_OFFER,
+                'social_auth',
+                $type_request('00000002'),
+                $extra
+            );
+        }
+
         $link_id = Cashback_Social_Auth_DB::save_link(array(
             'user_id'            => $user_id,
             'provider'           => $provider_id,

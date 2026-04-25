@@ -775,6 +775,14 @@ if (!class_exists('WP_Error')) {
             }
             return $this->error_data[ $code ] ?? null;
         }
+
+        public function add(string $code, string $message, mixed $data = null): void
+        {
+            $this->errors[ $code ][] = $message;
+            if ($data !== null) {
+                $this->error_data[ $code ] = $data;
+            }
+        }
     }
 }
 

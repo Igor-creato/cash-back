@@ -401,6 +401,9 @@ class Cashback_User_Support {
 echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render_container() возвращает заранее сформированный безопасный HTML капчи.
 }
 ?>
+            <p class="cashback-legal-remark" style="font-size:12px;color:#666;margin:6px 0 12px;">
+                <?php esc_html_e('Отправляя обращение, вы подтверждаете согласие на обработку персональных данных, ранее данное при регистрации (152-ФЗ).', 'cashback-plugin'); ?>
+            </p>
             <button type="submit" class="support-btn support-btn-primary" id="support-submit-btn">Отправить</button>
         </form>
         <?php

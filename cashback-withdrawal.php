@@ -668,6 +668,11 @@ class CashbackWithdrawal {
         if (class_exists('Cashback_Captcha')) {
             echo wp_kses_post( Cashback_Captcha::render_container('cb-captcha-withdrawal') ); // Pre-built captcha HTML container.
         }
+        // Юр. чекбокс согласия на обработку платёжных данных (161-ФЗ).
+        // Рендерится только при первой выплате — повторно не показывается, если согласие уже зафиксировано.
+        if (class_exists('Cashback_Legal_Payout_Consent')) {
+            Cashback_Legal_Payout_Consent::render_checkbox(get_current_user_id());
+        }
         echo '<p class="form-row">';
         echo '<button type="submit" class="woocommerce-Button button" id="withdrawal-submit" name="withdrawal_submit" value="' . esc_attr__('Вывести', 'cashback-plugin') . '">' . esc_html__('Вывести', 'cashback-plugin') . '</button>';
         echo '</p>';
@@ -766,6 +771,13 @@ class CashbackWithdrawal {
 
         echo '<div class="clear"></div>';
 
+        // Юр. чекбокс на форме настроек реквизитов — показывается, если согласие
+        // ещё не было дано. После save_payout_settings consent фиксируется и
+        // повторно не запрашивается ни здесь, ни на форме вывода.
+        if (class_exists('Cashback_Legal_Payout_Consent')) {
+            Cashback_Legal_Payout_Consent::render_checkbox(get_current_user_id());
+        }
+
         echo '<p class="woocommerce-form-row form-row">';
         echo '<button type="button" class="woocommerce-Button button" id="save_payout_settings_btn">' . esc_html__('Сохранить настройки', 'cashback-plugin') . '</button>';
         if ($has_settings && !$settings_inactive) {
@@ -837,6 +849,16 @@ class CashbackWithdrawal {
             $ban_info = Cashback_User_Status::get_ban_info($user_id);
             wp_send_json_error(Cashback_User_Status::get_banned_message($ban_info));
             return;
+        }
+
+        // Юр. согласие на обработку платёжных данных (161-ФЗ). Проверяется
+        // ДО валидации суммы — пользователь сразу видит причину отказа.
+        if (class_exists('Cashback_Legal_Payout_Consent')) {
+            $consent_check = Cashback_Legal_Payout_Consent::enforce_or_error($user_id, 'payout');
+            if ($consent_check !== true) {
+                wp_send_json_error($consent_check);
+                return;
+            }
         }
 
         // === 1.5. Антифрод: cooling period (детерминистичная проверка, до транзакции) ===
@@ -1302,6 +1324,16 @@ class CashbackWithdrawal {
         if (!$user_id) {
             wp_send_json_error(array( 'message' => __('Пользователь не найден.', 'cashback-plugin') ));
             return;
+        }
+
+        // Юр. согласие на обработку платёжных данных (161-ФЗ).
+        // При первом сохранении реквизитов — обязательно; затем не требуется.
+        if (class_exists('Cashback_Legal_Payout_Consent')) {
+            $consent_check = Cashback_Legal_Payout_Consent::enforce_or_error($user_id, 'profile');
+            if ($consent_check !== true) {
+                wp_send_json_error($consent_check);
+                return;
+            }
         }
 
         // Проверка статуса "banned"

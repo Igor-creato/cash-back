@@ -717,6 +717,36 @@ class Cashback_Broadcast {
                 $attempts = (int) $row['attempts'];
                 $is_last  = $attempts >= $max_att;
 
+                // 38-ФЗ ст. 18: рекламные сообщения только при наличии активного
+                // согласия subject'а в журнале (Cashback_Legal_Consent_Manager).
+                // Если согласие отсутствует/отозвано — помечаем строку как
+                // skipped (failed с last_error='no_marketing_consent'), не считаем
+                // в sent_delta. Без consent гарантированно не уйдёт ни одно письмо.
+                if ($user_id > 0 && class_exists('Cashback_Legal_Consent_Manager') && class_exists('Cashback_Legal_Documents')) {
+                    $has_marketing_consent = Cashback_Legal_Consent_Manager::has_active_consent(
+                        $user_id,
+                        Cashback_Legal_Documents::TYPE_MARKETING
+                    );
+                    if (!$has_marketing_consent) {
+                        $wpdb->update(
+                            self::table_queue(),
+                            array(
+                                'status'       => 'failed',
+                                'last_error'   => 'no_marketing_consent',
+                                'processed_at' => $now_sql,
+                            ),
+                            array(
+                                'id'               => $queue_id,
+                                'processing_token' => $claim_token,
+                            ),
+                            array( '%s', '%s', '%s' ),
+                            array( '%d', '%s' )
+                        );
+                        ++$failed_delta;
+                        continue;
+                    }
+                }
+
                 $ok = false;
                 try {
                     $ok = $sender->send($email, $subject, $body, self::NOTIFICATION_TYPE, $user_id);

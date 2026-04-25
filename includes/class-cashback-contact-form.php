@@ -165,6 +165,45 @@ class Cashback_Contact_Form {
                 </div>
                 <?php endif; ?>
 
+                <?php
+                // Юр. чекбокс согласия на обработку ПД для гостевой контактной
+                // формы (152-ФЗ ст. 9). Обязателен для всех — для авторизованных
+                // дублирует согласие, данное при регистрации, но «связь должна
+                // быть атомарной» по позиции РКН: каждый акт сбора ПД — отдельная цель.
+                $cb_legal_contact_url = '';
+                $cb_legal_request_id  = '';
+                if (class_exists('Cashback_Legal_Pages_Installer') && class_exists('Cashback_Legal_Documents')) {
+                    $cb_legal_contact_url = Cashback_Legal_Pages_Installer::get_url_for_type(
+                        Cashback_Legal_Documents::TYPE_CONTACT_FORM_PD
+                    );
+                    if ($cb_legal_contact_url === '') {
+                        $cb_legal_contact_url = Cashback_Legal_Pages_Installer::get_url_for_type(
+                            Cashback_Legal_Documents::TYPE_PD_POLICY
+                        );
+                    }
+                }
+                if (function_exists('cashback_generate_uuid7')) {
+                    $cb_legal_request_id = (string) cashback_generate_uuid7(false);
+                } else {
+                    try {
+                        $cb_legal_request_id = bin2hex(random_bytes(16));
+                    } catch (\Throwable $e) {
+                        $cb_legal_request_id = md5(uniqid('cashback_legal_contact_', true));
+                    }
+                }
+                ?>
+                <div class="cb-contact-field cb-contact-legal-consent">
+                    <input type="hidden" name="cashback_legal_request_id" value="<?php echo esc_attr($cb_legal_request_id); ?>" />
+                    <label for="cb-contact-legal-consent" class="checkbox">
+                        <input type="checkbox" id="cb-contact-legal-consent" name="cashback_legal_contact_consent" value="1" required />
+                        <?php esc_html_e('Я даю согласие на обработку моих персональных данных, указанных в форме, в целях ответа на обращение', 'cashback-plugin'); ?>
+                        <?php if ($cb_legal_contact_url !== '') : ?>
+                            (<a href="<?php echo esc_url($cb_legal_contact_url); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('подробнее', 'cashback-plugin'); ?></a>)
+                        <?php endif; ?>
+                        <span class="required" style="color:#b32d2e;"> *</span>
+                    </label>
+                </div>
+
                 <div class="cb-contact-field cb-contact-submit-row">
                     <button type="submit" id="cb-contact-submit" class="button btn">
                         <?php esc_html_e('Отправить', 'cashback-plugin'); ?>
@@ -350,8 +389,15 @@ class Cashback_Contact_Form {
         $subject = sanitize_text_field(wp_unslash($_POST['contact_subject'] ?? ''));
         $message = sanitize_textarea_field(wp_unslash($_POST['contact_message'] ?? ''));
 
+        // Юр. чекбокс согласия на обработку ПД для контактной формы (152-ФЗ ст. 9).
+        $legal_consent = sanitize_text_field(wp_unslash($_POST['cashback_legal_contact_consent'] ?? ''));
+
         // Validation
         $errors = array();
+
+        if ($legal_consent !== '1') {
+            $errors[] = 'Подтвердите согласие на обработку персональных данных для ответа на обращение.';
+        }
 
         if ($name === '' || mb_strlen($name) > self::MAX_NAME) {
             $errors[] = 'Введите ваше имя (до ' . self::MAX_NAME . ' символов).';
@@ -444,6 +490,31 @@ class Cashback_Contact_Form {
         // iter-30 F-30-003: фиксируем результат для идемпотентного ретрая (TTL = rate-window).
         if ($idem_key !== '') {
             set_transient($idem_key, 1, HOUR_IN_SECONDS);
+        }
+
+        // Юр. журнал: запись согласия contact_form_pd. user_id=0 для гостей.
+        // Идемпотентность через UNIQUE на request_id в БД — повторный submit не плодит дубль.
+        if (class_exists('Cashback_Legal_Consent_Manager')) {
+            $legal_request_id_raw = isset($_POST['cashback_legal_request_id'])
+                ? sanitize_text_field(wp_unslash((string) $_POST['cashback_legal_request_id']))
+                : '';
+            $legal_request_id = Cashback_Legal_Consent_Manager::normalize_request_id($legal_request_id_raw);
+            if ($legal_request_id === '') {
+                $legal_request_id = Cashback_Legal_Consent_Manager::generate_request_id();
+            }
+            Cashback_Legal_Consent_Manager::record_consent(
+                $user_id > 0 ? (int) $user_id : null,
+                Cashback_Legal_Documents::TYPE_CONTACT_FORM_PD,
+                'contact',
+                $legal_request_id,
+                array(
+                    'ip_address' => $ip,
+                    'user_agent' => isset($_SERVER['HTTP_USER_AGENT'])
+                        ? sanitize_text_field(wp_unslash((string) $_SERVER['HTTP_USER_AGENT']))
+                        : '',
+                    'extra_meta' => array( 'email' => $email ),
+                )
+            );
         }
 
         wp_send_json_success(array(
