@@ -395,6 +395,115 @@ final class StuckClaimTxAjaxTest extends TestCase
         );
     }
 
+    // =========================================================================
+    // Display-имена: offer_name из WooCommerce, partner из affiliate_networks.name
+    // =========================================================================
+
+    public function test_resolve_product_name_helper_exists(): void
+    {
+        $src = $this->recon_admin_src();
+        $this->assertMatchesRegularExpression(
+            '/private\s+static\s+function\s+resolve_product_name\s*\(\s*array\s+\$claim\s*\)\s*:\s*string/',
+            $src,
+            'resolve_product_name(array $claim): string должен существовать как private static helper'
+        );
+    }
+
+    public function test_resolve_product_name_uses_wc_get_product(): void
+    {
+        $src = $this->recon_admin_src();
+        $this->assertMatchesRegularExpression(
+            "/wc_get_product\(\s*\\\$product_id\s*\)/",
+            $src,
+            'resolve_product_name должен вызывать wc_get_product($product_id) — каноничный источник имён'
+        );
+        $this->assertMatchesRegularExpression(
+            "/->get_name\(\)/",
+            $src,
+            'resolve_product_name должен брать имя через ->get_name() (как в class-claims-eligibility.php)'
+        );
+        // Защита от удалённого товара — fallback на claim.product_name.
+        $this->assertMatchesRegularExpression(
+            "/\\\$claim\['product_name'\]/",
+            $src,
+            'fallback на claim.product_name если wc_get_product вернул false'
+        );
+    }
+
+    public function test_resolve_network_name_helper_exists(): void
+    {
+        $src = $this->recon_admin_src();
+        $this->assertMatchesRegularExpression(
+            '/private\s+static\s+function\s+resolve_network_name\s*\(\s*string\s+\$cpa_slug\s*\)\s*:\s*string/',
+            $src,
+            'resolve_network_name(string $cpa_slug): string должен существовать как private static helper'
+        );
+    }
+
+    public function test_resolve_network_name_queries_affiliate_networks_by_slug(): void
+    {
+        $src = $this->recon_admin_src();
+        $this->assertMatchesRegularExpression(
+            '/cashback_affiliate_networks/',
+            $src,
+            'resolve_network_name должен запрашивать таблицу cashback_affiliate_networks'
+        );
+        $this->assertMatchesRegularExpression(
+            "/SELECT name FROM %i WHERE slug = %s/",
+            $src,
+            'lookup должен быть SELECT name WHERE slug = $cpa_slug (через prepare с %i, %s)'
+        );
+    }
+
+    public function test_select_claim_includes_product_id_and_product_name(): void
+    {
+        $src = $this->recon_admin_src();
+        // Оба SELECT (load + create) должны включать product_id, иначе helper
+        // получит claim без полей, на которые опирается WC-fallback chain.
+        $count = preg_match_all(
+            "/product_id, product_name/",
+            $src
+        );
+        $this->assertGreaterThanOrEqual(
+            2,
+            $count,
+            'product_id и product_name должны быть в обоих SELECT claim (preview + create)'
+        );
+    }
+
+    public function test_create_handler_uses_resolve_helpers(): void
+    {
+        $src = $this->recon_admin_src();
+        // INSERT_data должен брать offer_name/partner из helper'ов, не из claim'а напрямую.
+        $this->assertMatchesRegularExpression(
+            "/'offer_name'\s*=>\s*\\\$shop_name/",
+            $src,
+            "offer_name в INSERT должен быть резолвнутым shop_name (а не claim.merchant_name)"
+        );
+        $this->assertMatchesRegularExpression(
+            "/'partner'\s*=>\s*\\\$network_name/",
+            $src,
+            'partner в INSERT должен быть резолвнутым network_name (а не cpa_network slug)'
+        );
+    }
+
+    public function test_load_handler_returns_resolved_names_to_modal(): void
+    {
+        $src = $this->recon_admin_src();
+        // wp_send_json_success должен возвращать резолвнутые имена, чтобы модал
+        // показал админу ровно то, что попадёт в БД.
+        $this->assertMatchesRegularExpression(
+            "/'merchant_name'\s*=>\s*\\\$shop_name/",
+            $src,
+            'preview-JSON должен отдавать $shop_name в поле merchant_name'
+        );
+        $this->assertMatchesRegularExpression(
+            "/'partner'\s*=>\s*\\\$network_name/",
+            $src,
+            'preview-JSON должен отдавать $network_name в поле partner'
+        );
+    }
+
     public function test_create_handler_does_not_set_reference_id_or_cashback_in_insert(): void
     {
         $src = $this->recon_admin_src();

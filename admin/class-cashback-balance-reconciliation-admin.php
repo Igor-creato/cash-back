@@ -787,6 +787,7 @@ class Cashback_Balance_Reconciliation_Admin {
 
 		$claim = $wpdb->get_row( $wpdb->prepare(
 			'SELECT claim_id, user_id, click_id, merchant_id, merchant_name,
+			        product_id, product_name,
 			        order_id, order_value, order_date, status, updated_at
 			 FROM %i
 			 WHERE claim_id = %d
@@ -830,22 +831,78 @@ class Cashback_Balance_Reconciliation_Admin {
 			$click_id
 		), ARRAY_A );
 
-		$partner    = is_array( $click ) ? (string) ( $click['cpa_network'] ?? '' ) : '';
+		$cpa_slug   = is_array( $click ) ? (string) ( $click['cpa_network'] ?? '' ) : '';
 		$click_time = is_array( $click ) ? (string) ( $click['created_at'] ?? '' ) : '';
+
+		$shop_name    = self::resolve_product_name( $claim );
+		$network_name = self::resolve_network_name( $cpa_slug );
 
 		wp_send_json_success( array(
 			'claim_id'      => (int) $claim['claim_id'],
 			'user_id'       => $user_id,
 			'click_id'      => $click_id,
 			'merchant_id'   => isset( $claim['merchant_id'] ) ? (int) $claim['merchant_id'] : 0,
-			'merchant_name' => (string) ( $claim['merchant_name'] ?? '' ),
+			'merchant_name' => $shop_name,
 			'order_id'      => (string) ( $claim['order_id'] ?? '' ),
 			'order_value'   => (string) ( $claim['order_value'] ?? '' ),
 			'order_date'    => (string) ( $claim['order_date'] ?? '' ),
 			'approved_at'   => (string) ( $claim['updated_at'] ?? '' ),
-			'partner'       => $partner,
+			'partner'       => $network_name,
 			'click_time'    => $click_time,
 		) );
+	}
+
+	/**
+	 * Возвращает каноничное название «магазина» (WooCommerce-товара).
+	 *
+	 * Приоритет:
+	 *   1. wc_get_product($product_id)->get_name() — текущее название из WP_Posts.
+	 *   2. claim.product_name — снапшот при создании заявки (если товар удалён).
+	 *   3. claim.merchant_name — что юзер ввёл при создании claim'а (фолбэк).
+	 *
+	 * @param array<string,mixed> $claim Строка из cashback_claims.
+	 */
+	private static function resolve_product_name( array $claim ): string {
+		$product_id = isset( $claim['product_id'] ) ? (int) $claim['product_id'] : 0;
+		if ( $product_id > 0 && function_exists( 'wc_get_product' ) ) {
+			$product = wc_get_product( $product_id );
+			if ( $product ) {
+				$name = (string) $product->get_name();
+				if ( $name !== '' ) {
+					return $name;
+				}
+			}
+		}
+		$snapshot = (string) ( $claim['product_name'] ?? '' );
+		if ( $snapshot !== '' ) {
+			return $snapshot;
+		}
+		return (string) ( $claim['merchant_name'] ?? '' );
+	}
+
+	/**
+	 * Возвращает display-имя CPA-сети по slug'у из cashback_click_log.cpa_network.
+	 *
+	 * cashback_click_log.cpa_network хранит slug ('admitad', 'epn', ...);
+	 * каноничное полное имя — в cashback_affiliate_networks.name. Если запись
+	 * не найдена / удалена / неактивна — возвращаем slug как-есть (фолбэк).
+	 */
+	private static function resolve_network_name( string $cpa_slug ): string {
+		$cpa_slug = trim( $cpa_slug );
+		if ( $cpa_slug === '' ) {
+			return '';
+		}
+		global $wpdb;
+		$networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
+		$name = $wpdb->get_var( $wpdb->prepare(
+			'SELECT name FROM %i WHERE slug = %s LIMIT 1',
+			$networks_table,
+			$cpa_slug
+		) );
+		if ( is_string( $name ) && $name !== '' ) {
+			return $name;
+		}
+		return $cpa_slug;
 	}
 
 	/**
@@ -957,6 +1014,7 @@ class Cashback_Balance_Reconciliation_Admin {
 		try {
 			$claim = $wpdb->get_row( $wpdb->prepare(
 				'SELECT claim_id, user_id, click_id, merchant_id, merchant_name,
+				        product_id, product_name,
 				        order_id, order_value, order_date, status
 				 FROM %i
 				 WHERE claim_id = %d
@@ -995,8 +1053,14 @@ class Cashback_Balance_Reconciliation_Admin {
 				$click_id
 			), ARRAY_A );
 
-			$partner    = is_array( $click ) ? (string) ( $click['cpa_network'] ?? '' ) : '';
+			$cpa_slug   = is_array( $click ) ? (string) ( $click['cpa_network'] ?? '' ) : '';
 			$click_time = is_array( $click ) ? (string) ( $click['created_at'] ?? '' ) : '';
+
+			// Каноничные display-имена (как в основной таблице транзакций / API-валидации):
+			// offer_name — название WooCommerce-товара ([class-claims-eligibility.php:84]),
+			// partner — полное имя CPA-сети из cashback_affiliate_networks.name, не slug.
+			$shop_name    = self::resolve_product_name( $claim );
+			$network_name = self::resolve_network_name( $cpa_slug );
 
 			$idempotency_key = 'manual_claim_' . $claim_id;
 
@@ -1005,9 +1069,9 @@ class Cashback_Balance_Reconciliation_Admin {
 			$insert_data = array(
 				'user_id'            => $user_id,
 				'order_number'       => (string) ( $claim['order_id'] ?? '' ),
-				'offer_name'         => (string) ( $claim['merchant_name'] ?? '' ),
+				'offer_name'         => $shop_name,
 				'order_status'       => 'completed',
-				'partner'            => $partner,
+				'partner'            => $network_name,
 				'sum_order'          => (string) ( $claim['order_value'] ?? '0.00' ),
 				'comission'          => $raw_comission,
 				'currency'           => 'RUB',
