@@ -90,8 +90,8 @@ class Cashback_Legal_Admin {
         if (Cashback_Legal_Operator::is_configured()) {
             return;
         }
-        $screen   = function_exists('get_current_screen') ? get_current_screen() : null;
-        $on_page  = $screen && isset($screen->id) && strpos((string) $screen->id, self::PAGE_SLUG_OPERATOR) !== false;
+        $screen  = function_exists('get_current_screen') ? get_current_screen() : null;
+        $on_page = $screen instanceof WP_Screen && strpos($screen->id, self::PAGE_SLUG_OPERATOR) !== false;
         if ($on_page) {
             return;
         }
@@ -124,7 +124,7 @@ class Cashback_Legal_Admin {
                 : '';
             $request_id = Cashback_Idempotency::normalize_request_id($request_id);
             if ($request_id !== '') {
-                $claimed = Cashback_Idempotency::claim('legal_save_operator', $request_id, 300);
+                $claimed = Cashback_Idempotency::claim('legal_save_operator', get_current_user_id(), $request_id, 300);
                 if (!$claimed) {
                     self::redirect_to_operator_page('replay');
                     return;
@@ -743,8 +743,8 @@ class Cashback_Legal_Admin {
         if (!current_user_can('manage_options')) {
             return;
         }
-        $screen   = function_exists('get_current_screen') ? get_current_screen() : null;
-        $on_page  = $screen && isset($screen->id) && strpos((string) $screen->id, self::PAGE_SLUG_AUDIT) !== false;
+        $screen  = function_exists('get_current_screen') ? get_current_screen() : null;
+        $on_page = $screen instanceof WP_Screen && strpos($screen->id, self::PAGE_SLUG_AUDIT) !== false;
         if ($on_page) {
             return;
         }
