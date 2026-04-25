@@ -220,7 +220,7 @@ class Cashback_Legal_Documents {
         }
 
         $path = self::plugin_root_dir() . '/' . $meta['template_path'];
-        if (!is_string($path) || !file_exists($path)) {
+        if (!file_exists($path)) {
             return '';
         }
 

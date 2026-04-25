@@ -79,9 +79,6 @@ class Cashback_Legal_Pages_Installer {
             }
             // Пропускаем contact_form_pd — это inline-чекбокс на форме обратной
             // связи, отдельной публичной страницы для него не делаем.
-            if (!empty($meta['is_public']) && $meta['is_public'] === false) {
-                continue;
-            }
             if ($type === Cashback_Legal_Documents::TYPE_CONTACT_FORM_PD) {
                 continue;
             }
