@@ -77,7 +77,9 @@ final class Cashback_Time {
 	public static function offset_mysql( string $relative ): string {
 		$ts = strtotime( $relative );
 		if ( false === $ts ) {
-			throw new InvalidArgumentException( "Cashback_Time::offset_mysql: cannot parse '{$relative}'" );
+			throw new InvalidArgumentException(
+				sprintf( "Cashback_Time::offset_mysql: cannot parse '%s'", esc_html( $relative ) )
+			);
 		}
 		return gmdate( 'Y-m-d H:i:s', $ts );
 	}
