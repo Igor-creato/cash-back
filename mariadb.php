@@ -83,6 +83,7 @@ class Mariadb_Plugin {
             $instance->migrate_add_frozen_balance_buckets();
             $instance->migrate_schema_idempotency_v1();
             $instance->migrate_add_click_sessions_v1();
+            $instance->migrate_add_transaction_created_by_admin();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -265,6 +266,7 @@ class Mariadb_Plugin {
             `spam_click` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = транзакция из подозрительного клика, кэшбэк только после ручной проверки',
             `funds_ready` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = CPA-сеть подтвердила готовность средств к снятию (Admitad: processed=1, EPN: status=approved)',
             `reference_id` varchar(11) NOT NULL DEFAULT '' COMMENT 'Публичный ID транзакции формата TX-XXXXXXXX',
+            `created_by_admin` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = транзакция создана админом вручную (Сверка баланса → зависший claim), 0 = пришла по API/постбэку CPA',
             `created_at` timestamp NULL DEFAULT current_timestamp(),
             `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
             PRIMARY KEY (`id`),
@@ -2793,6 +2795,63 @@ class Mariadb_Plugin {
 
         $migration = new Cashback_Schema_Idempotency_Migration($wpdb);
         $migration->run();
+    }
+
+    /**
+     * Миграция: добавление колонки `created_by_admin` в cashback_transactions.
+     *
+     * Флаг помечает транзакции, созданные админом вручную через подстраницу
+     * «Сверка баланса» → зависшие approved claims (handle_create_stuck_claim_tx).
+     * Используется в API-валидации для отображения столбца «Добавлена админом»
+     * в таблице расхождений «Есть на сайте, нет в API» — такие транзакции
+     * не приходят от CPA-сети и поэтому отсутствуют в API-ответе by design.
+     *
+     * Идемпотентная: проверяет наличие колонки через INFORMATION_SCHEMA.
+     * Использует raw $wpdb->query (не prepare) — non-ASCII COMMENT хрупок
+     * при $wpdb->prepare('ALTER TABLE %i ... COMMENT %s'), см. project memory.
+     * Post-verify через SHOW COLUMNS.
+     */
+    public function migrate_add_transaction_created_by_admin(): void {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cashback_transactions';
+
+        $column_exists = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = %s
+               AND COLUMN_NAME = 'created_by_admin'",
+            $table
+        ));
+        if ($column_exists > 0) {
+            return;
+        }
+
+        // %i для имени таблицы; COMMENT остаётся inline-литералом в SQL (а не
+        // через %s-параметр — последнее, по project memory, хрупко для non-ASCII
+        // текста в некоторых wpdb/PDO стэках).
+        $wpdb->query($wpdb->prepare(
+            "ALTER TABLE %i ADD COLUMN `created_by_admin` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = транзакция создана админом вручную (Сверка баланса → зависший claim), 0 = пришла по API/постбэку CPA' AFTER `reference_id`",
+            $table
+        ));
+
+        if ($wpdb->last_error) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log("[Cashback Migration] ALTER TABLE {$table} ADD created_by_admin: " . $wpdb->last_error);
+            return;
+        }
+
+        // Post-verify через SHOW COLUMNS — DDL с raw query не возвращает строгого
+        // confirmation на всех окружениях, проверяем явно.
+        $verified = $wpdb->get_row($wpdb->prepare(
+            'SHOW COLUMNS FROM %i LIKE %s',
+            $table,
+            'created_by_admin'
+        ));
+        if (!$verified) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log("[Cashback Migration] created_by_admin column verification FAILED on {$table}");
+        }
     }
 }
 

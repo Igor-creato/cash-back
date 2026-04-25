@@ -889,7 +889,8 @@ class Cashback_API_Client {
         $local_transactions = $wpdb->get_results($wpdb->prepare(
             'SELECT t.id, t.click_id, t.uniq_id, t.order_number, t.offer_name,
                     t.comission, t.cashback, t.order_status, t.partner,
-                    t.sum_order, t.created_at, t.updated_at, t.original_cpa_subid
+                    t.sum_order, t.created_at, t.updated_at, t.original_cpa_subid,
+                    t.created_by_admin
              FROM %i t
              WHERE t.user_id = %d
                AND (LOWER(t.partner) = LOWER(%s) OR LOWER(t.partner) = LOWER(%s))
@@ -1131,14 +1132,18 @@ class Cashback_API_Client {
             }
 
             $missing_api[] = array(
-                'local_id'     => $tx['id'],
-                'uniq_id'      => $tx['uniq_id'] ?? '',
-                'click_id'     => $tx['click_id'],
-                'order_number' => $tx['order_number'],
-                'status'       => $tx['order_status'],
-                'commission'   => (float) $tx['comission'],
-                'sum_order'    => (float) ( $tx['sum_order'] ?? 0 ),
-                'created'      => $tx['created_at'],
+                'local_id'         => $tx['id'],
+                'uniq_id'          => $tx['uniq_id'] ?? '',
+                'click_id'         => $tx['click_id'],
+                'order_number'     => $tx['order_number'],
+                'status'           => $tx['order_status'],
+                'commission'       => (float) $tx['comission'],
+                'sum_order'        => (float) ( $tx['sum_order'] ?? 0 ),
+                'created'          => $tx['created_at'],
+                // 1 = транзакция создана админом вручную (Сверка баланса → зависший claim).
+                // Такая запись отсутствует в API by design — UI рендерит «Да» в столбце
+                // «Добавлена админом», чтобы админ не искал причину «расхождения».
+                'created_by_admin' => isset( $tx['created_by_admin'] ) ? (int) $tx['created_by_admin'] : 0,
             );
         }
 
@@ -1601,14 +1606,18 @@ class Cashback_API_Client {
             }
 
             $missing_api[] = array(
-                'local_id'     => $tx['id'],
-                'uniq_id'      => $tx['uniq_id'] ?? '',
-                'click_id'     => $tx['click_id'],
-                'order_number' => $tx['order_number'],
-                'status'       => $tx['order_status'],
-                'commission'   => (float) $tx['comission'],
-                'sum_order'    => (float) ( $tx['sum_order'] ?? 0 ),
-                'created'      => $tx['created_at'],
+                'local_id'         => $tx['id'],
+                'uniq_id'          => $tx['uniq_id'] ?? '',
+                'click_id'         => $tx['click_id'],
+                'order_number'     => $tx['order_number'],
+                'status'           => $tx['order_status'],
+                'commission'       => (float) $tx['comission'],
+                'sum_order'        => (float) ( $tx['sum_order'] ?? 0 ),
+                'created'          => $tx['created_at'],
+                // 1 = транзакция создана админом вручную (Сверка баланса → зависший claim).
+                // Такая запись отсутствует в API by design — UI рендерит «Да» в столбце
+                // «Добавлена админом», чтобы админ не искал причину «расхождения».
+                'created_by_admin' => isset( $tx['created_by_admin'] ) ? (int) $tx['created_by_admin'] : 0,
             );
         }
 

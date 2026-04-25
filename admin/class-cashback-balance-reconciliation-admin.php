@@ -37,6 +37,8 @@ class Cashback_Balance_Reconciliation_Admin {
 		add_action( 'admin_post_cashback_reconcil_manual_run', array( __CLASS__, 'handle_manual_run' ) );
 		add_action( 'cashback_overview_widgets', array( __CLASS__, 'render_overview_widget' ) );
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_assets' ) );
+		add_action( 'wp_ajax_cashback_stuck_claim_load', array( __CLASS__, 'handle_load_stuck_claim' ) );
+		add_action( 'wp_ajax_cashback_stuck_claim_create_tx', array( __CLASS__, 'handle_create_stuck_claim_tx' ) );
 	}
 
 	/**
@@ -85,6 +87,35 @@ class Cashback_Balance_Reconciliation_Admin {
 			$ver,
 			true
 		);
+
+		// Модал ручного создания транзакции из зависших approved claims —
+		// независимый от balance-adjust, нужен только на recon-page.
+		wp_enqueue_style(
+			'cashback-admin-stuck-claim-tx',
+			plugins_url( '../assets/css/admin-stuck-claim-tx.css', __FILE__ ),
+			array(),
+			$ver
+		);
+		wp_enqueue_script(
+			'cashback-admin-stuck-claim-tx',
+			plugins_url( '../assets/js/admin-stuck-claim-tx.js', __FILE__ ),
+			array(),
+			$ver,
+			true
+		);
+		wp_localize_script( 'cashback-admin-stuck-claim-tx', 'cashbackStuckClaimTx', array(
+			'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+			'nonce'   => wp_create_nonce( 'cashback_stuck_claim_nonce' ),
+			'i18n'    => array(
+				'loading'           => __( 'Загрузка данных claim…', 'cashback-plugin' ),
+				'invalidComission'  => __( 'Некорректная комиссия. Используйте число до 2 знаков после точки.', 'cashback-plugin' ),
+				'comissionPositive' => __( 'Комиссия должна быть больше нуля.', 'cashback-plugin' ),
+				'selectFundsReady'  => __( 'Выберите значение', 'cashback-plugin' ),
+				'genericError'      => __( 'Ошибка создания транзакции.', 'cashback-plugin' ),
+				'networkError'      => __( 'Ошибка сети. Повторите.', 'cashback-plugin' ),
+			),
+		) );
+
 		wp_localize_script( 'cashback-admin-balance-adjust', 'cashbackBalanceAdjust', array(
 			'ajaxUrl'          => admin_url( 'admin-ajax.php' ),
 			'nonce'            => wp_create_nonce( 'cashback_adjust_balance_nonce' ),
@@ -451,6 +482,7 @@ class Cashback_Balance_Reconciliation_Admin {
 			</div>
 		</div>
 		<?php
+		self::render_stuck_claim_modal();
 	}
 
 	/**
@@ -570,7 +602,7 @@ class Cashback_Balance_Reconciliation_Admin {
 					<th><?php esc_html_e( 'Merchant', 'cashback-plugin' ); ?></th>
 					<th style="width:110px"><?php esc_html_e( 'Cashback', 'cashback-plugin' ); ?></th>
 					<th style="width:150px"><?php esc_html_e( 'Approved', 'cashback-plugin' ); ?></th>
-					<th style="width:200px"><?php esc_html_e( 'Действие', 'cashback-plugin' ); ?></th>
+					<th style="width:220px"><?php esc_html_e( 'Действие', 'cashback-plugin' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
@@ -588,18 +620,6 @@ class Cashback_Balance_Reconciliation_Admin {
 					$merchant   = is_array( $decoded ) ? (string) ( $decoded['merchant_name'] ?? '' ) : '';
 					$amount     = is_array( $decoded ) ? (string) ( $decoded['amount'] ?? '' ) : '';
 					$approved   = is_array( $decoded ) ? (string) ( $decoded['approved_at'] ?? '' ) : '';
-
-					$add_tx_url = add_query_arg(
-						array(
-							'page'                => 'cashback-transactions',
-							'action'              => 'add',
-							'prefill_user_id'     => $uid,
-							'prefill_merchant'    => rawurlencode( $merchant ),
-							'prefill_cashback'    => $amount,
-							'prefill_from_claim'  => $claim_id,
-						),
-						admin_url( 'admin.php' )
-					);
 					?>
 					<tr>
 						<td><?php echo esc_html( $created_at ); ?></td>
@@ -609,9 +629,13 @@ class Cashback_Balance_Reconciliation_Admin {
 						<td><?php echo esc_html( $amount ); ?></td>
 						<td><?php echo esc_html( $approved ); ?></td>
 						<td>
-							<a href="<?php echo esc_url( $add_tx_url ); ?>" class="button button-secondary">
+							<button
+								type="button"
+								class="button button-secondary cashback-stuck-create-tx"
+								data-claim-id="<?php echo esc_attr( (string) $claim_id ); ?>"
+							>
 								<?php esc_html_e( 'Создать транзакцию вручную', 'cashback-plugin' ); ?>
-							</a>
+							</button>
 						</td>
 					</tr>
 				<?php endforeach; ?>
@@ -619,5 +643,470 @@ class Cashback_Balance_Reconciliation_Admin {
 			</tbody>
 		</table>
 		<?php
+	}
+
+	/**
+	 * Hidden-разметка модала «Создать транзакцию вручную». Один раз на страницу.
+	 *
+	 * Все поля кроме «Комиссия» и «Готова к выплате?» заполняются через AJAX
+	 * `cashback_stuck_claim_load` и помечены readonly. Сабмит идёт в
+	 * `cashback_stuck_claim_create_tx` — INSERT в cashback_transactions
+	 * выполняется в той же транзакции БД, что и проверки claim/click.
+	 */
+	private static function render_stuck_claim_modal(): void {
+		?>
+		<div id="cashback-stuck-tx-backdrop" class="cashback-stuck-tx-backdrop" hidden>
+			<div
+				class="cashback-stuck-tx-modal"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="cashback-stuck-tx-title"
+				tabindex="-1"
+			>
+				<h2 id="cashback-stuck-tx-title">
+					<?php esc_html_e( 'Создать транзакцию вручную', 'cashback-plugin' ); ?>
+					<span class="cashback-stuck-tx-claim-badge">
+						claim #<span data-bind="claim_id">—</span>
+					</span>
+				</h2>
+
+				<div class="cashback-stuck-tx-loading" data-role="loading">
+					<?php esc_html_e( 'Загрузка данных claim…', 'cashback-plugin' ); ?>
+				</div>
+
+				<div class="cashback-stuck-tx-body" data-role="body" hidden>
+					<dl class="cashback-stuck-tx-readonly">
+						<dt><?php esc_html_e( 'User ID', 'cashback-plugin' ); ?></dt>
+						<dd data-bind="user_id">—</dd>
+
+						<dt><?php esc_html_e( 'Click ID', 'cashback-plugin' ); ?></dt>
+						<dd data-bind="click_id" class="cashback-stuck-tx-mono">—</dd>
+
+						<dt><?php esc_html_e( 'Merchant', 'cashback-plugin' ); ?></dt>
+						<dd data-bind="merchant_name">—</dd>
+
+						<dt><?php esc_html_e( 'Order ID', 'cashback-plugin' ); ?></dt>
+						<dd data-bind="order_id">—</dd>
+
+						<dt><?php esc_html_e( 'Order value', 'cashback-plugin' ); ?></dt>
+						<dd data-bind="order_value">—</dd>
+
+						<dt><?php esc_html_e( 'Order date', 'cashback-plugin' ); ?></dt>
+						<dd data-bind="order_date">—</dd>
+
+						<dt><?php esc_html_e( 'CPA-сеть', 'cashback-plugin' ); ?></dt>
+						<dd data-bind="partner">—</dd>
+
+						<dt><?php esc_html_e( 'Click time', 'cashback-plugin' ); ?></dt>
+						<dd data-bind="click_time">—</dd>
+
+						<dt><?php esc_html_e( 'Approved', 'cashback-plugin' ); ?></dt>
+						<dd data-bind="approved_at">—</dd>
+					</dl>
+
+					<div class="cashback-stuck-tx-field">
+						<label for="cashback-stuck-tx-comission">
+							<?php esc_html_e( 'Комиссия', 'cashback-plugin' ); ?>
+						</label>
+						<input
+							type="text"
+							id="cashback-stuck-tx-comission"
+							name="comission"
+							inputmode="decimal"
+							pattern="^\d+(\.\d{1,2})?$"
+							placeholder="0.00"
+							autocomplete="off"
+							required
+						/>
+						<p class="description">
+							<?php esc_html_e( 'Положительное число, до 2 знаков после точки. Кэшбэк рассчитается автоматически.', 'cashback-plugin' ); ?>
+						</p>
+					</div>
+
+					<div class="cashback-stuck-tx-field">
+						<label for="cashback-stuck-tx-funds-ready">
+							<?php esc_html_e( 'Готова к выплате?', 'cashback-plugin' ); ?>
+						</label>
+						<select id="cashback-stuck-tx-funds-ready" name="funds_ready" required>
+							<option value=""><?php esc_html_e( 'Выберите вариант', 'cashback-plugin' ); ?></option>
+							<option value="1"><?php esc_html_e( 'Да', 'cashback-plugin' ); ?></option>
+							<option value="0"><?php esc_html_e( 'Нет', 'cashback-plugin' ); ?></option>
+						</select>
+					</div>
+				</div>
+
+				<div class="cashback-stuck-tx-message" data-role="message" hidden></div>
+
+				<div class="cashback-stuck-tx-actions">
+					<button type="button" class="button button-secondary" data-role="cancel">
+						<?php esc_html_e( 'Отмена', 'cashback-plugin' ); ?>
+					</button>
+					<button type="button" class="button button-primary" data-role="submit" disabled>
+						<?php esc_html_e( 'Создать транзакцию', 'cashback-plugin' ); ?>
+					</button>
+				</div>
+			</div>
+		</div>
+		<?php
+	}
+
+	/**
+	 * AJAX: вернуть pre-fill для модала по `claim_id`.
+	 *
+	 * Контракт:
+	 *  - nonce = `cashback_stuck_claim_nonce` (общий для load + create).
+	 *  - capability = manage_options.
+	 *  - claim должен существовать и быть в статусе `approved`.
+	 *  - tx по паре (user_id, click_id) ещё не создана.
+	 *  - cashback_click_log опционален (LEFT JOIN) — partner/click_time могут быть NULL.
+	 */
+	public static function handle_load_stuck_claim(): void {
+		if ( ! isset( $_POST['nonce'] ) || ! wp_verify_nonce(
+			sanitize_text_field( wp_unslash( (string) $_POST['nonce'] ) ),
+			'cashback_stuck_claim_nonce'
+		) ) {
+			wp_send_json_error( array( 'message' => __( 'Неверный токен безопасности.', 'cashback-plugin' ) ), 403 );
+			return;
+		}
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Недостаточно прав.', 'cashback-plugin' ) ), 403 );
+			return;
+		}
+
+		$claim_id = isset( $_POST['claim_id'] ) ? absint( $_POST['claim_id'] ) : 0;
+		if ( $claim_id <= 0 ) {
+			wp_send_json_error( array( 'message' => __( 'Некорректный claim_id.', 'cashback-plugin' ) ) );
+			return;
+		}
+
+		global $wpdb;
+
+		$claims_table = $wpdb->prefix . 'cashback_claims';
+		$click_table  = $wpdb->prefix . 'cashback_click_log';
+		$tx_table     = $wpdb->prefix . 'cashback_transactions';
+
+		$claim = $wpdb->get_row( $wpdb->prepare(
+			'SELECT claim_id, user_id, click_id, merchant_id, merchant_name,
+			        order_id, order_value, order_date, status, updated_at
+			 FROM %i
+			 WHERE claim_id = %d
+			 LIMIT 1',
+			$claims_table,
+			$claim_id
+		), ARRAY_A );
+
+		if ( ! is_array( $claim ) ) {
+			wp_send_json_error( array( 'message' => __( 'Claim не найден.', 'cashback-plugin' ) ) );
+			return;
+		}
+		if ( (string) ( $claim['status'] ?? '' ) !== 'approved' ) {
+			wp_send_json_error( array( 'message' => __( 'Claim не в статусе approved.', 'cashback-plugin' ) ) );
+			return;
+		}
+
+		$user_id  = (int) ( $claim['user_id'] ?? 0 );
+		$click_id = (string) ( $claim['click_id'] ?? '' );
+
+		$existing_tx_id = (int) $wpdb->get_var( $wpdb->prepare(
+			'SELECT id FROM %i WHERE user_id = %d AND click_id = %s LIMIT 1',
+			$tx_table,
+			$user_id,
+			$click_id
+		) );
+		if ( $existing_tx_id > 0 ) {
+			wp_send_json_error( array(
+				'message' => sprintf(
+					/* translators: %d: id транзакции. */
+					__( 'Транзакция для этого click_id уже существует (ID %d).', 'cashback-plugin' ),
+					$existing_tx_id
+				),
+			) );
+			return;
+		}
+
+		$click = $wpdb->get_row( $wpdb->prepare(
+			'SELECT cpa_network, created_at FROM %i WHERE click_id = %s LIMIT 1',
+			$click_table,
+			$click_id
+		), ARRAY_A );
+
+		$partner    = is_array( $click ) ? (string) ( $click['cpa_network'] ?? '' ) : '';
+		$click_time = is_array( $click ) ? (string) ( $click['created_at'] ?? '' ) : '';
+
+		wp_send_json_success( array(
+			'claim_id'      => (int) $claim['claim_id'],
+			'user_id'       => $user_id,
+			'click_id'      => $click_id,
+			'merchant_id'   => isset( $claim['merchant_id'] ) ? (int) $claim['merchant_id'] : 0,
+			'merchant_name' => (string) ( $claim['merchant_name'] ?? '' ),
+			'order_id'      => (string) ( $claim['order_id'] ?? '' ),
+			'order_value'   => (string) ( $claim['order_value'] ?? '' ),
+			'order_date'    => (string) ( $claim['order_date'] ?? '' ),
+			'approved_at'   => (string) ( $claim['updated_at'] ?? '' ),
+			'partner'       => $partner,
+			'click_time'    => $click_time,
+		) );
+	}
+
+	/**
+	 * AJAX: атомарно создать транзакцию из approved-claim.
+	 *
+	 * Контракт:
+	 *  - nonce = `cashback_stuck_claim_nonce`, capability = manage_options.
+	 *  - server-side дедуп `request_id` через Cashback_Idempotency
+	 *    (scope = `admin_stuck_claim_tx`).
+	 *  - Валидация: comission strict regex `^\d+(\.\d{1,2})?$` + > 0;
+	 *    funds_ready ∈ {'0','1'} (строгая строковая проверка).
+	 *  - INSERT внутри START TRANSACTION + FOR UPDATE на claim/tx;
+	 *    UNIQUE idempotency_key = `manual_claim_<claim_id>` — последний рубеж от дублей.
+	 *  - api_verified = 1, order_status = 'completed', currency = 'RUB',
+	 *    reference_id/cashback/applied_cashback_rate проставит триггер
+	 *    calculate_cashback_before_insert.
+	 *  - Audit-log: `manual_tx_from_stuck_claim` (admin_id, claim_id, tx_id, request_id).
+	 */
+	public static function handle_create_stuck_claim_tx(): void {
+		if ( ! isset( $_POST['nonce'] ) || ! wp_verify_nonce(
+			sanitize_text_field( wp_unslash( (string) $_POST['nonce'] ) ),
+			'cashback_stuck_claim_nonce'
+		) ) {
+			wp_send_json_error( array( 'message' => __( 'Неверный токен безопасности.', 'cashback-plugin' ) ), 403 );
+			return;
+		}
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Недостаточно прав.', 'cashback-plugin' ) ), 403 );
+			return;
+		}
+
+		$idem_scope   = 'admin_stuck_claim_tx';
+		$admin_id     = (int) get_current_user_id();
+		$idem_request = '';
+		if ( isset( $_POST['request_id'] ) && is_string( $_POST['request_id'] ) ) {
+			$idem_request = Cashback_Idempotency::normalize_request_id(
+				sanitize_text_field( wp_unslash( $_POST['request_id'] ) )
+			);
+		}
+		if ( $idem_request !== '' ) {
+			$stored = Cashback_Idempotency::get_stored_result( $idem_scope, $admin_id, $idem_request );
+			if ( $stored !== null ) {
+				wp_send_json_success( $stored );
+				return;
+			}
+			if ( ! Cashback_Idempotency::claim( $idem_scope, $admin_id, $idem_request ) ) {
+				wp_send_json_error( array(
+					'code'    => 'in_progress',
+					'message' => __( 'Запрос уже обрабатывается. Повторите через несколько секунд.', 'cashback-plugin' ),
+				), 409 );
+				return;
+			}
+		}
+
+		$claim_id = isset( $_POST['claim_id'] ) ? absint( $_POST['claim_id'] ) : 0;
+		if ( $claim_id <= 0 ) {
+			if ( $idem_request !== '' ) {
+				Cashback_Idempotency::forget( $idem_scope, $admin_id, $idem_request );
+			}
+			wp_send_json_error( array( 'message' => __( 'Некорректный claim_id.', 'cashback-plugin' ) ) );
+			return;
+		}
+
+		// funds_ready — строгая строковая проверка ДО любых cast'ов.
+		$raw_funds_ready = isset( $_POST['funds_ready'] )
+			? sanitize_text_field( wp_unslash( (string) $_POST['funds_ready'] ) )
+			: '';
+		if ( $raw_funds_ready !== '0' && $raw_funds_ready !== '1' ) {
+			if ( $idem_request !== '' ) {
+				Cashback_Idempotency::forget( $idem_scope, $admin_id, $idem_request );
+			}
+			wp_send_json_error( array( 'message' => __( 'Выберите значение', 'cashback-plugin' ) ) );
+			return;
+		}
+		$funds_ready = (int) $raw_funds_ready;
+
+		// comission — строгая regex + положительное.
+		$raw_comission = isset( $_POST['comission'] )
+			? trim( sanitize_text_field( wp_unslash( (string) $_POST['comission'] ) ) )
+			: '';
+		if ( ! (bool) preg_match( '/^\d+(\.\d{1,2})?$/', $raw_comission ) ) {
+			if ( $idem_request !== '' ) {
+				Cashback_Idempotency::forget( $idem_scope, $admin_id, $idem_request );
+			}
+			wp_send_json_error( array( 'message' => __( 'Некорректная комиссия. Используйте число до 2 знаков после точки.', 'cashback-plugin' ) ) );
+			return;
+		}
+		// Сравнение строк через bccomp избегает float-погрешностей в граничных случаях
+		// типа '0.00' / '0.001'. Если bcmath нет — fallback на (float).
+		$comission_positive = function_exists( 'bccomp' )
+			? ( bccomp( $raw_comission, '0', 2 ) === 1 )
+			: ( (float) $raw_comission > 0.0 );
+		if ( ! $comission_positive ) {
+			if ( $idem_request !== '' ) {
+				Cashback_Idempotency::forget( $idem_scope, $admin_id, $idem_request );
+			}
+			wp_send_json_error( array( 'message' => __( 'Комиссия должна быть больше нуля.', 'cashback-plugin' ) ) );
+			return;
+		}
+
+		global $wpdb;
+
+		$claims_table = $wpdb->prefix . 'cashback_claims';
+		$click_table  = $wpdb->prefix . 'cashback_click_log';
+		$tx_table     = $wpdb->prefix . 'cashback_transactions';
+
+		$wpdb->query( 'START TRANSACTION' );
+
+		try {
+			$claim = $wpdb->get_row( $wpdb->prepare(
+				'SELECT claim_id, user_id, click_id, merchant_id, merchant_name,
+				        order_id, order_value, order_date, status
+				 FROM %i
+				 WHERE claim_id = %d
+				 FOR UPDATE',
+				$claims_table,
+				$claim_id
+			), ARRAY_A );
+
+			if ( ! is_array( $claim ) ) {
+				throw new \RuntimeException( __( 'Claim не найден.', 'cashback-plugin' ) );
+			}
+			if ( (string) ( $claim['status'] ?? '' ) !== 'approved' ) {
+				throw new \RuntimeException( __( 'Claim не в статусе approved.', 'cashback-plugin' ) );
+			}
+
+			$user_id  = (int) $claim['user_id'];
+			$click_id = (string) $claim['click_id'];
+
+			$existing_tx_id = (int) $wpdb->get_var( $wpdb->prepare(
+				'SELECT id FROM %i WHERE user_id = %d AND click_id = %s LIMIT 1 FOR UPDATE',
+				$tx_table,
+				$user_id,
+				$click_id
+			) );
+			if ( $existing_tx_id > 0 ) {
+				throw new \RuntimeException( sprintf(
+					/* translators: %d: id транзакции. */
+					__( 'Транзакция для этого click_id уже существует (ID %d).', 'cashback-plugin' ),
+					$existing_tx_id
+				) );
+			}
+
+			$click = $wpdb->get_row( $wpdb->prepare(
+				'SELECT cpa_network, created_at FROM %i WHERE click_id = %s LIMIT 1',
+				$click_table,
+				$click_id
+			), ARRAY_A );
+
+			$partner    = is_array( $click ) ? (string) ( $click['cpa_network'] ?? '' ) : '';
+			$click_time = is_array( $click ) ? (string) ( $click['created_at'] ?? '' ) : '';
+
+			$idempotency_key = 'manual_claim_' . $claim_id;
+
+			// Опциональные NULL-поля убираем из массива целиком — MariaDB подставит
+			// DEFAULT NULL по схеме (mariadb.php:241-282), $wpdb->insert не умеет NULL.
+			$insert_data = array(
+				'user_id'            => $user_id,
+				'order_number'       => (string) ( $claim['order_id'] ?? '' ),
+				'offer_name'         => (string) ( $claim['merchant_name'] ?? '' ),
+				'order_status'       => 'completed',
+				'partner'            => $partner,
+				'sum_order'          => (string) ( $claim['order_value'] ?? '0.00' ),
+				'comission'          => $raw_comission,
+				'currency'           => 'RUB',
+				'api_verified'       => 1,
+				'action_date'        => (string) ( $claim['order_date'] ?? '' ),
+				'click_id'           => $click_id,
+				'idempotency_key'    => $idempotency_key,
+				'original_cpa_subid' => (string) $user_id,
+				'funds_ready'        => $funds_ready,
+				'created_by_admin'   => 1,
+			);
+			if ( isset( $claim['merchant_id'] ) && $claim['merchant_id'] !== null ) {
+				$insert_data['offer_id'] = (int) $claim['merchant_id'];
+			}
+			if ( $click_time !== '' ) {
+				$insert_data['click_time'] = $click_time;
+			}
+
+			$insert_format = array();
+			foreach ( $insert_data as $col => $val ) {
+				if ( in_array( $col, array( 'user_id', 'offer_id', 'api_verified', 'funds_ready', 'created_by_admin' ), true ) ) {
+					$insert_format[] = '%d';
+				} else {
+					$insert_format[] = '%s';
+				}
+			}
+
+			$inserted = $wpdb->insert( $tx_table, $insert_data, $insert_format );
+
+			if ( $inserted === false ) {
+				$db_error = (string) $wpdb->last_error;
+				if ( $db_error !== '' && stripos( $db_error, 'Duplicate' ) !== false ) {
+					throw new \RuntimeException( __( 'Транзакция уже создана (idempotency_key).', 'cashback-plugin' ) );
+				}
+				throw new \RuntimeException( 'INSERT failed: ' . $db_error );
+			}
+
+			$tx_id = (int) $wpdb->insert_id;
+
+			$inserted_row = $wpdb->get_row( $wpdb->prepare(
+				'SELECT reference_id, cashback, applied_cashback_rate
+				 FROM %i WHERE id = %d',
+				$tx_table,
+				$tx_id
+			), ARRAY_A );
+
+			$reference_id          = is_array( $inserted_row ) ? (string) ( $inserted_row['reference_id'] ?? '' ) : '';
+			$cashback              = is_array( $inserted_row ) ? (string) ( $inserted_row['cashback'] ?? '' ) : '';
+			$applied_cashback_rate = is_array( $inserted_row ) ? (string) ( $inserted_row['applied_cashback_rate'] ?? '' ) : '';
+
+			if ( class_exists( 'Cashback_Encryption' ) ) {
+				Cashback_Encryption::write_audit_log(
+					'manual_tx_from_stuck_claim',
+					$admin_id,
+					'transaction',
+					$tx_id,
+					array(
+						'claim_id'              => $claim_id,
+						'user_id'               => $user_id,
+						'click_id'              => $click_id,
+						'comission'             => $raw_comission,
+						'funds_ready'           => $funds_ready,
+						'cashback'              => $cashback,
+						'reference_id'          => $reference_id,
+						'applied_cashback_rate' => $applied_cashback_rate,
+						'idempotency_key'       => $idempotency_key,
+						'request_id'            => $idem_request,
+					)
+				);
+			}
+
+			$wpdb->query( 'COMMIT' );
+
+			$payload = array(
+				'tx_id'        => $tx_id,
+				'reference_id' => $reference_id,
+				'cashback'     => $cashback,
+				'funds_ready'  => $funds_ready,
+				'message'      => sprintf(
+					/* translators: 1: reference_id, 2: cashback. */
+					__( 'Транзакция %1$s создана. Кэшбэк: %2$s.', 'cashback-plugin' ),
+					$reference_id !== '' ? $reference_id : ( '#' . $tx_id ),
+					$cashback
+				),
+			);
+
+			if ( $idem_request !== '' ) {
+				Cashback_Idempotency::store_result( $idem_scope, $admin_id, $idem_request, $payload );
+			}
+
+			wp_send_json_success( $payload );
+		} catch ( \Throwable $e ) {
+			$wpdb->query( 'ROLLBACK' );
+			if ( $idem_request !== '' ) {
+				Cashback_Idempotency::forget( $idem_scope, $admin_id, $idem_request );
+			}
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- diagnostic logging.
+			error_log( '[cashback_stuck_claim_create_tx] ' . $e->getMessage() );
+			wp_send_json_error( array( 'message' => $e->getMessage() ) );
+		}
 	}
 }
