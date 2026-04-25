@@ -139,6 +139,17 @@
             valid = false;
         }
 
+        // Юр. чекбокс согласия на обработку ПД (152-ФЗ).
+        // UX-подсветка через общий хелпер CashbackConsentValidate; серверная
+        // валидация в handle_submit остаётся как fallback.
+        var consentEl = document.getElementById('cb-contact-legal-consent');
+        if (consentEl && window.CashbackConsentValidate) {
+            var consentMsg = config.consentRequiredMessage || 'Подтвердите согласие на обработку персональных данных.';
+            if (!window.CashbackConsentValidate.validateRequired([consentEl], consentMsg)) {
+                return false;
+            }
+        }
+
         // CAPTCHA
         if (config.captchaRequired && !captchaToken) {
             showMessage('Пожалуйста, пройдите проверку (капча).', 'error');

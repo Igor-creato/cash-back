@@ -128,6 +128,38 @@ class Cashback_Legal_Bootstrap {
     }
 
     /**
+     * Регистрация общих ассетов UX-валидации чекбоксов согласий.
+     *
+     * Идемпотентно: повторный вызов — noop. Other places call this then
+     * `wp_enqueue_style/script` с тем же handle — это даёт нулевой overhead
+     * на страницах без consent-чекбоксов.
+     *
+     * Handle: `cashback-consent-validate`.
+     */
+    public static function register_common_assets(): void {
+        if (!function_exists('wp_register_style') || !function_exists('wp_register_script')) {
+            return;
+        }
+        // Уже зарегистрирован? Выходим.
+        if (function_exists('wp_style_is') && wp_style_is('cashback-consent-validate', 'registered')) {
+            return;
+        }
+
+        $plugin_root_file = dirname(__DIR__) . '/cashback-plugin.php';
+        $css_path         = dirname(__DIR__) . '/assets/css/cashback-consent-validate.css';
+        $js_path          = dirname(__DIR__) . '/assets/js/cashback-consent-validate.js';
+
+        $css_url = plugins_url('assets/css/cashback-consent-validate.css', $plugin_root_file);
+        $js_url  = plugins_url('assets/js/cashback-consent-validate.js', $plugin_root_file);
+
+        $css_ver = file_exists($css_path) ? (string) filemtime($css_path) : '1.7.0';
+        $js_ver  = file_exists($js_path) ? (string) filemtime($js_path) : '1.7.0';
+
+        wp_register_style('cashback-consent-validate', $css_url, array(), $css_ver);
+        wp_register_script('cashback-consent-validate', $js_url, array(), $js_ver, true);
+    }
+
+    /**
      * Подкладывает контент о плагине в WP-нативную «Политика конфиденциальности».
      * Вызывается на admin_init.
      */

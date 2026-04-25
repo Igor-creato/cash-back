@@ -90,6 +90,22 @@ jQuery(document).ready(function ($) {
     // обращении пользователя — Cashback_Legal_Payout_Consent::render_checkbox).
     var $legalConsent = $('#withdrawal-form input[name="cashback_legal_payment_pd_consent"]');
     if ($legalConsent.length) {
+      // UX-валидация: при отсутствии отметки — красная рамка + сообщение
+      // под чекбоксом + focus, без отправки на сервер. Серверная валидация
+      // в Cashback_Legal_Payout_Consent::enforce_or_error остаётся как fallback.
+      if (!$legalConsent.is(':checked') && window.CashbackConsentValidate) {
+        var legalMsg = (typeof cashback_ajax !== 'undefined' && cashback_ajax.legal_payment_pd_required_message)
+          ? cashback_ajax.legal_payment_pd_required_message
+          : 'Подтвердите согласие на обработку платёжных данных (161-ФЗ).';
+        window.CashbackConsentValidate.validateRequired([$legalConsent[0]], legalMsg);
+        submitBtn.prop('disabled', false);
+        withdrawalAmount.prop('disabled', false);
+        submitBtn.val('Вывести');
+        return false;
+      }
+      if (window.CashbackConsentValidate) {
+        window.CashbackConsentValidate.bindAutoClear($legalConsent[0]);
+      }
       data.cashback_legal_payment_pd_consent = $legalConsent.is(':checked') ? '1' : '0';
       data.cashback_legal_payment_pd_request_id = $('#withdrawal-form input[name="cashback_legal_payment_pd_request_id"]').val() || '';
     }
@@ -794,6 +810,20 @@ jQuery(document).ready(function ($) {
     };
     var $settingsLegal = $('#payout-settings-form input[name="cashback_legal_payment_pd_consent"]');
     if ($settingsLegal.length) {
+      // UX-валидация: при отсутствии отметки — красная рамка + сообщение
+      // под чекбоксом + focus, без отправки на сервер. Серверная валидация
+      // в Cashback_Legal_Payout_Consent::enforce_or_error остаётся как fallback.
+      if (!$settingsLegal.is(':checked') && window.CashbackConsentValidate) {
+        var settingsLegalMsg = (typeof cashback_ajax !== 'undefined' && cashback_ajax.legal_payment_pd_required_message)
+          ? cashback_ajax.legal_payment_pd_required_message
+          : 'Подтвердите согласие на обработку платёжных данных (161-ФЗ).';
+        window.CashbackConsentValidate.validateRequired([$settingsLegal[0]], settingsLegalMsg);
+        $('#save_payout_settings_btn').prop('disabled', false).text('Сохранить настройки');
+        return;
+      }
+      if (window.CashbackConsentValidate) {
+        window.CashbackConsentValidate.bindAutoClear($settingsLegal[0]);
+      }
       settingsData.cashback_legal_payment_pd_consent = $settingsLegal.is(':checked') ? '1' : '0';
       settingsData.cashback_legal_payment_pd_request_id = $('#payout-settings-form input[name="cashback_legal_payment_pd_request_id"]').val() || '';
     }

@@ -1285,12 +1285,20 @@ class CashbackWithdrawal {
                 '1.5.0'
             );
 
+            // Общий хелпер UX-валидации чекбоксов согласий (рамка + сообщение
+            // под чекбоксом payment_pd при попытке submit без отметки).
+            if (class_exists('Cashback_Legal_Bootstrap')) {
+                Cashback_Legal_Bootstrap::register_common_assets();
+                wp_enqueue_style('cashback-consent-validate');
+                wp_enqueue_script('cashback-consent-validate');
+            }
+
             // Подключаем скрипты для обработки формы вывода
             wp_enqueue_script(
                 'cashback-withdrawal-js',
                 plugins_url('assets/js/cashback-withdrawal.js', __FILE__),
-                array( 'jquery' ),
-                '1.6.0',
+                array( 'jquery', 'cashback-consent-validate' ),
+                '1.7.0',
                 true
             );
 
@@ -1299,6 +1307,7 @@ class CashbackWithdrawal {
                 'ajax_url'                => admin_url('admin-ajax.php'),
                 'nonce'                   => wp_create_nonce('cashback_withdrawal_nonce'),
                 'withdrawal_submit_nonce' => wp_create_nonce('cashback_withdrawal_submit_nonce'),
+                'legal_payment_pd_required_message' => esc_html__('Подтвердите согласие на обработку платёжных данных (161-ФЗ).', 'cashback-plugin'),
             ));
         }
     }

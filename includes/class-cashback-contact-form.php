@@ -74,7 +74,7 @@ class Cashback_Contact_Form {
     public function enqueue_assets(): void {
         // Регистрируем, но не подключаем — подключим в render_shortcode
         $plugin_url = plugin_dir_url(__DIR__);
-        $version    = '2.1.0';
+        $version    = '2.2.0';
 
         wp_register_style(
             'cashback-contact-form',
@@ -83,10 +83,15 @@ class Cashback_Contact_Form {
             $version
         );
 
+        // Общий хелпер UX-валидации чекбоксов согласий.
+        if (class_exists('Cashback_Legal_Bootstrap')) {
+            Cashback_Legal_Bootstrap::register_common_assets();
+        }
+
         wp_register_script(
             'cashback-contact-form',
             $plugin_url . 'assets/js/cashback-contact-form.js',
-            array( 'jquery' ),
+            array( 'jquery', 'cashback-consent-validate' ),
             $version,
             true
         );
@@ -102,6 +107,9 @@ class Cashback_Contact_Form {
     public function render_shortcode( $atts = array() ): string {
         // Подключаем стили и скрипты
         wp_enqueue_style('cashback-contact-form');
+        if (wp_style_is('cashback-consent-validate', 'registered')) {
+            wp_enqueue_style('cashback-consent-validate');
+        }
         wp_enqueue_script('cashback-contact-form');
 
         // Подключаем bot-protection если ещё не подключён
@@ -117,11 +125,12 @@ class Cashback_Contact_Form {
         $captcha_key  = $show_captcha ? Cashback_Captcha::get_client_key() : '';
 
         wp_localize_script('cashback-contact-form', 'cbContactForm', array(
-            'ajaxUrl'          => admin_url('admin-ajax.php'),
-            'nonce'            => $nonce,
-            'captchaRequired'  => $show_captcha,
-            'captchaClientKey' => $captcha_key,
-            'captchaJsUrl'     => 'https://smartcaptcha.yandexcloud.net/captcha.js',
+            'ajaxUrl'                => admin_url('admin-ajax.php'),
+            'nonce'                  => $nonce,
+            'captchaRequired'        => $show_captcha,
+            'captchaClientKey'       => $captcha_key,
+            'captchaJsUrl'           => 'https://smartcaptcha.yandexcloud.net/captcha.js',
+            'consentRequiredMessage' => esc_html__('Подтвердите согласие на обработку персональных данных.', 'cashback-plugin'),
         ));
 
         ob_start();
