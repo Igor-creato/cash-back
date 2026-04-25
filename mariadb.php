@@ -2827,13 +2827,15 @@ class Mariadb_Plugin {
             return;
         }
 
-        // %i для имени таблицы; COMMENT остаётся inline-литералом в SQL (а не
-        // через %s-параметр — последнее, по project memory, хрупко для non-ASCII
-        // текста в некоторых wpdb/PDO стэках).
-        $wpdb->query($wpdb->prepare(
-            "ALTER TABLE %i ADD COLUMN `created_by_admin` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = транзакция создана админом вручную (Сверка баланса → зависший claim), 0 = пришла по API/постбэку CPA' AFTER `reference_id`",
-            $table
-        ));
+        // ВАЖНО: raw $wpdb->query без prepare. По project memory
+        // (feedback_alter_table_no_prepare) и подтверждено в проде 2026-04-25:
+        // $wpdb->prepare("ALTER TABLE %i ... COMMENT 'русский текст' ...")
+        // ловится WP-обёрткой и падает с «query contains invalid data».
+        // $table = $wpdb->prefix . 'cashback_transactions' — без user-input,
+        // прямая интерполяция в backticks безопасна.
+        $sql = "ALTER TABLE `{$table}` ADD COLUMN `created_by_admin` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = транзакция создана админом вручную (Сверка баланса → зависший claim), 0 = пришла по API/постбэку CPA' AFTER `reference_id`";
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery -- DDL с non-ASCII COMMENT, см. комментарий выше.
+        $wpdb->query($sql);
 
         if ($wpdb->last_error) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
