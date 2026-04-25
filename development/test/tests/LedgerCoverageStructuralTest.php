@@ -95,11 +95,11 @@ final class LedgerCoverageStructuralTest extends TestCase
     {
         $src = $this->source('antifraud/class-fraud-admin.php');
         // Значение banned_at фиксируется в переменную один раз — иначе UPDATE и
-        // strtotime() в ledger-write могут дать разные timestamp'ы (разный idempotency_key).
+        // ledger-write могут дать разные timestamp'ы (разный idempotency_key).
         $this->assertMatchesRegularExpression(
-            '/\$banned_at_mysql\s*=\s*current_time\(\s*[\'"]mysql[\'"]\s*\)\s*;/',
+            '/\$banned_at_mysql\s*=\s*Cashback_Time::now_mysql\(\s*\)\s*;/',
             $src,
-            'fraud-admin должен запомнить banned_at один раз, не вызывать current_time() дважды'
+            'fraud-admin должен запомнить banned_at один раз, не вызывать Cashback_Time::now_mysql() дважды'
         );
     }
 
@@ -195,7 +195,7 @@ final class LedgerCoverageStructuralTest extends TestCase
             $src
         );
         $this->assertStringContainsString(
-            'DATE_SUB(NOW(), INTERVAL 14 DAY)',
+            'DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)',
             $src,
             '14-дневный порог для stuck approved claims'
         );

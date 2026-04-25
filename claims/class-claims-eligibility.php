@@ -116,8 +116,8 @@ class Cashback_Claims_Eligibility {
     public static function get_eligible_clicks( int $user_id, int $page = 1, int $per_page = 20 ): array {
         global $wpdb;
 
-        $cutoff_min = gmdate('Y-m-d H:i:s', strtotime('-' . self::MAX_DAYS_AFTER_CLICK . ' days'));
-        $cutoff_max = gmdate('Y-m-d H:i:s', strtotime('-' . self::MIN_HOURS_AFTER_CLICK . ' hours'));
+        $cutoff_min = Cashback_Time::offset_mysql('-' . self::MAX_DAYS_AFTER_CLICK . ' days');
+        $cutoff_max = Cashback_Time::offset_mysql('-' . self::MIN_HOURS_AFTER_CLICK . ' hours');
 
         $offset = ( $page - 1 ) * $per_page;
 
@@ -176,8 +176,8 @@ class Cashback_Claims_Eligibility {
 
         $offset = ( $page - 1 ) * $per_page;
 
-        $cutoff_min = gmdate('Y-m-d H:i:s', strtotime('-' . self::MAX_DAYS_AFTER_CLICK . ' days'));
-        $cutoff_max = gmdate('Y-m-d H:i:s', strtotime('-' . self::MIN_HOURS_AFTER_CLICK . ' hours'));
+        $cutoff_min = Cashback_Time::offset_mysql('-' . self::MAX_DAYS_AFTER_CLICK . ' days');
+        $cutoff_max = Cashback_Time::offset_mysql('-' . self::MIN_HOURS_AFTER_CLICK . ' hours');
 
         $where_extra  = '';
         $prepare_args = array( $user_id );

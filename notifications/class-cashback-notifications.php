@@ -919,7 +919,7 @@ ID заявки: %4$d
 
         // Очистка старых записей (старше 7 дней)
         $wpdb->query($wpdb->prepare(
-            'DELETE FROM %i WHERE processed = 1 AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY) LIMIT 500',
+            'DELETE FROM %i WHERE processed = 1 AND created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 7 DAY) LIMIT 500',
             $queue_table
         ));
     }

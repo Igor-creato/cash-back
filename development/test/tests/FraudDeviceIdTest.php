@@ -46,7 +46,7 @@ final class FraudDeviceIdWpdbStub
         if (preg_match('/^\s*(START TRANSACTION|COMMIT|ROLLBACK)/i', $sql)) {
             return true;
         }
-        if (preg_match('/^\s*DELETE FROM\s+\'?wp_cashback_fraud_device_ids\'?\s+WHERE last_seen\s*<\s*DATE_SUB\(NOW\(\),\s*INTERVAL\s+(\d+)\s+DAY\)/i', $sql, $m)) {
+        if (preg_match('/^\s*DELETE FROM\s+\'?wp_cashback_fraud_device_ids\'?\s+WHERE last_seen\s*<\s*DATE_SUB\(UTC_TIMESTAMP\(\),\s*INTERVAL\s+(\d+)\s+DAY\)/i', $sql, $m)) {
             $cutoff = time() - ((int) $m[1]) * 86400;
             $deleted = 0;
             foreach ($this->rows as $id => $row) {

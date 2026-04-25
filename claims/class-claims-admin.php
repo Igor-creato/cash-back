@@ -306,7 +306,7 @@ class Cashback_Claims_Admin {
                                         <span class="dashicons dashicons-warning" style="color: #d63638;" title="<?php echo esc_attr($reasons_text); ?>"></span>
                                     <?php endif; ?>
                                 </td>
-                                <td><?php echo esc_html(gmdate('d.m.Y H:i', strtotime($claim['created_at']))); ?></td>
+                                <td><?php echo esc_html(Cashback_Time::display((string) $claim['created_at'], 'd.m.Y H:i')); ?></td>
                                 <td>
                                     <button class="button claims-view-btn" data-claim-id="<?php echo esc_attr($claim['claim_id']); ?>">
                                         <?php esc_html_e('Просмотр', 'cashback-plugin'); ?>
@@ -540,7 +540,7 @@ class Cashback_Claims_Admin {
                     <tr><th><?php esc_html_e('Мерчант', 'cashback-plugin'); ?></th><td><?php echo esc_html($claim['merchant_name'] ?? '—'); ?> (ID: <?php echo esc_html($claim['merchant_id'] ?? '—'); ?>)</td></tr>
                     <tr><th><?php esc_html_e('Номер заказа', 'cashback-plugin'); ?></th><td><?php echo esc_html($claim['order_id']); ?></td></tr>
                     <tr><th><?php esc_html_e('Сумма заказа', 'cashback-plugin'); ?></th><td><?php echo esc_html(number_format_i18n((float) $claim['order_value'], 2)); ?> ₽</td></tr>
-                    <tr><th><?php esc_html_e('Дата заказа', 'cashback-plugin'); ?></th><td><?php echo esc_html(gmdate('d.m.Y', strtotime($claim['order_date']))); ?></td></tr>
+                    <tr><th><?php esc_html_e('Дата заказа', 'cashback-plugin'); ?></th><td><?php echo esc_html(Cashback_Time::display((string) $claim['order_date'], 'd.m.Y')); ?></td></tr>
                     <tr><th><?php esc_html_e('Вероятность', 'cashback-plugin'); ?></th><td><?php echo esc_html(number_format_i18n((float) $claim['probability_score'], 1)); ?>%</td></tr>
                     <tr><th><?php esc_html_e('Статус', 'cashback-plugin'); ?></th><td><span class="claim-status claim-status--<?php echo esc_attr($claim['status']); ?>"><?php echo esc_html($this->get_status_label($claim['status'])); ?></span></td></tr>
                     <?php
@@ -595,7 +595,7 @@ class Cashback_Claims_Admin {
                     <tr><th><?php esc_html_e('Click ID', 'cashback-plugin'); ?></th><td><code><?php echo esc_html($claim['click_id'] ?? '—'); ?></code></td></tr>
                     <tr><th><?php esc_html_e('IP', 'cashback-plugin'); ?></th><td><?php echo esc_html($claim['ip_address']); ?></td></tr>
                     <tr><th><?php esc_html_e('User-Agent', 'cashback-plugin'); ?></th><td><small><?php echo esc_html($claim['user_agent'] ?? '—'); ?></small></td></tr>
-                    <tr><th><?php esc_html_e('Создана', 'cashback-plugin'); ?></th><td><?php echo esc_html(gmdate('d.m.Y H:i:s', strtotime($claim['created_at']))); ?></td></tr>
+                    <tr><th><?php esc_html_e('Создана', 'cashback-plugin'); ?></th><td><?php echo esc_html(Cashback_Time::display((string) $claim['created_at'], 'd.m.Y H:i:s')); ?></td></tr>
                 </table>
 
                 <?php if (!empty($claim['comment'])) : ?>
@@ -628,7 +628,7 @@ class Cashback_Claims_Admin {
                         <tbody>
                             <?php foreach ($claim['events'] as $event) : ?>
                                 <tr>
-                                    <td><?php echo esc_html(gmdate('d.m.Y H:i', strtotime($event['created_at']))); ?></td>
+                                    <td><?php echo esc_html(Cashback_Time::display((string) $event['created_at'], 'd.m.Y H:i')); ?></td>
                                     <td><?php echo esc_html($event['status']); ?></td>
                                     <td><?php echo esc_html($event['actor_type'] . ( $event['actor_name'] ? ': ' . $event['actor_name'] : '' )); ?></td>
                                     <td><?php echo esc_html($event['note'] ?? ''); ?></td>

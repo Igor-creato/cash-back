@@ -101,7 +101,7 @@ class Cashback_Balance_Reconciliation {
             update_option( self::CURSOR_OPTION, 0, false );
             $stale_claims = self::check_stale_approved_claims();
             $summary      = array(
-                'finished_at'       => current_time( 'mysql' ),
+                'finished_at'       => Cashback_Time::now_mysql(),
                 'total_mismatches'  => (int) get_option( '_cashback_reconcil_run_mismatches', 0 ),
                 'total_scanned'     => (int) get_option( '_cashback_reconcil_run_scanned', 0 ),
                 'stale_approved_claims' => $stale_claims,
@@ -201,7 +201,7 @@ class Cashback_Balance_Reconciliation {
              FROM %i c
              LEFT JOIN %i t ON t.user_id = c.user_id AND t.click_id = c.click_id
              WHERE c.status = %s
-               AND c.updated_at < DATE_SUB(NOW(), INTERVAL 14 DAY)
+               AND c.updated_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)
                AND t.id IS NULL
              LIMIT 500',
             $claims_table,

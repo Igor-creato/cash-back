@@ -245,6 +245,11 @@ class CashbackPlugin {
             );
         }
 
+        // Подключаем helper времени (ADR utc-everywhere) — используется в миграциях
+        // при активации (Cashback_Fraud_Admin::migrate_dismiss_legacy_cgnat_alerts и др.).
+        // Должен быть доступен ДО mariadb.php / fraud-db / прочих require_file ниже.
+        $this->require_file('includes/class-cashback-time.php');
+
         // Подключаем утилиту шифрования (используется в миграции при активации)
         $this->require_file('includes/class-cashback-encryption.php');
 
@@ -521,6 +526,11 @@ class CashbackPlugin {
         // денежных сумм. Убирает (float)-cast'ы, `%f` в $wpdb->prepare и ad-hoc BCMath
         // на money-путях (payouts, withdrawal, affiliate, ledger).
         $this->require_file('includes/class-cashback-money.php');
+
+        // Time helper (ADR utc-everywhere) — единая точка работы со временем.
+        // Все timestamp'ы плагина пишутся/сравниваются в UTC, отображение —
+        // через wp_date() в зоне сайта. Замена смешивания current_time('mysql') и gmdate(...).
+        $this->require_file('includes/class-cashback-time.php');
 
         // PHP-фолбэки для логики MySQL-триггеров
         $this->require_file('includes/class-cashback-trigger-fallbacks.php');

@@ -1048,7 +1048,7 @@ class Cashback_Fraud_Admin {
             array(
                 'status'      => $new_status,
                 'reviewed_by' => get_current_user_id(),
-                'reviewed_at' => current_time('mysql'),
+                'reviewed_at' => Cashback_Time::now_mysql(),
                 'review_note' => $review_note,
             ),
             array( 'id' => $alert_id ),
@@ -1303,7 +1303,7 @@ class Cashback_Fraud_Admin {
 
         wp_send_json_success(array(
 			'message'  => 'Проверка завершена',
-			'last_run' => current_time('mysql'),
+			'last_run' => Cashback_Time::now_mysql(),
 		));
     }
 
@@ -1356,7 +1356,7 @@ class Cashback_Fraud_Admin {
                 throw new \Exception('Пользователь уже забанен');
             }
 
-            $banned_at_mysql = current_time('mysql');
+            $banned_at_mysql = Cashback_Time::now_mysql();
             $profile_updated = $wpdb->update(
                 $profile_table,
                 array(
@@ -1381,7 +1381,7 @@ class Cashback_Fraud_Admin {
             // available+pending → frozen_*_ban, фиксируем заморозку в cashback_balance_ledger.
             // Идемпотентно через UNIQUE idempotency_key = ban_freeze_{user_id}_{banned_at_unix}.
             if (class_exists('Cashback_Ban_Ledger')) {
-                $banned_at_unix = (int) strtotime($banned_at_mysql);
+                $banned_at_unix = Cashback_Time::parse((string) $banned_at_mysql);
                 if ($banned_at_unix > 0) {
                     Cashback_Ban_Ledger::write_freeze_entry($user_id, $banned_at_unix);
                 }
@@ -1402,7 +1402,7 @@ class Cashback_Fraud_Admin {
                     array(
                         'status'      => 'declined',
                         'fail_reason' => '(Аккаунт забанен)',
-                        'updated_at'  => current_time('mysql'),
+                        'updated_at'  => Cashback_Time::now_mysql(),
                     ),
                     array( 'id' => $request->id ),
                     array( '%s', '%s', '%s' ),
@@ -1436,7 +1436,7 @@ class Cashback_Fraud_Admin {
                      review_note = %s
                  WHERE user_id = %d AND status IN ('open', 'reviewing')",
                 get_current_user_id(),
-                current_time('mysql'),
+                Cashback_Time::now_mysql(),
                 'Автоматически подтверждён при бане',
                 $user_id
             ));
@@ -1698,7 +1698,7 @@ class Cashback_Fraud_Admin {
         if (!class_exists('Cashback_Fraud_Ip_Intelligence')) {
             // IP-Intelligence модуль отсутствует — миграция бессмысленна, но флаг ставим,
             // чтобы не пытаться снова на каждом activation.
-            update_option('cashback_fraud_legacy_cgnat_dismissed_at', current_time('mysql'), false);
+            update_option('cashback_fraud_legacy_cgnat_dismissed_at', Cashback_Time::now_mysql(), false);
             return 0;
         }
 
@@ -1709,7 +1709,7 @@ class Cashback_Fraud_Admin {
             'SELECT id, details FROM %i
              WHERE alert_type = %s
              AND status = %s
-             AND created_at >= DATE_SUB(NOW(), INTERVAL 90 DAY)',
+             AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 90 DAY)',
             $table,
             'multi_account_ip',
             'open'
@@ -1738,7 +1738,7 @@ class Cashback_Fraud_Admin {
                 array(
                     'status'      => 'dismissed',
                     'reviewed_by' => 0,
-                    'reviewed_at' => current_time('mysql'),
+                    'reviewed_at' => Cashback_Time::now_mysql(),
                     'review_note' => 'auto_dismissed_cgnat_migration',
                 ),
                 array( 'id' => (int) $row->id ),
@@ -1748,7 +1748,7 @@ class Cashback_Fraud_Admin {
             ++$dismissed;
         }
 
-        update_option('cashback_fraud_legacy_cgnat_dismissed_at', current_time('mysql'), false);
+        update_option('cashback_fraud_legacy_cgnat_dismissed_at', Cashback_Time::now_mysql(), false);
 
         if ($dismissed > 0 && class_exists('Cashback_Encryption')) {
             Cashback_Encryption::write_audit_log(

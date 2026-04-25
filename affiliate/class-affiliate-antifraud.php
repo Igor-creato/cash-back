@@ -263,7 +263,7 @@ class Cashback_Affiliate_Antifraud {
                 'SELECT 1 FROM %i
                  WHERE user_id = %d
                    AND ip_address LIKE %s
-                   AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                   AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
                  LIMIT 1',
                 $fp_table,
                 $referrer_id,
@@ -277,7 +277,7 @@ class Cashback_Affiliate_Antifraud {
                 'SELECT 1 FROM %i
                  WHERE user_id = %d
                    AND ip_address LIKE %s
-                   AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                   AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
                  LIMIT 1',
                 $click_table,
                 $referrer_id,
@@ -369,7 +369,7 @@ class Cashback_Affiliate_Antifraud {
             return false;
         }
 
-        $click_ts = (int) strtotime($click_time);
+        $click_ts = Cashback_Time::parse((string) $click_time);
         $now_ts   = time();
         $diff     = $now_ts - $click_ts;
 

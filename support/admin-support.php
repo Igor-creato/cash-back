@@ -1060,7 +1060,7 @@ class Cashback_Support_Admin {
             $this->tickets_table,
             array(
                 'status'     => 'answered',
-                'updated_at' => current_time('mysql'),
+                'updated_at' => Cashback_Time::now_mysql(),
             ),
             array( 'id' => $ticket_id ),
             array( '%s', '%s' ),
@@ -1100,7 +1100,7 @@ class Cashback_Support_Admin {
             'is_admin'   => 1,
             'user_login' => wp_get_current_user()->user_login,
             'message'    => $message,
-            'created_at' => current_time('mysql'),
+            'created_at' => Cashback_Time::now_mysql(),
         );
 
         // Получаем вложения для нового сообщения
@@ -1167,12 +1167,12 @@ class Cashback_Support_Admin {
 
         $update_data   = array(
             'status'     => $new_status,
-            'updated_at' => current_time('mysql'),
+            'updated_at' => Cashback_Time::now_mysql(),
         );
         $update_format = array( '%s', '%s' );
 
         if ($new_status === 'closed') {
-            $update_data['closed_at'] = current_time('mysql');
+            $update_data['closed_at'] = Cashback_Time::now_mysql();
             $update_format[]          = '%s';
         }
 

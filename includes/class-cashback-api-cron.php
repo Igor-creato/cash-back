@@ -269,7 +269,7 @@ class Cashback_API_Cron {
 
             // Сохраняем результат последней синхронизации для отображения в админке
             update_option('cashback_last_sync_result', array(
-                'timestamp'        => current_time('mysql'),
+                'timestamp'        => Cashback_Time::now_mysql(),
                 'elapsed'          => $elapsed,
                 'run_id'           => $run_id,
                 'results'          => $results,

@@ -62,7 +62,7 @@ class Cashback_Cron_State {
                 'run_id'     => $run_id,
                 'stage'      => $stage,
                 'status'     => 'running',
-                'started_at' => current_time('mysql'),
+                'started_at' => Cashback_Time::now_mysql(),
             ),
             array( '%s', '%s', '%s', '%s' )
         );
@@ -106,10 +106,9 @@ class Cashback_Cron_State {
 
         $duration_ms = null;
         if (! empty($row['started_at'])) {
-            $started_ts = strtotime((string) $row['started_at']);
-            $now_ts     = strtotime(current_time('mysql'));
-            if ($started_ts !== false && $now_ts !== false) {
-                $duration_ms = max(0, ( $now_ts - $started_ts ) * 1000);
+            $started_ts = Cashback_Time::parse((string) $row['started_at']);
+            if ($started_ts > 0) {
+                $duration_ms = max(0, ( time() - $started_ts ) * 1000);
             }
         }
 
@@ -122,7 +121,7 @@ class Cashback_Cron_State {
             $table,
             array(
                 'status'        => ( $status === 'success' ? 'success' : 'failed' ),
-                'finished_at'   => current_time('mysql'),
+                'finished_at'   => Cashback_Time::now_mysql(),
                 'duration_ms'   => $duration_ms,
                 'metrics_json'  => $metrics_json,
                 'error_message' => ( $error !== '' ? $error : null ),

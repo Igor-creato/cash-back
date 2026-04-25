@@ -296,7 +296,7 @@ class Cashback_Fraud_Collector {
                 'fingerprint_hash' => $fingerprint_hash,
                 'user_agent_hash'  => $user_agent_hash,
                 'event_type'       => $event_type,
-                'created_at'       => current_time('mysql'),
+                'created_at'       => Cashback_Time::now_mysql(),
             ),
             array( '%d', '%s', '%s', '%s', '%s', '%s' )
         );

@@ -101,7 +101,7 @@ class Cashback_Health_Check {
             "SELECT id, user_id, total_amount, created_at
              FROM %i
              WHERE status = 'waiting'
-             AND created_at < DATE_SUB(NOW(), INTERVAL %d DAY)",
+             AND created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)",
             $table,
             self::STALE_PAYOUT_DAYS
         ) );
@@ -310,7 +310,7 @@ class Cashback_Health_Check {
 
         $dump  = "Cashback Health Check Report\n";
         $dump .= str_repeat('=', 50) . "\n";
-        $dump .= sprintf("Дата: %s\n", current_time('mysql'));
+        $dump .= sprintf("Дата: %s\n", Cashback_Time::now_mysql());
         $dump .= sprintf("Сайт: %s\n", home_url());
         $dump .= sprintf("Критических: %d | Предупреждений: %d\n", $critical_count, $warning_count);
         $dump .= str_repeat('=', 50) . "\n\n";

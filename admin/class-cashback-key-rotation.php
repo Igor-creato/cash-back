@@ -405,7 +405,7 @@ class Cashback_Key_Rotation {
         // Переход idle → staging.
         $next                 = self::new_idle_state();
         $next['state']        = self::STATE_STAGING;
-        $next['started_at']   = current_time('mysql');
+        $next['started_at']   = Cashback_Time::now_mysql();
         $next['initiator_id'] = (int) ( function_exists('get_current_user_id') ? get_current_user_id() : 0 );
         self::save_state($next);
 
@@ -662,7 +662,7 @@ class Cashback_Key_Rotation {
         $next['current_phase'] = self::PHASES[0];
         $next['last_error']    = null;
         if (empty($next['started_at'])) {
-            $next['started_at'] = current_time('mysql');
+            $next['started_at'] = Cashback_Time::now_mysql();
         }
         $next['initiator_id'] = (int) ( function_exists('get_current_user_id') ? get_current_user_id() : 0 );
         self::save_state($next);
@@ -796,15 +796,15 @@ class Cashback_Key_Rotation {
         // Считаем длительность ротации.
         $duration_seconds = 0;
         if (!empty($state['started_at'])) {
-            $started = strtotime((string) $state['started_at']);
-            if ($started !== false) {
+            $started = Cashback_Time::parse((string) $state['started_at']);
+            if ($started > 0) {
                 $duration_seconds = max(0, time() - $started);
             }
         }
 
         // State → completed.
         $state['state']         = self::STATE_COMPLETED;
-        $state['finalized_at']  = current_time('mysql');
+        $state['finalized_at']  = Cashback_Time::now_mysql();
         $state['initiator_id']  = (int) ( function_exists('get_current_user_id') ? get_current_user_id() : 0 );
         $state['current_phase'] = null;
         self::save_state($state);
@@ -1243,15 +1243,15 @@ class Cashback_Key_Rotation {
         // write'ы с этого момента идут OLD-ключом.
         $days_since_finalize = 0;
         if (!empty($state['finalized_at'])) {
-            $finalized = strtotime((string) $state['finalized_at']);
-            if ($finalized !== false) {
+            $finalized = Cashback_Time::parse((string) $state['finalized_at']);
+            if ($finalized > 0) {
                 $days_since_finalize = max(0, (int) floor(( time() - $finalized ) / 86400));
             }
         }
 
         $next                  = self::new_idle_state();
         $next['state']         = self::STATE_ROLLING_BACK;
-        $next['started_at']    = current_time('mysql');
+        $next['started_at']    = Cashback_Time::now_mysql();
         $next['initiator_id']  = (int) ( function_exists('get_current_user_id') ? get_current_user_id() : 0 );
         $next['current_phase'] = self::PHASES[0];
         // Считаем totals: после finalize все записи зашифрованы NEW-ключом, теперь
@@ -2484,8 +2484,8 @@ class Cashback_Key_Rotation {
 
         $days_kept = 0;
         if (!empty($state['finalized_at'])) {
-            $finalized = strtotime((string) $state['finalized_at']);
-            if ($finalized !== false) {
+            $finalized = Cashback_Time::parse((string) $state['finalized_at']);
+            if ($finalized > 0) {
                 $days_kept = max(0, (int) floor(( time() - $finalized ) / 86400));
             }
         }

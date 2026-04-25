@@ -2,7 +2,7 @@
 /**
  * Garbage collector для таблицы cashback_rate_limit_counters (Группа 7 ADR, шаг 10).
  *
- * Чистит строки с истекшим окном (expires_at < NOW()) — кумулятивно они не нужны,
+ * Чистит строки с истекшим окном (expires_at < UTC_TIMESTAMP()) — кумулятивно они не нужны,
  * при следующем increment() записи пересоздаются с новым window_started_at.
  *
  * Вызывается hourly через WP-Cron (действие cashback_rate_limit_gc_cron).

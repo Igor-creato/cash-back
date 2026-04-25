@@ -94,7 +94,7 @@ class Cashback_Fraud_Consent {
             return false;
         }
 
-        return strtotime((string) $user->user_registered) < strtotime($required_after);
+        return Cashback_Time::parse((string) $user->user_registered) < Cashback_Time::parse($required_after);
     }
 
     /**
@@ -125,7 +125,7 @@ class Cashback_Fraud_Consent {
 
         // При повторной выдаче согласия снимаем флаг отзыва, иначе has_consent() продолжит возвращать false.
         delete_user_meta($user_id, self::META_KEY_CONSENT_WITHDRAWN_AT);
-        update_user_meta($user_id, self::META_KEY_CONSENT_AT, current_time('mysql'));
+        update_user_meta($user_id, self::META_KEY_CONSENT_AT, Cashback_Time::now_mysql());
         update_user_meta($user_id, self::META_KEY_CONSENT_VERSION, $version);
         update_user_meta($user_id, self::META_KEY_CONSENT_IP, self::sanitize_ip($ip));
     }
@@ -140,7 +140,7 @@ class Cashback_Fraud_Consent {
         }
         // Явный маркер отзыва фиксируем до удаления meta — иначе legacy-пользователь
         // (зарегистрированный до required_after) продолжил бы считаться согласившимся.
-        update_user_meta($user_id, self::META_KEY_CONSENT_WITHDRAWN_AT, current_time('mysql'));
+        update_user_meta($user_id, self::META_KEY_CONSENT_WITHDRAWN_AT, Cashback_Time::now_mysql());
         delete_user_meta($user_id, self::META_KEY_CONSENT_AT);
         delete_user_meta($user_id, self::META_KEY_CONSENT_VERSION);
         delete_user_meta($user_id, self::META_KEY_CONSENT_IP);
@@ -303,7 +303,7 @@ class Cashback_Fraud_Consent {
         if (get_option(self::OPTION_REQUIRED_AFTER, null) === null) {
             // first-install / first-activation: фиксируем дату — все юзеры до неё
             // считаются legacy и получают подразумеваемое согласие.
-            add_option(self::OPTION_REQUIRED_AFTER, current_time('mysql'));
+            add_option(self::OPTION_REQUIRED_AFTER, Cashback_Time::now_mysql());
         }
     }
 

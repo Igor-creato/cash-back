@@ -29,7 +29,7 @@ class Cashback_Social_Auth_Token_Store {
         }
 
         $table = Cashback_Social_Auth_DB::table_tokens();
-        $now   = current_time('mysql');
+        $now   = Cashback_Time::now_mysql();
 
         // Row-lock TX: encrypt + UPSERT под удержанием FOR UPDATE на link_id.
         // Закрывает TOCTOU-race с batch-job'ом ротации (фаза social_tokens):

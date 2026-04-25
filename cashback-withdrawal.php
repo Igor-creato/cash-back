@@ -867,7 +867,7 @@ class CashbackWithdrawal {
             if ($cooling_days > 0) {
                 $user_data = get_userdata($user_id);
                 if ($user_data) {
-                    $seconds_since = time() - strtotime($user_data->user_registered);
+                    $seconds_since = time() - Cashback_Time::parse((string) $user_data->user_registered);
                     if ($seconds_since < ( $cooling_days * DAY_IN_SECONDS )) {
                         $remaining = (int) ceil(( $cooling_days * DAY_IN_SECONDS - $seconds_since ) / DAY_IN_SECONDS);
                         wp_send_json_error(array(
@@ -1021,7 +1021,7 @@ class CashbackWithdrawal {
             // поэтому COUNT здесь видит консистентное состояние.
             $recent_requests_count = (int) $wpdb->get_var($wpdb->prepare(
                 'SELECT COUNT(*) FROM %i
-                 WHERE user_id = %d AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)',
+                 WHERE user_id = %d AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)',
                 $table_requests,
                 $user_id
             ));
@@ -1746,7 +1746,7 @@ class CashbackWithdrawal {
 
             $data    = array(
                 'payout_method_id'          => $payout_method_id,
-                'payout_details_updated_at' => current_time('mysql'),
+                'payout_details_updated_at' => Cashback_Time::now_mysql(),
             );
             $formats = array( '%d', '%s' );
 

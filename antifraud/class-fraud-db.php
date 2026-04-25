@@ -215,7 +215,7 @@ class Cashback_Fraud_DB {
         $fp_table   = $wpdb->prefix . 'cashback_user_fingerprints';
         $deleted_fp = $wpdb->query($wpdb->prepare(
             'DELETE FROM %i
-             WHERE created_at < DATE_SUB(NOW(), INTERVAL %d DAY)',
+             WHERE created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)',
             $fp_table,
             $retention_days
         ));
@@ -230,7 +230,7 @@ class Cashback_Fraud_DB {
         $deleted_alerts = $wpdb->query($wpdb->prepare(
             'DELETE FROM %i
              WHERE status = %s
-             AND updated_at < DATE_SUB(NOW(), INTERVAL %d DAY)',
+             AND updated_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)',
             $alerts_table,
             'dismissed',
             90
@@ -242,7 +242,7 @@ class Cashback_Fraud_DB {
         $clusters_table   = $wpdb->prefix . 'cashback_fraud_account_clusters';
         $deleted_clusters = $wpdb->query($wpdb->prepare(
             'DELETE FROM %i
-             WHERE updated_at < DATE_SUB(NOW(), INTERVAL %d DAY)',
+             WHERE updated_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)',
             $clusters_table,
             180
         ));

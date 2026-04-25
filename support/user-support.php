@@ -525,7 +525,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
         // Защита от спама: максимум 5 тикетов в час (проверка через БД — атомарна)
         $tickets_table_rl = $wpdb->prefix . 'cashback_support_tickets';
         $recent_tickets   = (int) $wpdb->get_var($wpdb->prepare(
-            'SELECT COUNT(*) FROM %i WHERE user_id = %d AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)',
+            'SELECT COUNT(*) FROM %i WHERE user_id = %d AND created_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 HOUR)',
             $tickets_table_rl,
             $user_id
         ));
@@ -702,7 +702,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
         // Защита от спама: максимум 20 ответов в час (проверка через БД — атомарна)
         $messages_table_rl = $wpdb->prefix . 'cashback_support_messages';
         $recent_replies    = (int) $wpdb->get_var($wpdb->prepare(
-            'SELECT COUNT(*) FROM %i WHERE user_id = %d AND is_admin = 0 AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)',
+            'SELECT COUNT(*) FROM %i WHERE user_id = %d AND is_admin = 0 AND created_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 HOUR)',
             $messages_table_rl,
             $user_id
         ));
@@ -787,7 +787,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
                 $this->tickets_table,
                 array(
                     'status'     => 'open',
-                    'updated_at' => current_time('mysql'),
+                    'updated_at' => Cashback_Time::now_mysql(),
                 ),
                 array( 'id' => $ticket_id ),
                 array( '%s', '%s' ),
@@ -822,7 +822,7 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
         $attachments     = $msg_attachments[ $message_id ] ?? array();
 
         wp_send_json_success(array(
-            'html' => $this->render_message_html($message, $user->user_login, false, current_time('mysql'), $attachments),
+            'html' => $this->render_message_html($message, $user->user_login, false, Cashback_Time::now_mysql(), $attachments),
         ));
     }
 
@@ -887,8 +887,8 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
             $this->tickets_table,
             array(
                 'status'     => 'closed',
-                'closed_at'  => current_time('mysql'),
-                'updated_at' => current_time('mysql'),
+                'closed_at'  => Cashback_Time::now_mysql(),
+                'updated_at' => Cashback_Time::now_mysql(),
             ),
             array( 'id' => $ticket_id ),
             array( '%s', '%s', '%s' ),

@@ -271,11 +271,11 @@ class Cashback_Social_Auth_My_Account {
         if ($mysql === '') {
             return '';
         }
-        $ts = strtotime($mysql);
-        if (!$ts) {
+        $ts = Cashback_Time::parse($mysql);
+        if ($ts === 0) {
             return $mysql;
         }
         $fmt = (string) get_option('date_format', 'Y-m-d');
-        return (string) date_i18n($fmt, $ts);
+        return (string) wp_date($fmt, $ts);
     }
 }
