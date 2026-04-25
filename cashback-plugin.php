@@ -659,6 +659,9 @@ class CashbackPlugin {
 
         // Social Auth module (Яндекс ID + VK ID) — подключаем bootstrap, он загружает остальное.
         $this->require_file('includes/social-auth/class-social-auth-bootstrap.php');
+
+        // Legal module (юр. документы, согласия по 152-ФЗ/38-ФЗ/161-ФЗ/ГК 437) — bootstrap.
+        $this->require_file('legal/class-cashback-legal-bootstrap.php');
     }
 
     /**
@@ -763,6 +766,21 @@ class CashbackPlugin {
             } catch (\Throwable $e) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback] Ledger accrual backfill auto-migration failed: ' . $e->getMessage());
+            }
+        }
+
+        // Legal module (Phase 1): создание таблицы wp_cashback_consent_log и
+        // seed версий документов 1.0.0. Идемпотентно — fast-path через
+        // cashback_legal_db_version. Безопасно вызывать на каждом init.
+        if (class_exists('Cashback_Legal_DB')) {
+            try {
+                Cashback_Legal_DB::migrate();
+                if (class_exists('Cashback_Legal_Documents')) {
+                    Cashback_Legal_Documents::seed_versions();
+                }
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Legal] auto-migration failed: ' . $e->getMessage());
             }
         }
     }
