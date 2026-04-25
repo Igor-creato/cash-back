@@ -203,7 +203,13 @@
             contact_email: $('#cb-contact-email').val(),
             contact_subject: $('#cb-contact-subject').val(),
             contact_message: $('#cb-contact-message').val(),
-            cb_captcha_token: captchaToken
+            cb_captcha_token: captchaToken,
+            // Юр. чекбокс согласия на обработку ПД (152-ФЗ).
+            // Памятка: payload собирается вручную → значения чекбоксов нужно
+            // явно читать из DOM, иначе сервер не увидит отметку и вернёт ошибку.
+            // См. obsidian/knowledge/debugging/ajax-payload-manual-сборка.md
+            cashback_legal_contact_consent: $('#cb-contact-legal-consent').is(':checked') ? '1' : '0',
+            cashback_legal_request_id: $form.find('input[name="cashback_legal_request_id"]').val() || ''
         };
 
         // Honeypot + timing (если bot-protection.js добавил поля)
