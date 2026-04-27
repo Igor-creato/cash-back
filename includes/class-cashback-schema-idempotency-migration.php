@@ -286,9 +286,10 @@ if (!class_exists('Cashback_Schema_Idempotency_Migration')) {
         }
 
         private function table_exists( string $table_suffix ): bool {
-            $full = $this->wpdb->prefix . $table_suffix;
+            $wpdb = $this->wpdb;
+            $full = $wpdb->prefix . $table_suffix;
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- INFORMATION_SCHEMA-проверка для DDL-guard'а.
-            $count = (int) $this->wpdb->get_var( $this->wpdb->prepare(
+            $count = (int) $wpdb->get_var( $wpdb->prepare(
                 'SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
                 $full
             ));
@@ -296,16 +297,24 @@ if (!class_exists('Cashback_Schema_Idempotency_Migration')) {
         }
 
         private function column_exists( string $table_suffix, string $column ): bool {
-            $full = $this->wpdb->prefix . $table_suffix;
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- SHOW COLUMNS: literal имя таблицы, $column — из allowlist steps[] в этом классе.
-            $rows = $this->wpdb->get_results( "SHOW COLUMNS FROM `{$full}` LIKE '{$column}'", ARRAY_A );
+            $wpdb = $this->wpdb;
+            $full = $wpdb->prefix . $table_suffix;
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- SHOW COLUMNS: %i для имени таблицы, $column — из allowlist steps[] в этом классе.
+            $rows = $wpdb->get_results(
+                $wpdb->prepare( 'SHOW COLUMNS FROM %i LIKE %s', $full, $column ),
+                ARRAY_A
+            );
             return !empty($rows);
         }
 
         private function index_exists( string $table_suffix, string $key_name ): bool {
-            $full = $this->wpdb->prefix . $table_suffix;
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- SHOW INDEX: literal имя таблицы, $key_name — из allowlist steps[] в этом классе.
-            $rows = $this->wpdb->get_results( "SHOW INDEX FROM `{$full}` WHERE Key_name = '{$key_name}'", ARRAY_A );
+            $wpdb = $this->wpdb;
+            $full = $wpdb->prefix . $table_suffix;
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- SHOW INDEX: %i для имени таблицы, $key_name — из allowlist steps[] в этом классе.
+            $rows = $wpdb->get_results(
+                $wpdb->prepare( 'SHOW INDEX FROM %i WHERE Key_name = %s', $full, $key_name ),
+                ARRAY_A
+            );
             return !empty($rows);
         }
 
