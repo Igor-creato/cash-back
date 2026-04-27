@@ -104,6 +104,7 @@ class Cashback_Fraud_DB {
 
         // Таблица persistent device IDs (evercookie + FingerprintJS visitor IDs).
         // Параллельная legacy cashback_user_fingerprints; user_id NULL разрешён для guest-визитов.
+        // session_date — STORED GENERATED column для UNIQUE-ключа дедупа (Группа 6, schema-idempotency-v1).
         $table_device_ids = "CREATE TABLE IF NOT EXISTS `{$wpdb->prefix}cashback_fraud_device_ids` (
             `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             `device_id` char(36) NOT NULL COMMENT 'UUID v4 from LocalStorage/IndexedDB/Cookie',
@@ -118,7 +119,9 @@ class Cashback_Fraud_DB {
             `confidence_score` decimal(3,2) DEFAULT NULL COMMENT 'FingerprintJS confidence (0..1)',
             `first_seen` datetime NOT NULL,
             `last_seen` datetime NOT NULL,
+            `session_date` DATE GENERATED ALWAYS AS (DATE(`first_seen`)) STORED,
             PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_user_session_device` (`user_id`, `session_date`, `device_id`),
             KEY `idx_device` (`device_id`),
             KEY `idx_visitor` (`visitor_id`),
             KEY `idx_user` (`user_id`),
@@ -133,7 +136,9 @@ class Cashback_Fraud_DB {
         dbDelta($table_alerts);
         dbDelta($table_signals);
         dbDelta($table_fingerprints);
-        dbDelta($table_device_ids);
+        // device_ids: raw query вместо dbDelta — dbDelta не поддерживает GENERATED-колонки.
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.DirectDatabaseQuery.SchemaChange -- DDL CREATE TABLE из локальной строки, без user-input.
+        $wpdb->query($table_device_ids);
         dbDelta($table_clusters);
 
         // Добавляем FK вручную (dbDelta не создаёт FK)

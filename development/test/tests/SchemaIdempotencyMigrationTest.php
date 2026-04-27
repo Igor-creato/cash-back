@@ -15,10 +15,13 @@ use PHPUnit\Framework\Attributes\Group;
  *   - cashback_support_messages: ADD request_id CHAR(36) NULL + UNIQUE(request_id)
  *
  * Поведение:
- *   - idempotent: при установленном option'е cashback_schema_idempotency_v1_applied — skip.
+ *   - self-heal: applied=true, но schema на существующих таблицах неполна → reset.
+ *   - idempotent: applied=true + schema полная → skip.
  *   - pre-check дублей по каждому будущему UNIQUE → abort + set admin-notice-флаг.
- *   - clean DB → DDL выполняются по одному; state SHOW COLUMNS / SHOW INDEX проверяется перед каждым.
- *   - после успеха → set applied-флаг + log run.end.
+ *   - clean DB → DDL по одному; SHOW COLUMNS / SHOW INDEX перед каждым.
+ *   - missing_tables → abort + blocked (applied НЕ ставится). Повторный run после
+ *     создания таблиц завершит миграцию.
+ *   - после полного успеха → set applied-флаг + log run.end.
  */
 #[Group('dedup')]
 #[Group('schema-migration')]
@@ -35,14 +38,31 @@ final class SchemaIdempotencyMigrationTest extends TestCase
         }
     }
 
+    /**
+     * Stub с полной схемой — все колонки/индексы из миграции уже на месте.
+     * Используется в тестах, где self-heal должен НЕ сработать.
+     */
+    private function stub_with_complete_schema(): Schema_Migration_Wpdb_Stub
+    {
+        $wpdb = new Schema_Migration_Wpdb_Stub();
+        $wpdb->existing_columns['cashback_fraud_device_ids'][] = 'session_date';
+        $wpdb->existing_indexes['cashback_fraud_device_ids'][] = 'uk_user_session_device';
+        $wpdb->existing_columns['cashback_claims'][]           = 'idempotency_key';
+        $wpdb->existing_indexes['cashback_claims'][]           = 'uk_user_idempotency';
+        $wpdb->existing_indexes['cashback_claims'][]           = 'uk_merchant_order';
+        $wpdb->existing_columns['cashback_support_messages'][] = 'request_id';
+        $wpdb->existing_indexes['cashback_support_messages'][] = 'uk_request_id';
+        return $wpdb;
+    }
+
     // ────────────────────────────────────────────────────────────
     // Idempotency
     // ────────────────────────────────────────────────────────────
 
-    public function test_skipped_when_applied_flag_true(): void
+    public function test_skipped_when_applied_flag_true_and_schema_complete(): void
     {
         update_option('cashback_schema_idempotency_v1_applied', true);
-        $wpdb = new Schema_Migration_Wpdb_Stub();
+        $wpdb = $this->stub_with_complete_schema();
 
         $migration = new Cashback_Schema_Idempotency_Migration($wpdb);
         $result    = $migration->run();
@@ -107,6 +127,7 @@ final class SchemaIdempotencyMigrationTest extends TestCase
 
         $blocked_info = get_option('cashback_schema_idempotency_v1_blocked');
         $this->assertIsArray($blocked_info);
+        $this->assertSame('duplicates_found', $blocked_info['reason']);
         $this->assertArrayHasKey('duplicate_checks', $blocked_info);
         $this->assertSame(5, $blocked_info['duplicate_checks']['cashback_fraud_device_ids']);
     }
@@ -161,14 +182,7 @@ final class SchemaIdempotencyMigrationTest extends TestCase
 
     public function test_fully_migrated_database_is_noop_without_applied_flag(): void
     {
-        $wpdb = new Schema_Migration_Wpdb_Stub();
-        $wpdb->existing_columns['cashback_fraud_device_ids'][] = 'session_date';
-        $wpdb->existing_indexes['cashback_fraud_device_ids'][] = 'uk_user_session_device';
-        $wpdb->existing_columns['cashback_claims'][]           = 'idempotency_key';
-        $wpdb->existing_indexes['cashback_claims'][]           = 'uk_user_idempotency';
-        $wpdb->existing_indexes['cashback_claims'][]           = 'uk_merchant_order';
-        $wpdb->existing_columns['cashback_support_messages'][] = 'request_id';
-        $wpdb->existing_indexes['cashback_support_messages'][] = 'uk_request_id';
+        $wpdb = $this->stub_with_complete_schema();
 
         $migration = new Cashback_Schema_Idempotency_Migration($wpdb);
         $result    = $migration->run();
@@ -216,6 +230,173 @@ final class SchemaIdempotencyMigrationTest extends TestCase
         $this->assertContains('run.aborted', $events);
         $this->assertNotContains('run.end', $events);
     }
+
+    // ────────────────────────────────────────────────────────────
+    // Missing tables (графа активации до создания таблиц модулей)
+    // ────────────────────────────────────────────────────────────
+
+    public function test_skips_steps_when_tables_missing(): void
+    {
+        $wpdb = new Schema_Migration_Wpdb_Stub();
+        $wpdb->missing_tables = array('cashback_claims', 'cashback_support_messages');
+
+        $migration = new Cashback_Schema_Idempotency_Migration($wpdb);
+        $result    = $migration->run();
+
+        $this->assertFalse($result['applied']);
+        $this->assertSame('missing_tables', $result['aborted_reason']);
+        // Из 7 шагов 5 относятся к claims/support → skipped, 2 к fraud_device_ids → executed.
+        $this->assertCount(2, $wpdb->executed_ddl);
+        $joined = implode("\n", $wpdb->executed_ddl);
+        $this->assertStringContainsString('ADD COLUMN `session_date`', $joined);
+        $this->assertStringContainsString('ADD UNIQUE KEY `uk_user_session_device`', $joined);
+        $this->assertStringNotContainsString('ADD COLUMN `idempotency_key`', $joined);
+        $this->assertStringNotContainsString('ADD COLUMN `request_id`', $joined);
+    }
+
+    public function test_does_not_set_applied_when_tables_missing(): void
+    {
+        $wpdb = new Schema_Migration_Wpdb_Stub();
+        $wpdb->missing_tables = array('cashback_claims', 'cashback_support_messages');
+
+        $migration = new Cashback_Schema_Idempotency_Migration($wpdb);
+        $migration->run();
+
+        $this->assertFalse((bool) get_option('cashback_schema_idempotency_v1_applied'));
+
+        $blocked = get_option('cashback_schema_idempotency_v1_blocked');
+        $this->assertIsArray($blocked);
+        $this->assertSame('missing_tables', $blocked['reason']);
+        $this->assertEqualsCanonicalizing(
+            array('cashback_claims', 'cashback_support_messages'),
+            $blocked['missing_tables']
+        );
+    }
+
+    public function test_logger_receives_missing_tables_events(): void
+    {
+        $events = array();
+        $wpdb   = new Schema_Migration_Wpdb_Stub();
+        $wpdb->missing_tables = array('cashback_claims');
+
+        $migration = new Cashback_Schema_Idempotency_Migration(
+            $wpdb,
+            function (string $event, array $ctx) use (&$events): void {
+                $events[] = array($event, $ctx);
+            }
+        );
+        $migration->run();
+
+        $skipped_with_missing = array_filter(
+            $events,
+            static fn(array $e) => $e[0] === 'step.skipped' && ($e[1]['reason'] ?? null) === 'table_missing'
+        );
+        $this->assertNotEmpty($skipped_with_missing);
+
+        $aborted = array_filter(
+            $events,
+            static fn(array $e) => $e[0] === 'run.aborted' && ($e[1]['reason'] ?? null) === 'missing_tables'
+        );
+        $this->assertNotEmpty($aborted);
+    }
+
+    public function test_run_again_after_tables_created_completes_migration(): void
+    {
+        $wpdb = new Schema_Migration_Wpdb_Stub();
+        $wpdb->missing_tables = array('cashback_claims', 'cashback_support_messages');
+
+        $migration = new Cashback_Schema_Idempotency_Migration($wpdb);
+        $first = $migration->run();
+        $this->assertSame('missing_tables', $first['aborted_reason']);
+        $this->assertFalse((bool) get_option('cashback_schema_idempotency_v1_applied'));
+
+        // Эмулируем: модули доделали create_tables() — таблицы появились.
+        $wpdb->missing_tables = array();
+        $wpdb->executed_ddl   = array();
+
+        $second = $migration->run();
+        $this->assertTrue($second['applied']);
+        $this->assertCount(7, $wpdb->executed_ddl, 'Все 7 DDL выполнены при повторном запуске');
+        $this->assertTrue((bool) get_option('cashback_schema_idempotency_v1_applied'));
+        $this->assertFalse(get_option('cashback_schema_idempotency_v1_blocked'));
+    }
+
+    public function test_pre_check_skips_missing_tables_without_query_error(): void
+    {
+        $wpdb = new Schema_Migration_Wpdb_Stub();
+        $wpdb->missing_tables = array('cashback_fraud_device_ids', 'cashback_claims');
+
+        $migration = new Cashback_Schema_Idempotency_Migration($wpdb);
+        $migration->run();
+
+        // Pre-check НЕ должен делать SELECT COUNT(*) ... HAVING COUNT
+        // по отсутствующим таблицам — это была бы ошибка «Table doesn't exist».
+        $bad_queries = array_filter(
+            $wpdb->queries_log,
+            static function (string $sql): bool {
+                return stripos($sql, 'HAVING COUNT') !== false
+                    && (stripos($sql, 'cashback_fraud_device_ids') !== false
+                        || (stripos($sql, 'cashback_claims') !== false && stripos($sql, 'merchant_id') !== false));
+            }
+        );
+        $this->assertEmpty($bad_queries, 'Pre-check на missing-таблицах не должен запускать SELECT COUNT');
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // Self-heal (applied=true, но колонок/индексов нет на существующих таблицах)
+    // ────────────────────────────────────────────────────────────
+
+    public function test_self_heal_resets_applied_when_existing_table_lacks_column(): void
+    {
+        update_option('cashback_schema_idempotency_v1_applied', true);
+
+        $wpdb = $this->stub_with_complete_schema();
+        // Эмулируем сломанную установку: applied=true, но `idempotency_key` отсутствует.
+        $wpdb->existing_columns['cashback_claims'] = array_values(
+            array_diff($wpdb->existing_columns['cashback_claims'], array('idempotency_key'))
+        );
+
+        $events = array();
+        $migration = new Cashback_Schema_Idempotency_Migration(
+            $wpdb,
+            function (string $event, array $ctx) use (&$events): void {
+                $events[] = $event;
+            }
+        );
+        $result = $migration->run();
+
+        $this->assertContains('self_heal.triggered', $events);
+        $this->assertTrue($result['applied']);
+        $joined = implode("\n", $wpdb->executed_ddl);
+        $this->assertStringContainsString('ADD COLUMN `idempotency_key`', $joined);
+        $this->assertTrue((bool) get_option('cashback_schema_idempotency_v1_applied'));
+    }
+
+    public function test_self_heal_does_not_trigger_when_tables_missing(): void
+    {
+        update_option('cashback_schema_idempotency_v1_applied', true);
+
+        $wpdb = new Schema_Migration_Wpdb_Stub();
+        $wpdb->missing_tables = array('cashback_claims');
+        // На существующих таблицах все колонки/индексы на месте — broken не считается.
+        $wpdb->existing_columns['cashback_fraud_device_ids'][] = 'session_date';
+        $wpdb->existing_indexes['cashback_fraud_device_ids'][] = 'uk_user_session_device';
+        $wpdb->existing_columns['cashback_support_messages'][] = 'request_id';
+        $wpdb->existing_indexes['cashback_support_messages'][] = 'uk_request_id';
+
+        $events = array();
+        $migration = new Cashback_Schema_Idempotency_Migration(
+            $wpdb,
+            function (string $event, array $ctx) use (&$events): void {
+                $events[] = $event;
+            }
+        );
+        $result = $migration->run();
+
+        $this->assertNotContains('self_heal.triggered', $events);
+        $this->assertTrue($result['already_applied']);
+        $this->assertEmpty($wpdb->executed_ddl, 'ALTER не должны вызываться при «not created» таблицах');
+    }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -228,12 +409,16 @@ final class Schema_Migration_Wpdb_Stub
     public string $last_error = '';
     /** @var array<int, string> */
     public array $executed_ddl = array();
+    /** @var array<int, string> — лог всех SQL, прошедших через query()/get_var()/get_results(). */
+    public array $queries_log = array();
     /** @var array<string, int> — table_suffix → кол-во групп дубликатов. */
     public array $duplicate_counts = array();
     /** @var array<string, array<int, string>> — table_suffix → список существующих колонок. */
     public array $existing_columns = array();
     /** @var array<string, array<int, string>> — table_suffix → список существующих индексов. */
     public array $existing_indexes = array();
+    /** @var array<int, string> — table_suffix'ы, которые information_schema.TABLES должна считать отсутствующими. */
+    public array $missing_tables = array();
 
     public function prepare(string $query, mixed ...$args): string
     {
@@ -246,6 +431,7 @@ final class Schema_Migration_Wpdb_Stub
 
     public function query(string $sql): int
     {
+        $this->queries_log[] = $sql;
         if (preg_match('/^\s*ALTER\s+TABLE/i', $sql)) {
             $this->executed_ddl[] = $sql;
             return 0;
@@ -255,6 +441,13 @@ final class Schema_Migration_Wpdb_Stub
 
     public function get_var(string $sql): string|int|null
     {
+        $this->queries_log[] = $sql;
+
+        // information_schema.TABLES → table_exists() guard.
+        if (preg_match("/information_schema\\.TABLES.*TABLE_NAME\\s*=\\s*['\"]?wp_([a-z_0-9]+)['\"]?/is", $sql, $m)) {
+            return in_array($m[1], $this->missing_tables, true) ? 0 : 1;
+        }
+
         // Pre-check дубликатов: SELECT COUNT(*) FROM (... GROUP BY ... HAVING COUNT(*)>1) ...
         if (stripos($sql, 'cashback_fraud_device_ids') !== false && stripos($sql, 'HAVING COUNT') !== false) {
             return $this->duplicate_counts['cashback_fraud_device_ids'] ?? 0;
@@ -268,6 +461,8 @@ final class Schema_Migration_Wpdb_Stub
     /** @return array<int, array<string,mixed>> */
     public function get_results(string $sql, string $output = 'ARRAY_A'): array
     {
+        $this->queries_log[] = $sql;
+
         // SHOW COLUMNS FROM wp_<table> LIKE '<col>'
         if (preg_match("/SHOW\\s+COLUMNS\\s+FROM\\s+[`']?wp_([a-z_]+)[`']?\\s+LIKE\\s+'([a-z_]+)'/i", $sql, $m)) {
             $table = $m[1];
