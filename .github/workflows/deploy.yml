@@ -24,9 +24,10 @@ jobs:
           port: ${{ secrets.SERVER_PORT }}
           script: |
             set -e
-            cd /home/igor/site/volumes/wordpress/wp-content/plugins/cash-back
-            git remote -v
-            git branch
-            git log --oneline -3
-            git pull --ff-only origin main
-            git log --oneline -3
+            PLUGIN_DIR=/home/igor/cash-back/deploy-cashback/service/volumes/wordpress/wp-content/plugins/cash-back
+            cd "$PLUGIN_DIR"
+            git -c safe.directory="$PLUGIN_DIR" remote -v
+            git -c safe.directory="$PLUGIN_DIR" branch
+            git -c safe.directory="$PLUGIN_DIR" log --oneline -3
+            git -c safe.directory="$PLUGIN_DIR" pull --ff-only origin main
+            git -c safe.directory="$PLUGIN_DIR" log --oneline -3
