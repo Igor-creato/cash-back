@@ -93,9 +93,19 @@ class Cashback_Legal_DB {
      * Fast-path по cashback_legal_db_version, аналог Cashback_Affiliate_DB::migrate_f22_003_attribution_model.
      */
     public static function migrate(): void {
+        global $wpdb;
+        $table  = self::table_name();
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) === $table;
+
         $current_version = (string) get_option(self::DB_VERSION_OPTION, '0.0');
-        if (version_compare($current_version, self::CURRENT_DB_VERSION, '>=')) {
+        if ($exists && version_compare($current_version, self::CURRENT_DB_VERSION, '>=')) {
             return;
+        }
+
+        if (!$exists && version_compare($current_version, self::CURRENT_DB_VERSION, '>=')) {
+            // Inconsistent state (restored from backup or aborted prior install): version flag set but table missing.
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+            error_log('[Cashback Legal] db_version=' . $current_version . ' but consent_log table missing — forcing install_table');
         }
 
         self::install_table();

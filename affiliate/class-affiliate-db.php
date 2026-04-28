@@ -410,10 +410,22 @@ class Cashback_Affiliate_DB {
         // без audit-таблицы. CREATE TABLE IF NOT EXISTS — дешёвый noop.
         self::ensure_audit_table();
 
-        // Fast-path: если db_version уже ≥ 1.2 — пропускаем все DDL профилей/accruals.
+        // Fast-path: если db_version уже ≥ 1.2 И ключевая колонка review_status присутствует —
+        // пропускаем все DDL профилей/accruals. Проверка колонки защищает от corrupted state
+        // (restored from backup или прерванный prior-install): option-флаг мог сохраниться,
+        // а ALTER не отработать. Без этой защиты review_status навсегда missing на свежей установке.
         $current_version = (string) get_option('cashback_affiliate_db_version', '1.0');
         if (version_compare($current_version, '1.2', '>=')) {
-            return;
+            $review_col = $wpdb->get_results($wpdb->prepare(
+                'SHOW COLUMNS FROM %i LIKE %s',
+                $profiles_table,
+                'review_status'
+            ));
+            if (!empty($review_col)) {
+                return;
+            }
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+            error_log('[Affiliate] db_version=' . $current_version . ' but review_status column missing — forcing F-22-003 migration');
         }
 
         $profile_alters = array(
