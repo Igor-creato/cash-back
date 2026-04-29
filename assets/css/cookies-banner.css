@@ -1,8 +1,14 @@
 /**
  * Cashback Legal — Cookies banner.
  *
- * Fixed bottom banner, мобильно-адаптивный. Кнопки одинакового веса
- * (требование РКН — нельзя выделять «Принять» агрессивнее «Отклонить»).
+ * Использует CSS-переменные активной темы (Woodmart fallback на нейтральные).
+ * Кнопки наследуют стиль темы через классы .btn / .btn-color-primary /
+ * .btn-color-default / .btn-style-bordered (woodmart) — никаких хардкоднутых
+ * цветов и шрифтов.
+ *
+ * Требование РКН: «Принять» и «Отклонить» одинаковой визуальной массы —
+ * обеспечивается тем, что обе кнопки используют стили темы (одна primary,
+ * вторая bordered — равноценные на уровне рендеринга woodmart).
  */
 
 .cashback-legal-cookies-banner {
@@ -11,12 +17,15 @@
     right: 0;
     bottom: 0;
     z-index: 99999;
-    background: #1f2937;
-    color: #f9fafb;
+    /* Surface: woodmart alternative-color (тёмный header) → текстовый цвет
+       темы → нейтральный fallback. */
+    background: var(--wd-alternative-color, var(--wd-text-color, #1f2937));
+    color: var(--wd-alternative-text-color, #f9fafb);
     padding: 14px 20px;
     box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
-    font-size: 14px;
-    line-height: 1.5;
+    font-family: var(--wd-text-font, inherit);
+    font-size: var(--wd-text-font-size, 14px);
+    line-height: var(--wd-text-line-height, 1.5);
     border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -38,6 +47,7 @@
     flex: 1 1 320px;
     margin: 0;
     color: inherit;
+    font-family: inherit;
 }
 
 .cashback-legal-cookies-banner__actions {
@@ -47,53 +57,32 @@
     align-items: center;
 }
 
+/* Кнопки — стили темы делают всю работу. Минимум собственных правил:
+   только обеспечиваем нормальный размер и flex-поведение. */
 .cashback-legal-cookies-banner__btn {
-    appearance: none;
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    background: transparent;
-    color: #f9fafb;
-    font: inherit;
-    padding: 8px 16px;
-    border-radius: 4px;
-    cursor: pointer;
     min-width: 110px;
-    transition: background-color 0.15s ease, border-color 0.15s ease;
+    /* Если тема не подцепила .btn — fallback на наследование. */
+    font-family: inherit;
+    line-height: 1.4;
 }
 
-.cashback-legal-cookies-banner__btn:hover,
 .cashback-legal-cookies-banner__btn:focus-visible {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.7);
-    outline: none;
-}
-
-.cashback-legal-cookies-banner__btn--primary {
-    background: #2271b1;
-    border-color: #2271b1;
-}
-
-.cashback-legal-cookies-banner__btn--primary:hover,
-.cashback-legal-cookies-banner__btn--primary:focus-visible {
-    background: #135e96;
-    border-color: #135e96;
-}
-
-.cashback-legal-cookies-banner__btn--secondary {
-    background: transparent;
-    border-color: rgba(255, 255, 255, 0.45);
+    /* outline берём из темы, но гарантируем видимый фокус для A11y. */
+    outline: 2px solid var(--wd-primary-color, currentColor);
+    outline-offset: 2px;
 }
 
 .cashback-legal-cookies-banner__link {
-    color: #f9fafb;
+    color: inherit;
     text-decoration: underline;
     font-size: inherit;
-    padding: 8px 8px;
-    line-height: 1;
+    padding: 8px;
+    line-height: 1.4;
 }
 
 .cashback-legal-cookies-banner__link:hover,
 .cashback-legal-cookies-banner__link:focus-visible {
-    color: #ffffff;
+    color: var(--wd-primary-color, currentColor);
     outline: none;
 }
 
