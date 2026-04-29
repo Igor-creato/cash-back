@@ -503,6 +503,59 @@ final class UserAnonymizationTest extends TestCase
         $this->assertStringContainsString("'[anonymized]'", $sql, 'message → [anonymized]');
     }
 
+    public function test_anonymize_social_tokens_via_join_on_link_id(): void
+    {
+        // P0.3d: social_tokens привязана через link_id, а не user_id.
+        Cashback_User_Anonymizer::anonymize(32, 1, 'reason ≥20 chars пожалуйста');
+
+        $sqls = $this->querySqls();
+        $tokens_deletes = array_values(array_filter(
+            $sqls,
+            static fn(string $s): bool => preg_match('/wp_cashback_social_tokens/i', $s) === 1
+        ));
+        $this->assertNotEmpty($tokens_deletes, 'Должен быть DELETE по social_tokens');
+        $sql = $tokens_deletes[0];
+
+        $this->assertMatchesRegularExpression('/INNER\s+JOIN/i', $sql, 'social_tokens чистится через JOIN на social_links');
+        $this->assertStringContainsString('link_id', $sql, 'JOIN по link_id');
+        $this->assertMatchesRegularExpression('/l\.user_id\s*=\s*32/i', $sql, 'фильтр по l.user_id=32');
+    }
+
+    public function test_anonymize_does_not_touch_social_pending(): void
+    {
+        // P0.3d: social_pending не имеет user_id — короткоживущая таблица с TTL.
+        Cashback_User_Anonymizer::anonymize(32, 1, 'reason ≥20 chars пожалуйста');
+
+        foreach ($this->querySqls() as $sql) {
+            $this->assertStringNotContainsStringIgnoringCase(
+                'cashback_social_pending',
+                $sql,
+                'cashback_social_pending не должен фигурировать (нет user_id, есть TTL)'
+            );
+        }
+    }
+
+    public function test_anonymize_deletes_social_links_after_tokens(): void
+    {
+        // P0.3d: порядок важен — сначала tokens (через JOIN), потом links.
+        Cashback_User_Anonymizer::anonymize(32, 1, 'reason ≥20 chars пожалуйста');
+
+        $sqls = $this->querySqls();
+        $tokens_idx = null;
+        $links_idx = null;
+        foreach ($sqls as $i => $sql) {
+            if ($tokens_idx === null && preg_match('/wp_cashback_social_tokens/i', $sql) === 1) {
+                $tokens_idx = $i;
+            }
+            if ($links_idx === null && preg_match('/DELETE\s+FROM\s+`wp_cashback_social_links`/i', $sql) === 1) {
+                $links_idx = $i;
+            }
+        }
+        $this->assertNotNull($tokens_idx, 'Должен быть DELETE social_tokens');
+        $this->assertNotNull($links_idx, 'Должен быть DELETE social_links');
+        $this->assertLessThan($links_idx, $tokens_idx, 'tokens DELETE должен быть РАНЬШЕ links DELETE');
+    }
+
     public function test_anonymize_support_attachments_uses_user_id_and_stored_name(): void
     {
         // P0.3c: реальные колонки support_attachments — user_id, ticket_id, stored_name.

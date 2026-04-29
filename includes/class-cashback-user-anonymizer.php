@@ -554,20 +554,32 @@ class Cashback_User_Anonymizer {
 
     private static function delete_social_auth_rows( int $user_id ): int {
         global $wpdb;
-        $tables = array(
-            'cashback_social_links',
-            'cashback_social_tokens',
-            'cashback_social_pending',
-        );
-        foreach ($tables as $slug) {
-            $table = $wpdb->prefix . $slug;
-            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DELETE через %i.
-            $wpdb->query($wpdb->prepare(
-                'DELETE FROM %i WHERE user_id = %d',
-                $table,
-                $user_id
-            ));
-        }
+
+        // Реальная схема (includes/social-auth/class-social-auth-db.php):
+        //   - social_links:  user_id ✅
+        //   - social_tokens: link_id (FK на social_links.id), без user_id
+        //   - social_pending: token, kind, payload_json, expires_at — БЕЗ user_id
+        //                    (короткоживущие заявки с TTL, чистятся сами).
+        //
+        // Порядок важен: tokens сначала (иначе после DELETE links подзапрос пустой).
+        $links_table  = $wpdb->prefix . 'cashback_social_links';
+        $tokens_table = $wpdb->prefix . 'cashback_social_tokens';
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DELETE через %i + JOIN.
+        $wpdb->query($wpdb->prepare(
+            'DELETE t FROM %i AS t INNER JOIN %i AS l ON l.id = t.link_id WHERE l.user_id = %d',
+            $tokens_table,
+            $links_table,
+            $user_id
+        ));
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DELETE через %i.
+        $wpdb->query($wpdb->prepare(
+            'DELETE FROM %i WHERE user_id = %d',
+            $links_table,
+            $user_id
+        ));
+
         return 1;
     }
 
