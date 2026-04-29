@@ -28,6 +28,27 @@ if (!current_user_can('activate_plugins')) {
 function cashback_plugin_uninstall(): void {
     global $wpdb;
 
+    // Двухшаговое подтверждение из admin/class-cashback-uninstall-confirm.php.
+    // Перед запуском uninstall.php JS-модалка пишет выбор пользователя в transient:
+    //   '1' = полная очистка (drops таблиц/триггеров/событий, удаление опций/transients,
+    //          uploads и ключа шифрования из wp-content);
+    //   '0' = soft uninstall (данные и ключ шифрования сохраняются — удаляются только
+    //          файлы плагина силами WordPress).
+    //
+    // Default-by-safety: при отсутствии transient (uninstall через WP-CLI/cron/без браузера)
+    // выполняется soft uninstall. Для CLI-скриптов нужно явно поставить:
+    //     wp transient set cashback_uninstall_purge_mode 1 300
+    // перед `wp plugin uninstall cash-back`.
+    $purge_mode = get_transient('cashback_uninstall_purge_mode');
+    if ($purge_mode !== '1') {
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+        error_log('Cashback Plugin: soft uninstall — БД и ключ шифрования сохранены (transient cashback_uninstall_purge_mode != "1")');
+        delete_transient('cashback_uninstall_purge_mode');
+        return;
+    }
+    // Полная чистка подтверждена — стираем флаг сразу, чтобы повторный запуск не наследовал его.
+    delete_transient('cashback_uninstall_purge_mode');
+
     // Remove scheduled cron events
     $cron_hooks = array(
         'cashback_support_auto_delete_cron',
