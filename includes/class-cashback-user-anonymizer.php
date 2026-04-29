@@ -126,7 +126,10 @@ class Cashback_User_Anonymizer {
     /**
      * Анонимизирует пользователя: PII скрабится, финансы сохраняются.
      *
-     * @return array{ok:bool, tables_scrubbed:int, consents_revoked:int, errors:array<int,string>}
+     * Idempotent: повторный вызов для уже обезличенного юзера вернёт
+     * `idempotent_noop=true` без записи в audit/consent_log.
+     *
+     * @return array{ok:bool, tables_scrubbed:int, consents_revoked:int, errors:array<int,mixed>, idempotent_noop?:bool}
      */
     public static function anonymize( int $user_id, int $admin_id, string $reason ): array {
         if ($user_id <= 0) {
@@ -147,6 +150,19 @@ class Cashback_User_Anonymizer {
         global $wpdb;
         if (!is_object($wpdb)) {
             return array( 'ok' => false, 'tables_scrubbed' => 0, 'consents_revoked' => 0, 'errors' => array( 'wpdb_not_initialized' ) );
+        }
+
+        // Idempotency guard: повторный вызов anonymize() для уже обезличенного
+        // юзера не должен дублировать audit_log и consent_log (compliance issue).
+        // Признак — cashback_user_profile.status = 'deleted'.
+        if (self::is_already_anonymized($user_id)) {
+            return array(
+                'ok'               => true,
+                'tables_scrubbed'  => 0,
+                'consents_revoked' => 0,
+                'errors'           => array(),
+                'idempotent_noop'  => true,
+            );
         }
 
         $tables_scrubbed = 0;
@@ -309,6 +325,25 @@ class Cashback_User_Anonymizer {
     // Внутренние helper'ы скраба отдельных таблиц.
     // Каждый возвращает 1 (таблица обработана) — для подсчёта tables_scrubbed.
     // ────────────────────────────────────────────────────────────────────
+
+    /**
+     * Проверяет — пользователь уже анонимизирован (status='deleted' в profile).
+     * Используется как idempotency guard в начале anonymize().
+     */
+    private static function is_already_anonymized( int $user_id ): bool {
+        global $wpdb;
+        if ($user_id <= 0 || !is_object($wpdb)) {
+            return false;
+        }
+        $table = $wpdb->prefix . 'cashback_user_profile';
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- read-only check via %i.
+        $status = $wpdb->get_var($wpdb->prepare(
+            'SELECT status FROM %i WHERE user_id = %d',
+            $table,
+            $user_id
+        ));
+        return is_string($status) && $status === self::STATUS_DELETED;
+    }
 
     private static function scrub_wp_users( int $user_id ): int {
         global $wpdb;

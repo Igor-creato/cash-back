@@ -417,4 +417,51 @@ final class UserAnonymizationTest extends TestCase
 
         $this->assertSame(count($expected_types), $result['consents_revoked']);
     }
+
+    // ────────────────────────────────────────────────────────────
+    // P0.2 — Idempotency guard на cashback_user_profile.status='deleted'
+    // ────────────────────────────────────────────────────────────
+
+    public function test_anonymize_returns_idempotent_noop_when_profile_status_deleted(): void
+    {
+        // Первый get_var в anonymize() — is_already_anonymized() → 'deleted'.
+        $this->wpdb->next_var_queue = array('deleted');
+
+        $result = Cashback_User_Anonymizer::anonymize(32, 1, 'reason ≥20 chars пожалуйста');
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame(0, $result['tables_scrubbed']);
+        $this->assertSame(0, $result['consents_revoked']);
+        $this->assertArrayHasKey('idempotent_noop', $result);
+        $this->assertTrue($result['idempotent_noop']);
+
+        // Никаких write-операций в audit_log / consent_log быть не должно.
+        $audit_inserts = array_filter(
+            $this->wpdb->calls,
+            static fn(array $c): bool => $c['method'] === 'insert' && ($c['table'] ?? '') === 'wp_cashback_audit_log'
+        );
+        $this->assertCount(0, $audit_inserts, 'Idempotent noop НЕ пишет в audit_log');
+
+        $consent_inserts = array_filter(
+            $this->wpdb->calls,
+            static fn(array $c): bool => $c['method'] === 'insert' && ($c['table'] ?? '') === 'wp_cashback_consent_log'
+        );
+        $this->assertCount(0, $consent_inserts, 'Idempotent noop НЕ пишет в consent_log');
+    }
+
+    public function test_anonymize_calls_is_already_anonymized_check_before_main_logic(): void
+    {
+        Cashback_User_Anonymizer::anonymize(32, 1, 'reason ≥20 chars пожалуйста');
+
+        $get_vars = array_filter(
+            $this->wpdb->calls,
+            static fn(array $c): bool => $c['method'] === 'get_var' && isset($c['sql'])
+                && preg_match('/SELECT\s+status\s+FROM\s+`wp_cashback_user_profile`\s+WHERE\s+user_id\s*=\s*32/i', (string) $c['sql']) === 1
+        );
+
+        $this->assertNotEmpty(
+            $get_vars,
+            'anonymize() должен сначала проверить status в cashback_user_profile (idempotency guard)'
+        );
+    }
 }
