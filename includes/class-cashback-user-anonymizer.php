@@ -177,7 +177,10 @@ class Cashback_User_Anonymizer {
             $tables_scrubbed += self::scrub_payout_requests_pii($user_id);
             $tables_scrubbed += self::scrub_user_fingerprints($user_id);
             $tables_scrubbed += self::scrub_click_log($user_id);
-            $tables_scrubbed += self::scrub_click_sessions($user_id);
+            // cashback_click_sessions: PII (IP/UA) в схеме отсутствует — там
+            // только user_id, canonical_click_id, product/merchant, status и
+            // timestamps. Скраб не требуется. См. obsidian/knowledge/patterns/
+            // user-anonymization.md, баг #5 E2E 2026-04-29.
             $tables_scrubbed += self::scrub_audit_log($user_id);
             $tables_scrubbed += self::scrub_consent_log_meta($user_id);
             $tables_scrubbed += self::scrub_support_messages($user_id);
@@ -453,20 +456,6 @@ class Cashback_User_Anonymizer {
     private static function scrub_click_log( int $user_id ): int {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_click_log';
-        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- UPDATE через %i.
-        $wpdb->query($wpdb->prepare(
-            'UPDATE %i SET ip_address = %s, user_agent = %s WHERE user_id = %d',
-            $table,
-            self::ANON_IP,
-            '',
-            $user_id
-        ));
-        return 1;
-    }
-
-    private static function scrub_click_sessions( int $user_id ): int {
-        global $wpdb;
-        $table = $wpdb->prefix . 'cashback_click_sessions';
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- UPDATE через %i.
         $wpdb->query($wpdb->prepare(
             'UPDATE %i SET ip_address = %s, user_agent = %s WHERE user_id = %d',

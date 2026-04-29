@@ -464,4 +464,22 @@ final class UserAnonymizationTest extends TestCase
             'anonymize() должен сначала проверить status в cashback_user_profile (idempotency guard)'
         );
     }
+
+    // ────────────────────────────────────────────────────────────
+    // P0.3 — Schema mismatches (исправление имён колонок)
+    // ────────────────────────────────────────────────────────────
+
+    public function test_anonymize_does_not_touch_click_sessions(): void
+    {
+        // P0.3a: cashback_click_sessions не имеет PII колонок — скраб не нужен.
+        Cashback_User_Anonymizer::anonymize(32, 1, 'reason ≥20 chars пожалуйста');
+
+        foreach ($this->querySqls() as $sql) {
+            $this->assertStringNotContainsStringIgnoringCase(
+                'cashback_click_sessions',
+                $sql,
+                'cashback_click_sessions не должен фигурировать в SQL анонимизации'
+            );
+        }
+    }
 }
