@@ -213,7 +213,16 @@ class Cashback_User_Anonymizer {
 
             // WooCommerce (graceful если WC не активен). Вызов через массив-callable
             // чтобы PHPStan не падал на отсутствующем классе сторонней зависимости.
+            //
+            // P1.1: WC_Privacy_Erasers::customer_data_erase агрессивно сносит
+            // usermeta, включая wp_capabilities/wp_user_level — а спека требует
+            // их keep (валидность роли в WP). Backup-restore вокруг WC erasers.
             if (class_exists('WC_Privacy_Erasers')) {
+                $caps_key  = $wpdb->prefix . 'capabilities';
+                $level_key = $wpdb->prefix . 'user_level';
+                $caps_backup  = function_exists('get_user_meta') ? get_user_meta($user_id, $caps_key, true) : '';
+                $level_backup = function_exists('get_user_meta') ? get_user_meta($user_id, $level_key, true) : '';
+
                 try {
                     $email = self::anon_email_for($user_id);
                     foreach (array( 'customer_data_erase', 'order_data_erase' ) as $method) {
@@ -224,6 +233,17 @@ class Cashback_User_Anonymizer {
                     }
                 } catch (\Throwable $e) {
                     self::$step_errors[] = array( 'table' => 'wc_erasers', 'error' => $e->getMessage() );
+                }
+
+                // Restore роль: WP-юзер без capability теряет валидность для
+                // последующего отображения в users-list и cron-cleanup.
+                if (function_exists('update_user_meta')) {
+                    if ($caps_backup !== '' && $caps_backup !== false) {
+                        update_user_meta($user_id, $caps_key, $caps_backup);
+                    }
+                    if ($level_backup !== '' && $level_backup !== false) {
+                        update_user_meta($user_id, $level_key, $level_backup);
+                    }
                 }
             }
 

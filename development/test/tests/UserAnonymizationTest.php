@@ -525,6 +525,54 @@ final class UserAnonymizationTest extends TestCase
         $this->assertMatchesRegularExpression('/l\.user_id\s*=\s*32/i', $sql, 'фильтр по l.user_id=32');
     }
 
+    // ────────────────────────────────────────────────────────────
+    // P1.1 — wp_capabilities backup/restore вокруг WC_Privacy_Erasers
+    // ────────────────────────────────────────────────────────────
+
+    public function test_anonymize_preserves_wp_capabilities_when_wc_active(): void
+    {
+        // Pre-fill usermeta — wp_capabilities='a:1:{s:10:"subscriber";b:1;}'
+        // (сериализованный массив capability=>true, как WP сохраняет).
+        $caps_value  = 'a:1:{s:10:"subscriber";b:1;}';
+        $level_value = '0';
+        $GLOBALS['_cb_test_user_meta'] = array(
+            32 => array(
+                'wp_capabilities' => $caps_value,
+                'wp_user_level'   => $level_value,
+            ),
+        );
+
+        // Замокать WC_Privacy_Erasers — он "удалит" capabilities имитируя prod.
+        if (!class_exists('WC_Privacy_Erasers')) {
+            eval('class WC_Privacy_Erasers {
+                public static function customer_data_erase(string $email): array {
+                    // Имитируем поведение WC: усиленно чистит usermeta вокруг кастомера.
+                    foreach (array_keys($GLOBALS["_cb_test_user_meta"] ?? array()) as $uid) {
+                        unset($GLOBALS["_cb_test_user_meta"][$uid]["wp_capabilities"]);
+                        unset($GLOBALS["_cb_test_user_meta"][$uid]["wp_user_level"]);
+                    }
+                    return array("items_removed" => true, "items_retained" => false, "messages" => array(), "done" => true);
+                }
+                public static function order_data_erase(string $email): array {
+                    return array("items_removed" => false, "items_retained" => false, "messages" => array(), "done" => true);
+                }
+            }');
+        }
+
+        Cashback_User_Anonymizer::anonymize(32, 1, 'reason ≥20 chars пожалуйста');
+
+        $this->assertSame(
+            $caps_value,
+            $GLOBALS['_cb_test_user_meta'][32]['wp_capabilities'] ?? null,
+            'wp_capabilities должны быть восстановлены после WC_Privacy_Erasers'
+        );
+        $this->assertSame(
+            $level_value,
+            $GLOBALS['_cb_test_user_meta'][32]['wp_user_level'] ?? null,
+            'wp_user_level должен быть восстановлен после WC_Privacy_Erasers'
+        );
+    }
+
     public function test_anonymize_does_not_touch_social_pending(): void
     {
         // P0.3d: social_pending не имеет user_id — короткоживущая таблица с TTL.
