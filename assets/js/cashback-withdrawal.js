@@ -801,12 +801,16 @@ jQuery(document).ready(function ($) {
     // iter-32 F-32-002: отправка AJAX без debug-логирования (URL/body/response/xhr содержат PII и nonce).
 
     // Юр. чекбокс согласия на обработку платёжных данных (161-ФЗ).
+    // request_id — UUID v4 для server-side дедупа retry'ев (Группа 5 ADR,
+    // follow-up из E2E прогона 2026-04-29 finding A6-2). Защищает квоту
+    // «3 сохранения / 24 ч» от network-retry'ев и двойных POST.
     var settingsData = {
       action: 'save_payout_settings',
       payout_method_id: payoutMethodId,
       payout_account: payoutAccount,
       bank_id: bankRequired === 0 ? 0 : bankId,
       security: nonce,
+      request_id: generateIdempotencyKey(),
     };
     var $settingsLegal = $('#payout-settings-form input[name="cashback_legal_payment_pd_consent"]');
     if ($settingsLegal.length) {

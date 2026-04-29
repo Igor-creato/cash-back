@@ -575,10 +575,13 @@ class CashbackWithdrawal {
             echo '</div>';
             echo '</div>';
             echo '<div class="cashback-withdrawal-form">';
-            echo '<form id="withdrawal-form">';
+            // Stub для неавторизованных. Те же defense-in-depth атрибуты, что
+            // у основной формы (см. ниже): method=post + ARIA naming.
+            echo '<form id="withdrawal-form" method="post" action="" aria-labelledby="withdrawal-form-stub-heading">';
+            echo '<h2 id="withdrawal-form-stub-heading" class="screen-reader-text">' . esc_html__('Форма вывода кэшбэка (требуется авторизация)', 'cashback-plugin') . '</h2>';
             echo '<p class="form-row">';
             echo '<label for="withdrawal-amount">' . esc_html__('Сумма вывода', 'cashback-plugin') . ' <span class="required">*</span></label>';
-            echo '<input type="number" class="input-text" name="withdrawal_amount" id="withdrawal-amount" placeholder="' . esc_attr__('Введите сумму', 'cashback-plugin') . '" value="" min="0" max="0" step="0.01" disabled/>';
+            echo '<input type="number" class="input-text" name="withdrawal_amount" id="withdrawal-amount" placeholder="' . esc_attr__('Введите сумму', 'cashback-plugin') . '" value="" min="0" max="0" step="0.01" disabled aria-describedby="withdrawal-min-payout-hint-stub" />';
             echo '</p>';
             echo '<p class="form-row">';
             echo '<button type="submit" class="woocommerce-Button button" id="withdrawal-submit" name="withdrawal_submit" value="' . esc_attr__('Вывести', 'cashback-plugin') . '" disabled>' . esc_html__('Вывести', 'cashback-plugin') . '</button>';
@@ -655,14 +658,20 @@ class CashbackWithdrawal {
 
         echo '</div>'; // .balance-info-grid
 
-        echo '<p>' . esc_html__('Минимальная сумма выплаты:', 'cashback-plugin') . ' <span class="min-payout-amount">' . esc_html( $this->format_price_plain( $min_payout_amount ) ) . '</span></p>';
+        echo '<p id="withdrawal-min-payout-hint">' . esc_html__('Минимальная сумма выплаты:', 'cashback-plugin') . ' <span class="min-payout-amount">' . esc_html( $this->format_price_plain( $min_payout_amount ) ) . '</span></p>';
 
         // Форма вывода кэшбэка
         echo '<div class="cashback-withdrawal-form">';
-        echo '<form id="withdrawal-form" data-cb-protected="1">';
+        // method="post" + action="" предотвращают GET-leak nonce/amount в URL/Referrer
+        // при сбое JS (CSP-блокировка / browser-extension perf-guard / network-fail).
+        // JS-обработчик ниже всегда вызывает e.preventDefault() — нативный submit
+        // не должен достигать сети при штатной работе.
+        echo '<form id="withdrawal-form" method="post" action="" data-cb-protected="1" aria-labelledby="withdrawal-form-heading">';
+        // Скрытый h-элемент для screen-reader naming (форма без явного <h> заголовка).
+        echo '<h2 id="withdrawal-form-heading" class="screen-reader-text">' . esc_html__('Форма вывода кэшбэка', 'cashback-plugin') . '</h2>';
         echo '<p class="form-row">';
         echo '<label for="withdrawal-amount">' . esc_html__('Сумма вывода', 'cashback-plugin') . ' <span class="required">*</span></label>';
-        echo '<input type="number" class="input-text" name="withdrawal_amount" id="withdrawal-amount" placeholder="' . esc_attr__('Введите сумму', 'cashback-plugin') . '" value="" step="0.01" min="' . esc_attr((string) $min_payout_amount) . '" />';
+        echo '<input type="number" class="input-text" name="withdrawal_amount" id="withdrawal-amount" placeholder="' . esc_attr__('Введите сумму', 'cashback-plugin') . '" value="" step="0.01" min="' . esc_attr((string) $min_payout_amount) . '" required aria-describedby="withdrawal-min-payout-hint" />';
         echo '</p>';
         // CAPTCHA контейнер для серых IP
         if (class_exists('Cashback_Captcha')) {
@@ -745,7 +754,13 @@ class CashbackWithdrawal {
 
         echo '<p class="woocommerce-form-row woocommerce-form-row--last form-row form-row-last">';
         echo '<label for="payout_account">' . esc_html__('Номер счета или телефона', 'cashback-plugin') . ' <span class="required">*</span></label>';
-        echo '<input type="text" class="woocommerce-Input woocommerce-Input--text input-text" name="payout_account" id="payout_account" value="' . esc_attr($payout_account) . '" />';
+        // P1-A6-1 (E2E прогон 2026-04-29): не рендерить plaintext payout_account
+        // в DOM. Шифрование at-rest (AES-256) защищает БД, но at-render обнажает
+        // полный номер для browser-extensions / XSS / screen-share / DLP. Поле
+        // всегда стартует пустым; JS на «Изменить данные» уже очищает его (см.
+        // assets/js/cashback-withdrawal.js — обработчик #edit_payout_settings_btn),
+        // так что UX не меняется. Маскированное отображение есть в #payout_settings_display.
+        echo '<input type="text" class="woocommerce-Input woocommerce-Input--text input-text" name="payout_account" id="payout_account" value="" placeholder="' . esc_attr__('Введите номер счета или телефона', 'cashback-plugin') . '" autocomplete="off" />';
         echo '</p>';
 
         // Кастомный компонент поиска банков с autocomplete
@@ -1313,7 +1328,12 @@ class CashbackWithdrawal {
     }
 
     /**
-     * AJAX обработчик для сохранения настроек вывода
+     * AJAX обработчик для сохранения настроек вывода.
+     *
+     * Server-side request_id idempotency (Группа 5 ADR, follow-up из E2E прогона
+     * 2026-04-29 — finding A6-2): network-retry / двойной POST не приводят
+     * к повторному списанию rate-limit квоты «3 сохранения / 24 ч» и не пишут
+     * лишний ciphertext в БД.
      */
     public function save_payout_settings() {
         // Проверяем nonce
@@ -1335,11 +1355,42 @@ class CashbackWithdrawal {
             return;
         }
 
+        // === Idempotency: claim слота под (scope, user_id, request_id) ===
+        // Если клиент пришёл с тем же request_id и предыдущий вызов уже
+        // успешно завершился — возвращаем сохранённый результат без повторной
+        // обработки (защита от network-retry). Если параллельный запрос ещё
+        // в работе — 409 in_progress. Если request_id невалиден / отсутствует —
+        // legacy-режим без дедупа (для обратной совместимости).
+        $idem_scope      = 'user_payout_settings';
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $stored = Cashback_Idempotency::get_stored_result($idem_scope, $user_id, $idem_request_id);
+            if ($stored !== null) {
+                wp_send_json_success($stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => __('Запрос уже обрабатывается. Подождите завершения.', 'cashback-plugin'),
+                ), 409);
+                return;
+            }
+        }
+
         // Юр. согласие на обработку платёжных данных (161-ФЗ).
         // При первом сохранении реквизитов — обязательно; затем не требуется.
         if (class_exists('Cashback_Legal_Payout_Consent')) {
             $consent_check = Cashback_Legal_Payout_Consent::enforce_or_error($user_id, 'profile');
             if ($consent_check !== true) {
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $user_id, $idem_request_id);
+                }
                 wp_send_json_error($consent_check);
                 return;
             }
@@ -1348,6 +1399,9 @@ class CashbackWithdrawal {
         // Проверка статуса "banned"
         if (Cashback_User_Status::is_user_banned($user_id)) {
             $ban_info = Cashback_User_Status::get_ban_info($user_id);
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $user_id, $idem_request_id);
+            }
             wp_send_json_error(array(
                 'message' => Cashback_User_Status::get_banned_message($ban_info),
             ));
@@ -1361,6 +1415,9 @@ class CashbackWithdrawal {
         // См. ADR Группа 4 (F-1-001).
         if (!class_exists('Cashback_Encryption') || !Cashback_Encryption::is_configured()) {
             $this->log_encryption_unavailable('save_payout_settings', $user_id);
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $user_id, $idem_request_id);
+            }
             wp_send_json_error(
                 array(
                     'message' => __('Шифрование реквизитов не настроено. Пожалуйста, обратитесь к администратору сайта.', 'cashback-plugin'),
@@ -1375,6 +1432,9 @@ class CashbackWithdrawal {
         $settings_rate_key   = 'cb_settings_rate_' . $user_id;
         $settings_rate_count = (int) get_transient($settings_rate_key);
         if ($settings_rate_count >= 3) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => __('Слишком частое сохранение настроек. Попробуйте через 24 часа.', 'cashback-plugin') ));
             return;
         }
@@ -1385,16 +1445,25 @@ class CashbackWithdrawal {
 
         // Валидация данных
         if (empty($payout_method_id)) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => __('Пожалуйста, выберите способ вывода.', 'cashback-plugin') ));
             return;
         }
 
         if (empty($payout_account)) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => __('Пожалуйста, введите номер счета или телефона.', 'cashback-plugin') ));
             return;
         }
 
         if (mb_strlen($payout_account) > 50) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => __('Номер счета слишком длинный (максимум 50 символов).', 'cashback-plugin') ));
             return;
         }
@@ -1402,6 +1471,9 @@ class CashbackWithdrawal {
         // Проверяем, что способ вывода существует и активен
         $valid_method = $this->validate_payout_method($payout_method_id);
         if (!$valid_method) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => __('Недопустимый способ вывода.', 'cashback-plugin') ));
             return;
         }
@@ -1411,6 +1483,9 @@ class CashbackWithdrawal {
 
         if ($bank_required) {
             if (!$bank_id || $bank_id <= 0) {
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $user_id, $idem_request_id);
+                }
                 wp_send_json_error(array( 'message' => __('Пожалуйста, выберите банк.', 'cashback-plugin') ));
                 return;
             }
@@ -1418,6 +1493,9 @@ class CashbackWithdrawal {
             // Проверяем, что банк существует и активен
             $valid_bank = $this->validate_bank($bank_id);
             if (!$valid_bank) {
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $user_id, $idem_request_id);
+                }
                 wp_send_json_error(array( 'message' => __('Недопустимый банк.', 'cashback-plugin') ));
                 return;
             }
@@ -1430,6 +1508,9 @@ class CashbackWithdrawal {
         if ($method_slug) {
             $format_error = $this->validate_payout_account_format($method_slug, $payout_account);
             if (!empty($format_error)) {
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $user_id, $idem_request_id);
+                }
                 wp_send_json_error(array( 'message' => $format_error ));
                 return;
             }
@@ -1454,10 +1535,23 @@ class CashbackWithdrawal {
             $settings_rate_count = (int) get_transient($settings_rate_key);
             set_transient($settings_rate_key, $settings_rate_count + 1, DAY_IN_SECONDS);
 
-            wp_send_json_success(array(
+            $response = array(
                 'message' => __('Настройки успешно сохранены.', 'cashback-plugin'),
-            ));
+            );
+
+            // Сохраняем результат для возможных retry с тем же request_id
+            // (TTL 5 мин). store_result ДО wp_send_json_success — иначе при
+            // race-condition между ответом клиенту и записью в кеш повторный
+            // запрос мог бы пройти всю обработку повторно.
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::store_result($idem_scope, $user_id, $idem_request_id, $response);
+            }
+
+            wp_send_json_success($response);
         } else {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $user_id, $idem_request_id);
+            }
             wp_send_json_error(array( 'message' => __('Ошибка при сохранении данных.', 'cashback-plugin') ));
         }
     }
