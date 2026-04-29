@@ -287,5 +287,4 @@ class Cashback_Legal_DB {
         $rows = $wpdb->get_results($wpdb->prepare($sql, $where_args), ARRAY_A);
         return is_array($rows) ? $rows : array();
     }
-
 }

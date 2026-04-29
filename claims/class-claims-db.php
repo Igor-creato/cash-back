@@ -432,5 +432,4 @@ class Cashback_Claims_DB {
             'system'
         ) );
     }
-
 }
