@@ -1,0 +1,19 @@
+# Исключаем папки и файлы, которые не нужны в плагине
+/development/   export-ignore
+/context/   export-ignore
+/docs/  export-ignore
+/node_modules/ export-ignore
+/obsidian/  export-ignore
+/obsidian/  export-ignore
+/vendor/    export-ignore
+/wp-plugin-tests/   export-ignore
+#  все скрытые файлы и папки
+/.*        export-ignore
+# Исключаем файлы разработки
+/CLAUDE.md     export-ignore
+/check.md   export-ignore
+/composer.json  export-ignore
+/composer.lock  export-ignore
+/eslint.config.js   export-ignore
+/package.json   export-ignore
+/phpstan.neon   export-ignore
