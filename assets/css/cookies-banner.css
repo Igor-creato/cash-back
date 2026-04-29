@@ -1,14 +1,9 @@
 /**
  * Cashback Legal — Cookies banner.
  *
- * Использует CSS-переменные активной темы (Woodmart fallback на нейтральные).
- * Кнопки наследуют стиль темы через классы .btn / .btn-color-primary /
- * .btn-color-default / .btn-style-bordered (woodmart) — никаких хардкоднутых
- * цветов и шрифтов.
- *
- * Требование РКН: «Принять» и «Отклонить» одинаковой визуальной массы —
- * обеспечивается тем, что обе кнопки используют стили темы (одна primary,
- * вторая bordered — равноценные на уровне рендеринга woodmart).
+ * Белый surface с тенью (как карточка), весь текст наследует цвет/шрифт темы.
+ * Кнопки — нативные WC `.button` (тема стилизует под основной accent).
+ * Ссылка — нативный <a>, без класса, тема применяет свои hover-стили.
  */
 
 .cashback-legal-cookies-banner {
@@ -17,16 +12,14 @@
     right: 0;
     bottom: 0;
     z-index: 99999;
-    /* Surface: woodmart alternative-color (тёмный header) → текстовый цвет
-       темы → нейтральный fallback. */
-    background: var(--wd-alternative-color, var(--wd-text-color, #1f2937));
-    color: var(--wd-alternative-text-color, #f9fafb);
-    padding: 14px 20px;
-    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
-    font-family: var(--wd-text-font, inherit);
-    font-size: var(--wd-text-font-size, 14px);
-    line-height: var(--wd-text-line-height, 1.5);
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    background: #ffffff;
+    color: inherit;
+    padding: 16px 20px;
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.12);
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .cashback-legal-cookies-banner.is-hidden {
@@ -39,7 +32,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 14px;
+    gap: 16px;
     justify-content: space-between;
 }
 
@@ -47,7 +40,7 @@
     flex: 1 1 320px;
     margin: 0;
     color: inherit;
-    font-family: inherit;
+    font: inherit;
 }
 
 .cashback-legal-cookies-banner__actions {
@@ -57,32 +50,24 @@
     align-items: center;
 }
 
-/* Кнопки — стили темы делают всю работу. Минимум собственных правил:
-   только обеспечиваем нормальный размер и flex-поведение. */
+/* Кнопки — собственных стилей не задаём, всё рендерит тема через .button.
+   Минимально гарантируем разумный размер для UX. */
 .cashback-legal-cookies-banner__btn {
-    min-width: 110px;
-    /* Если тема не подцепила .btn — fallback на наследование. */
-    font-family: inherit;
-    line-height: 1.4;
+    min-width: 120px;
 }
 
-.cashback-legal-cookies-banner__btn:focus-visible {
-    /* outline берём из темы, но гарантируем видимый фокус для A11y. */
-    outline: 2px solid var(--wd-primary-color, currentColor);
-    outline-offset: 2px;
-}
-
+/* Ссылка — без классов на стороне JS, тема применяет свои стили <a>.
+   На случай если тема не задаёт hover — лёгкий fallback. */
 .cashback-legal-cookies-banner__link {
     color: inherit;
     text-decoration: underline;
-    font-size: inherit;
+    font: inherit;
     padding: 8px;
-    line-height: 1.4;
 }
 
 .cashback-legal-cookies-banner__link:hover,
 .cashback-legal-cookies-banner__link:focus-visible {
-    color: var(--wd-primary-color, currentColor);
+    text-decoration: none;
     outline: none;
 }
 
