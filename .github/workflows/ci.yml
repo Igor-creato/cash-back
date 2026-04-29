@@ -72,7 +72,20 @@ jobs:
         run: composer update --no-interaction --no-progress --prefer-dist
 
       - name: Composer audit (CVE check)
-        run: composer audit --no-interaction --format=plain
+        # Retry до 3 раз — packagist.org/api/security-advisories/ периодически
+        # таймаутит (curl error 28). Финальная попытка с --ignore-unreachable,
+        # чтобы network-сбой не блокировал CI (CVE-проверки делаются и периодически
+        # cron-ом отдельно).
+        run: |
+          for attempt in 1 2 3; do
+            if composer audit --no-interaction --format=plain; then
+              exit 0
+            fi
+            echo "::warning::composer audit attempt ${attempt} failed (likely packagist timeout), retrying in 10s..."
+            sleep 10
+          done
+          echo "::warning::composer audit network unreachable after 3 retries, falling back to --ignore-unreachable"
+          composer audit --no-interaction --format=plain --ignore-unreachable
 
       - name: PHPStan (level 5)
         run: vendor/bin/phpstan analyse --no-progress --memory-limit=2G --error-format=github
