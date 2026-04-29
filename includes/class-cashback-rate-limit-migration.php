@@ -42,7 +42,12 @@ if (!class_exists('Cashback_Rate_Limit_Migration')) {
          * }
          */
         public function run(): array {
-            if ((bool) get_option(self::OPTION_APPLIED, false)) {
+            $table          = $this->wpdb->prefix . self::TABLE_SUFFIX;
+            $existed_before = $this->table_exists($table);
+
+            // Self-heal: option set, но таблица отсутствует (восстановление БД из бэкапа,
+            // ручной DROP, partial-DDL ошибка). Сбрасываем флаг и пересоздаём.
+            if ((bool) get_option(self::OPTION_APPLIED, false) && $existed_before) {
                 return array(
                     'applied'         => false,
                     'already_applied' => true,
@@ -51,10 +56,7 @@ if (!class_exists('Cashback_Rate_Limit_Migration')) {
                 );
             }
 
-            $this->emit('run.start', array());
-
-            $table          = $this->wpdb->prefix . self::TABLE_SUFFIX;
-            $existed_before = $this->table_exists($table);
+            $this->emit('run.start', array( 'self_heal' => ! $existed_before && (bool) get_option(self::OPTION_APPLIED, false) ));
 
             $ddl = sprintf(
                 'CREATE TABLE IF NOT EXISTS `%s` (
@@ -70,6 +72,19 @@ if (!class_exists('Cashback_Rate_Limit_Migration')) {
 
             // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.DirectDatabaseQuery.SchemaChange -- DDL-миграция: literal имя таблицы в backticks, без user-input.
             $this->wpdb->query($ddl);
+
+            // Post-verify: флаг ставим ТОЛЬКО если таблица реально создалась.
+            // Защита от silent CREATE TABLE failure (privileges, disk, etc).
+            $exists_after = $this->table_exists($table);
+            if (!$exists_after) {
+                $this->emit('run.failed', array( 'last_error' => $this->wpdb->last_error ));
+                return array(
+                    'applied'         => false,
+                    'already_applied' => false,
+                    'table_created'   => false,
+                    'ddl_executed'    => array( $ddl ),
+                );
+            }
 
             update_option(self::OPTION_APPLIED, true, true);
 

@@ -31,10 +31,11 @@ final class RateLimitMigrationTest extends TestCase
         }
     }
 
-    public function test_skipped_when_applied_flag_true(): void
+    public function test_skipped_when_applied_flag_true_and_table_exists(): void
     {
         update_option('cashback_rate_limit_v1_applied', true);
-        $wpdb = new Rate_Limit_Migration_Wpdb_Stub();
+        $wpdb                    = new Rate_Limit_Migration_Wpdb_Stub();
+        $wpdb->existing_tables[] = 'wp_cashback_rate_limit_counters';
 
         $migration = new Cashback_Rate_Limit_Migration($wpdb);
         $result    = $migration->run();
@@ -42,6 +43,44 @@ final class RateLimitMigrationTest extends TestCase
         $this->assertTrue($result['already_applied']);
         $this->assertFalse($result['applied']);
         $this->assertEmpty($wpdb->executed_ddl, 'Ни одного DDL на already-applied.');
+    }
+
+    /**
+     * Self-heal: option=true, но таблица отсутствует (бэкап без таблицы,
+     * ручной DROP, частичная DDL-ошибка) → миграция должна пересоздать.
+     */
+    public function test_self_heal_recreates_table_if_flag_set_but_table_missing(): void
+    {
+        update_option('cashback_rate_limit_v1_applied', true);
+        // existing_tables оставляем пустым → таблицы нет.
+        $wpdb = new Rate_Limit_Migration_Wpdb_Stub();
+
+        $migration = new Cashback_Rate_Limit_Migration($wpdb);
+        $result    = $migration->run();
+
+        $this->assertTrue($result['applied'], 'Self-heal должен выполнить DDL.');
+        $this->assertTrue($result['table_created']);
+        $this->assertCount(1, $result['ddl_executed']);
+        $this->assertContains('wp_cashback_rate_limit_counters', $wpdb->existing_tables);
+    }
+
+    /**
+     * Post-verify: если CREATE TABLE silently fail (нет привилегий, диск, и т.п.) —
+     * флаг НЕ ставим, чтобы следующий запуск повторил попытку.
+     */
+    public function test_flag_not_set_when_create_table_fails_silently(): void
+    {
+        $wpdb              = new Rate_Limit_Migration_Wpdb_Stub_FailingDdl();
+        $wpdb->last_error  = 'Access denied (simulated)';
+
+        delete_option('cashback_rate_limit_v1_applied');
+
+        $migration = new Cashback_Rate_Limit_Migration($wpdb);
+        $result    = $migration->run();
+
+        $this->assertFalse($result['applied'], 'Без таблицы не должен applied=true.');
+        $this->assertFalse($result['table_created']);
+        $this->assertFalse((bool) get_option('cashback_rate_limit_v1_applied', false));
     }
 
     public function test_sets_applied_flag_on_clean_success(): void
@@ -171,6 +210,57 @@ final class Rate_Limit_Migration_Wpdb_Stub
     public function get_results(string $sql, string $output = 'ARRAY_A'): array
     {
         // SHOW TABLES LIKE '<name>'
+        if (preg_match("/^\\s*SHOW\\s+TABLES\\s+LIKE\\s+'([^']+)'\\s*$/i", $sql, $m)) {
+            return in_array($m[1], $this->existing_tables, true)
+                ? array( array( 'Tables_in_db' => $m[1] ) )
+                : array();
+        }
+        return array();
+    }
+}
+
+/**
+ * Stub имитирующий silent CREATE TABLE failure (DDL прошёл без exception,
+ * но таблица не создалась — права/диск/etc).
+ *
+ * Не наследует Rate_Limit_Migration_Wpdb_Stub (final), повторяет интерфейс.
+ */
+final class Rate_Limit_Migration_Wpdb_Stub_FailingDdl
+{
+    public string $prefix     = 'wp_';
+    public string $last_error = '';
+    /** @var array<int, string> */
+    public array $executed_ddl = array();
+    /** @var array<int, string> */
+    public array $existing_tables = array();
+
+    public function prepare(string $query, mixed ...$args): string
+    {
+        $i = 0;
+        return (string) preg_replace_callback(
+            '/%[sdif]/',
+            function (array $m) use (&$i, $args): string {
+                $v = $args[ $i ] ?? '';
+                $i++;
+                return is_string($v) ? "'" . str_replace("'", "\\'", $v) . "'" : (string) $v;
+            },
+            $query
+        );
+    }
+
+    public function query(string $sql): int
+    {
+        // Записываем DDL в лог, но НЕ добавляем в existing_tables — имитация silent fail.
+        if (preg_match('/^\s*CREATE\s+TABLE/i', $sql)) {
+            $this->executed_ddl[] = $sql;
+            return 0;
+        }
+        return 0;
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    public function get_results(string $sql, string $output = 'ARRAY_A'): array
+    {
         if (preg_match("/^\\s*SHOW\\s+TABLES\\s+LIKE\\s+'([^']+)'\\s*$/i", $sql, $m)) {
             return in_array($m[1], $this->existing_tables, true)
                 ? array( array( 'Tables_in_db' => $m[1] ) )
