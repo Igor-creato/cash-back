@@ -26,6 +26,7 @@ check.md
 /.playwright-mcp/
 /plans/
 *.png
+/docs/
 
 # Composer lock (composer.json is source-controlled; lock regenerated in CI)
 /composer.lock
