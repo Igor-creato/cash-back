@@ -85,13 +85,13 @@ class Cashback_User_Anonymizer {
             }
         }
 
-        // 2) Партнёрские начисления — через referrer_user_id (выплачивается рефереру)
-        // и, исторически, может быть user_id у первоначальной модели; берём оба для
-        // защиты от ложно-отрицательных результатов.
+        // 2) Партнёрские начисления — реальные колонки (см. affiliate-db.php
+        // CREATE TABLE и F-22-003): `referrer_id` (кому начислена комиссия) и
+        // `referred_user_id` (чья покупка). Ловим юзера в любой роли.
         $accruals = $wpdb->prefix . 'cashback_affiliate_accruals';
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- read-only EXISTS-check via %i.
         $exists = (int) $wpdb->get_var($wpdb->prepare(
-            'SELECT EXISTS(SELECT 1 FROM %i WHERE referrer_user_id = %d OR user_id = %d LIMIT 1)',
+            'SELECT EXISTS(SELECT 1 FROM %i WHERE referrer_id = %d OR referred_user_id = %d LIMIT 1)',
             $accruals,
             $user_id,
             $user_id
