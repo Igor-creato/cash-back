@@ -44,6 +44,9 @@ class Cashback_Users_Management_Admin {
         // Группа 15, S2: ручная корректировка баланса через ledger (type=adjustment).
         add_action('wp_ajax_cashback_adjust_balance', array( $this, 'handle_adjust_balance' ));
 
+        // Анонимизация пользователя (152-ФЗ): PII-скраб с сохранением финансовой первички.
+        add_action('wp_ajax_cashback_anonymize_user', array( $this, 'handle_anonymize_user' ));
+
         // Подключение скриптов
         add_action('admin_enqueue_scripts', array( $this, 'enqueue_admin_scripts' ));
     }
@@ -81,9 +84,22 @@ class Cashback_Users_Management_Admin {
         );
 
         wp_localize_script('cashback-admin-users', 'cashbackUsersData', array(
-            'updateNonce'   => wp_create_nonce('update_user_profile_nonce'),
-            'getNonce'      => wp_create_nonce('get_user_profile_nonce'),
-            'bulkRateNonce' => wp_create_nonce('bulk_update_cashback_rate_nonce'),
+            'updateNonce'    => wp_create_nonce('update_user_profile_nonce'),
+            'getNonce'       => wp_create_nonce('get_user_profile_nonce'),
+            'bulkRateNonce'  => wp_create_nonce('bulk_update_cashback_rate_nonce'),
+            'anonymizeNonce' => wp_create_nonce('cashback_anonymize_user_nonce'),
+            'ajaxUrl'        => admin_url('admin-ajax.php'),
+            'i18nAnonymize'  => array(
+                'confirmTitle'   => __('Анонимизировать пользователя?', 'cashback-plugin'),
+                'confirmBody'    => __('PII (логин, email, имя, реквизиты) будет стёрт. Финансовая история (транзакции, выплаты, ledger) сохраняется ≥ 5 лет согласно 115-ФЗ / НК ст. 23. Действие необратимо.', 'cashback-plugin'),
+                'reasonLabel'    => __('Причина (для журнала аудита, минимум 10 символов)', 'cashback-plugin'),
+                'confirm'        => __('Анонимизировать', 'cashback-plugin'),
+                'cancel'         => __('Отмена', 'cashback-plugin'),
+                'reasonTooShort' => __('Причина должна быть не короче 10 символов.', 'cashback-plugin'),
+                'success'        => __('Пользователь анонимизирован. Скраблено таблиц: {t}, отозвано согласий: {c}.', 'cashback-plugin'),
+                'genericError'   => __('Ошибка анонимизации.', 'cashback-plugin'),
+                'networkError'   => __('Ошибка сети. Повторите.', 'cashback-plugin'),
+            ),
         ));
 
         // Группа 15, S2.B: модал ручной корректировки баланса (vanilla JS,
@@ -349,6 +365,17 @@ class Cashback_Users_Management_Admin {
                                         >
                                             <?php esc_html_e('Корректировка', 'cashback-plugin'); ?>
                                         </button>
+                                        <?php if (($user['status'] ?? '') !== 'deleted') : ?>
+                                        <button
+                                            type="button"
+                                            class="button button-link-delete cashback-anonymize-user-btn"
+                                            data-user-id="<?php echo esc_attr($user['ID']); ?>"
+                                            data-user-email="<?php echo esc_attr($user['user_email']); ?>"
+                                            title="<?php esc_attr_e('Анонимизация: PII скрабится, фин-история сохраняется (152-ФЗ + 115-ФЗ)', 'cashback-plugin'); ?>"
+                                        >
+                                            <?php esc_html_e('Анонимизировать', 'cashback-plugin'); ?>
+                                        </button>
+                                        <?php endif; ?>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -1350,6 +1377,77 @@ class Cashback_Users_Management_Admin {
                 'message' => 'Ошибка применения корректировки: ' . $e->getMessage(),
             ), 500);
         }
+    }
+
+    /**
+     * AJAX: анонимизация пользователя (152-ФЗ ст. 9 ч. 4 vs 115-ФЗ / НК ст. 23 / 161-ФЗ).
+     * PII скрабится, финансовая первичка сохраняется.
+     *
+     * Контракт:
+     *   POST cashback_anonymize_user_nonce — wp_create_nonce('cashback_anonymize_user_nonce')
+     *   POST user_id (int)
+     *   POST reason (string, ≥10 chars)
+     *
+     * @return void
+     */
+    public function handle_anonymize_user(): void {
+        // Nonce.
+        if (
+            !isset($_POST['nonce']) || !wp_verify_nonce(
+                sanitize_text_field(wp_unslash((string) $_POST['nonce'])),
+                'cashback_anonymize_user_nonce'
+            )
+        ) {
+            wp_send_json_error(array( 'message' => 'Неверный токен безопасности.' ), 403);
+            return;
+        }
+
+        // Capability — только админы.
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array( 'message' => 'Недостаточно прав.' ), 403);
+            return;
+        }
+
+        $user_id = isset($_POST['user_id']) ? absint(wp_unslash($_POST['user_id'])) : 0;
+        if ($user_id <= 0) {
+            wp_send_json_error(array( 'message' => 'Некорректный ID пользователя.' ));
+            return;
+        }
+
+        $reason = isset($_POST['reason'])
+            ? sanitize_textarea_field(wp_unslash((string) $_POST['reason']))
+            : '';
+        $reason = trim($reason);
+        if (mb_strlen($reason) < 10) {
+            wp_send_json_error(array(
+                'message' => 'Причина должна быть не короче 10 символов (журнал аудита).',
+            ));
+            return;
+        }
+
+        if (!class_exists('Cashback_User_Anonymizer')) {
+            wp_send_json_error(array( 'message' => 'Модуль анонимизации не загружен.' ), 500);
+            return;
+        }
+
+        $admin_id = (int) get_current_user_id();
+        $result   = \Cashback_User_Anonymizer::anonymize($user_id, $admin_id, $reason);
+
+        if (empty($result['ok'])) {
+            $err = !empty($result['errors']) ? implode('; ', $result['errors']) : 'unknown';
+            wp_send_json_error(array(
+                'message' => 'Анонимизация не выполнена: ' . $err,
+                'errors'  => $result['errors'] ?? array(),
+            ), 500);
+            return;
+        }
+
+        wp_send_json_success(array(
+            'tables_scrubbed'  => (int) $result['tables_scrubbed'],
+            'consents_revoked' => (int) $result['consents_revoked'],
+            'errors'           => $result['errors'] ?? array(),
+            'message'          => 'Пользователь анонимизирован.',
+        ));
     }
 }
 

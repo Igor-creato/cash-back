@@ -361,4 +361,64 @@ jQuery(document).ready(function($) {
         row.find('.save-btn, .cancel-btn').hide();
         row.find('.edit-btn').show();
     }
+
+    // ────────────────────────────────────────────────────────────
+    // Анонимизация пользователя (152-ФЗ + 115-ФЗ).
+    // Источник конфигурации: window.cashbackUsersData.{anonymizeNonce, ajaxUrl, i18nAnonymize}.
+    // ────────────────────────────────────────────────────────────
+    $(document).on('click', '.cashback-anonymize-user-btn', function() {
+        var $btn = $(this);
+        var userId = parseInt($btn.attr('data-user-id'), 10);
+        var userEmail = $btn.attr('data-user-email') || '';
+        var i18n = (window.cashbackUsersData && window.cashbackUsersData.i18nAnonymize) || {};
+
+        if (!userId) {
+            return;
+        }
+
+        var promptMsg = (i18n.confirmTitle || 'Анонимизировать пользователя?')
+            + '\n\n'
+            + (i18n.confirmBody || 'PII будет стёрт, финансы сохранены. Действие необратимо.')
+            + '\n\nID: ' + userId + ' (' + userEmail + ')'
+            + '\n\n' + (i18n.reasonLabel || 'Причина (минимум 10 символов):');
+
+        var reason = window.prompt(promptMsg, '');
+        if (reason === null) {
+            return;
+        }
+        reason = String(reason).trim();
+        if (reason.length < 10) {
+            window.alert(i18n.reasonTooShort || 'Причина должна быть не короче 10 символов.');
+            return;
+        }
+
+        $btn.prop('disabled', true);
+
+        $.ajax({
+            url: (window.cashbackUsersData && window.cashbackUsersData.ajaxUrl) || (window.ajaxurl || '/wp-admin/admin-ajax.php'),
+            method: 'POST',
+            dataType: 'json',
+            data: {
+                action: 'cashback_anonymize_user',
+                nonce: (window.cashbackUsersData && window.cashbackUsersData.anonymizeNonce) || '',
+                user_id: userId,
+                reason: reason
+            }
+        }).done(function(response) {
+            if (response && response.success && response.data) {
+                var msg = (i18n.success || 'Пользователь анонимизирован. Скраблено таблиц: {t}, отозвано согласий: {c}.')
+                    .replace('{t}', String(response.data.tables_scrubbed || 0))
+                    .replace('{c}', String(response.data.consents_revoked || 0));
+                window.alert(msg);
+                window.location.reload();
+            } else {
+                var err = (response && response.data && response.data.message) || (i18n.genericError || 'Ошибка.');
+                window.alert(err);
+                $btn.prop('disabled', false);
+            }
+        }).fail(function() {
+            window.alert(i18n.networkError || 'Ошибка сети. Повторите.');
+            $btn.prop('disabled', false);
+        });
+    });
 });

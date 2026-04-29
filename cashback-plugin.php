@@ -539,6 +539,12 @@ class CashbackPlugin {
         // cashback_balance_ledger при заморозке/разморозке баланса пользователя.
         $this->require_file('includes/class-cashback-ban-ledger.php');
 
+        // Анонимизация пользователя (152-ФЗ ст. 9 ч. 4 vs 115-ФЗ/161-ФЗ/НК ст. 23):
+        // PII-скраб с сохранением финансовой первички. Класс используется в
+        // pre_delete_user-хуке (ниже в initialize_components) и AJAX-handler'е
+        // admin/users-management.php → handle_anonymize_user.
+        $this->require_file('includes/class-cashback-user-anonymizer.php');
+
         // Подключение зависимых файлов (общие — нужны на фронтенде и в админке)
         $this->require_file('mariadb.php');
         $this->require_file('cashback-history.php');
@@ -876,6 +882,13 @@ class CashbackPlugin {
         // Согласие 152-ФЗ: чекбокс регистрации + хуки сохранения consent.
         if (class_exists('Cashback_Fraud_Consent')) {
             Cashback_Fraud_Consent::init();
+        }
+
+        // Анонимизация / soft-delete: pre_delete_user priority 5 — раньше дефолтных 10,
+        // чтобы плагиновые DELETE прошли (или wp_die сработал) до того как WP пытается
+        // удалить wp_users (FK fk_balance_user).
+        if (class_exists('Cashback_User_Anonymizer')) {
+            add_action('pre_delete_user', array( 'Cashback_User_Anonymizer', 'on_pre_delete_user' ), 5, 3);
         }
 
         if (is_admin() && class_exists('Cashback_Fraud_Admin')) {
