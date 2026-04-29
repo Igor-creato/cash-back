@@ -256,7 +256,7 @@ if (!class_exists('Cashback_Schema_Idempotency_Migration')) {
                     'table' => 'cashback_claims',
                     'type'  => 'column',
                     'name'  => 'idempotency_key',
-                    'ddl'   => 'ADD COLUMN `idempotency_key` CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL DEFAULT NULL',
+                    'ddl'   => 'ADD COLUMN `idempotency_key` CHAR(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL DEFAULT NULL',
                 ),
                 array(
                     'table' => 'cashback_claims',
@@ -274,7 +274,7 @@ if (!class_exists('Cashback_Schema_Idempotency_Migration')) {
                     'table' => 'cashback_support_messages',
                     'type'  => 'column',
                     'name'  => 'request_id',
-                    'ddl'   => 'ADD COLUMN `request_id` CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL DEFAULT NULL',
+                    'ddl'   => 'ADD COLUMN `request_id` CHAR(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL DEFAULT NULL',
                 ),
                 array(
                     'table' => 'cashback_support_messages',

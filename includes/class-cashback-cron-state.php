@@ -197,7 +197,7 @@ class Cashback_Cron_State {
 
         $sql = "CREATE TABLE IF NOT EXISTS `{$table}` (
             `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            `run_id` char(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'UUIDv7 всего прогона run_sync (один на 5 этапов)',
+            `run_id` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'UUIDv7 всего прогона run_sync (один на 5 этапов)',
             `stage` varchar(64) NOT NULL COMMENT 'Идентификатор этапа cron',
             `status` enum('running','success','failed') NOT NULL DEFAULT 'running',
             `started_at` datetime NOT NULL,

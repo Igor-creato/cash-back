@@ -49,7 +49,7 @@ class Cashback_Support_DB {
             `message` text NOT NULL,
             `is_admin` tinyint(1) NOT NULL DEFAULT 0,
             `is_read` tinyint(1) NOT NULL DEFAULT 0,
-            `request_id` CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL DEFAULT NULL,
+            `request_id` CHAR(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL DEFAULT NULL,
             `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             UNIQUE KEY `uk_request_id` (`request_id`),

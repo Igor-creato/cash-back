@@ -132,7 +132,7 @@ class Cashback_Notifications_DB {
         // Кампании массовых email-рассылок (создаются администратором).
         $sql_broadcast_campaigns = "CREATE TABLE IF NOT EXISTS `{$prefix}cashback_broadcast_campaigns` (
             id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            campaign_uuid CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+            campaign_uuid CHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
             subject VARCHAR(255) NOT NULL,
             body_html LONGTEXT NOT NULL,
             audience_filters TEXT DEFAULT NULL,

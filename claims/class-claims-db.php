@@ -115,7 +115,7 @@ class Cashback_Claims_DB {
         $table_claims = "CREATE TABLE IF NOT EXISTS `{$wpdb->prefix}cashback_claims` (
             `claim_id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             `user_id` bigint(20) unsigned NOT NULL,
-            `click_id` char(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'UUID клика из cashback_click_log',
+            `click_id` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'UUID клика из cashback_click_log',
             `merchant_id` int unsigned DEFAULT NULL COMMENT 'ID оффера/магазина (offer_id)',
             `merchant_name` varchar(255) DEFAULT NULL COMMENT 'Название магазина',
             `product_id` bigint(20) unsigned NOT NULL COMMENT 'ID товара WooCommerce',
@@ -132,7 +132,7 @@ class Cashback_Claims_DB {
             `suspicious_reasons` text DEFAULT NULL COMMENT 'JSON массив причин',
             `ip_address` varchar(45) NOT NULL COMMENT 'IP при создании заявки',
             `user_agent` text DEFAULT NULL COMMENT 'User-Agent при создании',
-            `idempotency_key` CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL DEFAULT NULL,
+            `idempotency_key` CHAR(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL DEFAULT NULL,
             `created_at` datetime NOT NULL DEFAULT current_timestamp(),
             `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
             PRIMARY KEY (`claim_id`),
