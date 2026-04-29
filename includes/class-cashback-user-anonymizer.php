@@ -312,6 +312,9 @@ class Cashback_User_Anonymizer {
             return array( 'ok' => false, 'tables_cleaned' => 0 );
         }
 
+        // Таблицы с user_id напрямую (DELETE WHERE user_id = X).
+        // social_tokens (link_id, без user_id) и social_pending (без user_id)
+        // обработаны отдельными блоками ниже. См. E2E 2026-04-29 баги #3-#4.
         $tables = array(
             'cashback_user_profile',
             'cashback_user_balance',
@@ -319,9 +322,6 @@ class Cashback_User_Anonymizer {
             'cashback_click_log',
             'cashback_click_sessions',
             'cashback_consent_log',
-            'cashback_social_links',
-            'cashback_social_tokens',
-            'cashback_social_pending',
         );
 
         $cleaned = 0;
@@ -335,6 +335,30 @@ class Cashback_User_Anonymizer {
             ));
             ++$cleaned;
         }
+
+        // social_tokens (link_id) → social_links (user_id). Порядок важен:
+        // tokens сначала через JOIN, потом links — иначе подзапрос пустой.
+        $links_table  = $wpdb->prefix . 'cashback_social_links';
+        $tokens_table = $wpdb->prefix . 'cashback_social_tokens';
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DELETE %i + JOIN.
+        $wpdb->query($wpdb->prepare(
+            'DELETE t FROM %i AS t INNER JOIN %i AS l ON l.id = t.link_id WHERE l.user_id = %d',
+            $tokens_table,
+            $links_table,
+            $user_id
+        ));
+        ++$cleaned;
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DELETE %i.
+        $wpdb->query($wpdb->prepare(
+            'DELETE FROM %i WHERE user_id = %d',
+            $links_table,
+            $user_id
+        ));
+        ++$cleaned;
+
+        // social_pending — НЕТ user_id (короткоживущие заявки с TTL). Чистится
+        // по expires_at; для конкретного юзера ничего не делаем.
 
         if (class_exists('Cashback_Encryption')) {
             $actor_id = function_exists('get_current_user_id') ? (int) get_current_user_id() : 0;

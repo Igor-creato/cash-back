@@ -192,4 +192,52 @@ final class UserHardDeleteTest extends TestCase
             'Hard-delete для empty user НЕ пишет revoke в consent_log (PD не обрабатывались)'
         );
     }
+
+    // ────────────────────────────────────────────────────────────────────
+    // Regression-guard для E2E 2026-04-29: hard_delete_plugin_rows должен
+    // использовать ту же schema-aware логику что и delete_social_auth_rows
+    // в anonymize() (баги #3 и #4 были в обоих местах, но изначально фиксили
+    // только anonymize-путь).
+    // ────────────────────────────────────────────────────────────────────
+
+    public function test_hard_delete_does_not_use_user_id_for_social_tokens(): void
+    {
+        // social_tokens.user_id не существует — должен быть JOIN на social_links.
+        Cashback_User_Anonymizer::hard_delete_plugin_rows(99);
+
+        $sqls = $this->querySqls();
+        $bad = array_filter(
+            $sqls,
+            static fn(string $s): bool => preg_match('/DELETE\s+FROM\s+`wp_cashback_social_tokens`\s+WHERE\s+user_id/i', $s) === 1
+        );
+        $this->assertEmpty($bad, 'social_tokens НЕ должен иметь DELETE WHERE user_id (нет колонки user_id в схеме)');
+    }
+
+    public function test_hard_delete_uses_join_for_social_tokens(): void
+    {
+        Cashback_User_Anonymizer::hard_delete_plugin_rows(99);
+
+        $sqls = $this->querySqls();
+        $join = array_filter(
+            $sqls,
+            static fn(string $s): bool => preg_match('/DELETE\s+t\s+FROM\s+`wp_cashback_social_tokens`/i', $s) === 1
+                && preg_match('/INNER\s+JOIN\s+`wp_cashback_social_links`/i', $s) === 1
+                && preg_match('/l\.user_id\s*=\s*99/i', $s) === 1
+        );
+        $this->assertNotEmpty($join, 'social_tokens должен чиститься через JOIN на social_links по l.user_id');
+    }
+
+    public function test_hard_delete_does_not_touch_social_pending(): void
+    {
+        // social_pending не имеет user_id (короткоживущие заявки с TTL).
+        Cashback_User_Anonymizer::hard_delete_plugin_rows(99);
+
+        foreach ($this->querySqls() as $sql) {
+            $this->assertStringNotContainsStringIgnoringCase(
+                'cashback_social_pending',
+                $sql,
+                'cashback_social_pending не должен фигурировать в hard_delete_plugin_rows'
+            );
+        }
+    }
 }
