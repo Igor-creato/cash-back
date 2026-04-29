@@ -502,4 +502,29 @@ final class UserAnonymizationTest extends TestCase
         $this->assertMatchesRegularExpression('/AND\s+is_admin\s*=\s*0/i', $sql, 'AND is_admin=0 — admin-ответы не трогаем');
         $this->assertStringContainsString("'[anonymized]'", $sql, 'message → [anonymized]');
     }
+
+    public function test_anonymize_support_attachments_uses_user_id_and_stored_name(): void
+    {
+        // P0.3c: реальные колонки support_attachments — user_id, ticket_id, stored_name.
+        Cashback_User_Anonymizer::anonymize(32, 1, 'reason ≥20 chars пожалуйста');
+
+        $select_calls = array_values(array_filter(
+            $this->wpdb->calls,
+            static fn(array $c): bool => $c['method'] === 'get_results' && isset($c['sql'])
+                && preg_match('/wp_cashback_support_attachments/i', (string) $c['sql']) === 1
+        ));
+        $this->assertNotEmpty($select_calls, 'Должен быть SELECT из cashback_support_attachments');
+        $select_sql = (string) $select_calls[0]['sql'];
+
+        $this->assertStringNotContainsStringIgnoringCase('uploader_id', $select_sql, 'НЕ должно быть uploader_id (его нет в схеме)');
+        $this->assertStringNotContainsStringIgnoringCase('file_path', $select_sql, 'НЕ должно быть file_path (его нет в схеме)');
+        $this->assertMatchesRegularExpression('/SELECT\s+ticket_id,\s*stored_name/i', $select_sql, 'SELECT ticket_id, stored_name');
+        $this->assertMatchesRegularExpression('/WHERE\s+user_id\s*=\s*32/i', $select_sql, 'WHERE user_id=32');
+
+        $delete_calls = array_values(array_filter(
+            $this->querySqls(),
+            static fn(string $s): bool => preg_match('/DELETE\s+FROM\s+`wp_cashback_support_attachments`\s+WHERE\s+user_id\s*=\s*32/i', $s) === 1
+        ));
+        $this->assertNotEmpty($delete_calls, 'Должен быть DELETE WHERE user_id=32');
+    }
 }

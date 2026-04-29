@@ -516,33 +516,36 @@ class Cashback_User_Anonymizer {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_support_attachments';
 
-        // Best-effort unlink файлов с диска (схема таблицы может отсутствовать в
-        // ряде установок — graceful fallback при ошибке SELECT).
-        try {
-            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- SELECT через %i.
-            $rows = $wpdb->get_results($wpdb->prepare(
-                'SELECT file_path FROM %i WHERE uploader_id = %d',
-                $table,
-                $user_id
-            ), ARRAY_A);
-            if (is_array($rows)) {
-                foreach ($rows as $row) {
-                    $path = (string) ($row['file_path'] ?? '');
-                    if ($path !== '' && file_exists($path) && is_file($path)) {
+        // Реальная схема (support-db.php) — `user_id` (не uploader_id) и
+        // `stored_name` (32-hex имя файла) + `ticket_id`. Путь строится через
+        // Cashback_Support_DB::get_upload_dir($ticket_id) . '/' . $stored_name.
+        // Best-effort unlink — БД-запись удаляется в любом случае ниже.
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- SELECT через %i.
+        $rows = $wpdb->get_results($wpdb->prepare(
+            'SELECT ticket_id, stored_name FROM %i WHERE user_id = %d',
+            $table,
+            $user_id
+        ), ARRAY_A);
+
+        if (is_array($rows) && class_exists('Cashback_Support_DB')) {
+            foreach ($rows as $row) {
+                $stored = (string) ($row['stored_name'] ?? '');
+                $ticket = (int) ($row['ticket_id'] ?? 0);
+                // Defence-in-depth: stored_name должен быть hex-строкой 32 символа
+                // (см. Cashback_Support_DB::create_attachment).
+                if ($ticket > 0 && $stored !== '' && preg_match('/^[a-f0-9]{32}$/', $stored) === 1) {
+                    $path = \Cashback_Support_DB::get_upload_dir($ticket) . '/' . $stored;
+                    if (file_exists($path) && is_file($path)) {
                         // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- best-effort cleanup, БД-запись удаляется ниже в любом случае.
                         @unlink($path);
                     }
                 }
             }
-        } catch (\Throwable $e) {
-            // schema mismatch (отсутствует колонка file_path или uploader_id) — продолжаем
-            // удаление БД-записей; partial cleanup лучше отказа всей анонимизации.
-            unset($e);
         }
 
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DELETE через %i.
         $wpdb->query($wpdb->prepare(
-            'DELETE FROM %i WHERE uploader_id = %d',
+            'DELETE FROM %i WHERE user_id = %d',
             $table,
             $user_id
         ));
