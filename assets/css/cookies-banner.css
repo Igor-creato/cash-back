@@ -55,8 +55,12 @@
     align-items: center;
 }
 
-/* Кнопки: green-as-theme-primary через --btn-default-* (woodmart). */
-.cashback-legal-cookies-banner__btn {
+/* Кнопки: green-as-theme-primary через --btn-default-* (woodmart).
+   Двойная классовая selektивность (.cashback-legal-cookies-banner
+   + .cashback-legal-cookies-banner__btn) = 0,0,2,0 — побеждает
+   :is(.btn,.button,button,...) (0,0,1,0) из woodmart base.css,
+   которая иначе перекрашивает <button> в #3E3E3E. */
+.cashback-legal-cookies-banner .cashback-legal-cookies-banner__btn {
     display: inline-block;
     background: var(--btn-default-bgcolor, #83b735);
     color: var(--btn-default-color, #ffffff);
@@ -74,8 +78,8 @@
     appearance: none;
 }
 
-.cashback-legal-cookies-banner__btn:hover,
-.cashback-legal-cookies-banner__btn:focus-visible {
+.cashback-legal-cookies-banner .cashback-legal-cookies-banner__btn:hover,
+.cashback-legal-cookies-banner .cashback-legal-cookies-banner__btn:focus-visible {
     background: var(--btn-default-bgcolor-hover, #74a32f);
     color: var(--btn-default-color-hover, #ffffff);
     outline: none;
