@@ -92,7 +92,14 @@ final class UserAnonymizeBlocksAdminTest extends TestCase
 
         $this->assertIsArray($result);
         $this->assertFalse($result['ok'], 'anonymize должен вернуть ok=false для админа');
-        $this->assertContains('cannot_anonymize_admin', $result['errors'], 'errors должен содержать cannot_anonymize_admin');
+
+        // P0.4: errors теперь массив структур {table, error}.
+        $error_codes = array_column($result['errors'], 'error');
+        $this->assertContains(
+            'cannot_anonymize_admin',
+            $error_codes,
+            'errors должен содержать запись с error=cannot_anonymize_admin'
+        );
     }
 
     public function test_anonymize_does_not_modify_db_for_admin_user(): void
@@ -128,6 +135,7 @@ final class UserAnonymizeBlocksAdminTest extends TestCase
 
         // Для non-admin — anonymize выполняется (ok=true либо ошибки уровня
         // legal_db, но не cannot_anonymize_admin).
-        $this->assertNotContains('cannot_anonymize_admin', $result['errors'] ?? array());
+        $error_codes = array_column($result['errors'] ?? array(), 'error');
+        $this->assertNotContains('cannot_anonymize_admin', $error_codes);
     }
 }

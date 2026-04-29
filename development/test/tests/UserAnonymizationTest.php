@@ -248,7 +248,11 @@ final class UserAnonymizationTest extends TestCase
         $result = Cashback_User_Anonymizer::anonymize(32, 1, 'РКН-запрос #2026-04-29');
 
         $this->assertIsArray($result);
-        $this->assertTrue($result['ok'], 'anonymize должен вернуть ok=true: errors=' . implode('; ', $result['errors'] ?? array()));
+        $error_messages = array_map(
+            static fn(array $e): string => ($e['table'] ?? '?') . ': ' . ($e['error'] ?? '?'),
+            $result['errors'] ?? array()
+        );
+        $this->assertTrue($result['ok'], 'anonymize должен вернуть ok=true: errors=' . implode('; ', $error_messages));
         $this->assertGreaterThan(0, $result['tables_scrubbed']);
     }
 

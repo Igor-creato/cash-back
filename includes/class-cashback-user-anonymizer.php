@@ -23,6 +23,14 @@ class Cashback_User_Anonymizer {
     public const ANON_IP        = '0.0.0.0';
     public const ANON_UA_HASH   = 'anonymized';
 
+    /**
+     * Per-run buffer ошибок (table+error) для error collection (P0.4).
+     * Сбрасывается в начале anonymize(), читается в конце для summary+audit.
+     *
+     * @var array<int, array{table:string, error:string}>
+     */
+    private static array $step_errors = array();
+
     /** PII keys в wp_usermeta (точное совпадение). */
     private const PII_USERMETA_KEYS = array(
         'first_name',
@@ -129,11 +137,21 @@ class Cashback_User_Anonymizer {
      * Idempotent: повторный вызов для уже обезличенного юзера вернёт
      * `idempotent_noop=true` без записи в audit/consent_log.
      *
-     * @return array{ok:bool, tables_scrubbed:int, consents_revoked:int, errors:array<int,mixed>, idempotent_noop?:bool}
+     * Если часть таблиц упала на schema mismatch / SQL error — возврат
+     * `ok=true, partial=true, errors=[{table,error}, ...]`. Транзакция при
+     * partial-fail коммитится (PII всё равно частично стёрт; rollback вернул
+     * бы PII обратно).
+     *
+     * @return array{ok:bool, tables_scrubbed:int, consents_revoked:int, errors:array<int,array{table:string,error:string}>, idempotent_noop?:bool, partial?:bool}
      */
     public static function anonymize( int $user_id, int $admin_id, string $reason ): array {
         if ($user_id <= 0) {
-            return array( 'ok' => false, 'tables_scrubbed' => 0, 'consents_revoked' => 0, 'errors' => array( 'invalid_user_id' ) );
+            return array(
+                'ok'               => false,
+                'tables_scrubbed'  => 0,
+                'consents_revoked' => 0,
+                'errors'           => array( array( 'table' => 'precondition', 'error' => 'invalid_user_id' ) ),
+            );
         }
 
         // Guard: нельзя анонимизировать админа. WP и так не даст удалить
@@ -143,13 +161,18 @@ class Cashback_User_Anonymizer {
                 'ok'               => false,
                 'tables_scrubbed'  => 0,
                 'consents_revoked' => 0,
-                'errors'           => array( 'cannot_anonymize_admin' ),
+                'errors'           => array( array( 'table' => 'precondition', 'error' => 'cannot_anonymize_admin' ) ),
             );
         }
 
         global $wpdb;
         if (!is_object($wpdb)) {
-            return array( 'ok' => false, 'tables_scrubbed' => 0, 'consents_revoked' => 0, 'errors' => array( 'wpdb_not_initialized' ) );
+            return array(
+                'ok'               => false,
+                'tables_scrubbed'  => 0,
+                'consents_revoked' => 0,
+                'errors'           => array( array( 'table' => 'precondition', 'error' => 'wpdb_not_initialized' ) ),
+            );
         }
 
         // Idempotency guard: повторный вызов anonymize() для уже обезличенного
@@ -166,7 +189,8 @@ class Cashback_User_Anonymizer {
         }
 
         $tables_scrubbed = 0;
-        $errors          = array();
+        // Сбрасываем буфер ошибок step'ов (P0.4) — собираем актуальный run.
+        self::$step_errors = array();
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- transactional admin-only path.
         $wpdb->query('START TRANSACTION');
@@ -199,23 +223,35 @@ class Cashback_User_Anonymizer {
                         }
                     }
                 } catch (\Throwable $e) {
-                    $errors[] = 'wc_erasers: ' . $e->getMessage();
+                    self::$step_errors[] = array( 'table' => 'wc_erasers', 'error' => $e->getMessage() );
                 }
             }
 
             $consents_revoked = self::revoke_all_consents($user_id);
 
+            // Снимок ошибок step'ов (P0.4): включается в summary, audit details
+            // и используется UI для показа warning-баннера. Partial scrub (когда
+            // часть таблиц упала на schema mismatch) НЕ откатывается — PII всё
+            // равно частично стёрт, rollback вернул бы PII обратно в открытый вид.
+            $errors  = self::$step_errors;
+            $partial = !empty($errors);
+
             if (class_exists('Cashback_Encryption')) {
+                $details = array(
+                    'reason'           => $reason,
+                    'tables_scrubbed'  => $tables_scrubbed,
+                    'consents_revoked' => $consents_revoked,
+                );
+                if ($partial) {
+                    $details['partial'] = true;
+                    $details['errors']  = $errors;
+                }
                 \Cashback_Encryption::write_audit_log(
                     'user_anonymized',
                     $admin_id,
                     'user',
                     $user_id,
-                    array(
-                        'reason'           => $reason,
-                        'tables_scrubbed'  => $tables_scrubbed,
-                        'consents_revoked' => $consents_revoked,
-                    )
+                    $details
                 );
             }
 
@@ -227,11 +263,13 @@ class Cashback_User_Anonymizer {
                 'tables_scrubbed'  => $tables_scrubbed,
                 'consents_revoked' => $consents_revoked,
                 'errors'           => $errors,
+                'partial'          => $partial,
             );
         } catch (\Throwable $e) {
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- transactional admin-only path.
             $wpdb->query('ROLLBACK');
-            $errors[] = $e->getMessage();
+            $errors   = self::$step_errors;
+            $errors[] = array( 'table' => 'exception', 'error' => $e->getMessage() );
             return array(
                 'ok'               => false,
                 'tables_scrubbed'  => 0,
@@ -330,6 +368,24 @@ class Cashback_User_Anonymizer {
     // ────────────────────────────────────────────────────────────────────
 
     /**
+     * Проверяет $wpdb->last_error и при non-empty пушит запись в self::$step_errors.
+     * Возвращает true если успех, false если ошибка. Сбрасывает last_error.
+     */
+    private static function record_query( string $label ): bool {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return false;
+        }
+        $err = (string) ($wpdb->last_error ?? '');
+        if ($err !== '') {
+            self::$step_errors[] = array( 'table' => $label, 'error' => $err );
+            $wpdb->last_error = '';
+            return false;
+        }
+        return true;
+    }
+
+    /**
      * Проверяет — пользователь уже анонимизирован (status='deleted' в profile).
      * Используется как idempotency guard в начале anonymize().
      */
@@ -359,6 +415,7 @@ class Cashback_User_Anonymizer {
             ? $wpdb->users
             : ($wpdb->prefix . 'users');
 
+        $wpdb->last_error = '';
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- скраб PII в core-таблице через %i.
         $wpdb->query($wpdb->prepare(
             'UPDATE %i SET user_login = %s, user_email = %s, display_name = %s, user_url = %s, user_pass = %s, user_nicename = %s WHERE ID = %d',
@@ -372,7 +429,7 @@ class Cashback_User_Anonymizer {
             $user_id
         ));
 
-        return 1;
+        return self::record_query('wp_users') ? 1 : 0;
     }
 
     private static function scrub_wp_usermeta( int $user_id ): int {
@@ -382,7 +439,10 @@ class Cashback_User_Anonymizer {
             ? $wpdb->usermeta
             : ($wpdb->prefix . 'usermeta');
 
+        $ok = true;
+
         foreach (self::PII_USERMETA_KEYS as $key) {
+            $wpdb->last_error = '';
             // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- скраб PII в usermeta через %i.
             $wpdb->query($wpdb->prepare(
                 'DELETE FROM %i WHERE user_id = %d AND meta_key = %s',
@@ -390,10 +450,14 @@ class Cashback_User_Anonymizer {
                 $user_id,
                 $key
             ));
+            if (!self::record_query('wp_usermeta')) {
+                $ok = false;
+            }
         }
 
         foreach (self::PII_USERMETA_PREFIXES as $prefix) {
             $like = $wpdb->esc_like($prefix) . '%';
+            $wpdb->last_error = '';
             // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- LIKE с esc_like + %i.
             $wpdb->query($wpdb->prepare(
                 'DELETE FROM %i WHERE user_id = %d AND meta_key LIKE %s',
@@ -401,15 +465,19 @@ class Cashback_User_Anonymizer {
                 $user_id,
                 $like
             ));
+            if (!self::record_query('wp_usermeta')) {
+                $ok = false;
+            }
         }
 
-        return 1;
+        return $ok ? 1 : 0;
     }
 
     private static function scrub_cashback_profile( int $user_id ): int {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_user_profile';
 
+        $wpdb->last_error = '';
         // status='deleted', PII NULL, banned_at = UTC now (для журнала).
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- UPDATE через %i.
         $wpdb->query($wpdb->prepare(
@@ -421,13 +489,14 @@ class Cashback_User_Anonymizer {
             self::STATUS_DELETED,
             $user_id
         ));
-        return 1;
+        return self::record_query('cashback_user_profile') ? 1 : 0;
     }
 
     private static function scrub_payout_requests_pii( int $user_id ): int {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_payout_requests';
 
+        $wpdb->last_error = '';
         // ВАЖНО: total_amount, status, masked_details (последние 4 цифры) сохраняются
         // для финаудита — только PII-поля стираются.
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- UPDATE через %i.
@@ -436,12 +505,13 @@ class Cashback_User_Anonymizer {
             $table,
             $user_id
         ));
-        return 1;
+        return self::record_query('cashback_payout_requests') ? 1 : 0;
     }
 
     private static function scrub_user_fingerprints( int $user_id ): int {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_user_fingerprints';
+        $wpdb->last_error = '';
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- UPDATE через %i.
         $wpdb->query($wpdb->prepare(
             'UPDATE %i SET ip_address = %s, user_agent_hash = %s WHERE user_id = %d',
@@ -450,12 +520,13 @@ class Cashback_User_Anonymizer {
             self::ANON_UA_HASH,
             $user_id
         ));
-        return 1;
+        return self::record_query('cashback_user_fingerprints') ? 1 : 0;
     }
 
     private static function scrub_click_log( int $user_id ): int {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_click_log';
+        $wpdb->last_error = '';
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- UPDATE через %i.
         $wpdb->query($wpdb->prepare(
             'UPDATE %i SET ip_address = %s, user_agent = %s WHERE user_id = %d',
@@ -464,12 +535,13 @@ class Cashback_User_Anonymizer {
             '',
             $user_id
         ));
-        return 1;
+        return self::record_query('cashback_click_log') ? 1 : 0;
     }
 
     private static function scrub_audit_log( int $user_id ): int {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_audit_log';
+        $wpdb->last_error = '';
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- UPDATE через %i; details уже редактирован через redact_audit_details на запись.
         $wpdb->query($wpdb->prepare(
             'UPDATE %i SET ip_address = %s, user_agent = %s WHERE actor_id = %d',
@@ -478,12 +550,13 @@ class Cashback_User_Anonymizer {
             '',
             $user_id
         ));
-        return 1;
+        return self::record_query('cashback_audit_log') ? 1 : 0;
     }
 
     private static function scrub_consent_log_meta( int $user_id ): int {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_consent_log';
+        $wpdb->last_error = '';
         // ВАЖНО: append-only журнал — мы НЕ удаляем записи, только обнуляем
         // ip/ua-метаданные (PII), сохраняя сам факт согласия (доказательная база).
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- UPDATE через %i.
@@ -494,12 +567,13 @@ class Cashback_User_Anonymizer {
             '',
             $user_id
         ));
-        return 1;
+        return self::record_query('cashback_consent_log') ? 1 : 0;
     }
 
     private static function scrub_support_messages( int $user_id ): int {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_support_messages';
+        $wpdb->last_error = '';
         // Реальная схема (support-db.php) — `user_id` (не sender_id) и `is_admin`.
         // is_admin=0 — чтобы не затирать admin-ответы (это не PII скрабимого юзера).
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- UPDATE через %i.
@@ -509,7 +583,7 @@ class Cashback_User_Anonymizer {
             '[anonymized]',
             $user_id
         ));
-        return 1;
+        return self::record_query('cashback_support_messages') ? 1 : 0;
     }
 
     private static function delete_support_attachments( int $user_id ): int {
@@ -520,14 +594,16 @@ class Cashback_User_Anonymizer {
         // `stored_name` (32-hex имя файла) + `ticket_id`. Путь строится через
         // Cashback_Support_DB::get_upload_dir($ticket_id) . '/' . $stored_name.
         // Best-effort unlink — БД-запись удаляется в любом случае ниже.
+        $wpdb->last_error = '';
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- SELECT через %i.
         $rows = $wpdb->get_results($wpdb->prepare(
             'SELECT ticket_id, stored_name FROM %i WHERE user_id = %d',
             $table,
             $user_id
         ), ARRAY_A);
+        $select_ok = self::record_query('cashback_support_attachments');
 
-        if (is_array($rows) && class_exists('Cashback_Support_DB')) {
+        if ($select_ok && is_array($rows) && class_exists('Cashback_Support_DB')) {
             foreach ($rows as $row) {
                 $stored = (string) ($row['stored_name'] ?? '');
                 $ticket = (int) ($row['ticket_id'] ?? 0);
@@ -543,13 +619,16 @@ class Cashback_User_Anonymizer {
             }
         }
 
+        $wpdb->last_error = '';
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DELETE через %i.
         $wpdb->query($wpdb->prepare(
             'DELETE FROM %i WHERE user_id = %d',
             $table,
             $user_id
         ));
-        return 1;
+        $delete_ok = self::record_query('cashback_support_attachments');
+
+        return ($select_ok && $delete_ok) ? 1 : 0;
     }
 
     private static function delete_social_auth_rows( int $user_id ): int {
@@ -565,6 +644,9 @@ class Cashback_User_Anonymizer {
         $links_table  = $wpdb->prefix . 'cashback_social_links';
         $tokens_table = $wpdb->prefix . 'cashback_social_tokens';
 
+        $ok = true;
+
+        $wpdb->last_error = '';
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DELETE через %i + JOIN.
         $wpdb->query($wpdb->prepare(
             'DELETE t FROM %i AS t INNER JOIN %i AS l ON l.id = t.link_id WHERE l.user_id = %d',
@@ -572,15 +654,22 @@ class Cashback_User_Anonymizer {
             $links_table,
             $user_id
         ));
+        if (!self::record_query('cashback_social_tokens')) {
+            $ok = false;
+        }
 
+        $wpdb->last_error = '';
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DELETE через %i.
         $wpdb->query($wpdb->prepare(
             'DELETE FROM %i WHERE user_id = %d',
             $links_table,
             $user_id
         ));
+        if (!self::record_query('cashback_social_links')) {
+            $ok = false;
+        }
 
-        return 1;
+        return $ok ? 1 : 0;
     }
 
     /**
