@@ -1433,20 +1433,37 @@ class Cashback_Users_Management_Admin {
         $admin_id = (int) get_current_user_id();
         $result   = \Cashback_User_Anonymizer::anonymize($user_id, $admin_id, $reason);
 
+        // P0.4: errors теперь массив структур [{table, error}, ...].
+        $errors_raw  = is_array($result['errors'] ?? null) ? $result['errors'] : array();
+        $error_lines = array();
+        foreach ($errors_raw as $e) {
+            if (is_array($e)) {
+                $error_lines[] = (string) ($e['table'] ?? '?') . ': ' . (string) ($e['error'] ?? '?');
+            } else {
+                $error_lines[] = (string) $e;
+            }
+        }
+
         if (empty($result['ok'])) {
-            $err = !empty($result['errors']) ? implode('; ', $result['errors']) : 'unknown';
+            $err = !empty($error_lines) ? implode('; ', $error_lines) : 'unknown';
             wp_send_json_error(array(
                 'message' => 'Анонимизация не выполнена: ' . $err,
-                'errors'  => $result['errors'] ?? array(),
+                'errors'  => $errors_raw,
             ), 500);
             return;
         }
 
+        $partial = !empty($result['partial']);
+        $message = $partial
+            ? 'Пользователь анонимизирован частично: ' . implode('; ', $error_lines)
+            : 'Пользователь анонимизирован.';
+
         wp_send_json_success(array(
             'tables_scrubbed'  => (int) $result['tables_scrubbed'],
             'consents_revoked' => (int) $result['consents_revoked'],
-            'errors'           => $result['errors'] ?? array(),
-            'message'          => 'Пользователь анонимизирован.',
+            'errors'           => $errors_raw,
+            'partial'          => $partial,
+            'message'          => $message,
         ));
     }
 }
