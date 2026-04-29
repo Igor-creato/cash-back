@@ -482,4 +482,24 @@ final class UserAnonymizationTest extends TestCase
             );
         }
     }
+
+    public function test_anonymize_support_messages_uses_user_id_and_is_admin(): void
+    {
+        // P0.3b: реальные колонки support_messages — user_id и is_admin.
+        Cashback_User_Anonymizer::anonymize(32, 1, 'reason ≥20 chars пожалуйста');
+
+        $sqls = $this->querySqls();
+        $support_updates = array_values(array_filter(
+            $sqls,
+            static fn(string $s): bool => preg_match('/UPDATE\s+`wp_cashback_support_messages`/i', $s) === 1
+        ));
+
+        $this->assertNotEmpty($support_updates, 'Должен быть UPDATE cashback_support_messages');
+        $sql = $support_updates[0];
+
+        $this->assertStringNotContainsStringIgnoringCase('sender_id', $sql, 'НЕ должно быть колонки sender_id (её нет в схеме)');
+        $this->assertMatchesRegularExpression('/WHERE\s+user_id\s*=\s*32/i', $sql, 'WHERE user_id=32');
+        $this->assertMatchesRegularExpression('/AND\s+is_admin\s*=\s*0/i', $sql, 'AND is_admin=0 — admin-ответы не трогаем');
+        $this->assertStringContainsString("'[anonymized]'", $sql, 'message → [anonymized]');
+    }
 }

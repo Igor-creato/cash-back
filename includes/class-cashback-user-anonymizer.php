@@ -500,9 +500,11 @@ class Cashback_User_Anonymizer {
     private static function scrub_support_messages( int $user_id ): int {
         global $wpdb;
         $table = $wpdb->prefix . 'cashback_support_messages';
+        // Реальная схема (support-db.php) — `user_id` (не sender_id) и `is_admin`.
+        // is_admin=0 — чтобы не затирать admin-ответы (это не PII скрабимого юзера).
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- UPDATE через %i.
         $wpdb->query($wpdb->prepare(
-            'UPDATE %i SET message = %s WHERE sender_id = %d',
+            'UPDATE %i SET message = %s WHERE user_id = %d AND is_admin = 0',
             $table,
             '[anonymized]',
             $user_id
