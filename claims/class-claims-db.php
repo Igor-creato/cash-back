@@ -433,16 +433,4 @@ class Cashback_Claims_DB {
         ) );
     }
 
-    public static function drop_tables(): void {
-        global $wpdb;
-
-        $tables = array(
-            "{$wpdb->prefix}cashback_claim_events",
-            "{$wpdb->prefix}cashback_claims",
-        );
-
-        foreach ($tables as $table) {
-            $wpdb->query($wpdb->prepare('DROP TABLE IF EXISTS %i', $table));
-        }
-    }
 }

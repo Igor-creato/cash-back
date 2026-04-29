@@ -288,15 +288,4 @@ class Cashback_Legal_DB {
         return is_array($rows) ? $rows : array();
     }
 
-    /**
-     * Удаление таблицы (только для uninstall.php — ВАЖНО: не вызывать обычно;
-     * журнал согласий хранится 3 года после отзыва по ст. 196 ГК).
-     */
-    public static function drop_table(): void {
-        global $wpdb;
-        $table = self::table_name();
-        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Static DDL; имя таблицы из $wpdb->prefix, не user-controlled.
-        $wpdb->query("DROP TABLE IF EXISTS `{$table}`");
-        delete_option(self::DB_VERSION_OPTION);
-    }
 }

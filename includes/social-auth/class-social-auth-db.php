@@ -106,23 +106,6 @@ class Cashback_Social_Auth_DB {
         error_log('[cashback-social] DB tables created/updated');
     }
 
-    /**
-     * Удалить таблицы (используется из uninstall).
-     */
-    public static function drop_tables(): void {
-        global $wpdb;
-        $t_pending = self::table_pending();
-        $t_tokens  = self::table_tokens();
-        $t_links   = self::table_links();
-
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Uninstall: DROP TABLE with trusted prefixed names.
-        $wpdb->query("DROP TABLE IF EXISTS {$t_pending}");
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Uninstall: DROP TABLE with trusted prefixed names.
-        $wpdb->query("DROP TABLE IF EXISTS {$t_tokens}");
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Uninstall: DROP TABLE with trusted prefixed names.
-        $wpdb->query("DROP TABLE IF EXISTS {$t_links}");
-    }
-
     // =========================================================================
     // Links
     // =========================================================================

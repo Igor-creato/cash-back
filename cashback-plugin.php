@@ -668,8 +668,6 @@ class CashbackPlugin {
             $this->require_file('antifraud/class-fraud-admin.php');
             $this->require_file('admin/class-cashback-admin-api-validation.php');
             $this->require_file('admin/class-cashback-admin-outbound-allowlist.php');
-            // Двухшаговое подтверждение удаления данных при uninstall (см. uninstall.php).
-            $this->require_file('admin/class-cashback-uninstall-confirm.php');
             $this->require_file('affiliate/class-affiliate-admin.php');
             $this->require_file('claims/class-claims-admin.php');
             $this->require_file('notifications/class-cashback-notifications-admin.php');
