@@ -123,17 +123,18 @@
         var actions = document.createElement('div');
         actions.className = 'cashback-legal-cookies-banner__actions';
 
-        // Стандартные WC/тема классы: .button — тема рендерит акцентным цветом
-        // (в текущей теме — зелёный). Обе кнопки одинакового веса (требование РКН).
+        // Кнопки используют только собственный класс — стилизация в
+        // cookies-banner.css через CSS-переменные темы (--btn-default-*).
+        // Без .button чтобы избежать конфликта с WC/woodmart loop-стилями.
         var btnAccept = document.createElement('button');
         btnAccept.type = 'button';
-        btnAccept.className = 'cashback-legal-cookies-banner__btn button';
+        btnAccept.className = 'cashback-legal-cookies-banner__btn';
         btnAccept.textContent = cfg.i18n.accept;
         actions.appendChild(btnAccept);
 
         var btnReject = document.createElement('button');
         btnReject.type = 'button';
-        btnReject.className = 'cashback-legal-cookies-banner__btn button';
+        btnReject.className = 'cashback-legal-cookies-banner__btn';
         btnReject.textContent = cfg.i18n.reject;
         actions.appendChild(btnReject);
 

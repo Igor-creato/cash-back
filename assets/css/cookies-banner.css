@@ -1,9 +1,14 @@
 /**
  * Cashback Legal — Cookies banner.
  *
- * Белый surface с тенью (как карточка), весь текст наследует цвет/шрифт темы.
- * Кнопки — нативные WC `.button` (тема стилизует под основной accent).
- * Ссылка — нативный <a>, без класса, тема применяет свои hover-стили.
+ * Белый surface с тенью, серый шрифт темы, кнопки в стиле основного
+ * акцента темы (зелёный «ПОЛУЧИТЬ КЭШБЭК»). Используются CSS-переменные,
+ * которые woodmart прописывает глобально (xts-theme_settings_default.css):
+ *   --wd-text-color, --wd-text-font, --btn-default-bgcolor*, --btn-default-color*
+ * и --btn-default-brd-radius. Для других тем — нейтральные fallback'и.
+ *
+ * РКН-требование одинаковой визуальной массы «Принять»/«Отклонить»
+ * выполнено: обе кнопки используют один класс `__btn` (один цвет/форма).
  */
 
 .cashback-legal-cookies-banner {
@@ -13,12 +18,12 @@
     bottom: 0;
     z-index: 99999;
     background: #ffffff;
-    color: inherit;
+    color: var(--wd-text-color, #767676);
     padding: 16px 20px;
     box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.12);
-    font-family: inherit;
-    font-size: inherit;
-    line-height: inherit;
+    font-family: var(--wd-text-font, inherit);
+    font-size: var(--wd-text-font-size, 14px);
+    line-height: 1.55;
     border-top: 1px solid rgba(0, 0, 0, 0.06);
 }
 
@@ -50,14 +55,34 @@
     align-items: center;
 }
 
-/* Кнопки — собственных стилей не задаём, всё рендерит тема через .button.
-   Минимально гарантируем разумный размер для UX. */
+/* Кнопки: green-as-theme-primary через --btn-default-* (woodmart). */
 .cashback-legal-cookies-banner__btn {
+    display: inline-block;
+    background: var(--btn-default-bgcolor, #83b735);
+    color: var(--btn-default-color, #ffffff);
+    border: 0;
+    padding: 10px 22px;
     min-width: 120px;
+    border-radius: var(--btn-default-brd-radius, 5px);
+    font-family: inherit;
+    font-size: var(--wd-text-font-size, 14px);
+    font-weight: 600;
+    text-transform: uppercase;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+    appearance: none;
 }
 
-/* Ссылка — без классов на стороне JS, тема применяет свои стили <a>.
-   На случай если тема не задаёт hover — лёгкий fallback. */
+.cashback-legal-cookies-banner__btn:hover,
+.cashback-legal-cookies-banner__btn:focus-visible {
+    background: var(--btn-default-bgcolor-hover, #74a32f);
+    color: var(--btn-default-color-hover, #ffffff);
+    outline: none;
+}
+
+/* Ссылка «Подробнее» — наследует стили <a> темы; в темах с акцентом на
+   подчёркивание оставляем underline + hover removes. */
 .cashback-legal-cookies-banner__link {
     color: inherit;
     text-decoration: underline;
@@ -67,6 +92,7 @@
 
 .cashback-legal-cookies-banner__link:hover,
 .cashback-legal-cookies-banner__link:focus-visible {
+    color: var(--wd-primary-color, currentColor);
     text-decoration: none;
     outline: none;
 }
