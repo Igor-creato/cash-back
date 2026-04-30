@@ -1201,6 +1201,27 @@ class CashbackWithdrawal {
 
             // === 5. Post-commit side effects (не влияют на консистентность) ===
 
+            // Audit-log запись финансовой операции — обязательна для compliance
+            // (152/161-ФЗ + ЦБ): «кто, когда, с какого IP, на какую сумму создал
+            // заявку». Пишется ПОСЛЕ COMMIT, чтобы сбой audit'а не откатил payout
+            // (cron-сверка `Cashback_Audit_Trail_Reconciliation` ловит orphan-ledger
+            // как defense-in-depth). PII не передаётся — write_audit_log() редактирует
+            // sensitive поля, но мы и так шлём только metadata.
+            if (class_exists('Cashback_Encryption')) {
+                Cashback_Encryption::write_audit_log(
+                    'withdrawal_created',
+                    $user_id,
+                    'payout_request',
+                    (int) $payout_id,
+                    array(
+                        'reference_id'    => $reference_id,
+                        'amount'          => $withdrawal_amount,
+                        'idempotency_key' => $idempotency_key,
+                        'payout_method'   => $payout_method,
+                    )
+                );
+            }
+
             // Антифрод: запись события вывода (после коммита, чтобы не inflate при rollback)
             if (class_exists('Cashback_Fraud_Collector')) {
                 Cashback_Fraud_Collector::record_withdrawal_event($user_id);

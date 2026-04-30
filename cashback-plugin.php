@@ -518,6 +518,11 @@ class CashbackPlugin {
         // Утилита проверки статуса пользователя (для блокировки забаненных)
         $this->require_file('includes/class-cashback-user-status.php');
 
+        // Запрет логина для забаненных юзеров (OBS-05 E2E run B 2026-04-30).
+        // Приоритет 30 — после стандартных проверок (auth_cookie/password/wp_login_failed
+        // на 20), чтобы не маскировать «неверный пароль».
+        add_filter( 'wp_authenticate_user', array( 'Cashback_User_Status', 'block_banned_login' ), 30, 1 );
+
         // Server-side дедуп request_id (Группа 5 ADR) — общий helper для admin-AJAX хендлеров.
         // Подключается рано: используется в разных AJAX-обработчиках (payouts/transactions/claims).
         $this->require_file('includes/class-cashback-idempotency.php');

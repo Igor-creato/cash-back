@@ -73,4 +73,36 @@ class Cashback_User_Status {
 
         return __('Ваш аккаунт заблокирован. Для разблокировки обратитесь к администратору.', 'cashback-plugin');
     }
+
+    /**
+     * Фильтр `wp_authenticate_user`: блокирует логин забаненных пользователей.
+     *
+     * Срабатывает ПОСЛЕ проверки пароля, ДО установки auth-cookie. Возврат
+     * WP_Error отменяет логин и показывает стандартный экран ошибки WP.
+     *
+     * Закрывает OBS-05 (E2E run B 2026-04-30): banned юзер с status='banned'
+     * в `cashback_user_profile` всё равно мог залогиниться и видеть личный
+     * кабинет (хоть withdrawal был заблокирован отдельно).
+     *
+     * @param WP_User|WP_Error $user
+     * @return WP_User|WP_Error
+     */
+    public static function block_banned_login( $user ) {
+        // Если на этапе аутентификации уже WP_Error (неверный пароль и пр.) —
+        // не вмешиваемся, чтобы не маскировать другие ошибки.
+        if ( ! ( $user instanceof WP_User ) ) {
+            return $user;
+        }
+
+        if ( ! self::is_user_banned( (int) $user->ID ) ) {
+            return $user;
+        }
+
+        $ban_info = self::get_ban_info( (int) $user->ID );
+
+        return new WP_Error(
+            'cashback_user_banned',
+            self::get_banned_message( $ban_info )
+        );
+    }
 }

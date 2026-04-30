@@ -110,6 +110,7 @@ class HistoryPayout {
         echo '<option value="paid">' . esc_html__('Выплачен', 'cashback-plugin') . '</option>';
         echo '<option value="failed">' . esc_html__('Возврат в доступный баланс', 'cashback-plugin') . '</option>';
         echo '<option value="declined">' . esc_html__('Выплата заморожена', 'cashback-plugin') . '</option>';
+        echo '<option value="needs_retry">' . esc_html__('Требует повтора', 'cashback-plugin') . '</option>';
         echo '</select>';
         echo '</div>';
 
