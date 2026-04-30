@@ -22,6 +22,8 @@ class Cashback_Welcome_Email {
 
     public static function init(): void {
         add_filter('wp_new_user_notification_email', array( __CLASS__, 'filter_wp_new_user_email' ), 10, 3);
+        // Админу — уведомление о регистрации нового юзера.
+        add_filter('wp_new_user_notification_email_admin', array( __CLASS__, 'filter_wp_new_user_admin_email' ), 10, 3);
 
         // Аналогично password-reset: WC уже мог быть инициализирован к моменту require_file.
         if (did_action('woocommerce_loaded') || function_exists('WC')) {
@@ -29,6 +31,53 @@ class Cashback_Welcome_Email {
         } else {
             add_action('woocommerce_loaded', array( __CLASS__, 'register_wc_handler' ));
         }
+    }
+
+    /**
+     * Фильтр админского уведомления о регистрации нового юзера.
+     *
+     * @param array        $email     Массив to/subject/message/headers.
+     * @param WP_User|null $user      Зарегистрированный пользователь.
+     * @param string       $blogname  Имя сайта.
+     * @return array
+     */
+    public static function filter_wp_new_user_admin_email( $email, $user, $blogname ): array {
+        unset($blogname);
+
+        if (!is_array($email)) {
+            $email = array();
+        }
+        if (!( $user instanceof WP_User )) {
+            return $email;
+        }
+        if (!class_exists('Cashback_Email_Sender') || !class_exists('Cashback_Email_Builder')) {
+            return $email;
+        }
+
+        $site = wp_specialchars_decode((string) get_option('blogname'), ENT_QUOTES);
+        $subject = $site !== ''
+            ? sprintf(
+                /* translators: %s: site name */
+                __('[%s] Новая регистрация', 'cashback-plugin'),
+                $site
+            )
+            : __('Новая регистрация', 'cashback-plugin');
+
+        $body  = Cashback_Email_Builder::greeting(__('Администратор', 'cashback-plugin'));
+        $body .= Cashback_Email_Builder::paragraph(
+            esc_html__('На сайте зарегистрировался новый пользователь.', 'cashback-plugin')
+        );
+        $body .= Cashback_Email_Builder::definition_list(array(
+            __('Имя пользователя', 'cashback-plugin') => (string) $user->user_login,
+            __('Email', 'cashback-plugin')             => (string) $user->user_email,
+            __('ID', 'cashback-plugin')                => (string) $user->ID,
+        ));
+
+        $email['subject'] = $subject;
+        $email['message'] = Cashback_Email_Sender::get_instance()->preview_html($subject, $body, null);
+        $email['headers'] = self::ensure_html_headers($email['headers'] ?? '');
+
+        return $email;
     }
 
     /**

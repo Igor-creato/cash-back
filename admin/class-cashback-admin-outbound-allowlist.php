@@ -336,6 +336,35 @@ final class Cashback_Admin_Outbound_Allowlist {
         $actor_info = $actor_id > 0 ? sprintf('user_id=%d', $actor_id) : 'unknown';
         $ip         = $this->get_request_ip();
 
+        // Брендированный body: тот же шаблон что у password-reset/welcome/ban-уведомлений.
+        // Fallback — plain-text лист (когда email-модуль ещё не загружен в edge-кейсе).
+        if (class_exists('Cashback_Email_Sender') && class_exists('Cashback_Email_Builder')) {
+            $rows = array(
+                __('Действие', 'cashback-plugin') => $action,
+                __('Домен', 'cashback-plugin')    => $host,
+                __('Кем', 'cashback-plugin')      => $actor_info,
+                __('IP', 'cashback-plugin')        => $ip !== '' ? $ip : 'unknown',
+                __('Время', 'cashback-plugin')    => Cashback_Time::now_mysql(),
+            );
+            if ($reason !== '') {
+                $rows[__('Причина', 'cashback-plugin')] = $reason;
+            }
+
+            $html  = Cashback_Email_Builder::greeting(__('Администратор', 'cashback-plugin'));
+            $html .= Cashback_Email_Builder::paragraph(
+                esc_html__('Зафиксировано изменение outbound-allowlist (доменов, на которые плагину разрешено делать исходящие HTTP-запросы).', 'cashback-plugin')
+            );
+            $html .= Cashback_Email_Builder::definition_list($rows);
+            $html .= Cashback_Email_Builder::note(
+                esc_html__('Если это не вы — смените пароль и проверьте audit-log (wp_cashback_audit_log).', 'cashback-plugin')
+            );
+
+            foreach ($recipients as $to) {
+                Cashback_Email_Sender::get_instance()->send_critical($to, $subject, $html);
+            }
+            return;
+        }
+
         $lines = array(
             /* translators: %s — add or remove action */
             sprintf(__('Действие: %s', 'cashback-plugin'), $action),
