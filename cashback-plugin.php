@@ -527,6 +527,12 @@ class CashbackPlugin {
         // специфичное сообщение «Ваш аккаунт заблокирован...» для cashback_user_banned.
         add_filter( 'woocommerce_login_errors', array( 'Cashback_User_Status', 'override_wc_login_error' ), 20, 1 );
 
+        // OBS-05 cosmetic (anti-mask): clearfy-pro и подобные anti-enumeration
+        // плагины через `login_errors` (prio 10 default) затирают всё на generic
+        // «Неверный логин/пароль». Hook'аемся на тот же filter с prio 50 (после
+        // них) и читаем per-request flag из block_banned_login().
+        add_filter( 'login_errors', array( 'Cashback_User_Status', 'override_login_error' ), 50, 1 );
+
         // Server-side дедуп request_id (Группа 5 ADR) — общий helper для admin-AJAX хендлеров.
         // Подключается рано: используется в разных AJAX-обработчиках (payouts/transactions/claims).
         $this->require_file('includes/class-cashback-idempotency.php');

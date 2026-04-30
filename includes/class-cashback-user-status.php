@@ -18,6 +18,15 @@ if (!defined('ABSPATH')) {
 class Cashback_User_Status {
 
     /**
+     * Per-request flag: текст сообщения о бане, установленный block_banned_login().
+     * Читается override_login_error() — обходит clearfy-pro/anti-enumeration плагины,
+     * которые маскируют все login-ошибки одним generic-сообщением через `login_errors`.
+     *
+     * @var string
+     */
+    private static $banned_login_message = '';
+
+    /**
      * Проверяет, забанен ли пользователь
      *
      * @param int $user_id ID пользователя
@@ -117,12 +126,15 @@ class Cashback_User_Status {
             return $user;
         }
 
-        $ban_info = self::get_ban_info( (int) $user->ID );
+        $ban_info     = self::get_ban_info( (int) $user->ID );
+        $banned_msg   = self::get_banned_message( $ban_info );
 
-        return new WP_Error(
-            'cashback_user_banned',
-            self::get_banned_message( $ban_info )
-        );
+        // Сохраняем сообщение в per-request static — override_login_error()
+        // подставит его обратно, если anti-enumeration плагин (clearfy-pro и пр.)
+        // через `login_errors` filter заменил на generic «Неверный логин/пароль».
+        self::$banned_login_message = $banned_msg;
+
+        return new WP_Error( 'cashback_user_banned', $banned_msg );
     }
 
     /**
@@ -137,6 +149,26 @@ class Cashback_User_Status {
      * @param WP_Error $errors
      * @return WP_Error
      */
+    /**
+     * Фильтр `login_errors` (WP core) с приоритетом > 10 — перезаписывает
+     * generic-сообщения от anti-enumeration плагинов (clearfy-pro и пр.) на
+     * наше специфичное «Ваш аккаунт заблокирован...», если в текущем запросе
+     * уже сработал block_banned_login() и установил per-request flag.
+     *
+     * Это работает для WC (line ~1096 class-wc-form-handler.php применяет
+     * apply_filters( 'login_errors', $e->getMessage() )) и для стандартного
+     * WP wp-login.php.
+     *
+     * @param string $message
+     * @return string
+     */
+    public static function override_login_error( $message ) {
+        if ( self::$banned_login_message !== '' ) {
+            return self::$banned_login_message;
+        }
+        return $message;
+    }
+
     public static function override_wc_login_error( $errors ) {
         if ( ! ( $errors instanceof WP_Error ) ) {
             return $errors;
