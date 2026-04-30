@@ -194,8 +194,8 @@ class Cashback_Social_Auth_Renderer {
         $html  = '<div class="cashback-social-buttons cashback-social-buttons--' . esc_attr($context) . '"';
         $html .= $show_or ? ' data-label="' . $label_or . '"' : '';
         $html .= '>';
-        $html .= $this->render_consent_checkbox($context);
         $html .= implode('', $items);
+        $html .= $this->render_consent_checkbox($context);
         $html .= '</div>';
 
         return $html;
