@@ -21,6 +21,8 @@ class Cashback_Password_Reset_Email {
 
     public static function init(): void {
         add_filter('retrieve_password_notification_email', array( __CLASS__, 'filter_wp_reset_email' ), 10, 4);
+        // Подтверждение «Пароль изменён» (wp_update_user / профиль / после reset_password).
+        add_filter('password_change_email', array( __CLASS__, 'filter_password_change_email' ), 10, 3);
 
         // WooCommerce фаерит woocommerce_loaded на plugins_loaded @ -1, наш плагин грузится на @ 10 —
         // к этому моменту действие уже отработало, и add_action('woocommerce_loaded', ...) был бы no-op.
@@ -29,6 +31,102 @@ class Cashback_Password_Reset_Email {
         } else {
             add_action('woocommerce_loaded', array( __CLASS__, 'register_wc_handler' ));
         }
+    }
+
+    /**
+     * Фильтр уведомления «Пароль изменён» (filter password_change_email).
+     *
+     * WP core шлёт это письмо после wp_update_user() при смене пароля
+     * (UI-профиль, reset-flow, wp-cli `wp user update --user_pass`).
+     * Брендируем тело и оборачиваем в общий шаблон Cashback_Email_Sender.
+     *
+     * @param array        $pass_change_email Массив to/subject/message/headers.
+     * @param array|null   $user              Массив с обновлёнными данными (associative WP_User).
+     * @param array|null   $userdata          Сырой массив userdata, переданный в wp_update_user.
+     * @return array
+     */
+    public static function filter_password_change_email( $pass_change_email, $user, $userdata ): array {
+        unset($userdata);
+
+        if (!is_array($pass_change_email)) {
+            $pass_change_email = array();
+        }
+        if (!is_array($user) || empty($user['ID'])) {
+            return $pass_change_email;
+        }
+        if (!class_exists('Cashback_Email_Sender') || !class_exists('Cashback_Email_Builder')) {
+            return $pass_change_email;
+        }
+
+        $user_id = (int) $user['ID'];
+        $wp_user = get_userdata($user_id);
+        if (!( $wp_user instanceof WP_User )) {
+            return $pass_change_email;
+        }
+
+        $subject = self::get_change_subject();
+        $body    = self::render_change_body($wp_user);
+
+        $pass_change_email['subject'] = $subject;
+        $pass_change_email['message'] = Cashback_Email_Sender::get_instance()->preview_html(
+            $subject,
+            $body,
+            $user_id
+        );
+        $pass_change_email['headers'] = self::ensure_html_headers($pass_change_email['headers'] ?? '');
+
+        return $pass_change_email;
+    }
+
+    private static function get_change_subject(): string {
+        return __('Пароль изменён', 'cashback-plugin');
+    }
+
+    /**
+     * Тело письма «Пароль изменён»: приветствие → подтверждение → security-advice
+     * (если это были не вы — обратитесь к админу) → email получателя для прозрачности.
+     */
+    private static function render_change_body( WP_User $user ): string {
+        $user_name   = $user->display_name !== '' ? $user->display_name : $user->user_login;
+        $blogname    = wp_specialchars_decode((string) get_option('blogname'), ENT_QUOTES);
+        $admin_email = (string) get_option('admin_email');
+
+        $html  = Cashback_Email_Builder::greeting($user_name);
+
+        if ($blogname !== '') {
+            $html .= Cashback_Email_Builder::paragraph(
+                sprintf(
+                    /* translators: %s: site name */
+                    esc_html__('Это уведомление подтверждает успешную смену пароля на сайте «%s».', 'cashback-plugin'),
+                    esc_html($blogname)
+                )
+            );
+        } else {
+            $html .= Cashback_Email_Builder::paragraph(
+                esc_html__('Это уведомление подтверждает успешную смену пароля.', 'cashback-plugin')
+            );
+        }
+
+        if ($admin_email !== '') {
+            /* translators: %1$s: admin email (used twice — текст и href) */
+            $tpl = __('Если вы не меняли пароль — напишите администратору на <a href="mailto:%1$s">%1$s</a>.', 'cashback-plugin');
+            $html .= Cashback_Email_Builder::note(
+                sprintf(
+                    wp_kses($tpl, array( 'a' => array( 'href' => array() ) )),
+                    esc_attr($admin_email)
+                )
+            );
+        }
+
+        $html .= Cashback_Email_Builder::note(
+            sprintf(
+                /* translators: %s: user email */
+                esc_html__('Письмо отправлено на %s.', 'cashback-plugin'),
+                esc_html((string) $user->user_email)
+            )
+        );
+
+        return $html;
     }
 
     /**
