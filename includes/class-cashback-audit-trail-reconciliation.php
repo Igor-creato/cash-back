@@ -110,7 +110,10 @@ class Cashback_Audit_Trail_Reconciliation {
 
         // ledger entries за окно 25ч + whitelist + LEFT JOIN на audit за ±5 мин.
         // Если match-record НЕТ — это orphan (audit отсутствует там, где должен быть).
-        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $type_placeholders / $match_window — числовые/ASCII константы.
+        // $type_placeholders / $match_window — числовые / ASCII константы (фиксированный
+        // whitelist + integer), не пользовательский ввод. phpcs sniffer не отслеживает
+        // array-form prepare() и interpolation констант — отсюда disable-блок.
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
         $sql = $wpdb->prepare(
             "SELECT l.id, l.user_id, l.type, l.amount, l.payout_request_id, l.transaction_id, l.created_at
                FROM %i l
@@ -133,9 +136,9 @@ class Cashback_Audit_Trail_Reconciliation {
                 array( self::BATCH_LIMIT )
             )
         );
-        // phpcs:enable
 
         $orphans = $wpdb->get_results( $sql, ARRAY_A );
+        // phpcs:enable
         if ( ! is_array( $orphans ) ) {
             $orphans = array();
         }
