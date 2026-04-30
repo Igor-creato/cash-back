@@ -232,7 +232,7 @@ class Cashback_Users_Management_Admin {
             array( $per_page, $offset )
         );
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where_sql из allowlist условий с %s/%d; таблицы через %i; sniff не считает spread-args.
-        $users = $wpdb->get_results( $wpdb->prepare( "SELECT u.ID, u.display_name, u.user_email, cup.cashback_rate, cup.min_payout_amount, cup.status, cup.ban_reason, cup.banned_at FROM %i u LEFT JOIN %i cup ON u.ID = cup.user_id {$where_sql} ORDER BY u.ID ASC LIMIT %d OFFSET %d", ...$select_params ), 'ARRAY_A' );
+        $users = $wpdb->get_results( $wpdb->prepare( "SELECT u.ID, u.display_name, u.user_email, cup.cashback_rate, cup.min_payout_amount, cup.status, cup.ban_reason, cup.ban_reason_admin, cup.banned_at FROM %i u LEFT JOIN %i cup ON u.ID = cup.user_id {$where_sql} ORDER BY u.ID ASC LIMIT %d OFFSET %d", ...$select_params ), 'ARRAY_A' );
 
         // Определяем все доступные статусы для фильтра
         $statuses = array( 'active', 'noactive', 'banned', 'deleted' );
@@ -313,7 +313,8 @@ class Cashback_Users_Management_Admin {
                             <th scope="col">Ставка кэшбэка (%)</th>
                             <th scope="col">Мин. сумма выплаты</th>
                             <th scope="col">Статус</th>
-                            <th scope="col">Причина бана</th>
+                            <th scope="col" title="<?php esc_attr_e('Показывается пользователю на странице вывода. Пусто = generic message.', 'cashback-plugin'); ?>"><?php esc_html_e('Публичная причина', 'cashback-plugin'); ?></th>
+                            <th scope="col" title="<?php esc_attr_e('Внутренняя для админов. НЕ показывается пользователю.', 'cashback-plugin'); ?>"><?php esc_html_e('Внутренняя причина', 'cashback-plugin'); ?></th>
                             <th scope="col">Дата бана</th>
                             <th scope="col">Действия</th>
                         </tr>
@@ -326,7 +327,8 @@ class Cashback_Users_Management_Admin {
                             <th scope="col">Ставка кэшбэка (%)</th>
                             <th scope="col">Мин. сумма выплаты</th>
                             <th scope="col">Статус</th>
-                            <th scope="col">Причина бана</th>
+                            <th scope="col" title="<?php esc_attr_e('Показывается пользователю на странице вывода. Пусто = generic message.', 'cashback-plugin'); ?>"><?php esc_html_e('Публичная причина', 'cashback-plugin'); ?></th>
+                            <th scope="col" title="<?php esc_attr_e('Внутренняя для админов. НЕ показывается пользователю.', 'cashback-plugin'); ?>"><?php esc_html_e('Внутренняя причина', 'cashback-plugin'); ?></th>
                             <th scope="col">Дата бана</th>
                             <th scope="col">Действия</th>
                         </tr>
@@ -347,8 +349,11 @@ class Cashback_Users_Management_Admin {
                                     <td class="edit-field" data-field="status">
                                         <?php echo esc_html($user['status'] ?? 'active'); ?>
                                     </td>
-                                    <td class="edit-field" data-field="ban_reason">
+                                    <td class="edit-field" data-field="ban_reason" title="<?php esc_attr_e('Публичная причина — видна пользователю', 'cashback-plugin'); ?>">
                                         <?php echo esc_html($user['ban_reason'] ?? ''); ?>
+                                    </td>
+                                    <td class="edit-field" data-field="ban_reason_admin" title="<?php esc_attr_e('Внутренняя причина — только для админов', 'cashback-plugin'); ?>">
+                                        <?php echo esc_html($user['ban_reason_admin'] ?? ''); ?>
                                     </td>
                                     <td class="edit-field" data-field="banned_at">
                                         <?php echo esc_html($user['banned_at'] ? wp_date('Y-m-d H:i:s', strtotime($user['banned_at'])) : ''); ?>
@@ -497,11 +502,13 @@ class Cashback_Users_Management_Admin {
                 return;
             }
 
-            // Если устанавливаем статус "banned", проверяем обязательность причины бана
+            // Если устанавливаем статус "banned", проверяем обязательность ВНУТРЕННЕЙ
+            // причины бана (для forensics + admin-audit). Публичная — опциональна
+            // (NULL = generic message пользователю; OBS-06 fix).
             if ($status === 'banned') {
-                $ban_reason = isset($_POST['ban_reason']) ? trim(sanitize_text_field(wp_unslash($_POST['ban_reason']))) : '';
-                if (empty($ban_reason)) {
-                    wp_send_json_error(array( 'message' => 'Заполните причину бана пользователя.' ));
+                $ban_reason_admin = isset($_POST['ban_reason_admin']) ? trim(sanitize_text_field(wp_unslash($_POST['ban_reason_admin']))) : '';
+                if (empty($ban_reason_admin)) {
+                    wp_send_json_error(array( 'message' => 'Заполните внутреннюю причину бана пользователя.' ));
                     return;
                 }
             }
@@ -510,11 +517,24 @@ class Cashback_Users_Management_Admin {
             $update_formats[]      = '%s';
         }
 
+        // Публичная причина (показывается пользователю). Опциональна — пустая
+        // строка = NULL → generic message. Админ ставит её только если хочет
+        // явно сообщить пользователю причину бана.
         if (isset($_POST['ban_reason'])) {
-            $ban_reason = sanitize_text_field(wp_unslash($_POST['ban_reason']));
+            $ban_reason_public = trim(sanitize_text_field(wp_unslash($_POST['ban_reason'])));
 
-            $update_data['ban_reason'] = $ban_reason;
+            $update_data['ban_reason'] = $ban_reason_public !== '' ? $ban_reason_public : null;
             $update_formats[]          = '%s';
+        }
+
+        // Внутренняя причина (только для админов / forensics — никогда не
+        // показывается пользователю). Закрывает OBS-06 (E2E run B 2026-04-30):
+        // утечка admin-комментариев на withdrawal page.
+        if (isset($_POST['ban_reason_admin'])) {
+            $ban_reason_admin = sanitize_text_field(wp_unslash($_POST['ban_reason_admin']));
+
+            $update_data['ban_reason_admin'] = $ban_reason_admin;
+            $update_formats[]                = '%s';
         }
 
         // 🔒 Если баним пользователя — сначала захватываем withdrawal lock
@@ -549,7 +569,7 @@ class Cashback_Users_Management_Admin {
         try {
             // БЛОКИРУЕМ строку профиля с FOR UPDATE для предотвращения race conditions.
             $profile = $wpdb->get_row($wpdb->prepare(
-                'SELECT status, ban_reason, banned_at FROM %i WHERE user_id = %d FOR UPDATE',
+                'SELECT status, ban_reason, ban_reason_admin, banned_at FROM %i WHERE user_id = %d FOR UPDATE',
                 $this->profile_table_name,
                 $user_id
             ));
@@ -570,6 +590,8 @@ class Cashback_Users_Management_Admin {
                     $update_formats[] = '%s';
                 } elseif ($old_status === 'banned' && $status !== 'banned') {
                     Cashback_Trigger_Fallbacks::clear_ban_fields($update_data);
+                    // 3 поля: banned_at, ban_reason, ban_reason_admin (v6, OBS-06).
+                    $update_formats[] = '%s';
                     $update_formats[] = '%s';
                     $update_formats[] = '%s';
                 }
@@ -606,11 +628,14 @@ class Cashback_Users_Management_Admin {
 
             // Если пользователь был забанен - обрабатываем последствия ВНУТРИ транзакции
             if (isset($status) && $status === 'banned') {
-                $ban_reason = isset($_POST['ban_reason']) ? sanitize_text_field(wp_unslash($_POST['ban_reason'])) : '';
+                // OBS-06: используем ВНУТРЕННЮЮ причину для audit-log (forensics)
+                // и ПУБЛИЧНУЮ для email пользователю (если задана; иначе generic).
+                $ban_reason_admin_post  = isset($_POST['ban_reason_admin']) ? sanitize_text_field(wp_unslash($_POST['ban_reason_admin'])) : '';
+                $ban_reason_public_post = isset($_POST['ban_reason']) ? trim(sanitize_text_field(wp_unslash($_POST['ban_reason']))) : '';
 
                 // Перехватываем любой вывод, который может сломать JSON-ответ
                 ob_start();
-                $ban_success = $this->handle_user_ban($user_id, $ban_reason, true);
+                $ban_success = $this->handle_user_ban($user_id, $ban_reason_admin_post, true, $ban_reason_public_post);
                 ob_end_clean();
 
                 if (!$ban_success) {
@@ -682,7 +707,7 @@ class Cashback_Users_Management_Admin {
         // Получаем обновленные данные из базы.
         $updated_user_data = $wpdb->get_row(
             $wpdb->prepare(
-                'SELECT cashback_rate, min_payout_amount, status, ban_reason, banned_at FROM %i WHERE user_id = %d',
+                'SELECT cashback_rate, min_payout_amount, status, ban_reason, ban_reason_admin, banned_at FROM %i WHERE user_id = %d',
                 $this->profile_table_name,
                 $user_id
             ),
@@ -733,7 +758,7 @@ class Cashback_Users_Management_Admin {
         // Получаем данные пользователя из базы данных.
         $user_data = $wpdb->get_row(
             $wpdb->prepare(
-                'SELECT cashback_rate, min_payout_amount, status, ban_reason, banned_at FROM %i WHERE user_id = %d',
+                'SELECT cashback_rate, min_payout_amount, status, ban_reason, ban_reason_admin, banned_at FROM %i WHERE user_id = %d',
                 $this->profile_table_name,
                 $user_id
             ),
@@ -747,6 +772,7 @@ class Cashback_Users_Management_Admin {
                 'min_payout_amount' => '100.00',
                 'status'            => 'active',
                 'ban_reason'        => '',
+                'ban_reason_admin'  => '',
                 'banned_at'         => null,
             );
         }
@@ -951,11 +977,12 @@ class Cashback_Users_Management_Admin {
      * Обработка последствий бана пользователя
      *
      * @param int $user_id ID забаненного пользователя
-     * @param string $ban_reason Причина бана
+     * @param string $ban_reason_admin Внутренняя (admin-only) причина для audit-log/forensics — никогда не показывается пользователю.
      * @param bool $in_transaction Флаг, указывающий что метод вызван внутри транзакции
+     * @param string $ban_reason_public Публичная причина (показывается в email + UI). Если '' — пользователь видит generic message (OBS-06 default).
      * @return bool Успешность операции
      */
-    private function handle_user_ban( int $user_id, string $ban_reason, bool $in_transaction = false ): bool {
+    private function handle_user_ban( int $user_id, string $ban_reason_admin, bool $in_transaction = false, string $ban_reason_public = '' ): bool {
         global $wpdb;
         $requests_table = $wpdb->prefix . 'cashback_payout_requests';
 
@@ -1008,14 +1035,20 @@ class Cashback_Users_Management_Admin {
             // PHP-фолбэк: заморозка баланса (идемпотентно при наличии триггера)
             Cashback_Trigger_Fallbacks::freeze_balance_on_ban($user_id);
 
-            // Логируем бан пользователя
+            // Логируем бан пользователя — записываем ВНУТРЕННЮЮ причину для
+            // forensics. Если есть публичная — тоже фиксируем (для аудита того,
+            // что пользователь увидел).
             if (class_exists('Cashback_Encryption')) {
+                $audit_details = array( 'ban_reason_admin' => $ban_reason_admin );
+                if ( $ban_reason_public !== '' ) {
+                    $audit_details['ban_reason_public'] = $ban_reason_public;
+                }
                 Cashback_Encryption::write_audit_log(
                     'user_banned',
                     get_current_user_id(),
                     'user',
                     $user_id,
-                    array( 'ban_reason' => $ban_reason )
+                    $audit_details
                 );
             }
 
@@ -1024,7 +1057,9 @@ class Cashback_Users_Management_Admin {
                 $wpdb->query('COMMIT');
             }
 
-            // ✉️ Email ПОСЛЕ транзакции (некритичная операция)
+            // ✉️ Email ПОСЛЕ транзакции (некритичная операция).
+            // OBS-06: в письмо передаём ТОЛЬКО публичную причину (или generic).
+            // Внутренняя НИКОГДА не покидает админку.
             $user = get_userdata($user_id);
             if ($user && $user->user_email && class_exists('Cashback_Email_Sender') && class_exists('Cashback_Email_Builder')) {
                 Cashback_Email_Sender::get_instance()->send_critical(
@@ -1032,7 +1067,7 @@ class Cashback_Users_Management_Admin {
                     __('Ваш аккаунт кэшбэк заблокирован', 'cashback-plugin'),
                     Cashback_Email_Builder::banned_account_body(
                         $user->display_name !== '' ? $user->display_name : $user->user_login,
-                        $ban_reason !== '' ? $ban_reason : __('Не указана', 'cashback-plugin'),
+                        $ban_reason_public !== '' ? $ban_reason_public : __('Не указана', 'cashback-plugin'),
                         (string) get_option('admin_email')
                     ),
                     (int) $user->ID

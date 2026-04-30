@@ -523,6 +523,10 @@ class CashbackPlugin {
         // на 20), чтобы не маскировать «неверный пароль».
         add_filter( 'wp_authenticate_user', array( 'Cashback_User_Status', 'block_banned_login' ), 30, 1 );
 
+        // OBS-05 cosmetic: заменяем WC generic «Неверный логин/пароль» на наше
+        // специфичное сообщение «Ваш аккаунт заблокирован...» для cashback_user_banned.
+        add_filter( 'woocommerce_login_errors', array( 'Cashback_User_Status', 'override_wc_login_error' ), 20, 1 );
+
         // Server-side дедуп request_id (Группа 5 ADR) — общий helper для admin-AJAX хендлеров.
         // Подключается рано: используется в разных AJAX-обработчиках (payouts/transactions/claims).
         $this->require_file('includes/class-cashback-idempotency.php');

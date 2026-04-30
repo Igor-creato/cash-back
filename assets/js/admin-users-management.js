@@ -265,7 +265,8 @@ jQuery(document).ready(function($) {
                 row.find('.edit-field[data-field="cashback_rate"]').text(response.data.cashback_rate);
                 row.find('.edit-field[data-field="min_payout_amount"]').text(response.data.min_payout_amount);
                 row.find('.edit-field[data-field="status"]').text(response.data.status);
-                row.find('.edit-field[data-field="ban_reason"]').text(response.data.ban_reason);
+                row.find('.edit-field[data-field="ban_reason"]').text(response.data.ban_reason || '');
+                row.find('.edit-field[data-field="ban_reason_admin"]').text(response.data.ban_reason_admin || '');
                 row.find('.edit-field[data-field="banned_at"]').text(response.data.banned_at ? response.data.banned_at : '');
 
                 row.find('.edit-input').each(function() {
@@ -318,7 +319,8 @@ jQuery(document).ready(function($) {
                 row.find('.edit-field[data-field="cashback_rate"]').text(response.data.cashback_rate);
                 row.find('.edit-field[data-field="min_payout_amount"]').text(response.data.min_payout_amount);
                 row.find('.edit-field[data-field="status"]').text(response.data.status);
-                row.find('.edit-field[data-field="ban_reason"]').text(response.data.ban_reason);
+                row.find('.edit-field[data-field="ban_reason"]').text(response.data.ban_reason || '');
+                row.find('.edit-field[data-field="ban_reason_admin"]').text(response.data.ban_reason_admin || '');
                 row.find('.edit-field[data-field="banned_at"]').text(response.data.banned_at ? response.data.banned_at : '');
             } else {
                 row.find('.edit-field').each(function() {

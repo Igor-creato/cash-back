@@ -1323,15 +1323,18 @@ class Cashback_Fraud_Admin {
         }
 
         $user_id    = isset($_POST['user_id']) ? absint($_POST['user_id']) : 0;
-        $ban_reason = isset($_POST['ban_reason']) ? sanitize_text_field(wp_unslash($_POST['ban_reason'])) : '';
+        // OBS-06 (E2E run B 2026-04-30): антифрод-причина — INTERNAL classification.
+        // Пишем в ban_reason_admin (для админов/forensics), публичная остаётся NULL
+        // → пользователь видит generic message «Аккаунт заблокирован».
+        $ban_reason_admin = isset($_POST['ban_reason']) ? sanitize_text_field(wp_unslash($_POST['ban_reason'])) : '';
 
         if (!$user_id) {
             wp_send_json_error(array( 'message' => 'Нет user_id' ));
             return;
         }
 
-        if (empty($ban_reason)) {
-            $ban_reason = 'Заблокирован антифрод-системой';
+        if (empty($ban_reason_admin)) {
+            $ban_reason_admin = 'Заблокирован антифрод-системой';
         }
 
         global $wpdb;
@@ -1360,13 +1363,14 @@ class Cashback_Fraud_Admin {
             $profile_updated = $wpdb->update(
                 $profile_table,
                 array(
-                    'status'     => 'banned',
-                    'ban_reason' => $ban_reason,
-                    'banned_at'  => $banned_at_mysql,
-                    'updated_at' => $banned_at_mysql,
+                    'status'           => 'banned',
+                    'ban_reason'       => null,
+                    'ban_reason_admin' => $ban_reason_admin,
+                    'banned_at'        => $banned_at_mysql,
+                    'updated_at'       => $banned_at_mysql,
                 ),
                 array( 'user_id' => $user_id ),
-                array( '%s', '%s', '%s', '%s' ),
+                array( '%s', '%s', '%s', '%s', '%s' ),
                 array( '%d' )
             );
 
@@ -1445,20 +1449,22 @@ class Cashback_Fraud_Admin {
                 throw new \Exception('Не удалось подтвердить открытые алерты');
             }
 
-            // Audit
+            // Audit — записываем INTERNAL причину (forensics).
             if (class_exists('Cashback_Encryption')) {
                 Cashback_Encryption::write_audit_log(
                     'fraud_user_banned',
                     get_current_user_id(),
                     'user_profile',
                     $user_id,
-                    array( 'ban_reason' => $ban_reason )
+                    array( 'ban_reason_admin' => $ban_reason_admin )
                 );
             }
 
             $wpdb->query('COMMIT');
 
-            // Email notification (non-critical delivery, after commit — но содержимое security)
+            // Email notification — OBS-06: НЕ передаём internal antifraud-причину
+            // пользователю в письмо. Generic «Не указана» соответствует UX choice
+            // 2026-04-30 («Generic without reason» для антифрод-банов).
             $user = get_userdata($user_id);
             if ($user && $user->user_email && class_exists('Cashback_Email_Sender') && class_exists('Cashback_Email_Builder')) {
                 Cashback_Email_Sender::get_instance()->send_critical(
@@ -1466,7 +1472,7 @@ class Cashback_Fraud_Admin {
                     __('Ваш аккаунт кэшбэк заблокирован', 'cashback-plugin'),
                     Cashback_Email_Builder::banned_account_body(
                         $user->display_name !== '' ? $user->display_name : $user->user_login,
-                        $ban_reason !== '' ? $ban_reason : __('Не указана', 'cashback-plugin'),
+                        __('Не указана', 'cashback-plugin'),
                         (string) get_option('admin_email')
                     ),
                     (int) $user->ID

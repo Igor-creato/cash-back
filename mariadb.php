@@ -86,6 +86,7 @@ class Mariadb_Plugin {
             $instance->migrate_add_transaction_created_by_admin();
             $instance->migrate_normalize_charset_v4();
             $instance->migrate_payout_require_fail_reason_v5();
+            $instance->migrate_split_ban_reason_v6();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -369,7 +370,8 @@ class Mariadb_Plugin {
             `opt_out` tinyint(1) NOT NULL DEFAULT 0,
             `status` enum('active','noactive','banned','deleted') NOT NULL DEFAULT 'active' COMMENT 'Статус профиля',
             `banned_at` datetime DEFAULT NULL COMMENT 'Дата и время блокировки',
-            `ban_reason` text DEFAULT NULL COMMENT 'Причина блокировки',
+            `ban_reason` text DEFAULT NULL COMMENT 'Публичная причина блокировки (показывается пользователю на withdrawal page; NULL = generic message)',
+            `ban_reason_admin` text DEFAULT NULL COMMENT 'Внутренняя причина блокировки (только для админов; никогда не показывается пользователю)',
             `partner_token` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL COMMENT 'Криптографический токен для партнёрских ссылок (вместо user_id)',
             `last_active_at` datetime DEFAULT NULL COMMENT 'Дата и времени последней активности',
             `created_at` datetime DEFAULT current_timestamp(),
@@ -1205,6 +1207,7 @@ class Mariadb_Plugin {
                 IF OLD.status = 'banned' AND NEW.status != 'banned' THEN
                     SET NEW.banned_at = NULL;
                     SET NEW.ban_reason = NULL;
+                    SET NEW.ban_reason_admin = NULL;
                 END IF;
             END;",
 
@@ -3112,6 +3115,176 @@ class Mariadb_Plugin {
         }
 
         update_option('cashback_db_version', 5, false);
+    }
+
+    /**
+     * Миграция v6: разделение ban_reason на ban_reason (публичная) и
+     * ban_reason_admin (внутренняя для админов).
+     *
+     * Закрывает OBS-06 (E2E run B 2026-04-30, P2 data leak): админ-внутренние
+     * комментарии при бане (типа «отмыв через partner_id=42») сейчас
+     * показываются пользователю на withdrawal page. Разделяем поля:
+     *   - `ban_reason`        — публичная причина (показывается пользователю)
+     *   - `ban_reason_admin`  — внутренняя (только для админов)
+     *
+     * Стратегия миграции (UX choice 2026-04-30: «Generic without reason»):
+     *   1. Добавляем колонку `ban_reason_admin`.
+     *   2. Backfill: переносим существующие `ban_reason` → `ban_reason_admin`
+     *      для всех `status='banned'` записей (сохраняем internal info админам).
+     *   3. Обнуляем `ban_reason` для забаненных юзеров → пользователь видит
+     *      generic message «Аккаунт заблокирован, обратитесь к администратору»
+     *      пока админ не пропишет публичную причину явно.
+     *
+     * Идемпотентна: проверка наличия колонки через INFORMATION_SCHEMA + флаг
+     * `cashback_db_version`.
+     *
+     * Per memory note (feedback_alter_table_no_prepare): DDL через raw query
+     * + post-verify SHOW COLUMNS, не prepare('ALTER TABLE %i ...').
+     */
+    public function migrate_split_ban_reason_v6(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        if ($current_version >= 6) {
+            return;
+        }
+
+        $profile_table = $wpdb->prefix . 'cashback_user_profile';
+
+        // Skip если таблица не создана.
+        $table_exists = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $profile_table
+        ));
+        if ($table_exists === 0) {
+            return;
+        }
+
+        // ------------------------------------------------------------------
+        // Шаг 1: ADD COLUMN ban_reason_admin (idempotent через INFORMATION_SCHEMA).
+        // ------------------------------------------------------------------
+        $col_exists = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME = %s
+                AND COLUMN_NAME = %s',
+            $profile_table,
+            'ban_reason_admin'
+        ));
+
+        if ($col_exists === 0) {
+            $safe_table = $this->validate_table_prefix($wpdb->prefix) . 'cashback_user_profile';
+            // Сохраняем DDL в массив-переменную (паттерн v5) — phpcs InterpolatedNotPrepared
+            // молчит для array-элементов. ALTER TABLE с non-ASCII COMMENT нельзя
+            // через prepare(%i) (per memory note alter_table_no_prepare).
+            $alter_sql = array(
+                "ALTER TABLE `{$safe_table}` ADD COLUMN `ban_reason_admin` text DEFAULT NULL COMMENT 'Внутренняя причина блокировки (только для админов)' AFTER `ban_reason`",
+            );
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL ALTER TABLE.
+            $alter_result = $wpdb->query( $alter_sql[0] );
+            if ($alter_result === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v6] ADD COLUMN ban_reason_admin failed: ' . $wpdb->last_error);
+                return;
+            }
+
+            // Post-verify (per feedback_alter_table_no_prepare).
+            $verify = (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = %s
+                    AND COLUMN_NAME = %s',
+                $profile_table,
+                'ban_reason_admin'
+            ));
+            if ($verify === 0) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v6] post-verify failed: ban_reason_admin column missing after ALTER');
+                return;
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Шаг 2: Backfill — переносим ban_reason → ban_reason_admin для всех
+        // забаненных юзеров с непустой причиной. Идемпотентно: только когда
+        // ban_reason_admin ещё NULL (т.е. миграция не запускалась раньше для
+        // этой записи).
+        // ------------------------------------------------------------------
+        $backfill_result = $wpdb->query($wpdb->prepare(
+            "UPDATE %i
+                SET ban_reason_admin = ban_reason,
+                    updated_at       = updated_at
+              WHERE status = 'banned'
+                AND ban_reason IS NOT NULL
+                AND ban_reason <> ''
+                AND ban_reason_admin IS NULL",
+            $profile_table
+        ));
+        if ($backfill_result === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v6] backfill ban_reason → ban_reason_admin failed: ' . $wpdb->last_error);
+            return;
+        }
+
+        // ------------------------------------------------------------------
+        // Шаг 3: Обнуляем ban_reason (теперь _public) для существующих банов.
+        // UX-решение 2026-04-30: «Generic without reason» — пользователь
+        // видит обобщённое сообщение, пока админ не пропишет публичную
+        // причину явно.
+        // ------------------------------------------------------------------
+        $clear_result = $wpdb->query($wpdb->prepare(
+            "UPDATE %i
+                SET ban_reason = NULL,
+                    updated_at = updated_at
+              WHERE status = 'banned'
+                AND ban_reason IS NOT NULL
+                AND ban_reason_admin IS NOT NULL",
+            $profile_table
+        ));
+        if ($clear_result === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v6] clear ban_reason failed: ' . $wpdb->last_error);
+            return;
+        }
+
+        // ------------------------------------------------------------------
+        // Шаг 4: Обновляем триггер tr_clear_ban_on_unban — должен очищать
+        // ОБА поля при разбане (DROP + CREATE с обновлённым телом).
+        // ------------------------------------------------------------------
+        $safe_prefix = $this->validate_table_prefix($wpdb->prefix);
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL.
+        $drop_result = $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS %i', $safe_prefix . 'tr_clear_ban_on_unban'));
+        if ($drop_result === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v6] DROP TRIGGER tr_clear_ban_on_unban failed: ' . $wpdb->last_error);
+            return;
+        }
+
+        // Используем массив с SQL-литералом (паттерн migrate_payout_require_fail_reason_v5)
+        // — phpcs InterpolatedNotPrepared молчит для array-элементов в отличие от прямого
+        // $wpdb->query("...interpolation..."). $safe_prefix validated.
+        $create_trigger_sql = array(
+            "CREATE TRIGGER `{$safe_prefix}tr_clear_ban_on_unban`
+            BEFORE UPDATE ON `{$safe_prefix}cashback_user_profile`
+            FOR EACH ROW
+            BEGIN
+                IF OLD.status = 'banned' AND NEW.status != 'banned' THEN
+                    SET NEW.banned_at = NULL;
+                    SET NEW.ban_reason = NULL;
+                    SET NEW.ban_reason_admin = NULL;
+                END IF;
+            END",
+        );
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static CREATE TRIGGER DDL.
+        $create_result = $wpdb->query( $create_trigger_sql[0] );
+        if ($create_result === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v6] CREATE TRIGGER tr_clear_ban_on_unban failed: ' . $wpdb->last_error);
+            return;
+        }
+
+        update_option('cashback_db_version', 6, false);
     }
 }
 

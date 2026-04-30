@@ -158,8 +158,9 @@ class Cashback_Trigger_Fallbacks {
      * @param array $data Данные для UPDATE (по ссылке)
      */
     public static function clear_ban_fields( array &$data ): void {
-        $data['banned_at']  = null;
-        $data['ban_reason'] = null;
+        $data['banned_at']        = null;
+        $data['ban_reason']       = null;
+        $data['ban_reason_admin'] = null;
     }
 
     /**
