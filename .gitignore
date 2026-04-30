@@ -4,6 +4,7 @@
 # Composer dependencies (в development/)
 /vendor/
 /development/vendor/
+/artefacts/
 
 # development/ — игнорируется всё, кроме тест-сьюта плагина
 /development/*
