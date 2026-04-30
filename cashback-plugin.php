@@ -789,6 +789,17 @@ class CashbackPlugin {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback] Ledger accrual backfill auto-migration failed: ' . $e->getMessage());
             }
+
+            // E2E 2026-04-29 P2-A1-2: BEFORE INSERT/UPDATE триггеры на cashback_payout_requests
+            // требуют fail_reason при status IN ('declined','failed'). Идемпотентно через
+            // cashback_db_version >= 5 fast-path. Runtime-вызов нужен на existing installs
+            // без re-activation (паттерн F-22-003).
+            try {
+                Mariadb_Plugin::get_instance()->migrate_payout_require_fail_reason_v5();
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] Payout fail_reason trigger auto-migration failed: ' . $e->getMessage());
+            }
         }
 
         // Legal module (Phase 1): создание таблицы wp_cashback_consent_log и

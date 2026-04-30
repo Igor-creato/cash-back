@@ -85,6 +85,7 @@ class Mariadb_Plugin {
             $instance->migrate_add_click_sessions_v1();
             $instance->migrate_add_transaction_created_by_admin();
             $instance->migrate_normalize_charset_v4();
+            $instance->migrate_payout_require_fail_reason_v5();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -935,6 +936,8 @@ class Mariadb_Plugin {
             'tr_prevent_update_paid_payout',
             'tr_prevent_delete_failed_payout',
             'tr_prevent_update_failed_payout',
+            'tr_payout_require_fail_reason_ins',
+            'tr_payout_require_fail_reason_upd',
             'tr_banned_user_update_banned_at',
             'tr_webhook_payload_hash',
             // Пересоздать с bucket-логикой (F-11-003 part 2).
@@ -1134,6 +1137,35 @@ class Mariadb_Plugin {
                 IF OLD.status = 'failed' THEN
                     SIGNAL SQLSTATE '45000'
                     SET MESSAGE_TEXT = 'Изменение запрещено: заявка со статусом failed не может быть изменена.';
+                END IF;
+            END;",
+
+            // Defense-in-depth (E2E 2026-04-29 P2-A1-2): нельзя через raw INSERT/UPDATE
+            // перевести заявку в declined/failed без fail_reason. Все legitimate callsite'ы
+            // (admin/payouts, admin/users-management, antifraud/class-fraud-admin,
+            // admin/class-cashback-encryption-recovery) уже заполняют fail_reason,
+            // так что триггер не сломает legitimate flow — закрывает только обход через raw SQL.
+            "CREATE TRIGGER `{$safe_prefix}tr_payout_require_fail_reason_ins`
+            BEFORE INSERT ON `{$safe_prefix}cashback_payout_requests`
+            FOR EACH ROW
+            --  'Требует fail_reason при создании заявки со статусом declined/failed'
+            BEGIN
+                IF NEW.status IN ('declined','failed')
+                    AND (NEW.fail_reason IS NULL OR NEW.fail_reason = '') THEN
+                    SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'fail_reason required for declined/failed payout status';
+                END IF;
+            END;",
+
+            "CREATE TRIGGER `{$safe_prefix}tr_payout_require_fail_reason_upd`
+            BEFORE UPDATE ON `{$safe_prefix}cashback_payout_requests`
+            FOR EACH ROW
+            --  'Требует fail_reason при переходе заявки в declined/failed'
+            BEGIN
+                IF NEW.status IN ('declined','failed')
+                    AND (NEW.fail_reason IS NULL OR NEW.fail_reason = '') THEN
+                    SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'fail_reason required for declined/failed payout status';
                 END IF;
             END;",
 
@@ -2971,6 +3003,115 @@ class Mariadb_Plugin {
         }
 
         update_option('cashback_db_version', 4, false);
+    }
+
+    /**
+     * Миграция v5: defense-in-depth для P2-A1-2 (E2E прогон 2026-04-29).
+     *
+     * Раньше можно было через raw `UPDATE wp_cashback_payout_requests SET status='declined'`
+     * (или 'failed') оставить fail_reason пустым/NULL — реальные admin handler'ы заполняют,
+     * но schema-level enforcement отсутствовал. Триггеры закрывают этот gap.
+     *
+     * Шаги:
+     *   1. Backfill legacy строк: пустой fail_reason у уже-declined/failed заявок →
+     *      '(legacy: причина не указана)' (иначе триггер потом отклонит legitimate
+     *      UPDATE других полей у legacy строки).
+     *   2. DROP TRIGGER IF EXISTS — идемпотентность для повторного прогона миграции.
+     *   3. CREATE TRIGGER tr_payout_require_fail_reason_ins / _upd — SIGNAL SQLSTATE
+     *      '45000' если NEW.status IN ('declined','failed') AND NEW.fail_reason пуст.
+     *
+     * Версионизация: cashback_db_version = 5. Idempotent через get_option fast-path.
+     * Используется raw $wpdb->query (триггерное тело — multi-statement DDL,
+     * %i prepare не покрывает CREATE TRIGGER body).
+     */
+    public function migrate_payout_require_fail_reason_v5(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        if ($current_version >= 5) {
+            return;
+        }
+
+        $payouts_table = $wpdb->prefix . 'cashback_payout_requests';
+
+        // Skip если таблица не создана (свежая установка ещё не дошла до create_tables).
+        $table_exists = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $payouts_table
+        ));
+        if ($table_exists === 0) {
+            return;
+        }
+
+        // ------------------------------------------------------------------
+        // Шаг 1: Backfill legacy строк
+        // ------------------------------------------------------------------
+        $backfill_result = $wpdb->query($wpdb->prepare(
+            "UPDATE %i
+                SET fail_reason = '(legacy: причина не указана)',
+                    updated_at  = updated_at
+              WHERE status IN ('declined','failed')
+                AND (fail_reason IS NULL OR fail_reason = '')",
+            $payouts_table
+        ));
+        if ($backfill_result === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v5] backfill fail_reason failed: ' . $wpdb->last_error);
+            return;
+        }
+
+        // ------------------------------------------------------------------
+        // Шаг 2: DROP TRIGGER IF EXISTS (idempotent)
+        // ------------------------------------------------------------------
+        $safe_prefix = $this->validate_table_prefix($wpdb->prefix);
+        foreach (array( 'tr_payout_require_fail_reason_ins', 'tr_payout_require_fail_reason_upd' ) as $trig_base) {
+            $trig_full = $safe_prefix . $trig_base;
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL.
+            $drop_result = $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS %i', $trig_full));
+            if ($drop_result === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log("[Cashback Migration v5] DROP TRIGGER {$trig_full} failed: " . $wpdb->last_error);
+                return;
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Шаг 3: CREATE TRIGGER tr_payout_require_fail_reason_ins / _upd
+        // ------------------------------------------------------------------
+        $create_triggers = array(
+            "CREATE TRIGGER `{$safe_prefix}tr_payout_require_fail_reason_ins`
+            BEFORE INSERT ON `{$safe_prefix}cashback_payout_requests`
+            FOR EACH ROW
+            BEGIN
+                IF NEW.status IN ('declined','failed')
+                    AND (NEW.fail_reason IS NULL OR NEW.fail_reason = '') THEN
+                    SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'fail_reason required for declined/failed payout status';
+                END IF;
+            END",
+            "CREATE TRIGGER `{$safe_prefix}tr_payout_require_fail_reason_upd`
+            BEFORE UPDATE ON `{$safe_prefix}cashback_payout_requests`
+            FOR EACH ROW
+            BEGIN
+                IF NEW.status IN ('declined','failed')
+                    AND (NEW.fail_reason IS NULL OR NEW.fail_reason = '') THEN
+                    SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'fail_reason required for declined/failed payout status';
+                END IF;
+            END",
+        );
+
+        foreach ($create_triggers as $sql) {
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static CREATE TRIGGER DDL, $safe_prefix validated.
+            $create_result = $wpdb->query($sql);
+            if ($create_result === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v5] CREATE TRIGGER failed: ' . $wpdb->last_error);
+                return;
+            }
+        }
+
+        update_option('cashback_db_version', 5, false);
     }
 }
 
