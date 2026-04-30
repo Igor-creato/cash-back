@@ -606,6 +606,10 @@ class CashbackPlugin {
         // Группа 14: ежедневная сверка ledger vs кэш баланса.
         $this->require_file('includes/class-cashback-balance-reconciliation.php');
 
+        // E2E follow-up A1-1: ежечасная сверка ledger ↔ audit_log
+        // (defense-in-depth: ловит ledger-write'ы в обход plugin handler'а).
+        $this->require_file('includes/class-cashback-audit-trail-reconciliation.php');
+
         // Группа 15: UI-помощник для расшифровки результатов проверки
         // (перевод issue + бухгалтерский HTML-блок). Используется в
         // Cashback_Balance_Reconciliation_Admin и admin/payouts.php (DRY).
@@ -923,6 +927,11 @@ class CashbackPlugin {
         // --- Группа 14: ежедневная сверка баланса (AS-job ledger vs cache) ---
         if (class_exists('Cashback_Balance_Reconciliation')) {
             Cashback_Balance_Reconciliation::init();
+        }
+
+        // --- E2E A1-1: ежечасная audit-trail сверка ledger ↔ audit_log ---
+        if (class_exists('Cashback_Audit_Trail_Reconciliation')) {
+            Cashback_Audit_Trail_Reconciliation::init();
         }
 
         // --- Группа 15: admin-UI поверх сверки (подстраница + Summary + manual run) ---
