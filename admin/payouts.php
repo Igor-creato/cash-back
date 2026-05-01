@@ -1320,7 +1320,13 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
 
     /**
      * Обновление баланса пользователя при изменении статуса выплаты на "declined".
-     * pending → frozen.
+     *
+     * F-S9-NEW-DECLINE-BANNED (Session 8): bucket-aware декремент.
+     *  - Обычный юзер: pending_balance -= X.
+     *  - Banned юзер (cashback_user_profile.status='banned'): pending=0,
+     *    pending уже в frozen_pending_balance_ban → декремент оттуда.
+     * В обоих случаях: frozen_balance += X (umbrella) + frozen_balance_admin += X
+     * (новый bucket для admin-разморозки, F-S9-NEW-UNFREEZE).
      *
      * @param int    $payout_id      ID заявки (уже заблокирована вызывающим кодом)
      * @param bool   $in_transaction Транзакция уже открыта вызывающим
@@ -1367,7 +1373,8 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
             $balance_table   = $wpdb->prefix . 'cashback_user_balance';
             $current_balance = $wpdb->get_row(
                 $wpdb->prepare(
-                    'SELECT pending_balance FROM %i WHERE user_id = %d FOR UPDATE',
+                    'SELECT pending_balance, frozen_pending_balance_ban
+                     FROM %i WHERE user_id = %d FOR UPDATE',
                     $balance_table,
                     $user_id
                 ),
@@ -1378,26 +1385,66 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
                 throw new Exception("Не найден баланс для пользователя {$user_id}");
             }
 
-            // Money-сравнение через Cashback_Money (F-4-001).
-            $pending = Cashback_Money::from_db_value($current_balance['pending_balance']);
-            $needed  = Cashback_Money::from_string($amount);
+            // F-S9-NEW-DECLINE-BANNED: defense-in-depth — banned-fallback срабатывает
+            // только если юзер действительно забанен. Иначе можем случайно списать
+            // ban-bucket у не-banned юзера при некогерентном кеше.
+            $profile_table  = $wpdb->prefix . 'cashback_user_profile';
+            $profile_status = (string) $wpdb->get_var($wpdb->prepare(
+                'SELECT status FROM %i WHERE user_id = %d',
+                $profile_table,
+                $user_id
+            ));
+            $is_banned = ( $profile_status === 'banned' );
+
+            $pending     = Cashback_Money::from_db_value($current_balance['pending_balance']);
+            $ban_pending = Cashback_Money::from_db_value($current_balance['frozen_pending_balance_ban']);
+            $needed      = Cashback_Money::from_string($amount);
+
+            $use_ban_bucket = false;
             if ($pending->is_less_than($needed)) {
-                throw new Exception("Недостаточно средств в pending_balance для пользователя {$user_id}. Требуется: {$amount}, доступно: {$current_balance['pending_balance']}");
+                if ($is_banned && !$ban_pending->is_less_than($needed)) {
+                    $use_ban_bucket = true;
+                } else {
+                    throw new Exception("Недостаточно средств в pending_balance для пользователя {$user_id}. Требуется: {$amount}, pending: {$current_balance['pending_balance']}, ban-pending: {$current_balance['frozen_pending_balance_ban']}");
+                }
             }
 
-            $result = $wpdb->query($wpdb->prepare(
-                'UPDATE %i
-                 SET pending_balance = pending_balance - CAST(%s AS DECIMAL(18,2)),
-                     frozen_balance = frozen_balance + CAST(%s AS DECIMAL(18,2)),
-                     version = version + 1
-                 WHERE user_id = %d
-                   AND pending_balance >= CAST(%s AS DECIMAL(18,2))',
-                $balance_table,
-                $amount,
-                $amount,
-                $user_id,
-                $amount
-            ));
+            if ($use_ban_bucket) {
+                // Banned-юзер: pending уже в frozen_pending_balance_ban (триггер ban_freeze
+                // переместил при .status='banned'). Декрементим оттуда. frozen_balance
+                // (umbrella) уже включает frozen_pending_balance_ban — оставляем без
+                // изменений, только перекладываем атрибуцию: admin-bucket += X.
+                $result = $wpdb->query($wpdb->prepare(
+                    'UPDATE %i
+                     SET frozen_pending_balance_ban = frozen_pending_balance_ban - CAST(%s AS DECIMAL(18,2)),
+                         frozen_balance_admin = frozen_balance_admin + CAST(%s AS DECIMAL(18,2)),
+                         version = version + 1
+                     WHERE user_id = %d
+                       AND frozen_pending_balance_ban >= CAST(%s AS DECIMAL(18,2))',
+                    $balance_table,
+                    $amount,
+                    $amount,
+                    $user_id,
+                    $amount
+                ));
+            } else {
+                // Обычный юзер: pending → frozen_balance umbrella + frozen_balance_admin.
+                $result = $wpdb->query($wpdb->prepare(
+                    'UPDATE %i
+                     SET pending_balance = pending_balance - CAST(%s AS DECIMAL(18,2)),
+                         frozen_balance = frozen_balance + CAST(%s AS DECIMAL(18,2)),
+                         frozen_balance_admin = frozen_balance_admin + CAST(%s AS DECIMAL(18,2)),
+                         version = version + 1
+                     WHERE user_id = %d
+                       AND pending_balance >= CAST(%s AS DECIMAL(18,2))',
+                    $balance_table,
+                    $amount,
+                    $amount,
+                    $amount,
+                    $user_id,
+                    $amount
+                ));
+            }
 
             if ($result === false || $result === 0) {
                 throw new Exception("Ошибка обновления баланса пользователя {$user_id}");
