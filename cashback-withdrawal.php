@@ -1043,7 +1043,7 @@ class CashbackWithdrawal {
 
             if ($recent_requests_count >= 3) {
                 $wpdb->query('ROLLBACK');
-                wp_send_json_error(__('Слишком много заявок на вывод. Попробуйте через 24 часа.', 'cashback-plugin'));
+                wp_send_json_error(__('Лимит 3 заявки в сутки исчерпан. Попробуйте завтра.', 'cashback-plugin'));
                 return;
             }
 
