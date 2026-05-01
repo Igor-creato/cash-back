@@ -103,13 +103,14 @@ class Cashback_Payouts_Admin {
             );
 
             wp_localize_script('cashback-admin-payout-detail', 'cashbackPayoutDetailData', array(
-                'updateNonce'  => wp_create_nonce('update_payout_request_nonce'),
-                'decryptNonce' => wp_create_nonce('decrypt_payout_details_nonce'),
-                'verifyNonce'  => wp_create_nonce('verify_payout_balance_nonce'),
+                'updateNonce'   => wp_create_nonce('update_payout_request_nonce'),
+                'decryptNonce'  => wp_create_nonce('decrypt_payout_details_nonce'),
+                'verifyNonce'   => wp_create_nonce('verify_payout_balance_nonce'),
+                'unfreezeNonce' => wp_create_nonce('cashback_payout_unfreeze'),
                 // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only detail-view ID passed to JS; nonce enforced on update AJAX actions.
-                'payoutId'     => absint($_GET['payout_id']),
-                'ajaxurl'      => admin_url('admin-ajax.php'),
-                'listUrl'      => admin_url('admin.php?page=cashback-payouts'),
+                'payoutId'      => absint($_GET['payout_id']),
+                'ajaxurl'       => admin_url('admin-ajax.php'),
+                'listUrl'       => admin_url('admin.php?page=cashback-payouts'),
             ));
         } else {
             wp_enqueue_script(
@@ -783,6 +784,13 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
                                                 data-payout-id="<?php echo esc_attr((string) $payout_id); ?>">
                                             <?php echo esc_html__('Проверить движения средств', 'cashback-plugin'); ?>
                                         </button>
+                                        <?php if ($current_status === 'declined' && current_user_can('manage_options')) : ?>
+                                            <button type="button" id="unfreeze-detail-btn" class="button button-secondary button-large payout-unfreeze-btn"
+                                                    data-payout-id="<?php echo esc_attr((string) $payout_id); ?>"
+                                                    data-amount="<?php echo esc_attr((string) $payout['total_amount']); ?>">
+                                                <?php echo esc_html__('Разморозить и вернуть', 'cashback-plugin'); ?>
+                                            </button>
+                                        <?php endif; ?>
                                         <button type="button" id="save-detail-btn" class="button button-primary button-large"
                                                 data-payout-id="<?php echo esc_attr((string) $payout_id); ?>"
                                                 data-original-status="<?php echo esc_attr($current_status); ?>"

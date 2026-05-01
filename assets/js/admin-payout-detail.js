@@ -131,6 +131,7 @@
     initDecryptButton();
     initSaveButton();
     initVerifyDetailButton();
+    initUnfreezeButton();
   });
 
   /**
@@ -504,6 +505,91 @@
           errorMsg = 'Ошибка 500: Внутренняя ошибка сервера.';
         }
         showNotice(errorMsg, 'error');
+      });
+    });
+  }
+
+  /**
+   * Инициализация кнопки «Разморозить и вернуть» (F-S9-NEW-UNFREEZE).
+   *
+   * Видна только для status='declined' + manage_options (рендерится в
+   * render_payout_detail_page). При клике делает confirm + POST на
+   * cashback_payout_unfreeze AJAX. После успеха — перезагружает страницу.
+   */
+  function initUnfreezeButton() {
+    $('#unfreeze-detail-btn').on('click', function () {
+      const btn = $(this);
+      const payoutId = btn.data('payout-id');
+      const amount = String(btn.data('amount') || '');
+
+      if (!payoutId) {
+        showNotice('Не удалось определить ID заявки.', 'error');
+        return;
+      }
+
+      const confirmText = 'Разморозить заявку #' + payoutId + ' и вернуть '
+        + formatAmount(amount) + ' в доступный баланс пользователя? '
+        + 'Действие необратимо после применения (создаст ledger row payout_unfreeze).';
+      if (!window.confirm(confirmText)) {
+        return;
+      }
+
+      const originalText = btn.text();
+      btn.prop('disabled', true).text('Размораживаем…');
+
+      // Группа 5 ADR: per-click request_id для идемпотентности retry.
+      let requestId = btn.data('cb-request-id');
+      if (!requestId) {
+        requestId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+          ? crypto.randomUUID()
+          : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+            const r = (Math.random() * 16) | 0;
+            return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+          });
+        btn.data('cb-request-id', requestId);
+      }
+
+      $.post(cashbackPayoutDetailData.ajaxurl, {
+        action: 'cashback_payout_unfreeze',
+        payout_id: payoutId,
+        nonce: cashbackPayoutDetailData.unfreezeNonce,
+        request_id: requestId,
+      }, function (response) {
+        if (response && response.success) {
+          const data = response.data || {};
+          const msg = data.is_first_unfreeze === false
+            ? 'Заявка уже была разморожена ранее.'
+            : ('Сумма ' + formatAmount(data.amount || amount)
+                + ' возвращена пользователю. Новый available: '
+                + formatAmount(data.new_available || ''));
+          showNotice(msg, 'success');
+          btn.removeData('cb-request-id');
+          // Через 1.5с перезагружаем страницу — отобразит новый ledger
+          // history и обновит badge статуса (status сам остаётся declined,
+          // Q2=B решение).
+          setTimeout(function () {
+            window.location.reload();
+          }, 1500);
+        } else {
+          const errorMsg = (response && response.data && response.data.message)
+            ? response.data.message
+            : 'Не удалось разморозить заявку.';
+          showNotice(errorMsg, 'error');
+          btn.prop('disabled', false).text(originalText);
+        }
+      }).fail(function (jqXHR) {
+        let errorMsg = 'Ошибка соединения при разморозке';
+        if (jqXHR.status === 403) {
+          errorMsg = 'Ошибка 403: Доступ запрещён. Обновите страницу.';
+        } else if (jqXHR.status === 409) {
+          errorMsg = 'Запрос уже обрабатывается. Повторите через несколько секунд.';
+        } else if (jqXHR.status === 500) {
+          errorMsg = (jqXHR.responseJSON && jqXHR.responseJSON.data && jqXHR.responseJSON.data.message)
+            ? jqXHR.responseJSON.data.message
+            : 'Ошибка 500: Внутренняя ошибка сервера.';
+        }
+        showNotice(errorMsg, 'error');
+        btn.prop('disabled', false).text(originalText);
       });
     });
   }
