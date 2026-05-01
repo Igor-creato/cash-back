@@ -87,6 +87,7 @@ class Mariadb_Plugin {
             $instance->migrate_normalize_charset_v4();
             $instance->migrate_payout_require_fail_reason_v5();
             $instance->migrate_split_ban_reason_v6();
+            $instance->migrate_payout_unfreeze_v7();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -333,6 +334,7 @@ class Mariadb_Plugin {
             `frozen_balance_ban`         decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Доступная часть, замороженная при бане пользователя',
             `frozen_balance_payout`      decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Часть, удерживаемая под активной заявкой на выплату',
             `frozen_pending_balance_ban` decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Pending-часть, замороженная при бане (возвращается в pending при разбане)',
+            `frozen_balance_admin`       decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Заморожено админом при declined-выплате (требует ручной разморозки, F-S9-NEW-UNFREEZE)',
             `version` int unsigned NOT NULL DEFAULT 0 COMMENT 'Версия строки для защиты от гонок',
             `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (`user_id`)
@@ -448,7 +450,7 @@ class Mariadb_Plugin {
         $table_balance_ledger = "CREATE TABLE IF NOT EXISTS `{$wpdb->prefix}cashback_balance_ledger` (
             `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             `user_id` bigint(20) unsigned NOT NULL COMMENT 'ID пользователя',
-            `type` enum('accrual','payout_hold','payout_complete','payout_cancel','payout_declined','adjustment','affiliate_accrual','affiliate_reversal','affiliate_freeze','affiliate_unfreeze','ban_freeze','ban_unfreeze') NOT NULL COMMENT 'Тип операции',
+            `type` enum('accrual','payout_hold','payout_complete','payout_cancel','payout_declined','payout_unfreeze','adjustment','affiliate_accrual','affiliate_reversal','affiliate_freeze','affiliate_unfreeze','ban_freeze','ban_unfreeze') NOT NULL COMMENT 'Тип операции',
             `amount` decimal(18,2) NOT NULL COMMENT 'Сумма со знаком (+ начисление, - списание)',
             `transaction_id` bigint(20) unsigned DEFAULT NULL COMMENT 'ID транзакции (для accrual/affiliate)',
             `payout_request_id` bigint(20) unsigned DEFAULT NULL COMMENT 'ID заявки на выплату',
@@ -1816,6 +1818,7 @@ class Mariadb_Plugin {
             'payout_complete'    => '0.00',
             'payout_cancel'      => '0.00',
             'payout_declined'    => '0.00',
+            'payout_unfreeze'    => '0.00',
             'adjustment'         => '0.00',
             'affiliate_accrual'  => '0.00',
             'affiliate_reversal' => '0.00',
@@ -1857,23 +1860,29 @@ class Mariadb_Plugin {
             $ban_frozen = '0.00';
         }
 
-        // Расчётный available: accrual - |hold| + cancel + adjustment + affiliate_net + ban_net
+        // Расчётный available: accrual - |hold| + cancel + adjustment + affiliate_net + ban_net + payout_unfreeze
         // payout_hold, ban_freeze отрицательные → bcadd с отрицательным = вычитание.
+        // payout_unfreeze (+amount) возвращает declined-сумму из frozen_balance_admin
+        // в available_balance (F-S9-NEW-UNFREEZE).
         $ledger_available = bcadd(
             bcadd(
                 bcadd(
                     bcadd(
-                        bcadd($sums['accrual'], $sums['payout_hold'], 2),
-                        $sums['payout_cancel'],
+                        bcadd(
+                            bcadd($sums['accrual'], $sums['payout_hold'], 2),
+                            $sums['payout_cancel'],
+                            2
+                        ),
+                        $sums['adjustment'],
                         2
                     ),
-                    $sums['adjustment'],
+                    $aff_net,
                     2
                 ),
-                $aff_net,
+                $ban_net,
                 2
             ),
-            $ban_net,
+            $sums['payout_unfreeze'],
             2
         );
 
@@ -1888,8 +1897,16 @@ class Mariadb_Plugin {
         // Расчётный paid: |payout_complete| (только реально выплаченные)
         $ledger_paid = $abs_complete;
 
-        // Расчётный frozen (из леджера): |payout_declined| + affiliate frozen + ban frozen
-        $ledger_frozen = bcadd(bcadd($abs_declined, $aff_frozen, 2), $ban_frozen, 2);
+        // Расчётный frozen (из леджера): |payout_declined| - payout_unfreeze + affiliate frozen + ban frozen
+        // payout_unfreeze (+amount) — admin размораживает declined-сумму обратно в available,
+        // поэтому она вычитается из активного frozen-объёма (F-S9-NEW-UNFREEZE).
+        // Clamp >= 0: если backfill миграции v7 не покрыл legacy declined и admin
+        // разморозил больше, чем зачтено в declined — в кеше уже отработал GREATEST(0,...).
+        $declined_frozen_active = bcsub($abs_declined, $sums['payout_unfreeze'], 2);
+        if (bccomp($declined_frozen_active, '0', 2) < 0) {
+            $declined_frozen_active = '0.00';
+        }
+        $ledger_frozen = bcadd(bcadd($declined_frozen_active, $aff_frozen, 2), $ban_frozen, 2);
 
         // 2. Кэш из cashback_user_balance
         $cache = $wpdb->get_row($wpdb->prepare(
@@ -1944,7 +1961,7 @@ class Mariadb_Plugin {
 
             if (bccomp($ledger_frozen, $frozen, 2) !== 0) {
                 $issues[] = sprintf(
-                    'frozen_balance mismatch: ledger(declined)=%s, cache=%s',
+                    'frozen_balance mismatch: ledger(declined-unfreeze)=%s, cache=%s',
                     $ledger_frozen,
                     $frozen
                 );
@@ -3285,6 +3302,170 @@ class Mariadb_Plugin {
         }
 
         update_option('cashback_db_version', 6, false);
+    }
+
+    /**
+     * Миграция v7: F-S9-NEW-UNFREEZE — добавляет bucket для admin-замороженных
+     * declined-выплат и расширяет ledger enum значением 'payout_unfreeze'.
+     *
+     * Контекст (Session 8, 2026-05-01): UI-метка «Выплата заморожена» для
+     * status='declined' подразумевает reversibility, но в коде её не было.
+     * Также F-S9-NEW-DECLINE-BANNED — decline у banned юзера падал throw'ом
+     * потому что pending=0 (всё в frozen_pending_balance_ban).
+     *
+     * Решение (AskUserQuestion: Q1=B, Q2=B, Q3=A):
+     *   1. Новый bucket frozen_balance_admin в cashback_user_balance.
+     *   2. Новый ledger type 'payout_unfreeze' для компенсирующих записей.
+     *   3. Backfill: для всех существующих declined-выплат списываем
+     *      frozen_balance_admin = LEAST(frozen_balance, SUM(declined_amounts)).
+     *      Идемпотентно: пропускаем юзеров с уже ненулевым frozen_balance_admin.
+     *
+     * Строго add-only (G1): не трогаем существующие колонки/триггеры.
+     *
+     * Версионизация: cashback_db_version = 7.
+     * DDL через raw $wpdb->query (memory feedback_alter_table_no_prepare):
+     * non-ASCII COMMENT не работает через prepare('ALTER TABLE %i ...').
+     */
+    public function migrate_payout_unfreeze_v7(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        if ($current_version >= 7) {
+            return;
+        }
+
+        $balance_table = $wpdb->prefix . 'cashback_user_balance';
+        $ledger_table  = $wpdb->prefix . 'cashback_balance_ledger';
+        $payouts_table = $wpdb->prefix . 'cashback_payout_requests';
+
+        // Skip если базовые таблицы ещё не созданы (свежая установка не дошла до create_tables).
+        $tables_exist = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (%s, %s, %s)',
+            $balance_table,
+            $ledger_table,
+            $payouts_table
+        ));
+        if ($tables_exist < 3) {
+            return;
+        }
+
+        // ------------------------------------------------------------------
+        // Шаг 1: ADD COLUMN frozen_balance_admin (idempotent через INFORMATION_SCHEMA).
+        // ------------------------------------------------------------------
+        $col_exists = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME = %s
+                AND COLUMN_NAME = %s',
+            $balance_table,
+            'frozen_balance_admin'
+        ));
+
+        if ($col_exists === 0) {
+            $safe_table = $this->validate_table_prefix($wpdb->prefix) . 'cashback_user_balance';
+            // ALTER TABLE с non-ASCII COMMENT — raw $wpdb->query, паттерн v6.
+            $alter_sql = array(
+                "ALTER TABLE `{$safe_table}` ADD COLUMN `frozen_balance_admin` decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Заморожено админом при declined-выплате (требует ручной разморозки, F-S9-NEW-UNFREEZE)' AFTER `frozen_pending_balance_ban`",
+            );
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL ALTER TABLE.
+            $alter_result = $wpdb->query( $alter_sql[0] );
+            if ($alter_result === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v7] ADD COLUMN frozen_balance_admin failed: ' . $wpdb->last_error);
+                return;
+            }
+
+            // Post-verify (per feedback_alter_table_no_prepare).
+            $verify = (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = %s
+                    AND COLUMN_NAME = %s',
+                $balance_table,
+                'frozen_balance_admin'
+            ));
+            if ($verify === 0) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v7] post-verify failed: frozen_balance_admin column missing after ALTER');
+                return;
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Шаг 2: MODIFY enum cashback_balance_ledger.type — добавить
+        // 'payout_unfreeze'. Идемпотентно: проверяем COLUMN_TYPE через
+        // INFORMATION_SCHEMA, расширяем только если значения нет.
+        // ------------------------------------------------------------------
+        $current_enum = (string) $wpdb->get_var($wpdb->prepare(
+            "SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME = %s
+                AND COLUMN_NAME = 'type'",
+            $ledger_table
+        ));
+
+        if (strpos($current_enum, "'payout_unfreeze'") === false) {
+            $safe_ledger = $this->validate_table_prefix($wpdb->prefix) . 'cashback_balance_ledger';
+            // MODIFY COLUMN с обновлённым enum. Полный список значений из текущего
+            // schema CREATE TABLE (mariadb.php:451) + 'payout_unfreeze'.
+            $modify_sql = array(
+                "ALTER TABLE `{$safe_ledger}` MODIFY COLUMN `type` enum('accrual','payout_hold','payout_complete','payout_cancel','payout_declined','payout_unfreeze','adjustment','affiliate_accrual','affiliate_reversal','affiliate_freeze','affiliate_unfreeze','ban_freeze','ban_unfreeze') NOT NULL COMMENT 'Тип операции'",
+            );
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL MODIFY enum.
+            $modify_result = $wpdb->query( $modify_sql[0] );
+            if ($modify_result === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v7] MODIFY enum cashback_balance_ledger.type failed: ' . $wpdb->last_error);
+                return;
+            }
+
+            // Post-verify (per feedback_alter_table_no_prepare).
+            $verify_enum = (string) $wpdb->get_var($wpdb->prepare(
+                "SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = %s
+                    AND COLUMN_NAME = 'type'",
+                $ledger_table
+            ));
+            if (strpos($verify_enum, "'payout_unfreeze'") === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v7] post-verify failed: payout_unfreeze missing in ledger.type enum after MODIFY');
+                return;
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Шаг 3: Backfill frozen_balance_admin для существующих declined-выплат.
+        //
+        // Стратегия: для каждого юзера с status='declined' выплатами считаем
+        // SUM(total_amount). Записываем в frozen_balance_admin = LEAST(frozen_balance,
+        // sum). Идемпотентно: только если frozen_balance_admin сейчас = 0.
+        //
+        // Edge case: pre-v7 declined без admin-bucket attribution + admin
+        // разморозит — UPDATE с GREATEST(0, frozen_balance_admin - X) защитит
+        // от ухода в минус (см. handle_payout_unfreeze).
+        // ------------------------------------------------------------------
+        $backfill_result = $wpdb->query($wpdb->prepare(
+            "UPDATE %i b
+                JOIN (
+                    SELECT user_id, SUM(total_amount) AS declined_sum
+                    FROM %i
+                    WHERE status = 'declined'
+                    GROUP BY user_id
+                ) p ON p.user_id = b.user_id
+                SET b.frozen_balance_admin = LEAST(b.frozen_balance, p.declined_sum)
+              WHERE b.frozen_balance_admin = 0",
+            $balance_table,
+            $payouts_table
+        ));
+        if ($backfill_result === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v7] backfill frozen_balance_admin failed: ' . $wpdb->last_error);
+            return;
+        }
+
+        update_option('cashback_db_version', 7, false);
     }
 }
 
