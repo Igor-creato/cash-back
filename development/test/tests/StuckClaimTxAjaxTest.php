@@ -402,10 +402,12 @@ final class StuckClaimTxAjaxTest extends TestCase
     public function test_resolve_product_name_helper_exists(): void
     {
         $src = $this->recon_admin_src();
+        // P0.1 (F-S7-NO-MANUAL-CREDIT): visibility расширен с private до public static
+        // для переиспользования из claims/class-claims-admin.php (combined approve+tx flow).
         $this->assertMatchesRegularExpression(
-            '/private\s+static\s+function\s+resolve_product_name\s*\(\s*array\s+\$claim\s*\)\s*:\s*string/',
+            '/public\s+static\s+function\s+resolve_product_name\s*\(\s*array\s+\$claim\s*\)\s*:\s*string/',
             $src,
-            'resolve_product_name(array $claim): string должен существовать как private static helper'
+            'resolve_product_name(array $claim): string должен существовать как public static helper'
         );
     }
 
@@ -433,10 +435,12 @@ final class StuckClaimTxAjaxTest extends TestCase
     public function test_resolve_network_name_helper_exists(): void
     {
         $src = $this->recon_admin_src();
+        // P0.1 (F-S7-NO-MANUAL-CREDIT): visibility расширен с private до public static
+        // для переиспользования из claims/class-claims-admin.php (combined approve+tx flow).
         $this->assertMatchesRegularExpression(
-            '/private\s+static\s+function\s+resolve_network_name\s*\(\s*string\s+\$cpa_slug\s*\)\s*:\s*string/',
+            '/public\s+static\s+function\s+resolve_network_name\s*\(\s*string\s+\$cpa_slug\s*\)\s*:\s*string/',
             $src,
-            'resolve_network_name(string $cpa_slug): string должен существовать как private static helper'
+            'resolve_network_name(string $cpa_slug): string должен существовать как public static helper'
         );
     }
 

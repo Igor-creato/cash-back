@@ -862,7 +862,7 @@ class Cashback_Balance_Reconciliation_Admin {
 	 *
 	 * @param array<string,mixed> $claim Строка из cashback_claims.
 	 */
-	private static function resolve_product_name( array $claim ): string {
+	public static function resolve_product_name( array $claim ): string {
 		$product_id = isset( $claim['product_id'] ) ? (int) $claim['product_id'] : 0;
 		if ( $product_id > 0 && function_exists( 'wc_get_product' ) ) {
 			$product = wc_get_product( $product_id );
@@ -887,7 +887,7 @@ class Cashback_Balance_Reconciliation_Admin {
 	 * каноничное полное имя — в cashback_affiliate_networks.name. Если запись
 	 * не найдена / удалена / неактивна — возвращаем slug как-есть (фолбэк).
 	 */
-	private static function resolve_network_name( string $cpa_slug ): string {
+	public static function resolve_network_name( string $cpa_slug ): string {
 		$cpa_slug = trim( $cpa_slug );
 		if ( $cpa_slug === '' ) {
 			return '';
