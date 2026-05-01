@@ -969,13 +969,17 @@ class CashbackWithdrawal {
         }
 
         // === 3. Идемпотентная проверка ДО транзакции (fast path) ===
-        // Если заявка с этим ключом уже существует — возвращаем её данные.
+        // Если заявка с этим ключом уже существует у этого юзера — возвращаем её данные.
         // Это дешёвый SELECT по UNIQUE INDEX, избегаем открытия транзакции при retry.
+        // F-S5-IDOR-01: фильтр `AND user_id = %d` обязателен — иначе подмена
+        // idempotency_key (cookie/storage) другим юзером возвращала бы чужой
+        // reference_id/total_amount (info-disclosure ≈ IDOR).
         $table_requests = $wpdb->prefix . 'cashback_payout_requests';
         $existing       = $wpdb->get_row($wpdb->prepare(
-            'SELECT id, reference_id, total_amount, status FROM %i WHERE idempotency_key = %s',
+            'SELECT id, reference_id, total_amount, status FROM %i WHERE idempotency_key = %s AND user_id = %d',
             $table_requests,
-            $idempotency_key
+            $idempotency_key,
+            $user_id
         ));
 
         if ($existing) {
@@ -1283,11 +1287,13 @@ class CashbackWithdrawal {
                     'show_form' => true,
                 ));
             } elseif ($error_message === 'Duplicate payout request detected') {
-                // Параллельный запрос с тем же ключом — найдём созданную заявку
+                // Параллельный запрос с тем же ключом — найдём созданную заявку.
+                // F-S5-IDOR-01: фильтр `AND user_id = %d` защищает от подмены ключа другим юзером.
                 $dup = $wpdb->get_row($wpdb->prepare(
-                    'SELECT reference_id, total_amount FROM %i WHERE idempotency_key = %s',
+                    'SELECT reference_id, total_amount FROM %i WHERE idempotency_key = %s AND user_id = %d',
                     $table_requests,
-                    $idempotency_key
+                    $idempotency_key,
+                    $user_id
                 ));
                 if ($dup) {
                     wp_send_json_success(sprintf(
