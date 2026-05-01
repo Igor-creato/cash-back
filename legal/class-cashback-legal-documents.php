@@ -37,6 +37,7 @@ class Cashback_Legal_Documents {
     public const TYPE_MARKETING       = 'marketing';
     public const TYPE_COOKIES_POLICY  = 'cookies_policy';
     public const TYPE_CONTACT_FORM_PD = 'contact_form_pd';
+    public const TYPE_TECH_DATA       = 'tech_data';
 
     public const VERSIONS_OPTION = 'cashback_legal_consent_versions';
 
@@ -56,6 +57,7 @@ class Cashback_Legal_Documents {
             self::TYPE_MARKETING,
             self::TYPE_COOKIES_POLICY,
             self::TYPE_CONTACT_FORM_PD,
+            self::TYPE_TECH_DATA,
         );
     }
 
@@ -73,6 +75,7 @@ class Cashback_Legal_Documents {
             self::TYPE_MARKETING,
             self::TYPE_COOKIES_POLICY,
             self::TYPE_CONTACT_FORM_PD,
+            self::TYPE_TECH_DATA,
         );
     }
 
@@ -140,6 +143,14 @@ class Cashback_Legal_Documents {
                 'is_public'     => false,
                 'is_consent'    => true,
                 'is_required'   => true,
+            ),
+            self::TYPE_TECH_DATA => array(
+                'slug'          => 'tech-data',
+                'title'         => 'Согласие на обработку технических данных (149-ФЗ)',
+                'template_path' => 'legal/templates/tech-data.php',
+                'is_public'     => true,
+                'is_consent'    => true,
+                'is_required'   => false,
             ),
         );
 

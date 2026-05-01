@@ -154,8 +154,15 @@ final class LegalPayoutConsentTest extends TestCase
         );
         $result = Cashback_Legal_Payout_Consent::enforce_or_error(103, 'profile');
         $this->assertTrue($result);
-        $this->assertCount(1, $GLOBALS['_cb_test_legal_inserted_rows']);
-        $row = $GLOBALS['_cb_test_legal_inserted_rows'][0];
+
+        // BUG-02: после fix wpdb-stub также захватывает audit_log INSERT
+        // (consent_granted). Фильтруем только consent_log-rows для проверки бизнес-логики.
+        $consent_rows = array_values(array_filter(
+            $GLOBALS['_cb_test_legal_inserted_rows'],
+            static fn(array $r): bool => isset($r['consent_type'])
+        ));
+        $this->assertCount(1, $consent_rows);
+        $row = $consent_rows[0];
         $this->assertSame('payment_pd', $row['consent_type']);
         $this->assertSame('profile', $row['source']);
         $this->assertSame(103, $row['user_id']);

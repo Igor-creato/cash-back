@@ -30,6 +30,7 @@ class Cashback_Legal_Registration_Checkboxes {
     public const FIELD_PD_PROCESSING = 'cashback_legal_consent_pd';
     public const FIELD_TERMS_OFFER   = 'cashback_legal_consent_offer';
     public const FIELD_MARKETING     = 'cashback_legal_consent_marketing';
+    public const FIELD_TECH_DATA     = 'cashback_legal_consent_tech_data';
     public const FIELD_REQUEST_ID    = 'cashback_legal_request_id';
 
     public static function init(): void {
@@ -132,6 +133,14 @@ class Cashback_Legal_Registration_Checkboxes {
             false,
             self::is_field_checked(self::FIELD_MARKETING)
         );
+
+        // 4. Технические данные (необязательный, 149-ФЗ ст. 10 — VULN-04)
+        self::render_single_checkbox(
+            self::FIELD_TECH_DATA,
+            self::compose_tech_data_label(),
+            false,
+            self::is_field_checked(self::FIELD_TECH_DATA)
+        );
     }
 
     /**
@@ -210,6 +219,12 @@ class Cashback_Legal_Registration_Checkboxes {
 
         if (self::is_field_checked(self::FIELD_MARKETING)) {
             $write(Cashback_Legal_Documents::TYPE_MARKETING, '00000003');
+        }
+
+        // VULN-04 (149-ФЗ ст. 10): согласие на обработку технических данных —
+        // opt-in. G6: legacy-юзеры (H1/H2/H5/H6 без отметки) не получают авто.
+        if (self::is_field_checked(self::FIELD_TECH_DATA)) {
+            $write(Cashback_Legal_Documents::TYPE_TECH_DATA, '00000004');
         }
 
         // BUG-02 (152-ФЗ ст. 9): сам факт регистрации — отдельное audit-событие.
@@ -361,6 +376,15 @@ class Cashback_Legal_Registration_Checkboxes {
     private static function compose_marketing_label(): string {
         $url  = self::get_doc_url(Cashback_Legal_Documents::TYPE_MARKETING);
         $lead = esc_html__('Я согласен получать информационные и рекламные сообщения по e-mail (по 38-ФЗ ст. 18). Можно отключить в любой момент.', 'cashback-plugin');
+        if ($url === '') {
+            return $lead;
+        }
+        return $lead . ' ' . self::link_or_text($url, __('Подробнее.', 'cashback-plugin'));
+    }
+
+    private static function compose_tech_data_label(): string {
+        $url  = self::get_doc_url(Cashback_Legal_Documents::TYPE_TECH_DATA);
+        $lead = esc_html__('Я согласен на обработку технических данных (cookies, IP-адрес, идентификатор устройства) для работы сайта и аналитики (149-ФЗ ст. 10).', 'cashback-plugin');
         if ($url === '') {
             return $lead;
         }

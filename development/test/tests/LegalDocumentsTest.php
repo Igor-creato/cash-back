@@ -32,10 +32,11 @@ final class LegalDocumentsTest extends TestCase
         $GLOBALS['_cb_test_options'] = array();
     }
 
-    public function test_all_types_contains_seven_canonical_slugs(): void
+    public function test_all_types_contains_canonical_slugs(): void
     {
         $types = Cashback_Legal_Documents::all_types();
-        $this->assertCount(7, $types);
+        // VULN-04: восьмой тип tech_data добавлен (149-ФЗ ст. 10).
+        $this->assertCount(8, $types);
         $this->assertContains('pd_policy', $types);
         $this->assertContains('pd_consent', $types);
         $this->assertContains('payment_pd', $types);
@@ -43,6 +44,7 @@ final class LegalDocumentsTest extends TestCase
         $this->assertContains('marketing', $types);
         $this->assertContains('cookies_policy', $types);
         $this->assertContains('contact_form_pd', $types);
+        $this->assertContains('tech_data', $types);
     }
 
     public function test_consent_types_excludes_pd_policy(): void
