@@ -897,6 +897,36 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
                 return;
             }
 
+            // F-S9-01 (P2.3): defense-in-depth перед START TRANSACTION.
+            // DB-trigger tr_payout_require_fail_reason_upd бросает SIGNAL 45000 при
+            // UPDATE со status IN ('declined','failed') и пустым fail_reason. Без
+            // этого guard'а админ получал generic «Ошибка при обновлении в базе
+            // данных.» от ROLLBACK после SIGNAL — без понятной причины.
+            if (in_array($status, array( 'declined', 'failed' ), true)) {
+                $candidate_fail_reason = isset($update_data['fail_reason'])
+                    ? trim((string) $update_data['fail_reason'])
+                    : '';
+                if ($candidate_fail_reason === '') {
+                    // Идемпотентный self-call (status уже declined/failed с заполненным
+                    // fail_reason в БД): прямой SELECT без FOR UPDATE — ещё не в транзакции.
+                    $existing_fail_reason = $wpdb->get_var($wpdb->prepare(
+                        'SELECT fail_reason FROM %i WHERE id = %d',
+                        $this->table_name,
+                        $payout_id
+                    ));
+                    if (trim((string) ($existing_fail_reason ?? '')) === '') {
+                        if ($idem_request_id !== '') {
+                            Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                        }
+                        wp_send_json_error(array(
+                            'code'    => 'fail_reason_required',
+                            'message' => __('Для статусов «Отклонено» и «Не выплачена» необходимо указать причину (поле fail_reason).', 'cashback-plugin'),
+                        ));
+                        return;
+                    }
+                }
+            }
+
             // 🔒 НАЧИНАЕМ ТРАНЗАКЦИЮ ДО чтения статуса для предотвращения TOCTOU
             $wpdb->query('START TRANSACTION');
             $in_transaction = true;
