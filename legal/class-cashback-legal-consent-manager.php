@@ -82,6 +82,32 @@ class Cashback_Legal_Consent_Manager {
             self::clear_reconsent_cache($user_id);
         }
 
+        // BUG-02 (152-ФЗ ст. 9): запись согласия — audit-событие. Пишем ПОСЛЕ
+        // успешного INSERT'а, чтобы duplicate request_id (UNIQUE) не давал
+        // orphan audit-row без соответствующей записи в журнале.
+        if ($id !== false && class_exists('Cashback_Encryption')) {
+            try {
+                Cashback_Encryption::write_audit_log(
+                    'consent_granted',
+                    $user_id ?? 0,
+                    'consent_log',
+                    is_int($id) ? $id : (int) $id,
+                    array(
+                        'consent_type'     => $consent_type,
+                        'document_version' => $version,
+                        'source'           => $source,
+                        'request_id'       => $request_id,
+                    )
+                );
+            } catch (\Throwable $e) {
+                // G2: audit — telemetry, не должен ронять основной flow.
+                if (function_exists('error_log')) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- defensive telemetry.
+                    error_log('[cashback-audit] consent_granted: ' . $e->getMessage());
+                }
+            }
+        }
+
         return $id;
     }
 

@@ -211,6 +211,30 @@ class Cashback_Legal_Registration_Checkboxes {
         if (self::is_field_checked(self::FIELD_MARKETING)) {
             $write(Cashback_Legal_Documents::TYPE_MARKETING, '00000003');
         }
+
+        // BUG-02 (152-ФЗ ст. 9): сам факт регистрации — отдельное audit-событие.
+        // Пишется ПОСЛЕ consent-INSERT'ов, чтобы в случае их provider-fail audit
+        // отражал реальное состояние, а не «зарегистрировали без согласий».
+        if (class_exists('Cashback_Encryption')) {
+            try {
+                Cashback_Encryption::write_audit_log(
+                    'user_registered',
+                    $user_id,
+                    'user',
+                    $user_id,
+                    array(
+                        'source'     => 'wc_registration',
+                        'request_id' => $request_id,
+                    )
+                );
+            } catch (\Throwable $e) {
+                // G2: audit — telemetry, не должен ронять регистрацию.
+                if (function_exists('error_log')) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- defensive telemetry.
+                    error_log('[cashback-audit] user_registered: ' . $e->getMessage());
+                }
+            }
+        }
     }
 
     // ────────────────────────────────────────────────────────────
