@@ -48,6 +48,8 @@ class Cashback_Payouts_Admin {
         add_action('wp_ajax_decrypt_payout_details', array( $this, 'handle_decrypt_payout_details' ));
         add_action('wp_ajax_verify_payout_balance', array( $this, 'handle_verify_payout_balance' ));
         add_action('wp_ajax_cashback_manual_encryption_refund', array( $this, 'handle_manual_encryption_refund' ));
+        // F-S9-NEW-UNFREEZE (Session 8): admin-разморозка declined-выплат.
+        add_action('wp_ajax_cashback_payout_unfreeze', array( $this, 'handle_payout_unfreeze' ));
 
         // Подключение скриптов
         add_action('admin_enqueue_scripts', array( $this, 'enqueue_admin_scripts' ));
@@ -1533,6 +1535,267 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
         wp_send_json_success(array(
             'message' => __('Средства возвращены пользователю. Заявка переведена в статус "failed".', 'cashback-plugin'),
         ));
+    }
+
+    /**
+     * AJAX-обработчик ручной разморозки declined-выплаты после расследования
+     * (F-S9-NEW-UNFREEZE, Session 8, run-h backlog).
+     *
+     * Контекст: UI-метка status='declined' = «Выплата заморожена» намеренно
+     * подразумевает reversibility. До Session 8 declined был терминальным
+     * (allowed_transitions['declined'] = []) и сумма «висела» в frozen_balance
+     * без возможности вернуть пользователю. Теперь админ может явно разморозить
+     * после расследования (мошенничество подтверждено отрицательно / ошибка).
+     *
+     * Решение (AskUserQuestion Q2=B + Q3=A):
+     *  - status='declined' остаётся (G1 add-don't-modify, минимум touch enum).
+     *  - Reversibility видна из ledger row payout_unfreeze (+amount).
+     *  - Кнопка «Разморозить и вернуть» в payout-detail модале.
+     *
+     * Атомарная транзакция:
+     *  1. SELECT payout FOR UPDATE — проверка status='declined'.
+     *  2. SELECT cashback_user_balance FOR UPDATE — lock balance row.
+     *  3. UPDATE: available_balance += X, frozen_balance -= X,
+     *     frozen_balance_admin = GREATEST(0.00, frozen_balance_admin - X).
+     *     GREATEST clamp защищает от ухода в минус для legacy declined-выплат
+     *     (миграция v7 backfill сделал LEAST(frozen_balance, sum) — некоторые
+     *     legacy declined могут не иметь admin-bucket attribution).
+     *  4. INSERT cashback_balance_ledger type='payout_unfreeze' amount=+X
+     *     idempotency_key='payout_unfreeze_<payout_id>' — UNIQUE индекс +
+     *     ON DUPLICATE KEY UPDATE id=id защищает от двойной разморозки.
+     *  5. Audit: action='payout_unfrozen' с деталями (admin_id, amount,
+     *     ledger_entry_id, prev/new available).
+     *
+     * Не меняет payout_requests.status (Q2=B: status=declined остаётся).
+     * НЕ срабатывает для status != 'declined' (waiting/processing/paid/failed
+     * запрещены — каждый имеет свой workflow).
+     */
+    public function handle_payout_unfreeze(): void {
+        // Nonce.
+        if (!isset($_POST['nonce']) || !wp_verify_nonce(
+            sanitize_text_field(wp_unslash((string) $_POST['nonce'])),
+            'cashback_payout_unfreeze'
+        )) {
+            wp_send_json_error(array( 'message' => __('Неверный токен безопасности.', 'cashback-plugin') ), 403);
+            return;
+        }
+
+        // Capability.
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array( 'message' => __('Недостаточно прав.', 'cashback-plugin') ), 403);
+            return;
+        }
+
+        // Server-side дедуп request_id (паттерн handle_update_payout_request).
+        $idem_scope      = 'admin_payout_unfreeze';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => __('Запрос уже обрабатывается. Повторите через несколько секунд.', 'cashback-plugin'),
+                ), 409);
+                return;
+            }
+        }
+
+        $payout_id = intval($_POST['payout_id'] ?? 0);
+        if ($payout_id <= 0) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
+            wp_send_json_error(array( 'message' => __('Некорректный ID заявки.', 'cashback-plugin') ));
+            return;
+        }
+
+        global $wpdb;
+        $admin_id = (int) get_current_user_id();
+
+        $balance_table = $wpdb->prefix . 'cashback_user_balance';
+        $ledger_table  = $wpdb->prefix . 'cashback_balance_ledger';
+
+        $wpdb->query('START TRANSACTION');
+        $in_transaction = true;
+
+        try {
+            // Lock payout row, проверяем status='declined'.
+            $payout = $wpdb->get_row($wpdb->prepare(
+                'SELECT id, user_id, total_amount, status
+                 FROM %i
+                 WHERE id = %d
+                 FOR UPDATE',
+                $this->table_name,
+                $payout_id
+            ), ARRAY_A);
+
+            if (!$payout) {
+                throw new \RuntimeException(__('Заявка не найдена.', 'cashback-plugin'));
+            }
+
+            if ($payout['status'] !== 'declined') {
+                throw new \RuntimeException(sprintf(
+                    /* translators: %s: текущий статус заявки. */
+                    __('Разморозка возможна только для статуса «Выплата заморожена». Текущий статус: %s.', 'cashback-plugin'),
+                    esc_html($payout['status'])
+                ));
+            }
+
+            $payout_user_id = (int) $payout['user_id'];
+            $amount         = (string) $payout['total_amount'];
+
+            // Money-валидация суммы (DECIMAL canonical из БД).
+            try {
+                $amount_money = Cashback_Money::from_db_value($amount);
+            } catch (\InvalidArgumentException $e) {
+                throw new \RuntimeException('Некорректная сумма заявки: ' . $amount);
+            }
+            if ($amount_money->is_zero() || $amount_money->is_negative()) {
+                throw new \RuntimeException('Сумма заявки должна быть положительной: ' . $amount);
+            }
+
+            // Lock balance row перед UPDATE+INSERT (защита от race).
+            $balance_row = $wpdb->get_row($wpdb->prepare(
+                'SELECT available_balance, frozen_balance, frozen_balance_admin
+                 FROM %i
+                 WHERE user_id = %d
+                 FOR UPDATE',
+                $balance_table,
+                $payout_user_id
+            ), ARRAY_A);
+
+            if (!$balance_row) {
+                throw new \RuntimeException(__('Запись баланса пользователя не найдена.', 'cashback-plugin'));
+            }
+
+            $prev_available = (string) $balance_row['available_balance'];
+
+            // Идемпотентный ledger INSERT (UNIQUE на idempotency_key + ON DUPLICATE KEY).
+            // Если повторный вызов на тот же payout — INSERT молча пропустится,
+            // ledger_entry_id будет 0 → ниже проверяем существование row для
+            // понимания: это первая разморозка или повтор.
+            $idempotency_key = 'payout_unfreeze_' . $payout_id;
+            $ledger_result   = $wpdb->query($wpdb->prepare(
+                'INSERT INTO %i
+                     (user_id, type, amount, payout_request_id, reference_type, reference_id, idempotency_key)
+                 VALUES (%d, %s, %s, %d, %s, %d, %s)
+                 ON DUPLICATE KEY UPDATE id = id',
+                $ledger_table,
+                $payout_user_id,
+                'payout_unfreeze',
+                $amount,
+                $payout_id,
+                'payout_unfreeze',
+                $payout_id,
+                $idempotency_key
+            ));
+
+            if ($ledger_result === false) {
+                throw new \RuntimeException('Ledger INSERT failed: ' . $wpdb->last_error);
+            }
+
+            // insert_id == 0 при ON DUPLICATE → значит уже была разморозка ранее
+            // (другой админ нажал кнопку, или повторный POST после COMMIT).
+            // В этом случае не повторяем UPDATE баланса — он уже применён.
+            $ledger_entry_id     = (int) $wpdb->insert_id;
+            $is_first_unfreeze   = ( $ledger_entry_id > 0 );
+
+            if ($is_first_unfreeze) {
+                // UPDATE: вернуть amount из frozen_balance (umbrella) + frozen_balance_admin
+                // в available_balance. GREATEST clamp на frozen_balance_admin защищает
+                // от legacy declined без backfill (frozen_balance_admin может быть < amount).
+                $update_result = $wpdb->query($wpdb->prepare(
+                    'UPDATE %i
+                     SET available_balance     = available_balance + CAST(%s AS DECIMAL(18,2)),
+                         frozen_balance        = GREATEST(0.00, frozen_balance - CAST(%s AS DECIMAL(18,2))),
+                         frozen_balance_admin  = GREATEST(0.00, frozen_balance_admin - CAST(%s AS DECIMAL(18,2))),
+                         version               = version + 1
+                     WHERE user_id = %d',
+                    $balance_table,
+                    $amount,
+                    $amount,
+                    $amount,
+                    $payout_user_id
+                ));
+
+                if ($update_result === false) {
+                    throw new \RuntimeException('Balance UPDATE failed: ' . $wpdb->last_error);
+                }
+            }
+
+            // Получаем актуальный available после UPDATE для ответа клиенту.
+            $new_available = (string) $wpdb->get_var($wpdb->prepare(
+                'SELECT available_balance FROM %i WHERE user_id = %d',
+                $balance_table,
+                $payout_user_id
+            ));
+
+            $wpdb->query('COMMIT');
+            $in_transaction = false;
+
+            // Audit-log после COMMIT: telemetry не должна ронять основной flow.
+            try {
+                if (class_exists('Cashback_Encryption')) {
+                    Cashback_Encryption::write_audit_log(
+                        'payout_unfrozen',
+                        $admin_id,
+                        'payout_request',
+                        $payout_id,
+                        array(
+                            'user_id'           => $payout_user_id,
+                            'amount'            => $amount,
+                            'idempotency_key'   => $idempotency_key,
+                            'ledger_entry_id'   => $ledger_entry_id,
+                            'is_first_unfreeze' => $is_first_unfreeze,
+                            'prev_available'    => $prev_available,
+                            'new_available'     => $new_available,
+                        )
+                    );
+                }
+            } catch (\Throwable $audit_err) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Audit telemetry, non-critical.
+                error_log('[cashback_payout_unfreeze] audit-log failed: ' . $audit_err->getMessage());
+            }
+
+            $response = array(
+                'message'           => $is_first_unfreeze
+                    ? __('Сумма разморожена и возвращена пользователю.', 'cashback-plugin')
+                    : __('Заявка уже была разморожена ранее.', 'cashback-plugin'),
+                'payout_id'         => $payout_id,
+                'amount'            => $amount,
+                'new_available'     => $new_available,
+                'ledger_entry_id'   => $ledger_entry_id,
+                'is_first_unfreeze' => $is_first_unfreeze,
+            );
+
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response);
+            }
+
+            wp_send_json_success($response);
+        } catch (\Throwable $e) {
+            if ($in_transaction) {
+                $wpdb->query('ROLLBACK');
+            }
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- diagnostic logging.
+            error_log('[cashback_payout_unfreeze] ' . $e->getMessage());
+            wp_send_json_error(array(
+                'message' => $e->getMessage(),
+            ), 500);
+        }
     }
 
     /**
