@@ -63,6 +63,27 @@ class Cashback_Affiliate_Antifraud {
                     'reason'         => 'self_referral',
                 ));
             }
+            // Catalog-level audit для централизованного wp_cashback_audit_log
+            // (VULN-05 + audit-log-completeness ADR §G2). Hard-block path —
+            // нет TX, audit пишется до return.
+            if (class_exists('Cashback_Encryption')) {
+                try {
+                    Cashback_Encryption::write_audit_log(
+                        'self_referral_attempt',
+                        $new_user_id,
+                        'user',
+                        $new_user_id,
+                        array(
+                            'referrer_id' => $referrer_id,
+                            'click_id'    => $click_id,
+                            'reason'      => 'self_referral',
+                        )
+                    );
+                } catch (\Throwable $e) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Audit telemetry fail-soft (G2 ADR).
+                    error_log('[cashback-audit] self_referral_attempt: ' . $e->getMessage());
+                }
+            }
             return array(
                 'allowed'    => false,
                 'confidence' => 'low',

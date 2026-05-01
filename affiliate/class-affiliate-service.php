@@ -736,6 +736,48 @@ class Cashback_Affiliate_Service {
                     ),
                 ));
             }
+
+            // Catalog-level audit (152-ФЗ ст. 9 + audit-log-completeness ADR):
+            // парные события affiliate_signup + referral_assigned пишутся в
+            // централизованный wp_cashback_audit_log поверх типизированного
+            // affiliate_audit (cashback_affiliate_audit). Каждый — отдельный
+            // try/Throwable, чтобы сбой одного не блокировал другой (G2).
+            if (class_exists('Cashback_Encryption')) {
+                try {
+                    Cashback_Encryption::write_audit_log(
+                        'affiliate_signup',
+                        $user_id,
+                        'affiliate_profile',
+                        $user_id,
+                        array(
+                            'referrer_id' => $referrer_id,
+                            'confidence'  => $confidence,
+                            'source'      => $source,
+                        )
+                    );
+                } catch (\Throwable $e) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Audit telemetry fail-soft (G2 ADR).
+                    error_log('[cashback-audit] affiliate_signup: ' . $e->getMessage());
+                }
+
+                try {
+                    Cashback_Encryption::write_audit_log(
+                        'referral_assigned',
+                        $user_id,
+                        'affiliate_profile',
+                        $referrer_id,
+                        array(
+                            'referred_user_id' => $user_id,
+                            'click_id'         => $click_id,
+                            'confidence'       => $confidence,
+                            'review_status'    => $review_status,
+                        )
+                    );
+                } catch (\Throwable $e) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Audit telemetry fail-soft (G2 ADR).
+                    error_log('[cashback-audit] referral_assigned: ' . $e->getMessage());
+                }
+            }
         }
 
         self::clear_referral_cookie();

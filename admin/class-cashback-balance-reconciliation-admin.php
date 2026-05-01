@@ -1141,6 +1141,30 @@ class Cashback_Balance_Reconciliation_Admin {
 						'request_id'            => $idem_request,
 					)
 				);
+
+				// Catalog-level audit (F-S3-01 partial — admin path; webhook path
+				// owned by Session 5 receiver). Сосуществует с manual_tx_from_stuck_claim:
+				// первое — субъект-специфичное действие, второе — универсальный
+				// catalog-action для audit-log-completeness inventory (Stage 10.12).
+				try {
+					Cashback_Encryption::write_audit_log(
+						'transaction_created',
+						$admin_id,
+						'transaction',
+						$tx_id,
+						array(
+							'user_id'         => $user_id,
+							'reference_id'    => $reference_id,
+							'cashback'        => $cashback,
+							'click_id'        => $click_id,
+							'source'          => 'manual_stuck_claim',
+							'idempotency_key' => $idempotency_key,
+						)
+					);
+				} catch ( \Throwable $e ) {
+					// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Audit telemetry fail-soft (G2 ADR).
+					error_log( '[cashback-audit] transaction_created: ' . $e->getMessage() );
+				}
 			}
 
 			$wpdb->query( 'COMMIT' );

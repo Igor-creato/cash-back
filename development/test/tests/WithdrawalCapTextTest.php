@@ -33,14 +33,42 @@ final class WithdrawalCapTextTest extends TestCase
     {
         $src = $this->withdrawal_source();
 
-        // Извлекаем cap-reject ветку: блок от `if ($recent_requests_count >= 3)` до его закрывающего `}`.
-        $pattern = '/if\s*\(\s*\$recent_requests_count\s*>=\s*3\s*\)\s*\{(.*?)\}/s';
-        $this->assertSame(
-            1,
-            preg_match($pattern, $src, $m),
-            'Не нашли cap-reject ветку `if ($recent_requests_count >= 3) { ... }` — рефакторинг изменил структуру?'
+        // Извлекаем cap-reject ветку через ручной счётчик скобок (recursive regex
+        // в PHP PCRE плохо комбинируется с lazy-квантификаторами). Ветка может
+        // содержать вложенные блоки (например, audit-log try/catch добавленный
+        // в Session 3 audit-log-completeness sweep) — простой `(.*?)\}` режется
+        // по первому `}`.
+        $start = strpos($src, '$recent_requests_count >= 3');
+        $this->assertNotFalse(
+            $start,
+            'Не нашли условие `$recent_requests_count >= 3` — рефакторинг изменил структуру?'
         );
-        $cap_branch = $m[1];
+
+        $brace_open = strpos($src, '{', $start);
+        $this->assertNotFalse(
+            $brace_open,
+            'Не нашли открывающую скобку cap-reject ветки'
+        );
+
+        $depth = 0;
+        $end   = null;
+        $len   = strlen($src);
+        for ($i = $brace_open; $i < $len; $i++) {
+            if ($src[ $i ] === '{') {
+                $depth++;
+            } elseif ($src[ $i ] === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    $end = $i;
+                    break;
+                }
+            }
+        }
+        $this->assertNotNull(
+            $end,
+            'Не нашли балансированную закрывающую скобку cap-reject ветки'
+        );
+        $cap_branch = substr($src, $brace_open + 1, $end - $brace_open - 1);
 
         $this->assertStringNotContainsString(
             'через 24 часа',

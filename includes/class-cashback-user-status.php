@@ -134,6 +134,27 @@ class Cashback_User_Status {
         // через `login_errors` filter заменил на generic «Неверный логин/пароль».
         self::$banned_login_message = $banned_msg;
 
+        // Audit-log: фиксируем попытку логина забаненным юзером (VULN-03).
+        // 152-ФЗ ст. 9 + ЦБ требования — security event на финансовом сервисе.
+        // G2 ADR audit-log-completeness: try/Throwable обёртка обязательна.
+        if ( class_exists( 'Cashback_Encryption' ) ) {
+            try {
+                Cashback_Encryption::write_audit_log(
+                    'banned_login_attempt',
+                    0,
+                    'user',
+                    (int) $user->ID,
+                    array(
+                        'login'     => $user->user_login,
+                        'banned_at' => $ban_info['banned_at'] ?? null,
+                    )
+                );
+            } catch ( \Throwable $e ) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Audit telemetry fail-soft (G2 ADR).
+                error_log( '[cashback-audit] banned_login_attempt: ' . $e->getMessage() );
+            }
+        }
+
         return new WP_Error( 'cashback_user_banned', $banned_msg );
     }
 

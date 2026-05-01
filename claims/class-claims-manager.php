@@ -202,6 +202,27 @@ class Cashback_Claims_Manager {
 
         do_action('cashback_claim_created', $claim_id, $user_id, $event_data);
 
+        // Catalog-level audit (audit-log-completeness ADR §G2).
+        // Пишется ПОСЛЕ COMMIT и do_action — post-commit side effect, fail-soft.
+        if (class_exists('Cashback_Encryption')) {
+            try {
+                Cashback_Encryption::write_audit_log(
+                    'claim_created',
+                    $user_id,
+                    'claim',
+                    $claim_id,
+                    array(
+                        'order_id'      => $data['order_id'] ?? null,
+                        'merchant_name' => $event_data['merchant_name'] ?? null,
+                        'is_suspicious' => !empty($post_analysis['is_suspicious']),
+                    )
+                );
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Audit telemetry fail-soft (G2 ADR).
+                error_log('[cashback-audit] claim_created: ' . $e->getMessage());
+            }
+        }
+
         return array(
 			'success'  => true,
 			'claim_id' => $claim_id,
@@ -300,6 +321,31 @@ class Cashback_Claims_Manager {
         $wpdb->query('COMMIT');
 
         do_action('cashback_claim_status_changed', $claim_id, $current_status, $new_status, $note, $actor_type, $actor_id);
+
+        // Catalog-level audit для approved-перехода (F-S7-AUDIT-CLAIMS,
+        // audit-log-completeness ADR §G2). Только approved branch — paid/declined
+        // покрываются другими call-sites. Пишется ПОСЛЕ COMMIT — post-commit
+        // side effect, fail-soft через try/Throwable.
+        if ($new_status === 'approved' && class_exists('Cashback_Encryption')) {
+            try {
+                Cashback_Encryption::write_audit_log(
+                    'claim_approved',
+                    (int) ($actor_id ?? 0),
+                    'claim',
+                    $claim_id,
+                    array(
+                        'user_id'    => (int) $claim['user_id'],
+                        'old_status' => $current_status,
+                        'new_status' => $new_status,
+                        'note'       => $note,
+                        'actor_type' => $actor_type,
+                    )
+                );
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Audit telemetry fail-soft (G2 ADR).
+                error_log('[cashback-audit] claim_approved: ' . $e->getMessage());
+            }
+        }
 
         return array( 'success' => true );
     }

@@ -625,6 +625,31 @@ echo Cashback_Captcha::render_container('cb-captcha-support'); // phpcs:ignore W
 
         $wpdb->query('COMMIT');
 
+        // Catalog-level audit (F-S10-AUDIT-SUPPORT, audit-log-completeness ADR §G2).
+        // Пишется ПОСЛЕ COMMIT — post-commit side effect, fail-soft.
+        // Тело сообщения не передаётся (PII risk + redact_audit_details уже
+        // покрывает sensitive ключи). Только metadata.
+        if (class_exists('Cashback_Encryption')) {
+            try {
+                Cashback_Encryption::write_audit_log(
+                    'support_ticket_created',
+                    $user_id,
+                    'ticket',
+                    $ticket_id,
+                    array(
+                        'subject_len'  => mb_strlen($subject),
+                        'message_len'  => mb_strlen($message),
+                        'priority'     => $priority,
+                        'related_type' => $related_type,
+                        'related_id'   => $related_id > 0 ? $related_id : null,
+                    )
+                );
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Audit telemetry fail-soft (G2 ADR).
+                error_log('[cashback-audit] support_ticket_created: ' . $e->getMessage());
+            }
+        }
+
         // Отправляем email администратору через модуль уведомлений
         if (has_action('cashback_notification_ticket_admin_alert')) {
             do_action('cashback_notification_ticket_admin_alert', $ticket_id, 'new_ticket', $subject);

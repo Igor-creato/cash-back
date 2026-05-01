@@ -1047,6 +1047,29 @@ class CashbackWithdrawal {
 
             if ($recent_requests_count >= 3) {
                 $wpdb->query('ROLLBACK');
+                // Audit-log: cap-rejected withdrawal attempt (BUG-01).
+                // ROLLBACK уже выполнен — mutation'ов нет; audit фиксирует попытку
+                // (G3 exception per ADR audit-log-completeness: до wp_send_json_error,
+                // потому что rate-limit reject не делает mutation в payout_requests/ledger).
+                if (class_exists('Cashback_Encryption')) {
+                    try {
+                        Cashback_Encryption::write_audit_log(
+                            'payout_rate_limited',
+                            $user_id,
+                            'user',
+                            $user_id,
+                            array(
+                                'limit'           => 3,
+                                'window'          => '24h',
+                                'recent_count'    => $recent_requests_count,
+                                'idempotency_key' => $idempotency_key,
+                            )
+                        );
+                    } catch (\Throwable $e) {
+                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Audit telemetry fail-soft (G2 ADR).
+                        error_log('[cashback-audit] payout_rate_limited: ' . $e->getMessage());
+                    }
+                }
                 wp_send_json_error(__('Лимит 3 заявки в сутки исчерпан. Попробуйте завтра.', 'cashback-plugin'));
                 return;
             }
