@@ -132,6 +132,33 @@ class Cashback_Claims_Admin {
             'statsNonce'      => wp_create_nonce('claims_admin_stats'),
             'ajaxUrl'         => admin_url('admin-ajax.php'),
         ));
+
+        // Combined approve+tx модал (Session 4-bis, P0.1 F-S7-NO-MANUAL-CREDIT).
+        // CSS переиспользуем из stuck-claim-tx flow — визуальная согласованность.
+        wp_enqueue_style(
+            'cashback-admin-stuck-claim-tx-css',
+            $plugin_dir_url . 'assets/css/admin-stuck-claim-tx.css',
+            array(),
+            '1.0.0'
+        );
+        wp_enqueue_script(
+            'cashback-admin-claim-approve-tx-js',
+            $plugin_dir_url . 'assets/js/admin-claim-approve-tx.js',
+            array(),
+            '1.0.0',
+            true
+        );
+        wp_localize_script('cashback-admin-claim-approve-tx-js', 'cashbackClaimApproveTx', array(
+            'ajaxUrl' => admin_url('admin-ajax.php'),
+            'nonce'   => wp_create_nonce('cashback_stuck_claim_nonce'),
+            'i18n'    => array(
+                'genericError'      => __('Внутренняя ошибка.', 'cashback-plugin'),
+                'networkError'      => __('Ошибка сети. Повторите.', 'cashback-plugin'),
+                'selectFundsReady'  => __('Выберите значение', 'cashback-plugin'),
+                'invalidComission'  => __('Некорректная комиссия. Используйте число до 2 знаков после точки.', 'cashback-plugin'),
+                'comissionPositive' => __('Комиссия должна быть больше нуля.', 'cashback-plugin'),
+            ),
+        ));
     }
 
     public function render_page(): void {
@@ -343,6 +370,87 @@ class Cashback_Claims_Admin {
                 <div class="claim-detail-content">
                     <span class="claim-detail-close">&times;</span>
                     <div id="claim-detail-body"></div>
+                </div>
+            </div>
+        </div>
+        <?php
+        $this->render_claim_approve_modal();
+    }
+
+    /**
+     * Hidden-разметка модала «Одобрить и создать транзакцию» (Session 4-bis,
+     * P0.1 F-S7-NO-MANUAL-CREDIT). Один раз на страницу — JS показывает
+     * по клику на .cashback-claim-approve-tx.
+     *
+     * Отличия от stuck-claim-tx модала:
+     *  - Нет preview-load: claim уже отрендерен в #claim-detail-body.
+     *  - Только два input'а — comission + funds_ready (read-only blocks
+     *    не нужны, всё видно в карточке заявки).
+     *
+     * Visual-классы переиспользуют admin-stuck-claim-tx.css.
+     */
+    private function render_claim_approve_modal(): void {
+        ?>
+        <div id="cashback-claim-approve-tx-backdrop" class="cashback-stuck-tx-backdrop" hidden>
+            <div
+                class="cashback-stuck-tx-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="cashback-claim-approve-tx-title"
+                tabindex="-1"
+            >
+                <h2 id="cashback-claim-approve-tx-title">
+                    <?php esc_html_e('Одобрить и создать транзакцию', 'cashback-plugin'); ?>
+                    <span class="cashback-stuck-tx-claim-badge">
+                        claim #<span data-bind="claim_id">—</span>
+                    </span>
+                </h2>
+
+                <div class="cashback-stuck-tx-body" data-role="body" hidden>
+                    <p class="description">
+                        <?php esc_html_e('Транзакция будет создана атомарно: статус заявки меняется на «approved» и начисляется кэшбэк в одной БД-транзакции.', 'cashback-plugin'); ?>
+                    </p>
+
+                    <div class="cashback-stuck-tx-field">
+                        <label for="cashback-claim-approve-tx-comission">
+                            <?php esc_html_e('Комиссия', 'cashback-plugin'); ?>
+                        </label>
+                        <input
+                            type="text"
+                            id="cashback-claim-approve-tx-comission"
+                            name="comission"
+                            inputmode="decimal"
+                            pattern="^\d+(\.\d{1,2})?$"
+                            placeholder="0.00"
+                            autocomplete="off"
+                            required
+                        />
+                        <p class="description">
+                            <?php esc_html_e('Положительное число, до 2 знаков после точки. Кэшбэк рассчитается автоматически.', 'cashback-plugin'); ?>
+                        </p>
+                    </div>
+
+                    <div class="cashback-stuck-tx-field">
+                        <label for="cashback-claim-approve-tx-funds-ready">
+                            <?php esc_html_e('Готова к выплате?', 'cashback-plugin'); ?>
+                        </label>
+                        <select id="cashback-claim-approve-tx-funds-ready" name="funds_ready" required>
+                            <option value=""><?php esc_html_e('Выберите вариант', 'cashback-plugin'); ?></option>
+                            <option value="1"><?php esc_html_e('Да', 'cashback-plugin'); ?></option>
+                            <option value="0"><?php esc_html_e('Нет', 'cashback-plugin'); ?></option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="cashback-stuck-tx-message" data-role="message" hidden></div>
+
+                <div class="cashback-stuck-tx-actions">
+                    <button type="button" class="button button-secondary" data-role="cancel">
+                        <?php esc_html_e('Отмена', 'cashback-plugin'); ?>
+                    </button>
+                    <button type="button" class="button button-primary" data-role="submit">
+                        <?php esc_html_e('Одобрить и создать транзакцию', 'cashback-plugin'); ?>
+                    </button>
                 </div>
             </div>
         </div>
@@ -1003,15 +1111,15 @@ class Cashback_Claims_Admin {
                     <button class="button button-primary claims-action-btn" data-action="sent_to_network" data-claim-id="<?php echo esc_attr($claim['claim_id']); ?>">
                         <?php esc_html_e('Отправить партнёру', 'cashback-plugin'); ?>
                     </button>
-                    <button class="button button-success claims-action-btn" data-action="approved" data-claim-id="<?php echo esc_attr($claim['claim_id']); ?>">
-                        <?php esc_html_e('Одобрить', 'cashback-plugin'); ?>
+                    <button class="button button-success cashback-claim-approve-tx" data-claim-id="<?php echo esc_attr($claim['claim_id']); ?>">
+                        <?php esc_html_e('Одобрить и создать транзакцию', 'cashback-plugin'); ?>
                     </button>
                     <button class="button button-danger claims-action-btn" data-action="declined" data-claim-id="<?php echo esc_attr($claim['claim_id']); ?>">
                         <?php esc_html_e('Отклонить', 'cashback-plugin'); ?>
                     </button>
                 <?php elseif ($claim['status'] === 'sent_to_network') : ?>
-                    <button class="button button-success claims-action-btn" data-action="approved" data-claim-id="<?php echo esc_attr($claim['claim_id']); ?>">
-                        <?php esc_html_e('Одобрить', 'cashback-plugin'); ?>
+                    <button class="button button-success cashback-claim-approve-tx" data-claim-id="<?php echo esc_attr($claim['claim_id']); ?>">
+                        <?php esc_html_e('Одобрить и создать транзакцию', 'cashback-plugin'); ?>
                     </button>
                     <button class="button button-danger claims-action-btn" data-action="declined" data-claim-id="<?php echo esc_attr($claim['claim_id']); ?>">
                         <?php esc_html_e('Отклонить', 'cashback-plugin'); ?>
