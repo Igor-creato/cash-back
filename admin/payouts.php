@@ -920,7 +920,7 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
                         }
                         wp_send_json_error(array(
                             'code'    => 'fail_reason_required',
-                            'message' => __('Для статусов «Отклонено» и «Не выплачена» необходимо указать причину (поле fail_reason).', 'cashback-plugin'),
+                            'message' => __('Для статусов «Выплата заморожена» и «Возврат в доступный баланс» необходимо указать причину.', 'cashback-plugin'),
                         ));
                         return;
                     }
