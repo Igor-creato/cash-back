@@ -237,8 +237,20 @@ final class Cashback_Generic_Json_Coupons_Adapter implements Cashback_Coupons_Ad
      */
     private function build_auth_config( array $credentials ): array {
         $auth_type = (string) $this->config_field( 'api_auth_type', 'oauth2_client_credentials' );
-        $base_url  = rtrim( (string) $this->config_field( 'api_base_url', '' ), '/' );
-        $token_ep  = (string) $this->config_field( 'api_token_endpoint', '' );
+
+        // Нормализация: схема cashback_affiliate_networks.api_auth_type — ENUM('oauth2','api_key'),
+        // т.е. legacy 'oauth2' = 'oauth2_client_credentials' (Admitad/EPN модель). NetworkHttpClient
+        // принимает только полные имена auth_type, поэтому маппим алиасы.
+        $auth_aliases = array(
+            'oauth2'  => 'oauth2_client_credentials',
+            'bearer'  => 'bearer_token',
+        );
+        if ( isset( $auth_aliases[ $auth_type ] ) ) {
+            $auth_type = $auth_aliases[ $auth_type ];
+        }
+
+        $base_url = rtrim( (string) $this->config_field( 'api_base_url', '' ), '/' );
+        $token_ep = (string) $this->config_field( 'api_token_endpoint', '' );
 
         $token_url = '';
         if ( $token_ep !== '' ) {
