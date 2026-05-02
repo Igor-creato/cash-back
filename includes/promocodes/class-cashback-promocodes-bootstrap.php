@@ -47,6 +47,27 @@ final class Cashback_Promocodes_Bootstrap {
         if ( is_admin() && class_exists( 'Cashback_Promocodes_Admin' ) ) {
             Cashback_Promocodes_Admin::init();
         }
+
+        // WoodMart custom-tabs (post_meta _woodmart_extra_tabs) рендерят
+        // content через `echo` без do_shortcode. Низкоинвазивный fix:
+        // hook на woocommerce_product_tabs prio 99 (после WoodMart=98),
+        // applies do_shortcode к 'content' каждого таба, у которого он
+        // есть. Без шорткодов do_shortcode no-op возвращает строку как
+        // есть — безопасно для всех остальных табов.
+        add_filter( 'woocommerce_product_tabs', array( __CLASS__, 'apply_shortcodes_to_extra_tabs' ), 99 );
+    }
+
+    /**
+     * @param array<string,array<string,mixed>> $tabs
+     * @return array<string,array<string,mixed>>
+     */
+    public static function apply_shortcodes_to_extra_tabs( array $tabs ): array {
+        foreach ( $tabs as $key => &$tab ) {
+            if ( isset( $tab['content'] ) && is_string( $tab['content'] ) && $tab['content'] !== '' ) {
+                $tab['content'] = do_shortcode( $tab['content'] );
+            }
+        }
+        return $tabs;
     }
 
     public static function register_shortcode(): void {
