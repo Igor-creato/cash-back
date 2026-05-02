@@ -595,6 +595,9 @@ class CashbackPlugin {
         // Health-check cron обработчик (WP Cron работает через фронтенд-запросы)
         $this->require_file('admin/health-check.php');
 
+        // OAuth2 helper'ы (используются адаптерами)
+        $this->require_file('includes/oauth/class-oauth2-client-credentials-helper.php');
+
         // API адаптеры CPA-сетей (загружаются перед API-клиентом)
         $this->require_file('includes/adapters/interface-cashback-network-adapter.php');
         $this->require_file('includes/adapters/abstract-cashback-network-adapter.php');

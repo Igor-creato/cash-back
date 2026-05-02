@@ -21,6 +21,16 @@ if (!defined('ABSPATH')) {
 class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
 
     /**
+     * Cache namespace для Admitad токенов. Совпадает с историческим ключом
+     * `cashback_admitad_token_{md5}`, чтобы deploy не инвалидировал
+     * закешированные токены в продакшене.
+     */
+    private const TOKEN_CACHE_NAMESPACE = 'cashback_admitad_token';
+
+    /** @var Cashback_OAuth2_Client_Credentials_Helper|null Лениво инициализируется. */
+    private ?Cashback_OAuth2_Client_Credentials_Helper $oauth_helper = null;
+
+    /**
      * {@inheritdoc}
      */
     public function get_slug(): string {
@@ -38,74 +48,26 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
      * {@inheritdoc}
      *
      * Admitad OAuth2: Basic Auth header + client_credentials grant.
-     * Кеширование в transient + runtime cache.
+     * Делегирует в Cashback_OAuth2_Client_Credentials_Helper (фундамент
+     * для generic-движка купонов).
      *
-     * Один токен с полным набором scope (например "statistics advcampaigns")
-     * работает для всех endpoint'ов.
+     * Один токен с полным набором scope (например "statistics advcampaigns
+     * coupons_for_website") работает для всех endpoint'ов сети.
      */
     public function get_token( array $credentials, array $network_config ): ?string {
-        $client_id     = $credentials['client_id'] ?? '';
-        $client_secret = $credentials['client_secret'] ?? '';
-        $scope         = $credentials['scope'] ?? 'statistics advcampaigns';
-
-        if (empty($client_id) || empty($client_secret)) {
-            $this->last_token_error = 'Admitad credentials incomplete (client_id или client_secret пустые)';
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('Cashback API Client: ' . $this->last_token_error);
-            return null;
-        }
-
-        $cache_key = 'cashback_admitad_token_' . md5($client_id);
-
-        // Проверяем transient
-        $cached = get_transient($cache_key);
-        if ($cached) {
-            return $cached;
-        }
-
-        // Проверяем runtime кеш
-        if (isset($this->token_cache[ $cache_key ])) {
-            return $this->token_cache[ $cache_key ];
-        }
+        $client_id     = (string) ( $credentials['client_id'] ?? '' );
+        $client_secret = (string) ( $credentials['client_secret'] ?? '' );
+        $scope         = (string) ( $credentials['scope'] ?? 'statistics advcampaigns' );
 
         $token_url = $this->build_api_url($network_config, 'api_token_endpoint', 'https://api.admitad.com/token/');
 
-        $response = $this->http_post($token_url, array(
-            'Authorization' => 'Basic ' . base64_encode($client_id . ':' . $client_secret),
-            'Content-Type'  => 'application/x-www-form-urlencoded',
-        ), array(
-            'grant_type' => 'client_credentials',
-            'client_id'  => $client_id,
-            'scope'      => $scope,
-        ));
+        $token = $this->get_oauth_helper()->get_token($token_url, $client_id, $client_secret, $scope);
 
-        if (is_wp_error($response)) {
-            $this->last_token_error = 'Admitad token ошибка сети: ' . $response->get_error_message();
+        if ($token === null) {
+            $this->last_token_error = $this->get_oauth_helper()->get_last_error();
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('Cashback API Client: ' . $this->last_token_error);
-            return null;
+            error_log('Cashback Admitad: ' . $this->last_token_error);
         }
-
-        $code = wp_remote_retrieve_response_code($response);
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-
-        if ($code !== 200 || empty($body['access_token'])) {
-            $safe_body = $body;
-            if (is_array($safe_body)) {
-                unset($safe_body['access_token'], $safe_body['refresh_token'], $safe_body['client_secret']);
-            }
-            $this->last_token_error = 'Admitad token failed (HTTP ' . $code . ')';
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('Cashback API Client: Admitad token failed. Code: ' . $code . ', Body: ' . wp_json_encode($safe_body));
-            return null;
-        }
-
-        $token   = $body['access_token'];
-        $expires = (int) ( $body['expires_in'] ?? 3600 );
-
-        // Кешируем с запасом 5 минут
-        set_transient($cache_key, $token, max(60, $expires - 300));
-        $this->token_cache[ $cache_key ] = $token;
 
         return $token;
     }
@@ -114,12 +76,18 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
      * {@inheritdoc}
      */
     public function invalidate_token( array $credentials ): void {
-        $client_id = $credentials['client_id'] ?? '';
-        if ($client_id !== '') {
-            $cache_key = 'cashback_admitad_token_' . md5($client_id);
-            delete_transient($cache_key);
-            unset($this->token_cache[ $cache_key ]);
+        $client_id = (string) ( $credentials['client_id'] ?? '' );
+        $this->get_oauth_helper()->invalidate_token($client_id);
+    }
+
+    /**
+     * Лениво создаёт OAuth2 helper с правильным cache namespace.
+     */
+    private function get_oauth_helper(): Cashback_OAuth2_Client_Credentials_Helper {
+        if ($this->oauth_helper === null) {
+            $this->oauth_helper = new Cashback_OAuth2_Client_Credentials_Helper(self::TOKEN_CACHE_NAMESPACE);
         }
+        return $this->oauth_helper;
     }
 
     /**
