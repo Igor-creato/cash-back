@@ -131,10 +131,11 @@ final class Cashback_Promocodes_Admin {
             '%' . $wpdb->esc_like( $search ) . '%'
         ) );
 
-        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- read-only flash-message после redirect от admin-post (nonce проверен в handle_admin_fetch_all).
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- read-only flash-message после redirect от admin-post (nonce проверен в handle_admin_fetch_all). $fetch_detail санитизуется через sanitize_text_field после rawurldecode.
         $fetch_status = isset( $_GET['fetch_status'] ) ? sanitize_key( wp_unslash( $_GET['fetch_status'] ) ) : '';
-        $fetch_detail = isset( $_GET['fetch_detail'] ) ? sanitize_text_field( rawurldecode( (string) wp_unslash( $_GET['fetch_detail'] ) ) ) : '';
-        // phpcs:enable WordPress.Security.NonceVerification.Recommended
+        $fetch_detail_raw = isset( $_GET['fetch_detail'] ) ? wp_unslash( $_GET['fetch_detail'] ) : '';
+        $fetch_detail     = sanitize_text_field( rawurldecode( (string) $fetch_detail_raw ) );
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 
         ?>
         <div class="wrap">
@@ -237,6 +238,7 @@ final class Cashback_Promocodes_Admin {
     }
 
     public static function handle_refresh_product(): void {
+        // phpcs:ignore WordPress.WP.Capabilities.Unknown -- edit_products — стандартный WC capability (зарегистрирован WooCommerce).
         if ( ! current_user_can( 'edit_products' ) ) {
             wp_send_json_error( array( 'code' => 'forbidden' ), 403 );
             return;
