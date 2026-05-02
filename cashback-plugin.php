@@ -846,6 +846,17 @@ class CashbackPlugin {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback] Payout unfreeze v7 auto-migration failed: ' . $e->getMessage());
             }
+
+            // Промокоды (Шаг 1 плана generic-coupons-engine, 2026-05-03): +4 колонки
+            // public-конфига в cashback_affiliate_networks + 2 новые таблицы
+            // (cashback_promocodes, cashback_promocode_clicks) + seed admitad.
+            // Идемпотентно через cashback_db_version >= 8 fast-path.
+            try {
+                Mariadb_Plugin::get_instance()->migrate_promocodes_v8();
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] Promocodes v8 auto-migration failed: ' . $e->getMessage());
+            }
         }
 
         // Legal module (Phase 1): создание таблицы wp_cashback_consent_log и

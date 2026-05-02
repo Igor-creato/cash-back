@@ -88,6 +88,7 @@ class Mariadb_Plugin {
             $instance->migrate_payout_require_fail_reason_v5();
             $instance->migrate_split_ban_reason_v6();
             $instance->migrate_payout_unfreeze_v7();
+            $instance->migrate_promocodes_v8();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -188,6 +189,10 @@ class Mariadb_Plugin {
             `api_field_map` text DEFAULT NULL COMMENT 'JSON маппинг полей API → колонки таблицы транзакций',
             `api_actions_endpoint` varchar(500) DEFAULT NULL COMMENT 'Endpoint для получения действий (/statistics/actions/)',
             `api_token_endpoint` varchar(500) DEFAULT NULL COMMENT 'Endpoint для получения токена (/token/)',
+            `api_coupons_endpoint` varchar(500) DEFAULT NULL COMMENT 'Endpoint купонов с placeholder-ами {website_id}/{advcampaign_id}/{limit}/{offset} (v8)',
+            `api_coupons_field_map` longtext DEFAULT NULL COMMENT 'JSON маппинг полей купонов API → DTO (v8)',
+            `api_coupons_species_map` longtext DEFAULT NULL COMMENT 'JSON normalize raw type/species → canonical promocode|deal (v8)',
+            `api_coupons_pagination` varchar(32) DEFAULT NULL COMMENT 'Pagination strategy для купонов: offset_limit|page|none (v8)',
             `api_website_id` varchar(100) DEFAULT NULL COMMENT 'ID площадки в CPA-сети (для фильтрации)',
             `sort_order` int(11) NOT NULL DEFAULT 0 COMMENT 'Порядок сортировки',
             `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1 = активен',
@@ -553,6 +558,61 @@ class Mariadb_Plugin {
             KEY `idx_stage_status` (`stage`,`status`)
         ) ENGINE=InnoDB {$charset_collate} COMMENT='Checkpoint-история прогонов cashback_api_sync';";
 
+        // ---------------------------------------------------------------
+        // v8: таблицы промокодов CPA-сетей.
+        //
+        // cashback_promocodes — нормализованный кэш купонов всех сетей.
+        // UNIQUE (network_id, external_id) исключает коллизии ID между сетями.
+        // is_active=0 — soft-delete (купон отсутствует в свежем fetch).
+        // utf8mb4_unicode_520_ci для текста (per memory feedback_no_ascii_columns).
+        // ---------------------------------------------------------------
+        $table_promocodes = "CREATE TABLE IF NOT EXISTS `{$wpdb->prefix}cashback_promocodes` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `network_id` bigint(20) unsigned NOT NULL COMMENT 'FK cashback_affiliate_networks.id',
+            `advcampaign_id` varchar(64) NOT NULL COMMENT 'offer_id = ID кампании в сети',
+            `external_id` varchar(64) NOT NULL COMMENT 'ID купона в сети (уникален в рамках network_id)',
+            `species` varchar(32) NOT NULL COMMENT 'promocode|deal|sale|discount|other',
+            `promocode` varchar(128) DEFAULT NULL COMMENT 'Сам код (NULL для deals)',
+            `name` varchar(255) NOT NULL,
+            `short_name` varchar(255) DEFAULT NULL,
+            `description` text DEFAULT NULL COMMENT 'Санитизируется через DOMPurify при выводе',
+            `discount` varchar(64) DEFAULT NULL COMMENT 'Строка от сети (5%, до 1000₽)',
+            `date_start` datetime DEFAULT NULL,
+            `date_end` datetime DEFAULT NULL,
+            `regions` varchar(255) DEFAULT NULL COMMENT 'CSV RU,KZ,BY',
+            `categories` text DEFAULT NULL COMMENT 'JSON массив',
+            `image` varchar(512) DEFAULT NULL,
+            `goto_link` varchar(1024) NOT NULL COMMENT 'Tracking URL',
+            `is_exclusive` tinyint(1) NOT NULL DEFAULT 0,
+            `rating` decimal(3,2) DEFAULT NULL,
+            `raw_payload` longtext DEFAULT NULL COMMENT 'JSON оригинал coupon-объекта от API',
+            `fetched_at` datetime NOT NULL,
+            `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '0 = купон отсутствовал в последнем fetch (soft-delete)',
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uniq_network_external` (`network_id`, `external_id`),
+            KEY `idx_campaign_active` (`advcampaign_id`, `is_active`, `date_end`),
+            KEY `idx_fetched_at` (`fetched_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci COMMENT='Промокоды CPA-сетей (v8)';";
+
+        // ---------------------------------------------------------------
+        // cashback_promocode_clicks — click-tracking для промокодов.
+        // ip_hash CHAR(64) — sha256(ip+salt), не raw IP (152-ФЗ).
+        // utf8mb4_bin для hash/UA (per memory feedback_no_ascii_columns).
+        // ---------------------------------------------------------------
+        $table_promocode_clicks = "CREATE TABLE IF NOT EXISTS `{$wpdb->prefix}cashback_promocode_clicks` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `user_id` bigint(20) unsigned NOT NULL DEFAULT 0 COMMENT '0 для гостей',
+            `promocode_id` bigint(20) unsigned NOT NULL,
+            `product_id` bigint(20) unsigned DEFAULT NULL COMMENT 'WC product откуда кликнули',
+            `action` enum('copy','goto') NOT NULL,
+            `ip_hash` char(64) DEFAULT NULL COMMENT 'sha256(ip+salt) — не raw IP (152-ФЗ)',
+            `ua_family` varchar(64) DEFAULT NULL,
+            `created_at` datetime NOT NULL,
+            PRIMARY KEY (`id`),
+            KEY `idx_user_action` (`user_id`, `action`, `created_at`),
+            KEY `idx_promo` (`promocode_id`, `created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='Click-tracking промокодов (v8)';";
+
         // Порядок создания: сначала справочники, потом зависимые таблицы
         $tables = array(
             'cashback_payout_methods'            => $table_payout_methods,
@@ -572,6 +632,8 @@ class Mariadb_Plugin {
             'cashback_sync_log'                  => $table_sync_log,
             'cashback_rate_history'              => $table_rate_history,
             'cashback_cron_state'                => $table_cron_state,
+            'cashback_promocodes'                => $table_promocodes,
+            'cashback_promocode_clicks'          => $table_promocode_clicks,
         );
 
         $failed_tables = array();
@@ -3466,6 +3528,248 @@ class Mariadb_Plugin {
         }
 
         update_option('cashback_db_version', 7, false);
+    }
+
+    /**
+     * Миграция v8: универсальный движок промокодов.
+     *
+     * Изменения:
+     *   1. ALTER TABLE cashback_affiliate_networks ADD COLUMN ×4:
+     *      - api_coupons_endpoint     varchar(500)
+     *      - api_coupons_field_map    longtext (JSON)
+     *      - api_coupons_species_map  longtext (JSON)
+     *      - api_coupons_pagination   varchar(32)
+     *   2. CREATE TABLE cashback_promocodes (нормализованный кэш купонов).
+     *   3. CREATE TABLE cashback_promocode_clicks (click-tracking, sha256 IP).
+     *   4. Seed дефолтного coupons-конфига для admitad через
+     *      migrate_seed_admitad_coupons_config() (только public-зона).
+     *
+     * Encrypted scope ('coupons_for_website') расширяется отдельным методом
+     * migrate_extend_admitad_scope_for_coupons() — он использует
+     * Cashback_API_Client::save_credentials() (FOR UPDATE TX + AES-GCM)
+     * и вызывается только когда api_client готов.
+     *
+     * Идемпотентность: cashback_db_version >= 8 fast-path + INFORMATION_SCHEMA
+     * проверки на каждую колонку. CREATE TABLE IF NOT EXISTS для новых таблиц.
+     *
+     * Версионизация: cashback_db_version = 8. Совместимо с feedback
+     * alter_table_no_prepare (raw query + post-verify).
+     */
+    public function migrate_promocodes_v8(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        if ($current_version >= 8) {
+            return;
+        }
+
+        $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
+
+        // Skip если базовая таблица сетей не существует (свежая установка ещё
+        // не дошла до create_tables()).
+        $table_exists = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $networks_table
+        ));
+        if ($table_exists === 0) {
+            return;
+        }
+
+        // ------------------------------------------------------------------
+        // Шаг 1: ADD COLUMN ×4 в cashback_affiliate_networks (idempotent через
+        // INFORMATION_SCHEMA для каждой колонки).
+        // ------------------------------------------------------------------
+        $safe_networks = $this->validate_table_prefix($wpdb->prefix) . 'cashback_affiliate_networks';
+
+        $columns_to_add = array(
+            'api_coupons_endpoint'     => "ALTER TABLE `{$safe_networks}` ADD COLUMN `api_coupons_endpoint` varchar(500) DEFAULT NULL COMMENT 'Endpoint купонов с placeholder-ами {website_id}/{advcampaign_id}/{limit}/{offset} (v8)' AFTER `api_token_endpoint`",
+            'api_coupons_field_map'    => "ALTER TABLE `{$safe_networks}` ADD COLUMN `api_coupons_field_map` longtext DEFAULT NULL COMMENT 'JSON маппинг полей купонов API → DTO (v8)' AFTER `api_coupons_endpoint`",
+            'api_coupons_species_map'  => "ALTER TABLE `{$safe_networks}` ADD COLUMN `api_coupons_species_map` longtext DEFAULT NULL COMMENT 'JSON normalize raw type/species → canonical promocode|deal (v8)' AFTER `api_coupons_field_map`",
+            'api_coupons_pagination'   => "ALTER TABLE `{$safe_networks}` ADD COLUMN `api_coupons_pagination` varchar(32) DEFAULT NULL COMMENT 'Pagination strategy для купонов: offset_limit|page|none (v8)' AFTER `api_coupons_species_map`",
+        );
+
+        foreach ($columns_to_add as $col_name => $alter_ddl) {
+            $col_exists = (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = %s
+                    AND COLUMN_NAME = %s',
+                $networks_table,
+                $col_name
+            ));
+
+            if ($col_exists !== 0) {
+                continue;
+            }
+
+            $alter_arr = array( $alter_ddl );
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL ALTER TABLE с non-ASCII COMMENT.
+            $alter_result = $wpdb->query( $alter_arr[0] );
+            if ($alter_result === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v8] ADD COLUMN ' . $col_name . ' failed: ' . $wpdb->last_error);
+                return;
+            }
+
+            // Post-verify (per feedback_alter_table_no_prepare).
+            $verify = (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = %s
+                    AND COLUMN_NAME = %s',
+                $networks_table,
+                $col_name
+            ));
+            if ($verify === 0) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v8] post-verify failed: ' . $col_name . ' missing after ALTER');
+                return;
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Шаг 2: CREATE TABLE cashback_promocodes + cashback_promocode_clicks
+        // (idempotent через CREATE IF NOT EXISTS).
+        //
+        // Также для НЕ-свежих installs, где create_tables() уже отработал ДО
+        // выпуска v8 — таблиц нет, нужно создать здесь.
+        // ------------------------------------------------------------------
+        $safe_prefix = $this->validate_table_prefix($wpdb->prefix);
+
+        $promocodes_ddl = array(
+            "CREATE TABLE IF NOT EXISTS `{$safe_prefix}cashback_promocodes` (
+                `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+                `network_id` bigint(20) unsigned NOT NULL COMMENT 'FK cashback_affiliate_networks.id',
+                `advcampaign_id` varchar(64) NOT NULL COMMENT 'offer_id = ID кампании в сети',
+                `external_id` varchar(64) NOT NULL COMMENT 'ID купона в сети (уникален в рамках network_id)',
+                `species` varchar(32) NOT NULL COMMENT 'promocode|deal|sale|discount|other',
+                `promocode` varchar(128) DEFAULT NULL COMMENT 'Сам код (NULL для deals)',
+                `name` varchar(255) NOT NULL,
+                `short_name` varchar(255) DEFAULT NULL,
+                `description` text DEFAULT NULL,
+                `discount` varchar(64) DEFAULT NULL,
+                `date_start` datetime DEFAULT NULL,
+                `date_end` datetime DEFAULT NULL,
+                `regions` varchar(255) DEFAULT NULL COMMENT 'CSV RU,KZ,BY',
+                `categories` text DEFAULT NULL COMMENT 'JSON массив',
+                `image` varchar(512) DEFAULT NULL,
+                `goto_link` varchar(1024) NOT NULL COMMENT 'Tracking URL',
+                `is_exclusive` tinyint(1) NOT NULL DEFAULT 0,
+                `rating` decimal(3,2) DEFAULT NULL,
+                `raw_payload` longtext DEFAULT NULL,
+                `fetched_at` datetime NOT NULL,
+                `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '0 = soft-delete (нет в последнем fetch)',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uniq_network_external` (`network_id`, `external_id`),
+                KEY `idx_campaign_active` (`advcampaign_id`, `is_active`, `date_end`),
+                KEY `idx_fetched_at` (`fetched_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci COMMENT='Промокоды CPA-сетей (v8)'",
+        );
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL, $safe_prefix validated.
+        $create_promocodes = $wpdb->query( $promocodes_ddl[0] );
+        if ($create_promocodes === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v8] CREATE TABLE cashback_promocodes failed: ' . $wpdb->last_error);
+            return;
+        }
+
+        $clicks_ddl = array(
+            "CREATE TABLE IF NOT EXISTS `{$safe_prefix}cashback_promocode_clicks` (
+                `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+                `user_id` bigint(20) unsigned NOT NULL DEFAULT 0 COMMENT '0 для гостей',
+                `promocode_id` bigint(20) unsigned NOT NULL,
+                `product_id` bigint(20) unsigned DEFAULT NULL,
+                `action` enum('copy','goto') NOT NULL,
+                `ip_hash` char(64) DEFAULT NULL COMMENT 'sha256(ip+salt) — не raw IP (152-ФЗ)',
+                `ua_family` varchar(64) DEFAULT NULL,
+                `created_at` datetime NOT NULL,
+                PRIMARY KEY (`id`),
+                KEY `idx_user_action` (`user_id`, `action`, `created_at`),
+                KEY `idx_promo` (`promocode_id`, `created_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='Click-tracking промокодов (v8)'",
+        );
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL.
+        $create_clicks = $wpdb->query( $clicks_ddl[0] );
+        if ($create_clicks === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v8] CREATE TABLE cashback_promocode_clicks failed: ' . $wpdb->last_error);
+            return;
+        }
+
+        // ------------------------------------------------------------------
+        // Шаг 3: Seed дефолтного coupons-конфига для admitad (public-зона).
+        // ------------------------------------------------------------------
+        $this->migrate_seed_admitad_coupons_config();
+
+        update_option('cashback_db_version', 8, false);
+    }
+
+    /**
+     * Seed public-конфига coupons API для существующей сети admitad (v8).
+     *
+     * Заполняет 4 новые колонки cashback_affiliate_networks дефолтами для
+     * Admitad'а только если api_coupons_endpoint NULL/пустой — не перезаписывает
+     * ручную настройку. Идемпотентно. Public-зона: НЕ зашифрованные значения,
+     * UPDATE без TX.
+     *
+     * Encrypted scope (coupons_for_website) добавляется отдельным методом
+     * migrate_extend_admitad_scope_for_coupons() — там нужен Cashback_API_Client,
+     * а его готовность зависит от bootstrap'а.
+     */
+    public function migrate_seed_admitad_coupons_config(): void {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'cashback_affiliate_networks';
+
+        $current_endpoint = $wpdb->get_var($wpdb->prepare(
+            'SELECT api_coupons_endpoint FROM %i WHERE slug = %s LIMIT 1',
+            $table,
+            'admitad'
+        ));
+
+        // Не перезаписываем если админ уже настроил.
+        // current_endpoint == null/''  → seed нужен (NULL колонка либо записи нет —
+        // в обоих случаях UPDATE идемпотентен: при отсутствии записи 0 affected rows).
+        if (is_string($current_endpoint) && $current_endpoint !== '') {
+            return;
+        }
+
+        $defaults = array(
+            'api_coupons_endpoint'    => '/coupons/website/{website_id}/?campaign={advcampaign_id}&limit={limit}&offset={offset}',
+            'api_coupons_field_map'   => wp_json_encode(array(
+                'id'          => 'external_id',
+                'promocode'   => 'promocode',
+                'name'        => 'name',
+                'short_name'  => 'short_name',
+                'description' => 'description',
+                'discount'    => 'discount',
+                'date_start'  => 'date_start',
+                'date_end'    => 'date_end',
+                'status'      => 'status',
+                'regions'     => 'regions',
+                'categories'  => 'categories',
+                'image'       => 'image_url',
+                'goto_link'   => 'goto_link',
+                'exclusive'   => 'is_exclusive',
+                'type'        => 'species_raw',
+                'rating'      => 'rating',
+            )),
+            'api_coupons_species_map' => wp_json_encode(array(
+                'promocode'  => 'promocode',
+                'promo_code' => 'promocode',
+                'deal'       => 'deal',
+                'sale'       => 'deal',
+                'discount'   => 'deal',
+            )),
+            'api_coupons_pagination'  => 'offset_limit',
+        );
+
+        $wpdb->update(
+            $table,
+            $defaults,
+            array( 'slug' => 'admitad' )
+        );
     }
 }
 
