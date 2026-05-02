@@ -112,22 +112,28 @@ final class TechDataConsentTest extends TestCase
         );
     }
 
-    public function test_registration_checkboxes_writes_tech_data_consent(): void
+    public function test_registration_does_not_write_tech_data_consent(): void
     {
+        // UX-cleanup 1.4.0: tech_data toggle переехал с формы регистрации в ЛК
+        // (Cashback_Legal_My_Account). Регистрация НЕ должна писать TYPE_TECH_DATA
+        // в журнал — это делается явным opt-in через AJAX в ЛК.
         $path = dirname(__DIR__, 3) . '/legal/class-cashback-legal-registration-checkboxes.php';
         $src  = (string) file_get_contents($path);
 
-        // В save_consents_on_registration() должен быть условный $write(TYPE_TECH_DATA, ...)
-        // когда чекбокс отмечен — иначе legacy-юзеры с unset чекбоксом получали бы
-        // tech_data авто (G6 — нельзя).
         $this->assertSame(
-            1,
+            0,
             preg_match(
-                '/is_field_checked\s*\(\s*self::FIELD_TECH_DATA\s*\)\s*\)\s*\{\s*\$write\s*\(\s*Cashback_Legal_Documents::TYPE_TECH_DATA/s',
+                '/\$write\s*\(\s*Cashback_Legal_Documents::TYPE_TECH_DATA/s',
                 $src
             ),
-            'save_consents_on_registration() должен писать tech_data consent ТОЛЬКО когда FIELD_TECH_DATA отмечен (G6 — H1/H2/H5/H6 без отметки не получают авто)'
+            'save_consents_on_registration() НЕ должен писать tech_data — он переехал в ЛК (Cashback_Legal_My_Account)'
         );
+
+        // Сам toggle должен быть в новом классе.
+        $my_account = dirname(__DIR__, 3) . '/legal/class-cashback-legal-my-account.php';
+        $this->assertFileExists($my_account, 'Cashback_Legal_My_Account отвечает за tech_data toggle');
+        $my_src = (string) file_get_contents($my_account);
+        $this->assertStringContainsString('TYPE_TECH_DATA', $my_src);
     }
 
     public function test_default_template_file_exists(): void

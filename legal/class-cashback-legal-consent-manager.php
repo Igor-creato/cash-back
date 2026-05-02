@@ -155,6 +155,32 @@ class Cashback_Legal_Consent_Manager {
             self::clear_reconsent_cache($user_id);
         }
 
+        // 152-ФЗ ст. 9 evidence-chain: revoke — юр.факт, должен быть в audit-trail.
+        // Симметрично record_consent (см. строки 88–109). UX-cleanup 1.4.0: добавлено
+        // при переносе marketing/tech_data toggle'ов в ЛК.
+        if ($id !== false && class_exists('Cashback_Encryption')) {
+            try {
+                Cashback_Encryption::write_audit_log(
+                    'consent_revoked',
+                    $user_id,
+                    'consent_log',
+                    is_int($id) ? $id : (int) $id,
+                    array(
+                        'consent_type'     => $consent_type,
+                        'document_version' => $version,
+                        'source'           => $source,
+                        'request_id'       => $request_id,
+                    )
+                );
+            } catch (\Throwable $e) {
+                // G2: audit — telemetry, не должен ронять основной flow.
+                if (function_exists('error_log')) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- defensive telemetry.
+                    error_log('[cashback-audit] consent_revoked: ' . $e->getMessage());
+                }
+            }
+        }
+
         return $id;
     }
 

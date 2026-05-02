@@ -61,6 +61,10 @@ class Cashback_Rate_Limiter {
         'support_user_close_ticket'                 => 'write',
         'claims_submit'                             => 'write',
         'cashback_save_notification_prefs'          => 'write',
+        // UX-cleanup 1.4.0: toggle опц. согласий (38-ФЗ marketing, 149-ФЗ tech_data)
+        // в личном кабинете. write tier (10/мин per-user) защищает от bot-spam,
+        // но позволяет юзеру нормально пощёлкать переключатель.
+        'cashback_legal_toggle_consent'             => 'write',
         'claims_mark_read'                          => 'write',
         'social_start'                              => 'write',
         'social_callback'                           => 'write',

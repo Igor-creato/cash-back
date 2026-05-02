@@ -6,13 +6,13 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Тесты Cashback_Legal_Registration_Checkboxes (Phase 3).
+ * Тесты Cashback_Legal_Registration_Checkboxes (Phase 3 + UX-cleanup 1.4.0).
  *
  * Покрывает:
- *  - render_checkboxes выводит 3 чекбокса (PD/offer/marketing) + hidden request_id
- *  - validate_checkboxes требует отметки PD и offer; marketing — нет
- *  - save_consents_on_registration пишет 2 записи (когда marketing=off)
- *    или 3 записи (когда marketing=on) с одним «префиксом» request_id
+ *  - render_checkboxes выводит ровно 2 чекбокса (PD/offer) + hidden request_id;
+ *    маркетинг и tech_data на форме регистрации удалены — они переехали в ЛК
+ *  - validate_checkboxes требует отметки PD и offer
+ *  - save_consents_on_registration пишет ровно 2 записи (никогда marketing/tech_data)
  *
  * Полные wpdb-операции мочиатся через стаб $GLOBALS['wpdb']:
  * insert_log_row → собирает в $GLOBALS['_cb_test_legal_inserted_rows'].
@@ -95,7 +95,7 @@ final class LegalRegistrationCheckboxesTest extends TestCase
         };
     }
 
-    public function test_render_checkboxes_outputs_three_inputs_and_hidden_uuid(): void
+    public function test_render_checkboxes_outputs_two_required_inputs_and_hidden_uuid(): void
     {
         ob_start();
         Cashback_Legal_Registration_Checkboxes::render_checkboxes();
@@ -103,9 +103,17 @@ final class LegalRegistrationCheckboxesTest extends TestCase
 
         $this->assertStringContainsString('cashback_legal_consent_pd', $html);
         $this->assertStringContainsString('cashback_legal_consent_offer', $html);
-        $this->assertStringContainsString('cashback_legal_consent_marketing', $html);
         $this->assertStringContainsString('cashback_legal_request_id', $html);
-        // Обязательные чекбоксы — required-атрибут в HTML.
+        // UX-cleanup 1.4.0: marketing + tech_data переехали в ЛК.
+        $this->assertStringNotContainsString('cashback_legal_consent_marketing', $html);
+        $this->assertStringNotContainsString('cashback_legal_consent_tech_data', $html);
+        // Ровно 2 input[type=checkbox] на форме регистрации.
+        $this->assertSame(
+            2,
+            preg_match_all('/<input[^>]+type="checkbox"/', $html),
+            'Форма регистрации должна содержать ровно 2 чекбокса (PD + offer)'
+        );
+        // Оба обязательные.
         $this->assertGreaterThanOrEqual(2, substr_count($html, ' required'));
     }
 
@@ -174,55 +182,26 @@ final class LegalRegistrationCheckboxesTest extends TestCase
         $this->assertNotContains('tech_data', $types);
     }
 
-    public function test_save_writes_three_rows_when_marketing_checked(): void
+    public function test_save_never_writes_marketing_even_if_post_field_present(): void
     {
+        // UX-cleanup 1.4.0: даже если кто-то добавит FIELD_MARKETING в POST вручную
+        // (через прямой curl), регистрационный handler не должен писать marketing —
+        // это поле переехало в ЛК. Защита от регрессии.
         $_POST = array(
             Cashback_Legal_Registration_Checkboxes::FIELD_PD_PROCESSING => '1',
             Cashback_Legal_Registration_Checkboxes::FIELD_TERMS_OFFER   => '1',
             Cashback_Legal_Registration_Checkboxes::FIELD_MARKETING     => '1',
+            Cashback_Legal_Registration_Checkboxes::FIELD_TECH_DATA     => '1',
             Cashback_Legal_Registration_Checkboxes::FIELD_REQUEST_ID    => bin2hex(random_bytes(16)),
         );
 
         Cashback_Legal_Registration_Checkboxes::save_consents_on_registration(43);
 
-        $rows = $this->consent_rows_only();
-        $this->assertCount(3, $rows);
-        $types = array_column($rows, 'consent_type');
-        $this->assertContains('marketing', $types);
-        $this->assertNotContains('tech_data', $types);
-    }
-
-    public function test_save_writes_tech_data_row_when_checked(): void
-    {
-        $_POST = array(
-            Cashback_Legal_Registration_Checkboxes::FIELD_PD_PROCESSING => '1',
-            Cashback_Legal_Registration_Checkboxes::FIELD_TERMS_OFFER   => '1',
-            Cashback_Legal_Registration_Checkboxes::FIELD_TECH_DATA     => '1',
-            Cashback_Legal_Registration_Checkboxes::FIELD_REQUEST_ID    => bin2hex(random_bytes(16)),
-        );
-
-        Cashback_Legal_Registration_Checkboxes::save_consents_on_registration(44);
-
         $rows  = $this->consent_rows_only();
+        $this->assertCount(2, $rows, 'Только pd_consent + terms_offer пишутся при регистрации');
         $types = array_column($rows, 'consent_type');
-        $this->assertContains('tech_data', $types, 'VULN-04: tech_data consent должен записаться при отмеченном чекбоксе');
         $this->assertNotContains('marketing', $types);
-    }
-
-    public function test_save_skips_tech_data_when_unchecked(): void
-    {
-        // G6: legacy-юзеры (H1/H2/H5/H6 без отметки) не получают tech_data авто.
-        $_POST = array(
-            Cashback_Legal_Registration_Checkboxes::FIELD_PD_PROCESSING => '1',
-            Cashback_Legal_Registration_Checkboxes::FIELD_TERMS_OFFER   => '1',
-            Cashback_Legal_Registration_Checkboxes::FIELD_REQUEST_ID    => bin2hex(random_bytes(16)),
-        );
-
-        Cashback_Legal_Registration_Checkboxes::save_consents_on_registration(45);
-
-        $rows  = $this->consent_rows_only();
-        $types = array_column($rows, 'consent_type');
-        $this->assertNotContains('tech_data', $types, 'G6 idempotent: без отметки tech_data не должен записываться');
+        $this->assertNotContains('tech_data', $types);
     }
 
     public function test_save_skips_when_user_id_zero(): void
@@ -236,15 +215,14 @@ final class LegalRegistrationCheckboxesTest extends TestCase
         $_POST = array(
             Cashback_Legal_Registration_Checkboxes::FIELD_PD_PROCESSING => '1',
             Cashback_Legal_Registration_Checkboxes::FIELD_TERMS_OFFER   => '1',
-            Cashback_Legal_Registration_Checkboxes::FIELD_MARKETING     => '1',
             Cashback_Legal_Registration_Checkboxes::FIELD_REQUEST_ID    => str_repeat('a', 32),
         );
 
         Cashback_Legal_Registration_Checkboxes::save_consents_on_registration(50);
 
-        $rows = $GLOBALS['_cb_test_legal_inserted_rows'];
+        $rows = $this->consent_rows_only();
         $request_ids = array_column($rows, 'request_id');
-        $this->assertCount(3, $request_ids);
-        $this->assertCount(3, array_unique($request_ids), 'Каждый consent_type должен иметь свой request_id для UNIQUE constraint');
+        $this->assertCount(2, $request_ids);
+        $this->assertCount(2, array_unique($request_ids), 'Каждый consent_type должен иметь свой request_id для UNIQUE constraint');
     }
 }

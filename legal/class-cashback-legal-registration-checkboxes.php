@@ -9,15 +9,17 @@ if (!defined('ABSPATH')) {
 /**
  * Cashback_Legal_Registration_Checkboxes
  *
- * Три юр. чекбокса на форме регистрации WooCommerce:
+ * Два юр. чекбокса на форме регистрации WooCommerce (UX-cleanup 1.4.0):
  *   1. pd_processing — обязательный (152-ФЗ ст. 9, отдельный документ с 01.09.2025)
  *   2. terms_offer   — обязательный (ГК ст. 437, акцепт оферты)
- *   3. marketing     — необязательный, OFF by default (38-ФЗ ст. 18)
+ *
+ * Опциональные согласия (38-ФЗ marketing, 149-ФЗ tech_data) переехали в личный
+ * кабинет как toggle-переключатели — см. Cashback_Legal_My_Account.
  *
  * Hooks:
  *   - woocommerce_register_form         (priority 21, после fraud_consent на 20)
  *   - woocommerce_registration_errors   (priority 11, требует pd_processing+terms_offer)
- *   - woocommerce_created_customer      (priority 11, пишет 3 строки в consent_log
+ *   - woocommerce_created_customer      (priority 11, пишет 2 строки в consent_log
  *                                        с общим request_id из hidden поля)
  *
  * Idempotency: hidden uuid в форме → UNIQUE на request_id в журнале гарантирует
@@ -29,7 +31,9 @@ class Cashback_Legal_Registration_Checkboxes {
 
     public const FIELD_PD_PROCESSING = 'cashback_legal_consent_pd';
     public const FIELD_TERMS_OFFER   = 'cashback_legal_consent_offer';
+    /** @deprecated 1.4.0 marketing toggle переехал в Cashback_Legal_My_Account. Удалить в 1.5.0. */
     public const FIELD_MARKETING     = 'cashback_legal_consent_marketing';
+    /** @deprecated 1.4.0 tech_data toggle переехал в Cashback_Legal_My_Account. Удалить в 1.5.0. */
     public const FIELD_TECH_DATA     = 'cashback_legal_consent_tech_data';
     public const FIELD_REQUEST_ID    = 'cashback_legal_request_id';
 
@@ -98,7 +102,8 @@ class Cashback_Legal_Registration_Checkboxes {
     }
 
     /**
-     * Рендер 3 чекбоксов в форме регистрации.
+     * Рендер 2 обязательных чекбоксов в форме регистрации.
+     * UX-cleanup 1.4.0: marketing/tech_data toggle'ы переехали в ЛК.
      */
     public static function render_checkboxes(): void {
         $request_id = self::generate_request_id();
@@ -124,22 +129,6 @@ class Cashback_Legal_Registration_Checkboxes {
             self::compose_terms_label(),
             true,
             self::is_field_checked(self::FIELD_TERMS_OFFER)
-        );
-
-        // 3. Маркетинг (необязательный, OFF by default per 38-ФЗ)
-        self::render_single_checkbox(
-            self::FIELD_MARKETING,
-            self::compose_marketing_label(),
-            false,
-            self::is_field_checked(self::FIELD_MARKETING)
-        );
-
-        // 4. Технические данные (необязательный, 149-ФЗ ст. 10 — VULN-04)
-        self::render_single_checkbox(
-            self::FIELD_TECH_DATA,
-            self::compose_tech_data_label(),
-            false,
-            self::is_field_checked(self::FIELD_TECH_DATA)
         );
     }
 
@@ -178,9 +167,13 @@ class Cashback_Legal_Registration_Checkboxes {
     /**
      * Сохранение согласий после успешного создания пользователя.
      *
-     * Пишем 3 строки в cashback_consent_log: pd_processing (granted),
-     * terms_offer (granted) и marketing (granted, только если отмечен).
-     * request_id одинаков для всех — это атомарный «акт регистрации».
+     * Пишем 2 строки в cashback_consent_log: pd_processing (granted) и
+     * terms_offer (granted). request_id одинаков для всех — это атомарный
+     * «акт регистрации».
+     *
+     * UX-cleanup 1.4.0: marketing (38-ФЗ) и tech_data (149-ФЗ) — opt-in toggle'ы
+     * в личном кабинете (Cashback_Legal_My_Account); тут они НЕ пишутся, даже
+     * если кто-то добавит соответствующий POST-параметр вручную.
      */
     public static function save_consents_on_registration( int $user_id ): void {
         if ($user_id <= 0 || !class_exists('Cashback_Legal_Consent_Manager')) {
@@ -203,7 +196,7 @@ class Cashback_Legal_Registration_Checkboxes {
         $write = static function ( string $type, string $rid_suffix ) use ( $user_id, $request_id, $extra ): void {
             // У каждого consent_type — свой уникальный request_id (одинаковый префикс
             // одного «акта регистрации» + суффикс типа). Иначе UNIQUE на request_id
-            // не даст вставить три строки.
+            // не даст вставить две строки.
             $rid = substr($request_id, 0, 24) . $rid_suffix;
             Cashback_Legal_Consent_Manager::record_consent(
                 $user_id,
@@ -216,16 +209,6 @@ class Cashback_Legal_Registration_Checkboxes {
 
         $write(Cashback_Legal_Documents::TYPE_PD_CONSENT, '00000001');
         $write(Cashback_Legal_Documents::TYPE_TERMS_OFFER, '00000002');
-
-        if (self::is_field_checked(self::FIELD_MARKETING)) {
-            $write(Cashback_Legal_Documents::TYPE_MARKETING, '00000003');
-        }
-
-        // VULN-04 (149-ФЗ ст. 10): согласие на обработку технических данных —
-        // opt-in. G6: legacy-юзеры (H1/H2/H5/H6 без отметки) не получают авто.
-        if (self::is_field_checked(self::FIELD_TECH_DATA)) {
-            $write(Cashback_Legal_Documents::TYPE_TECH_DATA, '00000004');
-        }
 
         // BUG-02 (152-ФЗ ст. 9): сам факт регистрации — отдельное audit-событие.
         // Пишется ПОСЛЕ consent-INSERT'ов, чтобы в случае их provider-fail audit
@@ -371,24 +354,6 @@ class Cashback_Legal_Registration_Checkboxes {
             __('Пользовательского соглашения (публичной оферты)', 'cashback-plugin')
         );
         return $lead . ' ' . $link . '.';
-    }
-
-    private static function compose_marketing_label(): string {
-        $url  = self::get_doc_url(Cashback_Legal_Documents::TYPE_MARKETING);
-        $lead = esc_html__('Я согласен получать информационные и рекламные сообщения по e-mail (по 38-ФЗ ст. 18). Можно отключить в любой момент.', 'cashback-plugin');
-        if ($url === '') {
-            return $lead;
-        }
-        return $lead . ' ' . self::link_or_text($url, __('Подробнее.', 'cashback-plugin'));
-    }
-
-    private static function compose_tech_data_label(): string {
-        $url  = self::get_doc_url(Cashback_Legal_Documents::TYPE_TECH_DATA);
-        $lead = esc_html__('Я согласен на обработку технических данных (cookies, IP-адрес, идентификатор устройства) для работы сайта и аналитики (149-ФЗ ст. 10).', 'cashback-plugin');
-        if ($url === '') {
-            return $lead;
-        }
-        return $lead . ' ' . self::link_or_text($url, __('Подробнее.', 'cashback-plugin'));
     }
 
     private static function link_or_text( string $url, string $text ): string {

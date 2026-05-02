@@ -30,3 +30,62 @@
 .cashback-social-consent.cashback-consent-error {
     margin: 6px 0;
 }
+
+/**
+ * UX-cleanup 1.4.0 — секция «Согласия и уведомления» в личном кабинете.
+ * Cashback_Legal_My_Account рендерит её под формой edit-account.
+ */
+.cashback-legal-consents {
+    margin-top: 24px;
+    padding: 16px;
+    border: 1px solid #e3e3e3;
+    border-radius: 4px;
+    background: #fafafa;
+}
+
+.cashback-legal-consents h3 {
+    margin: 0 0 6px;
+    font-size: 16px;
+}
+
+.cashback-legal-consents-hint {
+    margin: 0 0 12px;
+    color: #666;
+    font-size: 13px;
+}
+
+.cashback-legal-toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 8px 0;
+    line-height: 1.4;
+    cursor: pointer;
+}
+
+.cashback-legal-toggle input[type="checkbox"] {
+    flex: 0 0 auto;
+    margin-top: 3px;
+}
+
+.cashback-legal-toggle input[type="checkbox"]:disabled {
+    opacity: 0.6;
+    cursor: progress;
+}
+
+.cashback-legal-toggle-text {
+    font-size: 14px;
+    color: #333;
+}
+
+.cashback-legal-toggle-status {
+    display: block;
+    margin-top: 8px;
+    min-height: 1.2em;
+    font-size: 13px;
+    color: #2a7a2a;
+}
+
+.cashback-legal-toggle-status.is-error {
+    color: #a82b10;
+}

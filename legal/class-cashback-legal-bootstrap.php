@@ -48,6 +48,7 @@ class Cashback_Legal_Bootstrap {
             'class-cashback-legal-cookies-banner.php',
             'class-cashback-legal-reconsent-modal.php',
             'class-cashback-legal-reviews-notice.php',
+            'class-cashback-legal-my-account.php',
         );
     }
 
@@ -115,6 +116,9 @@ class Cashback_Legal_Bootstrap {
         }
         if (class_exists('Cashback_Legal_Reviews_Notice')) {
             Cashback_Legal_Reviews_Notice::init();
+        }
+        if (class_exists('Cashback_Legal_My_Account')) {
+            Cashback_Legal_My_Account::init();
         }
         if (class_exists('Cashback_Legal_Admin')) {
             Cashback_Legal_Admin::init();
