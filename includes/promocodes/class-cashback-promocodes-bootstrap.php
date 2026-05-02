@@ -37,6 +37,11 @@ final class Cashback_Promocodes_Bootstrap {
 
         // Register шорткод [cashback_promocodes] при init.
         add_action( 'init', array( __CLASS__, 'register_shortcode' ), 20 );
+
+        // Click-tracker AJAX (auth + nopriv).
+        if ( class_exists( 'Cashback_Promocodes_Tracker' ) ) {
+            Cashback_Promocodes_Tracker::init();
+        }
     }
 
     public static function register_shortcode(): void {
