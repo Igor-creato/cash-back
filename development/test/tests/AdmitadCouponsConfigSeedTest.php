@@ -35,20 +35,19 @@ final class AdmitadCouponsConfigSeedTest extends TestCase
      * Statefull mock $wpdb: эмулирует SELECT/UPDATE для cashback_affiliate_networks
      * с одной записью admitad.
      */
-    private function make_wpdb_mock(?string $existing_endpoint): object
+    private function make_wpdb_mock(?string $existing_endpoint, string $row_slug = 'admitad', bool $row_exists = true): object
     {
-        return new class($existing_endpoint) {
+        return new class($existing_endpoint, $row_slug, $row_exists) {
             public string $prefix = 'wp_';
             public string $last_error = '';
 
             /** @var array<int,array{table:string,data:array,where:array}> */
             public array $update_calls = array();
 
-            public function __construct(private ?string $existing_endpoint) {}
+            public function __construct(private ?string $existing_endpoint, private string $row_slug, private bool $row_exists) {}
 
             public function prepare(string $query, mixed ...$args): string
             {
-                // Минимальная имитация: подменяем %s/%i на quoted.
                 $i = 0;
                 return preg_replace_callback('/%[sid]/', function ($m) use (&$i, $args) {
                     $val = $args[$i++] ?? '';
@@ -62,13 +61,16 @@ final class AdmitadCouponsConfigSeedTest extends TestCase
                 }, $query);
             }
 
-            public function get_var(string $query): mixed
+            public function get_row(string $query): ?object
             {
-                // Возвращаем existing endpoint при SELECT api_coupons_endpoint ... slug='admitad'.
-                if (str_contains($query, 'api_coupons_endpoint') && str_contains($query, "'admitad'")) {
-                    return $this->existing_endpoint;
+                if (! $this->row_exists) {
+                    return null;
                 }
-                return null;
+                return (object) array(
+                    'id'                   => 1,
+                    'slug'                 => $this->row_slug,
+                    'api_coupons_endpoint' => $this->existing_endpoint,
+                );
             }
 
             public function update(string $table, array $data, array $where): int
@@ -118,10 +120,26 @@ final class AdmitadCouponsConfigSeedTest extends TestCase
 
         $this->assertNotEmpty($wpdb->update_calls, 'Должен быть UPDATE call для admitad когда endpoint пустой');
         $call = $wpdb->update_calls[0];
-        $this->assertSame('admitad', $call['where']['slug']);
+        $this->assertSame(1, $call['where']['id'], 'WHERE по id, не по slug — поддержка alias adm');
         $this->assertArrayHasKey('api_coupons_endpoint', $call['data']);
         $this->assertStringContainsString('{advcampaign_id}', $call['data']['api_coupons_endpoint'], 'Endpoint должен содержать placeholder {advcampaign_id}');
         $this->assertStringContainsString('{website_id}', $call['data']['api_coupons_endpoint'], 'Endpoint должен содержать placeholder {website_id}');
+    }
+
+    public function test_seed_finds_admitad_by_alias_slug_adm(): void
+    {
+        // На production-инсталляциях slug='adm' (из get_aliases адаптера).
+        $wpdb = $this->call_seed_method($this->make_wpdb_mock(null, 'adm'));
+
+        $this->assertNotEmpty($wpdb->update_calls, 'Должен seed-ить и для slug=adm');
+        $this->assertSame(1, $wpdb->update_calls[0]['where']['id']);
+    }
+
+    public function test_seed_skipped_when_admitad_row_missing(): void
+    {
+        // Admitad-сети не существует → seed не запускается.
+        $wpdb = $this->call_seed_method($this->make_wpdb_mock(null, 'admitad', false));
+        $this->assertEmpty($wpdb->update_calls);
     }
 
     // ============================================================

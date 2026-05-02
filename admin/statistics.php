@@ -560,6 +560,105 @@ class Cashback_Statistics_Admin {
             })();
             </script>
 
+            <!-- [cashback_promocodes] -->
+            <div class="cb-shortcode-section">
+                <div class="postbox">
+                    <h2 class="hndle"><span>[cashback_promocodes] — <?php echo esc_html__('Промокоды CPA-сети для товара', 'cashback-plugin'); ?></span></h2>
+                    <div class="inside">
+                        <p><?php echo esc_html__('Выводит активные промокоды кампании, к которой привязан товар. Купоны загружаются автоматически раз в 6 часов из API CPA-сети (Admitad и др.) и кэшируются в БД — на запросе фронта внешних HTTP-вызовов не делается.', 'cashback-plugin'); ?></p>
+
+                        <table class="widefat striped" style="margin-bottom: 12px;">
+                            <thead>
+                                <tr>
+                                    <th style="width: 42%;"><?php echo esc_html__('Шорткод', 'cashback-plugin'); ?></th>
+                                    <th><?php echo esc_html__('Описание', 'cashback-plugin'); ?></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                $promo_rows = array(
+                                    array(
+                                        '[cashback_promocodes]',
+                                        __('Все активные промокоды текущего товара (если шорткод вставлен в описание product page).', 'cashback-plugin'),
+                                    ),
+                                    array(
+                                        '[cashback_promocodes product_id="123"]',
+                                        __('Промокоды конкретного товара по ID — если шорткод не на странице товара (например, на лендинге).', 'cashback-plugin'),
+                                    ),
+                                    array(
+                                        '[cashback_promocodes limit="5"]',
+                                        __('Ограничить количество карточек (по умолчанию 30, hard-cap 100).', 'cashback-plugin'),
+                                    ),
+                                    array(
+                                        '[cashback_promocodes species="promocode"]',
+                                        __('Только промокоды с кодом (без deals/sale без кода).', 'cashback-plugin'),
+                                    ),
+                                    array(
+                                        '[cashback_promocodes species="promocode,deal"]',
+                                        __('Промокоды + deals (CSV нескольких типов).', 'cashback-plugin'),
+                                    ),
+                                    array(
+                                        '[cashback_promocodes layout="compact"]',
+                                        __('Узкое расположение в одну колонку (по умолчанию — сетка карточек).', 'cashback-plugin'),
+                                    ),
+                                );
+                                foreach ($promo_rows as $row) :
+                                ?>
+                                <tr>
+                                    <td>
+                                        <span class="cb-shortcode-copy" data-shortcode="<?php echo esc_attr($row[0]); ?>" title="<?php echo esc_attr__('Нажмите, чтобы скопировать', 'cashback-plugin'); ?>">
+                                            <span class="cb-copy-icon">⎘</span><?php echo esc_html($row[0]); ?>
+                                        </span>
+                                    </td>
+                                    <td><?php echo esc_html($row[1]); ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+
+                        <p class="cb-shortcode-attrs">
+                            <strong><?php echo esc_html__('Атрибуты:', 'cashback-plugin'); ?></strong>
+                            <code>product_id</code> — <?php echo esc_html__('WC product ID (по умолчанию текущий продукт)', 'cashback-plugin'); ?> &nbsp;|&nbsp;
+                            <code>limit</code> — <?php echo esc_html__('лимит карточек (1–100, default 30)', 'cashback-plugin'); ?> &nbsp;|&nbsp;
+                            <code>species</code> — <code>promocode</code> / <code>deal</code> / <?php echo esc_html__('CSV', 'cashback-plugin'); ?> &nbsp;|&nbsp;
+                            <code>layout</code> — <code>cards</code> / <code>compact</code>
+                        </p>
+
+                        <div class="cb-how-to">
+                            <strong><?php echo esc_html__('Как добавить на страницу товара:', 'cashback-plugin'); ?></strong>
+                            <ol>
+                                <li><?php echo esc_html__('Откройте товар в редакторе WooCommerce.', 'cashback-plugin'); ?></li>
+                                <li><?php echo esc_html__('Убедитесь, что у товара заполнены поля «Партнёрская сеть» и «Offer ID (ID кампании)» во вкладке «Внешний/Партнёрский товар».', 'cashback-plugin'); ?></li>
+                                <li><?php echo esc_html__('В описание товара (или в любой блок страницы/виджет) вставьте шорткод — например через Gutenberg-блок «Шорткод».', 'cashback-plugin'); ?></li>
+                                <li><?php echo esc_html__('Сохраните. Если для товара ещё нет загруженных промокодов — нажмите «Обновить промокоды сейчас» в редакторе товара рядом с Offer ID.', 'cashback-plugin'); ?></li>
+                            </ol>
+                        </div>
+
+                        <div class="cb-notice-info" style="margin-top: 14px; padding: 10px 12px; background: #f0f6fc; border-left: 4px solid #2271b1;">
+                            <strong><?php echo esc_html__('Где увидеть весь список и запустить обновление вручную:', 'cashback-plugin'); ?></strong>
+                            <?php
+                            $promocodes_url = admin_url('admin.php?page=cashback-promocodes');
+                            printf(
+                                /* translators: %s — admin link to promocodes page. */
+                                esc_html__('Подменю %s в разделе «Кэшбэк» (поиск, фильтры, статистика кликов за 7 дней, ручной fetch_all для всех сетей).', 'cashback-plugin'),
+                                '<a href="' . esc_url($promocodes_url) . '">' . esc_html__('«Промокоды»', 'cashback-plugin') . '</a>'
+                            );
+                            ?>
+                        </div>
+
+                        <p style="margin-top: 12px;">
+                            <strong><?php echo esc_html__('Как работает:', 'cashback-plugin'); ?></strong>
+                            <?php echo esc_html__('cron Action Scheduler раз в 6 часов запрашивает API сети (для Admitad scope coupons_for_website) и обновляет таблицу wp_cashback_promocodes. Купоны, отсутствующие в свежем ответе, помечаются is_active=0 (soft-delete — статистика кликов сохраняется).', 'cashback-plugin'); ?>
+                        </p>
+
+                        <p>
+                            <strong><?php echo esc_html__('Безопасность:', 'cashback-plugin'); ?></strong>
+                            <?php echo esc_html__('description купонов рендерится через DOMPurify (XSS-защита, fail-closed → plain text при отсутствии обёртки). Click-tracking хранит sha256(IP+salt), не raw IP (152-ФЗ). Rate-limit 30 кликов/мин per-user (или per-IP для гостей).', 'cashback-plugin'); ?>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
             <?php endif; /* tab shortcodes */ ?>
 
         </div>

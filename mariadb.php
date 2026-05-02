@@ -3722,16 +3722,23 @@ class Mariadb_Plugin {
 
         $table = $wpdb->prefix . 'cashback_affiliate_networks';
 
-        $current_endpoint = $wpdb->get_var($wpdb->prepare(
-            'SELECT api_coupons_endpoint FROM %i WHERE slug = %s LIMIT 1',
+        // Production-инсталляции хранят Admitad под slug='adm' (alias из
+        // Cashback_Admitad_Adapter::get_aliases). Покрываем оба варианта.
+        $row = $wpdb->get_row($wpdb->prepare(
+            'SELECT id, slug, api_coupons_endpoint FROM %i WHERE slug IN (%s, %s) ORDER BY id LIMIT 1',
             $table,
-            'admitad'
+            'admitad',
+            'adm'
         ));
 
+        if ($row === null) {
+            // Записи admitad нет — нечего seed'ить (свежая установка без
+            // insert_default_api_config или ручного добавления).
+            return;
+        }
+
         // Не перезаписываем если админ уже настроил.
-        // current_endpoint == null/''  → seed нужен (NULL колонка либо записи нет —
-        // в обоих случаях UPDATE идемпотентен: при отсутствии записи 0 affected rows).
-        if (is_string($current_endpoint) && $current_endpoint !== '') {
+        if (is_string($row->api_coupons_endpoint) && $row->api_coupons_endpoint !== '') {
             return;
         }
 
@@ -3768,7 +3775,7 @@ class Mariadb_Plugin {
         $wpdb->update(
             $table,
             $defaults,
-            array( 'slug' => 'admitad' )
+            array( 'id' => (int) $row->id )
         );
     }
 }
