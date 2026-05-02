@@ -35,8 +35,13 @@ final class Cashback_Promocodes_Bootstrap {
         // Register cron при init.
         add_action( 'init', array( __CLASS__, 'register_cron' ), 20 );
 
-        // Register шорткод [cashback_promocodes] при init.
-        add_action( 'init', array( __CLASS__, 'register_shortcode' ), 20 );
+        // Register шорткод [cashback_promocodes] СРАЗУ — без add_action('init').
+        // WoodMart custom-tabs могут вызывать do_shortcode на этапе template_redirect
+        // или раньше; раннее register_shortcode гарантирует что шорткод доступен.
+        // add_shortcode по сути просто пишет в global $shortcode_tags — безопасно.
+        if ( class_exists( 'Cashback_Promocodes_Shortcode' ) ) {
+            self::get_shortcode()->register();
+        }
 
         // Click-tracker AJAX (auth + nopriv).
         if ( class_exists( 'Cashback_Promocodes_Tracker' ) ) {
@@ -75,12 +80,6 @@ final class Cashback_Promocodes_Bootstrap {
             // не модифицируем (не наш кейс).
         }
         return $tabs;
-    }
-
-    public static function register_shortcode(): void {
-        if ( class_exists( 'Cashback_Promocodes_Shortcode' ) ) {
-            self::get_shortcode()->register();
-        }
     }
 
     public static function get_shortcode(): Cashback_Promocodes_Shortcode {
