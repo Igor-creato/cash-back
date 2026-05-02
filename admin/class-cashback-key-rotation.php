@@ -50,7 +50,28 @@ class Cashback_Key_Rotation {
     public const BATCH_SIZE_PAYOUTS  = 200;
     public const BATCH_SIZE_SMALL    = 100;
 
-    public const ROLLBACK_WINDOW_DAYS = 7;
+    /**
+     * Окно отката после finalize, в течение которого .previous.php сохраняется
+     * на ФС и rollback физически возможен. CONCERN C4 prod-readiness 2026-05-02:
+     * 7 → 14 дней. 14 — industry-standard incident-response window для key
+     * rotation в финтехе (один SOC-цикл + buffer). Override через
+     * `CASHBACK_KEY_ROTATION_PREVIOUS_TTL_DAYS` в wp-config (1..365).
+     */
+    public const ROLLBACK_WINDOW_DAYS = 14;
+
+    /**
+     * Резолвер окна отката с учётом override-константы. Используется в finalize/cleanup
+     * AS-сlot scheduling и в admin UI текстах. Защита от мусорных значений (clamp 1..365).
+     */
+    public static function rollback_window_days(): int {
+        if ( defined( 'CASHBACK_KEY_ROTATION_PREVIOUS_TTL_DAYS' ) ) {
+            $override = (int) constant( 'CASHBACK_KEY_ROTATION_PREVIOUS_TTL_DAYS' );
+            if ( $override >= 1 && $override <= 365 ) {
+                return $override;
+            }
+        }
+        return self::ROLLBACK_WINDOW_DAYS;
+    }
 
     /** Слова-подтверждения для критических операций. Сравниваются через hash_equals. */
     public const CONFIRMATION_START    = 'ROTATE_ENCRYPTION_KEY';
@@ -786,8 +807,9 @@ class Cashback_Key_Rotation {
         $new_fingerprint = hash_hmac('sha256', $new_hex, 'cashback_fingerprint_v1');
         update_option('cashback_encryption_key_fingerprint', $new_fingerprint, false);
 
-        // Ставим cleanup previous-файла через 7 дней.
-        $cleanup_at = time() + self::ROLLBACK_WINDOW_DAYS * DAY_IN_SECONDS;
+        // Ставим cleanup previous-файла через rollback_window_days() (default 14, override
+        // через CASHBACK_KEY_ROTATION_PREVIOUS_TTL_DAYS в wp-config).
+        $cleanup_at = time() + self::rollback_window_days() * DAY_IN_SECONDS;
         update_option(self::CLEANUP_DEADLINE_OPTION, $cleanup_at, false);
         if (function_exists('as_schedule_single_action')) {
             as_schedule_single_action($cleanup_at, self::AS_HOOK_CLEANUP, array(), self::AS_GROUP);
@@ -836,7 +858,7 @@ class Cashback_Key_Rotation {
 
         return array(
             'ok'              => true,
-            'message'         => 'Ротация завершена. Старый ключ сохранён на ' . self::ROLLBACK_WINDOW_DAYS . ' дней для возможного отката.',
+            'message'         => 'Ротация завершена. Старый ключ сохранён на ' . self::rollback_window_days() . ' дней для возможного отката.',
             'new_fingerprint' => $new_fingerprint,
             'cleanup_at'      => $cleanup_at,
         );

@@ -74,6 +74,13 @@ class Cashback_Transactions_Admin {
         // когда admin пытается править транзакцию с ledger-записью, JS предлагает
         // создать корректирующую запись через window.CashbackBalanceAdjust.open().
         if (class_exists('Cashback_Users_Management_Admin')) {
+            // CONCERN C3 (prod-readiness): defense-in-depth DOMPurify available
+            // для будущих client-side template'ов (S3 confirm-flow renders modal
+            // с user-entered reason'ом).
+            if (class_exists('Cashback_Assets')) {
+                Cashback_Assets::enqueue_safe_html();
+            }
+
             $ver = defined('CASHBACK_PLUGIN_VERSION') ? CASHBACK_PLUGIN_VERSION : '1.3.0';
             wp_enqueue_style(
                 'cashback-admin-balance-adjust',

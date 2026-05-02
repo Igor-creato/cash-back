@@ -178,8 +178,11 @@ class KeyRotationFinalizeTest extends TestCase
         $this->assertSame($expected_fp, (string) get_option('cashback_encryption_key_fingerprint'));
     }
 
-    public function test_finalize_schedules_cleanup_in_7_days(): void
+    public function test_finalize_schedules_cleanup_in_rollback_window(): void
     {
+        // CONCERN C4 prod-readiness 2026-05-02: окно 7 → 14 дней. Контракт
+        // теперь привязан к Cashback_Key_Rotation::rollback_window_days(),
+        // что также учитывает override через CASHBACK_KEY_ROTATION_PREVIOUS_TTL_DAYS.
         $this->set_migrated_state();
         $this->write_key_files(str_repeat('a', 64), str_repeat('b', 64));
 
@@ -190,8 +193,9 @@ class KeyRotationFinalizeTest extends TestCase
         $this->assertTrue($result['ok']);
         $this->assertArrayHasKey('cleanup_at', $result);
 
-        $expected_min = $before + 7 * 86400;
-        $expected_max = $after + 7 * 86400;
+        $window_days  = Cashback_Key_Rotation::rollback_window_days();
+        $expected_min = $before + $window_days * 86400;
+        $expected_max = $after + $window_days * 86400;
         $this->assertGreaterThanOrEqual($expected_min, $result['cleanup_at']);
         $this->assertLessThanOrEqual($expected_max, $result['cleanup_at']);
 

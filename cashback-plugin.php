@@ -625,6 +625,10 @@ class CashbackPlugin {
         // (defense-in-depth: ловит ledger-write'ы в обход plugin handler'а).
         $this->require_file('includes/class-cashback-audit-trail-reconciliation.php');
 
+        // CONCERN C1 prod-readiness: ежедневная retention-чистка cashback_audit_log
+        // (5 лет = 1825 дней, override через filter cashback_audit_log_retention_days).
+        $this->require_file('includes/class-cashback-audit-log-retention.php');
+
         // Группа 15: UI-помощник для расшифровки результатов проверки
         // (перевод issue + бухгалтерский HTML-блок). Используется в
         // Cashback_Balance_Reconciliation_Admin и admin/payouts.php (DRY).
@@ -967,6 +971,11 @@ class CashbackPlugin {
         // --- E2E A1-1: ежечасная audit-trail сверка ledger ↔ audit_log ---
         if (class_exists('Cashback_Audit_Trail_Reconciliation')) {
             Cashback_Audit_Trail_Reconciliation::init();
+        }
+
+        // --- CONCERN C1: ежедневный retention-purge cashback_audit_log (5 лет) ---
+        if (class_exists('Cashback_Audit_Log_Retention')) {
+            Cashback_Audit_Log_Retention::init();
         }
 
         // --- Группа 15: admin-UI поверх сверки (подстраница + Summary + manual run) ---

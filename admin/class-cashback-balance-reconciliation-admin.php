@@ -59,6 +59,12 @@ class Cashback_Balance_Reconciliation_Admin {
 			? Cashback_Users_Management_Admin::MIN_ADJUST_REASON_LENGTH
 			: 20;
 
+		// CONCERN C3 (prod-readiness): defense-in-depth — DOMPurify available
+		// для будущего client-side рендеринга таблицы расхождений / stuck-claims.
+		if ( class_exists( 'Cashback_Assets' ) ) {
+			Cashback_Assets::enqueue_safe_html();
+		}
+
 		// CSS для раскрывающейся ячейки «Расхождение» и виджета на overview —
 		// нужен на обеих страницах (recon-page + overview).
 		wp_enqueue_style(

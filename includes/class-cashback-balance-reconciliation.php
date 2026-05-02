@@ -30,6 +30,12 @@ class Cashback_Balance_Reconciliation {
     const BATCH_SIZE         = 500;
     const CURSOR_OPTION      = 'cashback_balance_reconciliation_cursor';
     const LAST_SUMMARY_OPT   = 'cashback_balance_reconciliation_last_summary';
+    /**
+     * Email-alert на mismatch (CONCERN C2). Один email в сутки на admin: при
+     * finalize round'а, если total_mismatches > 0 и transient отсутствует.
+     * Throttle-key: 'cashback_balance_recon_alert_sent_' . gmdate('Y-m-d').
+     */
+    const ALERT_TOP_N = 10;
 
     public static function init(): void {
         // Void-обёртка для action callback: PHPStan+phpstan-wordpress ругается на
@@ -99,16 +105,27 @@ class Cashback_Balance_Reconciliation {
             // Round завершён — сбрасываем cursor, фиксируем summary + сканируем
             // зависшие approved claims (Шаг B, Группа 14).
             update_option( self::CURSOR_OPTION, 0, false );
-            $stale_claims = self::check_stale_approved_claims();
-            $summary      = array(
-                'finished_at'       => Cashback_Time::now_mysql(),
-                'total_mismatches'  => (int) get_option( '_cashback_reconcil_run_mismatches', 0 ),
-                'total_scanned'     => (int) get_option( '_cashback_reconcil_run_scanned', 0 ),
+            $stale_claims     = self::check_stale_approved_claims();
+            $total_mismatches = (int) get_option( '_cashback_reconcil_run_mismatches', 0 );
+            $total_scanned    = (int) get_option( '_cashback_reconcil_run_scanned', 0 );
+            $summary          = array(
+                'finished_at'           => Cashback_Time::now_mysql(),
+                'total_mismatches'      => $total_mismatches,
+                'total_scanned'         => $total_scanned,
                 'stale_approved_claims' => $stale_claims,
             );
             update_option( self::LAST_SUMMARY_OPT, $summary, false );
             delete_option( '_cashback_reconcil_run_mismatches' );
             delete_option( '_cashback_reconcil_run_scanned' );
+
+            // CONCERN C2 (prod-readiness): email админу при mismatch'ах через
+            // Cashback_Email_Sender::send_critical (bypass opt-out, паттерн
+            // Cashback_Audit_Trail_Reconciliation). Throttle: 1 email в сутки
+            // на admin, чтобы не спамить при частом ре-планировании round'а
+            // (например, при ручном запуске из admin → «Сверка баланса»).
+            if ( $total_mismatches > 0 ) {
+                self::maybe_send_admin_alert( $total_mismatches, $total_scanned, $stale_claims );
+            }
 
             return array( 'batch' => 0, 'mismatches' => 0, 'scanned' => 0, 'completed_round' => true );
         }
@@ -162,6 +179,112 @@ class Cashback_Balance_Reconciliation {
             'mismatches'      => $mismatches,
             'scanned'         => $scanned,
             'completed_round' => false,
+        );
+    }
+
+    /**
+     * CONCERN C2 prod-readiness: алёрт админу при balance_consistency_mismatch.
+     *
+     * Throttle: один email в сутки (transient ALERT_TRANSIENT_PREFIX + дата UTC).
+     * При повторных round'ах в течение 24ч — no-op. Не блокирует
+     * reconciliation-cycle при сбое email (try/catch внутри send_critical).
+     */
+    private static function maybe_send_admin_alert(
+        int $total_mismatches,
+        int $total_scanned,
+        int $stale_claims
+    ): void {
+        if ( ! class_exists( 'Cashback_Email_Sender' ) ) {
+            return;
+        }
+
+        $admin_email = (string) get_option( 'admin_email' );
+        if ( $admin_email === '' || ! is_email( $admin_email ) ) {
+            return;
+        }
+
+        // Throttle по UTC-дате — один email в сутки даже при ручном повторе.
+        if ( get_transient( 'cashback_balance_recon_alert_sent_' . gmdate( 'Y-m-d' ) ) ) {
+            return;
+        }
+
+        $top_rows = self::collect_recent_mismatch_rows( self::ALERT_TOP_N );
+        $body     = self::build_alert_body( $total_mismatches, $total_scanned, $stale_claims, $top_rows );
+
+        Cashback_Email_Sender::get_instance()->send_critical(
+            $admin_email,
+            sprintf(
+                /* translators: %d: count of users with balance mismatch */
+                __( '[Cashback] Расхождение баланса: %d пользователей', 'cashback-plugin' ),
+                $total_mismatches
+            ),
+            $body,
+            0
+        );
+
+        set_transient(
+            'cashback_balance_recon_alert_sent_' . gmdate( 'Y-m-d' ),
+            time(),
+            DAY_IN_SECONDS
+        );
+    }
+
+    /**
+     * Читает последние top-N mismatch-записей из audit_log для тела email.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private static function collect_recent_mismatch_rows( int $limit ): array {
+        global $wpdb;
+
+        $audit_table = $wpdb->prefix . 'cashback_audit_log';
+        $exists      = $wpdb->get_var( $wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $audit_table
+        ) );
+        if ( ! $exists ) {
+            return array();
+        }
+
+        $rows = $wpdb->get_results( $wpdb->prepare(
+            'SELECT entity_id, created_at FROM %i
+              WHERE action_type = %s
+              ORDER BY created_at DESC
+              LIMIT %d',
+            $audit_table,
+            'balance_consistency_mismatch',
+            max( 1, $limit )
+        ), ARRAY_A );
+
+        return is_array( $rows ) ? $rows : array();
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $top_rows
+     */
+    private static function build_alert_body(
+        int $total_mismatches,
+        int $total_scanned,
+        int $stale_claims,
+        array $top_rows
+    ): string {
+        $lines = array();
+        foreach ( $top_rows as $row ) {
+            $lines[] = sprintf(
+                'user_id=%d  at=%s',
+                (int) ( $row['entity_id'] ?? 0 ),
+                (string) ( $row['created_at'] ?? '' )
+            );
+        }
+
+        return sprintf(
+            "Ежедневная сверка ledger ↔ кэш баланса нашла расхождения.\n\n" .
+            "Mismatch-юзеров: %d\nПросканировано: %d\nЗависших approved-claims: %d\n\nПоследние:\n%s\n\n%s",
+            $total_mismatches,
+            $total_scanned,
+            $stale_claims,
+            empty( $lines ) ? '—' : implode( "\n", $lines ),
+            __( 'Подробности — Admin → Кэшбэк → Сверка баланса (audit-log action=balance_consistency_mismatch).', 'cashback-plugin' )
         );
     }
 

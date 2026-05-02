@@ -102,6 +102,14 @@ class Cashback_Users_Management_Admin {
             ),
         ));
 
+        // CONCERN C3 (prod-readiness): defense-in-depth DOMPurify для модала
+        // balance-adjust. Сейчас server-side wp_kses_post + JS escapeHtml,
+        // safe-html обеспечивает fail-closed на случай будущих client-side
+        // template'ов (returns '' если DOMPurify не загрузился).
+        if (class_exists('Cashback_Assets')) {
+            Cashback_Assets::enqueue_safe_html();
+        }
+
         // Группа 15, S2.B: модал ручной корректировки баланса (vanilla JS,
         // переиспользуется из S3 через window.CashbackBalanceAdjust.open()).
         $ver = defined('CASHBACK_PLUGIN_VERSION') ? CASHBACK_PLUGIN_VERSION : '1.3.0';
