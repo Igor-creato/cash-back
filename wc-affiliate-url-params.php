@@ -184,6 +184,12 @@ class WC_Affiliate_URL_Params {
             . '</span>';
         echo '</p>';
 
+        // Промокоды (v8): индикатор + кнопка manual refresh для product.
+        if ( class_exists( 'Cashback_Promocodes_Admin' ) ) {
+            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- HTML собран внутри Cashback_Promocodes_Admin::render_product_refresh_block с esc_html/esc_attr/esc_js.
+            echo Cashback_Promocodes_Admin::render_product_refresh_block( (int) $post->ID );
+        }
+
         // Индикатор автоматической деактивации
         $auto_deactivated = get_post_meta($post->ID, '_cashback_auto_deactivated', true);
         if ($auto_deactivated === '1') {

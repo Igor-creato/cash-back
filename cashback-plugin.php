@@ -615,6 +615,7 @@ class CashbackPlugin {
         $this->require_file('includes/promocodes/class-cashback-promocodes-fetcher.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-shortcode.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-tracker.php');
+        $this->require_file('includes/promocodes/class-cashback-promocodes-admin.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-bootstrap.php');
 
         // Глобальный lock для атомарной синхронизации + начисления

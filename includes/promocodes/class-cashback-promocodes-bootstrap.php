@@ -42,6 +42,11 @@ final class Cashback_Promocodes_Bootstrap {
         if ( class_exists( 'Cashback_Promocodes_Tracker' ) ) {
             Cashback_Promocodes_Tracker::init();
         }
+
+        // Admin AJAX manual refresh (метабокс «Обновить промокоды»).
+        if ( is_admin() && class_exists( 'Cashback_Promocodes_Admin' ) ) {
+            Cashback_Promocodes_Admin::init();
+        }
     }
 
     public static function register_shortcode(): void {
