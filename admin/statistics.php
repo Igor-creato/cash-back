@@ -552,42 +552,6 @@ class Cashback_Statistics_Admin {
                 </div>
             </details>
 
-            <script>
-            (function() {
-                function copyText(text) {
-                    if (navigator.clipboard && window.isSecureContext) {
-                        return navigator.clipboard.writeText(text);
-                    }
-                    // Fallback для HTTP-окружений
-                    var ta = document.createElement('textarea');
-                    ta.value = text;
-                    ta.style.position = 'fixed';
-                    ta.style.left = '-9999px';
-                    document.body.appendChild(ta);
-                    ta.focus();
-                    ta.select();
-                    try { document.execCommand('copy'); } catch(e) {}
-                    document.body.removeChild(ta);
-                    return Promise.resolve();
-                }
-
-                document.querySelectorAll('.cb-shortcode-copy').forEach(function(el) {
-                    el.addEventListener('click', function() {
-                        var text = el.dataset.shortcode;
-                        copyText(text).then(function() {
-                            var original = el.innerHTML;
-                            el.classList.add('cb-copied');
-                            el.innerHTML = '<span class="cb-copy-icon">✓</span> Скопировано!';
-                            setTimeout(function() {
-                                el.classList.remove('cb-copied');
-                                el.innerHTML = original;
-                            }, 1800);
-                        });
-                    });
-                });
-            })();
-            </script>
-
             <!-- [cashback_promocodes] -->
             <details class="cb-shortcode-section">
                 <summary>[cashback_promocodes] — <?php echo esc_html__('Промокоды CPA-сети для товара', 'cashback-plugin'); ?></summary>
@@ -684,6 +648,49 @@ class Cashback_Statistics_Admin {
                         </p>
                 </div>
             </details>
+
+            <script>
+            (function() {
+                function copyText(text) {
+                    if (navigator.clipboard && window.isSecureContext) {
+                        return navigator.clipboard.writeText(text);
+                    }
+                    // Fallback для HTTP-окружений и старых браузеров.
+                    var ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.position = 'fixed';
+                    ta.style.left = '-9999px';
+                    document.body.appendChild(ta);
+                    ta.focus();
+                    ta.select();
+                    try { document.execCommand('copy'); } catch (e) {}
+                    document.body.removeChild(ta);
+                    return Promise.resolve();
+                }
+
+                // Делегирование на document: работает для всех .cb-shortcode-copy,
+                // включая добавленные после загрузки скрипта, и независимо от того,
+                // открыт <details> или нет.
+                document.addEventListener('click', function(e) {
+                    var el = e.target.closest ? e.target.closest('.cb-shortcode-copy') : null;
+                    if (!el) { return; }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var text = el.dataset.shortcode;
+                    if (!text) { return; }
+                    copyText(text).then(function() {
+                        if (el.classList.contains('cb-copied')) { return; }
+                        var original = el.innerHTML;
+                        el.classList.add('cb-copied');
+                        el.innerHTML = '<span class="cb-copy-icon">✓</span> Скопировано!';
+                        setTimeout(function() {
+                            el.classList.remove('cb-copied');
+                            el.innerHTML = original;
+                        }, 1800);
+                    });
+                });
+            })();
+            </script>
 
             <?php endif; /* tab shortcodes */ ?>
 
