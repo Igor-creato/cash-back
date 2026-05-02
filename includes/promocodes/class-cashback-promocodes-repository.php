@@ -17,7 +17,9 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-final class Cashback_Promocodes_Repository {
+// Не final: extending в тестах через анонимный класс и для будущих
+// расширений (caching layer, audit-decorator). Контракт стабилен.
+class Cashback_Promocodes_Repository {
 
     /** Hard-cap для get_active_for_campaign limit'а (защита от huge SELECT). */
     private const MAX_LIMIT = 100;

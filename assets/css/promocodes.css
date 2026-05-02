@@ -1,0 +1,133 @@
+/* Cashback promocodes shortcode styles */
+
+.cashback-promocodes {
+    --cashback-brand: #2271b1;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin: 24px 0;
+}
+
+.cashback-promocodes--compact {
+    grid-template-columns: 1fr;
+}
+
+.cashback-promocodes--empty {
+    padding: 16px;
+    background: #f6f7f7;
+    border-radius: 6px;
+    color: #666;
+    text-align: center;
+}
+
+.cashback-promo-card {
+    position: relative;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: box-shadow .15s, border-color .15s;
+}
+
+.cashback-promo-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    border-color: var(--cashback-brand);
+}
+
+.cashback-promo-card__exclusive {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: var(--cashback-brand);
+    color: #fff;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    text-transform: uppercase;
+}
+
+.cashback-promo-card__discount {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--cashback-brand);
+    line-height: 1.2;
+}
+
+.cashback-promo-card__name {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: #1d2327;
+}
+
+.cashback-promo-card__description {
+    font-size: 13px;
+    color: #555;
+    line-height: 1.4;
+}
+
+.cashback-promo-card__code-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.cashback-promo-card__code {
+    flex: 1;
+    background: #f6f7f7;
+    border: 1px dashed #b0b0b0;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-family: ui-monospace, "Cascadia Mono", "Source Code Pro", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1d2327;
+    text-align: center;
+    user-select: all;
+}
+
+.cashback-promo-card__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 4px;
+    border: 1px solid var(--cashback-brand);
+    background: #fff;
+    color: var(--cashback-brand);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background .15s, color .15s;
+}
+
+.cashback-promo-card__btn:hover,
+.cashback-promo-card__btn:focus {
+    background: var(--cashback-brand);
+    color: #fff;
+}
+
+.cashback-promo-card__btn--copy {
+    flex-shrink: 0;
+}
+
+.cashback-promo-card__btn--copy.is-copied {
+    background: var(--cashback-brand);
+    color: #fff;
+}
+
+.cashback-promo-card__btn--goto {
+    margin-top: 4px;
+    text-align: center;
+}
+
+.cashback-promo-card__date-end {
+    font-size: 11px;
+    color: #888;
+    margin-top: auto;
+}

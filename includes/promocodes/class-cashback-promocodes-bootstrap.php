@@ -26,6 +26,7 @@ final class Cashback_Promocodes_Bootstrap {
     private static ?Cashback_Coupons_Adapter_Registry $registry = null;
     private static ?Cashback_Promocodes_Repository $repository = null;
     private static ?Cashback_Promocodes_Fetcher $fetcher = null;
+    private static ?Cashback_Promocodes_Shortcode $shortcode = null;
 
     public static function init(): void {
         // AS-hook handler для cron.
@@ -33,6 +34,22 @@ final class Cashback_Promocodes_Bootstrap {
 
         // Register cron при init.
         add_action( 'init', array( __CLASS__, 'register_cron' ), 20 );
+
+        // Register шорткод [cashback_promocodes] при init.
+        add_action( 'init', array( __CLASS__, 'register_shortcode' ), 20 );
+    }
+
+    public static function register_shortcode(): void {
+        if ( class_exists( 'Cashback_Promocodes_Shortcode' ) ) {
+            self::get_shortcode()->register();
+        }
+    }
+
+    public static function get_shortcode(): Cashback_Promocodes_Shortcode {
+        if ( self::$shortcode === null ) {
+            self::$shortcode = new Cashback_Promocodes_Shortcode( self::get_repository() );
+        }
+        return self::$shortcode;
     }
 
     /**
