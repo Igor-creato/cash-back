@@ -48,13 +48,17 @@ final class Cashback_Promocodes_Bootstrap {
             Cashback_Promocodes_Admin::init();
         }
 
-        // WoodMart custom-tabs (post_meta _woodmart_extra_tabs) рендерят
-        // content через `echo` без do_shortcode. Низкоинвазивный fix:
-        // hook на woocommerce_product_tabs prio 99 (после WoodMart=98),
-        // applies do_shortcode к 'content' каждого таба, у которого он
-        // есть. Без шорткодов do_shortcode no-op возвращает строку как
-        // есть — безопасно для всех остальных табов.
-        add_filter( 'woocommerce_product_tabs', array( __CLASS__, 'apply_shortcodes_to_extra_tabs' ), 99 );
+        // WoodMart custom-tabs (CPT 'wd_product_tabs') рендерят content
+        // через прямой echo в Manager::get_product_tab_content без вызова
+        // the_content/do_shortcode. Двухуровневый fix:
+        //   1) Filter 'woocommerce_product_tabs' с PHP_INT_MAX priority —
+        //      гарантирует выполнение последним. Применяет do_shortcode
+        //      ко всем 'content' ключам табов.
+        //   2) Filter 'the_content' с приоритетом 11 (после wpautop=10)
+        //      на случай если woodmart_get_post_content идёт через
+        //      get_the_content + apply_filters('the_content',...) для
+        //      Gutenberg-блоков.
+        add_filter( 'woocommerce_product_tabs', array( __CLASS__, 'apply_shortcodes_to_extra_tabs' ), PHP_INT_MAX );
     }
 
     /**
@@ -66,6 +70,9 @@ final class Cashback_Promocodes_Bootstrap {
             if ( isset( $tab['content'] ) && is_string( $tab['content'] ) && $tab['content'] !== '' ) {
                 $tab['content'] = do_shortcode( $tab['content'] );
             }
+            // Кастомные WoodMart-табы передают callback, который читает content
+            // из $product_tab['content']. Если callback указан, но content нет —
+            // не модифицируем (не наш кейс).
         }
         return $tabs;
     }
