@@ -611,6 +611,9 @@ class CashbackPlugin {
         $this->require_file('includes/promocodes/class-network-http-client.php');
         $this->require_file('includes/promocodes/class-coupons-adapter-registry.php');
         $this->require_file('includes/promocodes/adapters/class-generic-json-coupons-adapter.php');
+        $this->require_file('includes/promocodes/class-cashback-promocodes-repository.php');
+        $this->require_file('includes/promocodes/class-cashback-promocodes-fetcher.php');
+        $this->require_file('includes/promocodes/class-cashback-promocodes-bootstrap.php');
 
         // Глобальный lock для атомарной синхронизации + начисления
         $this->require_file('includes/class-cashback-lock.php');
@@ -983,6 +986,11 @@ class CashbackPlugin {
         // --- API Валидация: cron фоновой синхронизации (фронт + админка) ---
         if (class_exists('Cashback_API_Cron')) {
             Cashback_API_Cron::init();
+        }
+
+        // --- Промокоды CPA-сетей: AS-cron 6ч + manual refresh ---
+        if (class_exists('Cashback_Promocodes_Bootstrap')) {
+            Cashback_Promocodes_Bootstrap::init();
         }
 
         // --- Группа 14: ежедневная сверка баланса (AS-job ledger vs cache) ---
