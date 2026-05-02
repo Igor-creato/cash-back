@@ -820,6 +820,25 @@ class CashbackPlugin {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback] Payout fail_reason trigger auto-migration failed: ' . $e->getMessage());
             }
+
+            // OBS-06 (E2E run B 2026-04-30): split ban_reason на public + admin поля.
+            // Идемпотентно через cashback_db_version >= 6 fast-path.
+            try {
+                Mariadb_Plugin::get_instance()->migrate_split_ban_reason_v6();
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] Split ban_reason auto-migration failed: ' . $e->getMessage());
+            }
+
+            // F-S9-NEW-UNFREEZE (Session 8, 2026-05-01): frozen_balance_admin bucket +
+            // ledger enum 'payout_unfreeze' + backfill для existing declined-выплат.
+            // Идемпотентно через cashback_db_version >= 7 fast-path.
+            try {
+                Mariadb_Plugin::get_instance()->migrate_payout_unfreeze_v7();
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] Payout unfreeze v7 auto-migration failed: ' . $e->getMessage());
+            }
         }
 
         // Legal module (Phase 1): создание таблицы wp_cashback_consent_log и
