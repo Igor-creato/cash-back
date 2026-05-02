@@ -604,6 +604,14 @@ class CashbackPlugin {
         $this->require_file('includes/adapters/class-admitad-adapter.php');
         $this->require_file('includes/adapters/class-epn-adapter.php');
 
+        // Промокоды: контракты, DTO, generic-движок (используется fetcher'ом + admin UI).
+        $this->require_file('includes/promocodes/contracts/interface-coupons-adapter.php');
+        $this->require_file('includes/promocodes/dto/class-coupon-dto.php');
+        $this->require_file('includes/promocodes/class-coupons-field-mapper.php');
+        $this->require_file('includes/promocodes/class-network-http-client.php');
+        $this->require_file('includes/promocodes/class-coupons-adapter-registry.php');
+        $this->require_file('includes/promocodes/adapters/class-generic-json-coupons-adapter.php');
+
         // Глобальный lock для атомарной синхронизации + начисления
         $this->require_file('includes/class-cashback-lock.php');
 
