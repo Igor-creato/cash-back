@@ -31,3 +31,16 @@ jobs:
             git -c safe.directory="$PLUGIN_DIR" log --oneline -3
             git -c safe.directory="$PLUGIN_DIR" pull --ff-only origin main
             git -c safe.directory="$PLUGIN_DIR" log --oneline -3
+
+            # opcache invalidation (production has opcache.validate_timestamps=Off
+            # for performance — без этого шага новый код не подхватится pool-воркерами).
+            # SIGUSR2 на php-fpm master = graceful reload: новые воркеры с свежим
+            # opcache, активные запросы не обрываются.
+            echo ">> Reloading PHP-FPM (graceful, USR2)..."
+            docker kill -s USR2 wordpress
+            sleep 2
+
+            # WP object cache (Redis) — сбрасываем чтобы изменённые шорткоды/options
+            # обновились моментально, а не по TTL.
+            echo ">> Flushing WP object cache..."
+            docker exec wordpress wp --allow-root cache flush || true
