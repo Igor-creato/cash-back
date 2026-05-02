@@ -236,7 +236,7 @@ class Cashback_Social_Auth_Renderer {
         $label_html .= self::link_or_text($pd_url, __('согласие на обработку персональных данных', 'cashback-plugin'));
         $label_html .= ', ' . esc_html__('принимаю условия', 'cashback-plugin') . ' ';
         $label_html .= self::link_or_text($offer_url, __('Пользовательского соглашения (публичной оферты)', 'cashback-plugin'));
-        $label_html .= ' ' . esc_html__('и согласен на обработку технических данных устройства (152-ФЗ ст. 9).', 'cashback-plugin');
+        $label_html .= ' ' . esc_html__('и согласен на обработку технических данных устройства для защиты от мошенничества (152-ФЗ ст. 9).', 'cashback-plugin');
 
         $html  = '<div class="cashback-social-consent">';
         $html .= '<input type="checkbox" class="cashback-social-consent__checkbox"';
