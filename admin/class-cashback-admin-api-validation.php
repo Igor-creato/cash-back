@@ -523,6 +523,53 @@ echo 'style="display:none"';}
                                 <p class="description">Маппинг полей из нормализованного ответа API в колонки таблицы транзакций. Например: <code>payment → comission</code>, <code>cart → sum_order</code></p>
                             </td>
                         </tr>
+
+                        <!-- Промокоды (v8): 4 public-поля для generic-движка купонов -->
+                        <tr>
+                            <th colspan="2" style="background:#f6f7f7; padding-top:16px;"><h3 style="margin:0;">Купоны API <small style="font-weight:normal; color:#666;">(generic-движок промокодов)</small></h3></th>
+                        </tr>
+                        <tr>
+                            <th><label for="api_coupons_endpoint_<?php echo esc_attr($network['id']); ?>">Coupons Endpoint</label></th>
+                            <td>
+                                <input type="text" id="api_coupons_endpoint_<?php echo esc_attr($network['id']); ?>"
+                                    name="api_coupons_endpoint" class="api-field regular-text"
+                                    value="<?php echo esc_attr($network['api_coupons_endpoint'] ?? ''); ?>"
+                                    placeholder="/coupons/website/{website_id}/?campaign={advcampaign_id}&limit={limit}&offset={offset}">
+                                <p class="description">URL купонов с placeholder-ами: <code>{website_id}</code>, <code>{advcampaign_id}</code>, <code>{limit}</code>, <code>{offset}</code>, <code>{api_key}</code>. Пустое значение → шаг отключён для этой сети.</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><label for="api_coupons_pagination_<?php echo esc_attr($network['id']); ?>">Coupons Pagination</label></th>
+                            <td>
+                                <select id="api_coupons_pagination_<?php echo esc_attr($network['id']); ?>" name="api_coupons_pagination" class="api-field">
+                                    <?php $cur_pag = (string) ( $network['api_coupons_pagination'] ?? 'offset_limit' ); ?>
+                                    <option value="offset_limit"<?php selected($cur_pag, 'offset_limit'); ?>>offset_limit (Admitad / CityAds)</option>
+                                    <option value="page"<?php selected($cur_pag, 'page'); ?>>page (page=N)</option>
+                                    <option value="none"<?php selected($cur_pag, 'none'); ?>>none (одиночный запрос)</option>
+                                </select>
+                                <p class="description">Тип пагинации API купонов сети.</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><label for="api_coupons_field_map_<?php echo esc_attr($network['id']); ?>">Coupons Field Map (JSON)</label></th>
+                            <td>
+                                <textarea id="api_coupons_field_map_<?php echo esc_attr($network['id']); ?>"
+                                    name="api_coupons_field_map" class="api-field large-text code"
+                                    rows="6"
+                                    placeholder='{"id":"external_id","promocode":"promocode","name":"name","goto_link":"goto_link","date_start":"date_start","date_end":"date_end","status":"status","regions":"regions","type":"species_raw"}'><?php echo esc_textarea($network['api_coupons_field_map'] ?? ''); ?></textarea>
+                                <p class="description">JSON-маппинг raw-полей API купонов → канонические DTO-ключи. Канонические ключи: <code>external_id</code>, <code>promocode</code>, <code>name</code>, <code>short_name</code>, <code>description</code>, <code>discount</code>, <code>date_start</code>, <code>date_end</code>, <code>regions</code>, <code>categories</code>, <code>image_url</code>, <code>goto_link</code>, <code>is_exclusive</code>, <code>rating</code>, <code>species_raw</code>, <code>status</code>.</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><label for="api_coupons_species_map_<?php echo esc_attr($network['id']); ?>">Coupons Species Map (JSON)</label></th>
+                            <td>
+                                <textarea id="api_coupons_species_map_<?php echo esc_attr($network['id']); ?>"
+                                    name="api_coupons_species_map" class="api-field large-text code"
+                                    rows="4"
+                                    placeholder='{"promocode":"promocode","promo_code":"promocode","deal":"deal","sale":"deal","discount":"deal"}'><?php echo esc_textarea($network['api_coupons_species_map'] ?? ''); ?></textarea>
+                                <p class="description">JSON-маппинг raw <code>type</code>/<code>species</code> сети → канонические значения <code>promocode</code> / <code>deal</code>. Незнакомые типы автоматически становятся <code>other</code>.</p>
+                            </td>
+                        </tr>
                     </table>
 
                     <p>
@@ -908,7 +955,41 @@ echo 'style="display:none"';}
             'api_user_field'       => isset($_POST['api_user_field']) ? sanitize_text_field(wp_unslash($_POST['api_user_field'])) : '',
             'api_click_field'      => isset($_POST['api_click_field']) ? sanitize_text_field(wp_unslash($_POST['api_click_field'])) : '',
             'api_website_id'       => isset($_POST['api_website_id']) ? sanitize_text_field(wp_unslash($_POST['api_website_id'])) : '',
+            // v8 промокоды: 4 public-поля.
+            'api_coupons_endpoint'   => isset($_POST['api_coupons_endpoint']) ? sanitize_text_field(wp_unslash($_POST['api_coupons_endpoint'])) : '',
+            'api_coupons_pagination' => isset($_POST['api_coupons_pagination']) ? sanitize_key(wp_unslash($_POST['api_coupons_pagination'])) : 'offset_limit',
         );
+
+        // Whitelist для api_coupons_pagination — только известные значения.
+        if (!in_array($fields['api_coupons_pagination'], array( 'offset_limit', 'page', 'none' ), true)) {
+            $fields['api_coupons_pagination'] = 'offset_limit';
+        }
+
+        // Валидация JSON-маппинга полей купонов.
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- JSON validated via json_decode + json_last_error.
+        $coupons_field_map_raw = wp_unslash($_POST['api_coupons_field_map'] ?? '');
+        if (!empty($coupons_field_map_raw)) {
+            $decoded_cfm = json_decode($coupons_field_map_raw, true);
+            if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded_cfm)) {
+                wp_send_json_error(array( 'message' => 'Coupons Field Map: невалидный JSON — ' . json_last_error_msg() ));
+            }
+            $fields['api_coupons_field_map'] = wp_json_encode($decoded_cfm);
+        } else {
+            $fields['api_coupons_field_map'] = null;
+        }
+
+        // Валидация JSON-маппинга species купонов.
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- JSON validated via json_decode + json_last_error.
+        $coupons_species_map_raw = wp_unslash($_POST['api_coupons_species_map'] ?? '');
+        if (!empty($coupons_species_map_raw)) {
+            $decoded_csm = json_decode($coupons_species_map_raw, true);
+            if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded_csm)) {
+                wp_send_json_error(array( 'message' => 'Coupons Species Map: невалидный JSON — ' . json_last_error_msg() ));
+            }
+            $fields['api_coupons_species_map'] = wp_json_encode($decoded_csm);
+        } else {
+            $fields['api_coupons_species_map'] = null;
+        }
 
         // Валидация маппинга статусов (должен быть валидный JSON)
         // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- JSON payload, validated via json_decode + json_last_error check below; sanitize_text_field would corrupt JSON content.
