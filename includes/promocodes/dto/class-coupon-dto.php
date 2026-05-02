@@ -160,7 +160,13 @@ final class Cashback_Coupon_DTO {
 
     /**
      * Нормализует regions/categories в массив строк.
-     * Принимает: null, string (CSV), array (любой shape).
+     *
+     * Принимает:
+     *   - null / '' → []
+     *   - string CSV "RU,KZ" → ['RU','KZ']
+     *   - array of strings ['RU','KZ'] → ['RU','KZ']
+     *   - array of objects [{id:1,name:'Tech'}] → ['Tech']
+     *     (категории Admitad/CityAds приходят таким shape).
      *
      * @return string[]
      */
@@ -171,7 +177,15 @@ final class Cashback_Coupon_DTO {
         if ( is_array( $value ) ) {
             $out = array();
             foreach ( $value as $item ) {
-                $str = trim( (string) $item );
+                if ( is_array( $item ) ) {
+                    // Object-shape — берём name/title (типичные ключи API сетей).
+                    $str = (string) ( $item['name'] ?? $item['title'] ?? $item['slug'] ?? '' );
+                } elseif ( is_object( $item ) ) {
+                    $str = (string) ( $item->name ?? $item->title ?? '' );
+                } else {
+                    $str = (string) $item;
+                }
+                $str = trim( $str );
                 if ( $str !== '' ) {
                     $out[] = $str;
                 }

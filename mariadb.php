@@ -3759,7 +3759,9 @@ class Mariadb_Plugin {
                 'image'       => 'image_url',
                 'goto_link'   => 'goto_link',
                 'exclusive'   => 'is_exclusive',
-                'type'        => 'species_raw',
+                // В API Admitad species — string ('promocode'/'deal'/'sale'/'discount').
+                // Mapper нормализует через species_map к каноническому DTO species.
+                'species'     => 'species_raw',
                 'rating'      => 'rating',
             )),
             'api_coupons_species_map' => wp_json_encode(array(

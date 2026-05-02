@@ -52,26 +52,28 @@ class Cashback_Promocodes_Repository {
 
             $row = $this->dto_to_row( $coupon, $network_id, $advcampaign_id );
 
+            // NULLIF(%s, '') в SQL преобразует пустую строку в SQL NULL —
+            // защита от MySQL '0000-00-00 00:00:00' для DATETIME при wpdb->prepare(%s, null).
             $sql = $wpdb->prepare(
-                'INSERT INTO %i (network_id, advcampaign_id, external_id, species, promocode, name, short_name, description, discount, date_start, date_end, regions, categories, image, goto_link, is_exclusive, rating, raw_payload, fetched_at, is_active) VALUES (%d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %d, %s, %s, %s, 1) ON DUPLICATE KEY UPDATE species = VALUES(species), promocode = VALUES(promocode), name = VALUES(name), short_name = VALUES(short_name), description = VALUES(description), discount = VALUES(discount), date_start = VALUES(date_start), date_end = VALUES(date_end), regions = VALUES(regions), categories = VALUES(categories), image = VALUES(image), goto_link = VALUES(goto_link), is_exclusive = VALUES(is_exclusive), rating = VALUES(rating), raw_payload = VALUES(raw_payload), fetched_at = VALUES(fetched_at), is_active = 1',
+                'INSERT INTO %i (network_id, advcampaign_id, external_id, species, promocode, name, short_name, description, discount, date_start, date_end, regions, categories, image, goto_link, is_exclusive, rating, raw_payload, fetched_at, is_active) VALUES (%d, %s, %s, %s, NULLIF(%s, %s), %s, NULLIF(%s, %s), NULLIF(%s, %s), NULLIF(%s, %s), NULLIF(%s, %s), NULLIF(%s, %s), %s, %s, NULLIF(%s, %s), %s, %d, NULLIF(%s, %s), %s, %s, 1) ON DUPLICATE KEY UPDATE species = VALUES(species), promocode = VALUES(promocode), name = VALUES(name), short_name = VALUES(short_name), description = VALUES(description), discount = VALUES(discount), date_start = VALUES(date_start), date_end = VALUES(date_end), regions = VALUES(regions), categories = VALUES(categories), image = VALUES(image), goto_link = VALUES(goto_link), is_exclusive = VALUES(is_exclusive), rating = VALUES(rating), raw_payload = VALUES(raw_payload), fetched_at = VALUES(fetched_at), is_active = 1',
                 $table,
                 $row['network_id'],
                 $row['advcampaign_id'],
                 $row['external_id'],
                 $row['species'],
-                $row['promocode'] ?? '',
+                (string) ( $row['promocode'] ?? '' ), '',
                 $row['name'],
-                $row['short_name'] ?? '',
-                $row['description'] ?? '',
-                $row['discount'] ?? '',
-                $row['date_start'] ?? '',
-                $row['date_end'] ?? '',
+                (string) ( $row['short_name'] ?? '' ), '',
+                (string) ( $row['description'] ?? '' ), '',
+                (string) ( $row['discount'] ?? '' ), '',
+                (string) ( $row['date_start'] ?? '' ), '',
+                (string) ( $row['date_end'] ?? '' ), '',
                 $row['regions'],
                 $row['categories'],
-                $row['image'] ?? '',
+                (string) ( $row['image'] ?? '' ), '',
                 $row['goto_link'],
                 $row['is_exclusive'],
-                $row['rating'] ?? '',
+                (string) ( $row['rating'] ?? '' ), '',
                 $row['raw_payload'],
                 $row['fetched_at']
             );
