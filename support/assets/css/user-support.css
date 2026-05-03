@@ -347,12 +347,17 @@
 }
 
 /* === File-input button ("Выбор файлов") — coral pill, matches the
-   "money returning" warm CTA family. Native input has its built-in
+   "money returning" warm CTA family. Applies to BOTH the new-ticket
+   form and the in-ticket reply form. Native input has its built-in
    button styled via ::file-selector-button (modern) and the WebKit
    fallback. */
 
+.cashback-support-tab-content input[type="file"]::file-selector-button,
 .support-form-group input[type="file"]::file-selector-button,
-input[type="file"].support-files::file-selector-button {
+.support-ticket-actions input[type="file"]::file-selector-button,
+input[type="file"].support-files::file-selector-button,
+input[type="file"][name*="support"]::file-selector-button,
+input[type="file"][id*="support"]::file-selector-button {
     background: var(--cb-warm, #ff8a65);
     color: var(--cb-text-on-accent, #fff);
     border: none;
@@ -367,16 +372,24 @@ input[type="file"].support-files::file-selector-button {
     transition: background-color 0.15s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
+.cashback-support-tab-content input[type="file"]::file-selector-button:hover,
 .support-form-group input[type="file"]::file-selector-button:hover,
-input[type="file"].support-files::file-selector-button:hover {
+.support-ticket-actions input[type="file"]::file-selector-button:hover,
+input[type="file"].support-files::file-selector-button:hover,
+input[type="file"][name*="support"]::file-selector-button:hover,
+input[type="file"][id*="support"]::file-selector-button:hover {
     background: var(--cb-warm-hover, #f76b41);
     color: var(--cb-text-on-accent, #fff);
     box-shadow: var(--cb-shadow-raised, 0 18px 36px -16px rgba(15, 18, 34, 0.14));
     transform: translateY(-1px);
 }
 
+.cashback-support-tab-content input[type="file"]::-webkit-file-upload-button,
 .support-form-group input[type="file"]::-webkit-file-upload-button,
-input[type="file"].support-files::-webkit-file-upload-button {
+.support-ticket-actions input[type="file"]::-webkit-file-upload-button,
+input[type="file"].support-files::-webkit-file-upload-button,
+input[type="file"][name*="support"]::-webkit-file-upload-button,
+input[type="file"][id*="support"]::-webkit-file-upload-button {
     background: var(--cb-warm, #ff8a65);
     color: var(--cb-text-on-accent, #fff);
     border: none;
@@ -391,8 +404,12 @@ input[type="file"].support-files::-webkit-file-upload-button {
     transition: background-color 0.15s ease, box-shadow 0.2s ease;
 }
 
+.cashback-support-tab-content input[type="file"]::-webkit-file-upload-button:hover,
 .support-form-group input[type="file"]::-webkit-file-upload-button:hover,
-input[type="file"].support-files::-webkit-file-upload-button:hover {
+.support-ticket-actions input[type="file"]::-webkit-file-upload-button:hover,
+input[type="file"].support-files::-webkit-file-upload-button:hover,
+input[type="file"][name*="support"]::-webkit-file-upload-button:hover,
+input[type="file"][id*="support"]::-webkit-file-upload-button:hover {
     background: var(--cb-warm-hover, #f76b41);
     box-shadow: var(--cb-shadow-raised, 0 18px 36px -16px rgba(15, 18, 34, 0.14));
 }
@@ -400,7 +417,9 @@ input[type="file"].support-files::-webkit-file-upload-button:hover {
 /* The file input itself shouldn't have a card-style border around the
    whole input (it already has the button + filename span). Keep it
    clean and inheriting body text styles. */
-.support-form-group input[type="file"] {
+.cashback-support-tab-content input[type="file"],
+.support-form-group input[type="file"],
+.support-ticket-actions input[type="file"] {
     border: none !important;
     background: transparent !important;
     padding: 6px 0 !important;
