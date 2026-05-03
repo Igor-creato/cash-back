@@ -1,6 +1,7 @@
 /**
- * Cashback Contact Form — Styles.
- * Совместимость с темой Woodmart / WooCommerce.
+ * Cashback Contact Form — soft / neumorphic-lite restyle.
+ * Token-driven (--cb-* from woodmart-child design system) so palette,
+ * radii and shadows stay consistent with the rest of the cabinet.
  *
  * @since 2.1.0
  */
@@ -13,46 +14,51 @@
 .cb-contact-form-wrap form {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 18px;
 }
 
 .cb-contact-field label {
     display: block;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
     font-weight: 600;
     font-size: 14px;
-    color: #333;
+    color: var(--cb-text-primary, #16151c);
 }
 
 .cb-contact-field label .required {
-    color: #e2401c;
+    color: var(--cb-danger, #e5484d);
+    margin-left: 2px;
 }
 
 .cb-contact-field input[type="text"],
 .cb-contact-field input[type="email"],
 .cb-contact-field textarea {
     width: 100%;
-    padding: 10px 14px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
+    padding: 11px 14px;
+    border: 1px solid var(--cb-border-strong, rgba(22, 21, 28, 0.12));
+    border-radius: var(--cb-radius-sm, 10px);
     font-size: 14px;
     line-height: 1.5;
-    color: #333;
-    background: #fff;
-    transition: border-color 0.2s ease;
+    color: var(--cb-text-primary, #16151c);
+    background: var(--cb-bg-surface, #fff);
+    box-shadow: var(--cb-shadow-inset, inset 0 1px 2px rgba(22, 21, 28, 0.05));
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
     box-sizing: border-box;
+    font-family: inherit;
 }
 
 .cb-contact-field input:focus,
 .cb-contact-field textarea:focus {
-    border-color: #83b735;
+    border-color: var(--cb-border-focus, rgba(91, 108, 247, 0.45));
     outline: none;
-    box-shadow: 0 0 0 2px rgba(131, 183, 53, 0.15);
+    box-shadow: var(--cb-shadow-focus, 0 0 0 3px rgba(91, 108, 247, 0.25)),
+                var(--cb-shadow-inset, inset 0 1px 2px rgba(22, 21, 28, 0.05));
 }
 
 .cb-contact-field input.cb-field-error,
 .cb-contact-field textarea.cb-field-error {
-    border-color: #e2401c;
+    border-color: var(--cb-danger, #e5484d);
+    background: var(--cb-danger-soft, #fbe0e1);
 }
 
 .cb-contact-field textarea {
@@ -66,53 +72,64 @@
     justify-content: flex-start;
 }
 
-/* Submit */
+/* Submit row */
 .cb-contact-submit-row {
     padding-top: 4px;
 }
 
 #cb-contact-submit {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     padding: 12px 32px;
-    font-size: 14px;
+    min-height: 2.625rem;
+    font-size: 15px;
     font-weight: 600;
-    line-height: 1.4;
-    color: #fff;
-    background-color: #83b735;
+    line-height: 1;
+    color: var(--cb-text-on-accent, #fff);
+    background-color: var(--cb-accent, #5b6cf7);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--cb-radius-pill, 999px);
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
     cursor: pointer;
-    transition: background-color 0.2s ease, opacity 0.2s ease;
+    font-family: inherit;
+    transition: background-color 0.15s ease, box-shadow 0.2s ease,
+                opacity 0.2s ease, transform 0.2s ease;
 }
 
 #cb-contact-submit:hover {
-    background-color: #72a02e;
+    background-color: var(--cb-accent-hover, #4555e8);
+    box-shadow: var(--cb-shadow-raised, 0 18px 36px -16px rgba(15, 18, 34, 0.14));
+    transform: translateY(-1px);
 }
 
 #cb-contact-submit:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
 }
 
 /* Messages */
 .cb-contact-messages {
     padding: 12px 16px;
-    border-radius: 4px;
+    border-radius: var(--cb-radius-md, 16px);
     font-size: 14px;
     line-height: 1.5;
     margin-top: 4px;
+    border: none;
 }
 
 .cb-contact-messages.cb-msg-success {
-    background: #eaf7e0;
-    border: 1px solid #83b735;
-    color: #3d6b0a;
+    background: var(--cb-success-soft, #dcf5eb);
+    border-left: 3px solid var(--cb-success, #1fae7f);
+    color: #14724f;
 }
 
 .cb-contact-messages.cb-msg-error {
-    background: #fef0ed;
-    border: 1px solid #e2401c;
-    color: #a82b10;
+    background: var(--cb-danger-soft, #fbe0e1);
+    border-left: 3px solid var(--cb-danger, #e5484d);
+    color: #a32328;
 }
 
 /* Spinner */
@@ -125,7 +142,7 @@
     border-radius: 50%;
     animation: cb-spin 0.6s linear infinite;
     vertical-align: middle;
-    margin-right: 6px;
+    margin-right: 8px;
 }
 
 @keyframes cb-spin {

@@ -1,16 +1,22 @@
-/* Cashback History Filters */
+/* =============================================================================
+   Cashback purchase-history tab — filters bar + transactions table.
+   Mobile rebuilds the table into a stack of soft cards (preserved verbatim).
+   Restyled to consume --cb-* tokens from the woodmart-child design system.
+   ============================================================================= */
+
+/* --- Filters bar ----------------------------------------------------- */
 
 .wd-cashback-history .clicks-filters {
-    margin-bottom: 16px;
-    padding: 14px 16px;
-    background: #f9f9f9;
-    border: 1px solid #e0e0e0;
-    border-radius: 6px;
+    margin-bottom: 20px;
+    padding: 16px 18px;
+    background: var(--cb-bg-canvas, #f5f4f0);
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+    border-radius: var(--cb-radius-md, 16px);
 }
 
 .wd-cashback-history .clicks-filters-row {
     display: flex;
-    gap: 10px;
+    gap: 12px;
     flex-wrap: wrap;
     align-items: flex-end;
 }
@@ -18,20 +24,31 @@
 .wd-cashback-history .clicks-filter-group {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
 }
 
 .wd-cashback-history .clicks-filter-group label {
     font-size: 12px;
     font-weight: 600;
-    color: #555;
+    color: var(--cb-text-secondary, #5b5c70);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
 .wd-cashback-history .clicks-filter-input {
-    padding: 6px 10px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    padding: 8px 12px;
+    border: 1px solid var(--cb-border-strong, rgba(22, 21, 28, 0.12));
+    border-radius: var(--cb-radius-sm, 10px);
     font-size: 14px;
+    background-color: var(--cb-bg-surface, #fff);
+    color: var(--cb-text-primary, #16151c);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.wd-cashback-history .clicks-filter-input:focus {
+    outline: none;
+    border-color: var(--cb-border-focus, rgba(91, 108, 247, 0.45));
+    box-shadow: var(--cb-shadow-focus, 0 0 0 3px rgba(91, 108, 247, 0.25));
 }
 
 .wd-cashback-history input#history-search {
@@ -45,69 +62,80 @@
 
 .wd-cashback-history .clicks-filter-buttons {
     flex-direction: row;
-    gap: 6px;
+    gap: 8px;
     align-items: center;
     padding-top: 18px;
 }
 
-/* Apply button */
+/* --- Apply / Reset buttons ----------------------------------------- */
+
 #history-filter-apply {
     border: none !important;
-    border-radius: var(--btn-accented-brd-radius, 4px) !important;
-    color: var(--btn-accented-color, #fff) !important;
-    box-shadow: var(--btn-accented-box-shadow) !important;
-    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
-    text-transform: var(--btn-accented-transform, var(--btn-transform, uppercase)) !important;
-    font-weight: var(--btn-accented-font-weight, var(--btn-font-weight, 600)) !important;
-    font-family: var(--btn-accented-font-family, var(--btn-font-family, inherit)) !important;
-    font-style: var(--btn-accented-font-style, var(--btn-font-style, unset)) !important;
-    padding: 8px 18px !important;
+    border-radius: var(--cb-radius-pill, 999px) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
+    background-color: var(--cb-accent, #5b6cf7) !important;
+    text-transform: none !important;
+    font-weight: 600 !important;
+    font-family: inherit !important;
+    font-style: normal !important;
+    padding: 9px 22px !important;
     cursor: pointer;
+    transition: background-color 0.15s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
 }
 
 #history-filter-apply:hover {
-    color: var(--btn-accented-color-hover, #fff) !important;
-    box-shadow: var(--btn-accented-box-shadow-hover) !important;
-    background-color: var(--btn-accented-bgcolor-hover, #005a87) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-raised, 0 18px 36px -16px rgba(15, 18, 34, 0.14)) !important;
+    background-color: var(--cb-accent-hover, #4555e8) !important;
+    transform: translateY(-1px);
 }
 
-/* Reset button */
+#history-filter-reset {
+    border: 1px solid var(--cb-border-strong, rgba(22, 21, 28, 0.12)) !important;
+    border-radius: var(--cb-radius-pill, 999px) !important;
+    color: var(--cb-text-primary, #16151c) !important;
+    background-color: transparent !important;
+    text-transform: none !important;
+    font-weight: 600 !important;
+    font-family: inherit !important;
+    font-style: normal !important;
+    padding: 9px 22px !important;
+    cursor: pointer;
+    transition: background-color 0.15s ease, box-shadow 0.2s ease !important;
+}
+
 #history-filter-reset:hover {
-    color: var(--btn-accented-color-hover, #fff) !important;
-    box-shadow: var(--btn-accented-box-shadow-hover) !important;
-    background-color: var(--btn-accented-bgcolor-hover, #005a87) !important;
+    color: var(--cb-text-primary, #16151c) !important;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
+    background-color: var(--cb-bg-surface, #fff) !important;
 }
 
-/* Desktop status colors - remove backgrounds and add text colors */
-.wd-cashback-history #transactions-table tbody tr td.status-balance {
-    color: #00a32a !important;
-    background: transparent !important;
-}
+/* --- Status colors (desktop table) --------------------------------- */
 
+.wd-cashback-history #transactions-table tbody tr td.status-balance,
 .wd-cashback-history #transactions-table tbody tr td.status-completed {
-    color: #00a32a !important;
+    color: var(--cb-success, #1fae7f) !important;
     background: transparent !important;
+    font-weight: 600;
 }
 
 .wd-cashback-history #transactions-table tbody tr td.status-waiting {
-    color: #0073aa !important;
+    color: var(--cb-info, #3e8ddd) !important;
     background: transparent !important;
+    font-weight: 600;
 }
 
 .wd-cashback-history #transactions-table tbody tr td.status-hold {
-    color: #dba617 !important;
+    color: var(--cb-warning, #e89b0a) !important;
     background: transparent !important;
+    font-weight: 600;
 }
 
 .wd-cashback-history #transactions-table tbody tr td.status-declined {
-    color: #d63638 !important;
+    color: var(--cb-danger, #e5484d) !important;
     background: transparent !important;
-}
-
-#history-filter-reset:hover {
-    color: var(--btn-accented-color-hover, #fff) !important;
-    box-shadow: var(--btn-accented-box-shadow-hover) !important;
-    background-color: var(--btn-accented-bgcolor-hover, #005a87) !important;
+    font-weight: 600;
 }
 
 @media (max-width: 768px) {
@@ -129,13 +157,11 @@
         width: 100%;
     }
 
-    /* Mobile cards for transactions table - override WooCommerce defaults */
-    /* Hide table header on mobile */
+    /* Mobile: hide table header, stack rows as cards */
     .wd-cashback-history #transactions-table thead {
         display: none !important;
     }
 
-    /* Table becomes a stack of cards */
     .wd-cashback-history #transactions-table {
         border: none !important;
         border-collapse: collapse !important;
@@ -148,33 +174,32 @@
         border: none !important;
     }
 
-    /* Override WooCommerce responsive styles */
     .wd-cashback-history #transactions-table tbody tr {
         display: flex !important;
         flex-direction: column !important;
-        background: #fff !important;
-        border: 1px solid #e0e0e0 !important;
-        border-radius: 8px !important;
-        padding: 14px 16px !important;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06) !important;
+        background: var(--cb-bg-surface, #fff) !important;
+        border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06)) !important;
+        border-radius: var(--cb-radius-lg, 20px) !important;
+        padding: 16px 18px !important;
+        box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
         margin-bottom: 0 !important;
         position: static !important;
         gap: 0 !important;
-        border-bottom: none !important;
-        padding-bottom: 14px !important;
+        border-bottom: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06)) !important;
+        padding-bottom: 16px !important;
     }
 
-    /* Each cell = labelled row inside the card */
     .wd-cashback-history #transactions-table tbody tr td {
         display: flex !important;
         justify-content: space-between !important;
         align-items: center !important;
-        padding: 6px 0 !important;
+        padding: 8px 0 !important;
         border: none !important;
-        border-bottom: 1px solid #f0f0f0 !important;
+        border-bottom: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06)) !important;
         font-size: 14px !important;
         background: transparent !important;
         position: static !important;
+        color: var(--cb-text-primary, #16151c);
     }
 
     .wd-cashback-history #transactions-table tbody tr td:last-child {
@@ -186,54 +211,46 @@
         padding-top: 0 !important;
     }
 
-    /* data-title label */
     .wd-cashback-history #transactions-table tbody tr td::before {
         content: attr(data-title) !important;
         font-weight: 600 !important;
-        color: #555 !important;
-        font-size: 13px !important;
+        color: var(--cb-text-secondary, #5b5c70) !important;
+        font-size: 12px !important;
         flex-shrink: 0 !important;
         margin-right: 12px !important;
         display: inline-block !important;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
     }
 
-    /* ID — make it stand out as a card header */
+    /* ID — header of the card */
     .wd-cashback-history #transactions-table tbody tr td:first-child {
         font-weight: 700 !important;
         font-size: 15px !important;
-        padding-bottom: 8px !important;
-        margin-bottom: 2px !important;
-        border-bottom: 2px solid var(--btn-accented-bgcolor, #0073aa) !important;
+        padding-bottom: 10px !important;
+        margin-bottom: 4px !important;
+        border-bottom: 2px solid var(--cb-accent, #5b6cf7) !important;
     }
 
-    /* Status — highlight with color */
+    /* Status — last cell, highlighted */
     .wd-cashback-history #transactions-table tbody tr td:last-child {
         font-weight: 600 !important;
     }
 
-    /* Status colors */
-    .wd-cashback-history #transactions-table tbody tr td.status-balance {
-        color: #00a32a !important;
-        background: transparent !important;
-    }
-
+    .wd-cashback-history #transactions-table tbody tr td.status-balance,
     .wd-cashback-history #transactions-table tbody tr td.status-completed {
-        color: #00a32a !important;
-        background: transparent !important;
+        color: var(--cb-success, #1fae7f) !important;
     }
 
     .wd-cashback-history #transactions-table tbody tr td.status-waiting {
-        color: #0073aa !important;
-        background: transparent !important;
+        color: var(--cb-info, #3e8ddd) !important;
     }
 
     .wd-cashback-history #transactions-table tbody tr td.status-hold {
-        color: #dba617 !important;
-        background: transparent !important;
+        color: var(--cb-warning, #e89b0a) !important;
     }
 
     .wd-cashback-history #transactions-table tbody tr td.status-declined {
-        color: #d63638 !important;
-        background: transparent !important;
+        color: var(--cb-danger, #e5484d) !important;
     }
 }

@@ -1,4 +1,15 @@
-/* Модальное окно */
+/* =============================================================================
+   Cashback frontend — base styles for personal cabinet, modals, withdrawal,
+   tabs, balance cards, payout settings, bank search, product cashback chip.
+
+   Restyled in 2026-05 to consume the woodmart-child design tokens
+   (--cb-* and --wd-* — defined in the child theme's tokens.css). All
+   class names / IDs / !important's preserved so AJAX selectors and
+   mobile card layouts keep working unchanged.
+   ============================================================================= */
+
+/* --- Affiliate "пожалуйста войдите" modal ----------------------------- */
+
 .wc-affiliate-modal {
     display: block !important;
     position: fixed !important;
@@ -7,7 +18,7 @@
     top: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: rgba(22, 21, 28, 0.45);
     opacity: 0;
     transition: opacity 0.3s ease;
     overflow: auto;
@@ -18,14 +29,14 @@
 }
 
 .wc-affiliate-modal-content {
-    background-color: #fff;
+    background-color: var(--cb-bg-surface, #fff);
     margin: 10% auto;
-    padding: 30px;
-    border-radius: 8px;
+    padding: 32px;
+    border-radius: var(--cb-radius-lg, 20px);
     width: 90%;
     max-width: 500px;
     position: relative;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--cb-shadow-floating, 0 32px 64px -24px rgba(15, 18, 34, 0.18));
     animation: slideDown 0.3s ease;
     text-align: center;
 }
@@ -35,7 +46,6 @@
         transform: translateY(-50px);
         opacity: 0;
     }
-
     to {
         transform: translateY(0);
         opacity: 1;
@@ -44,11 +54,11 @@
 
 .wc-affiliate-modal-close {
     position: absolute;
-    right: 15px;
-    top: 15px;
-    font-size: 28px;
+    right: 16px;
+    top: 16px;
+    font-size: 24px;
     font-weight: bold;
-    color: #aaa;
+    color: var(--cb-text-muted, #aaa);
     cursor: pointer;
     line-height: 20px;
     transition: color 0.2s ease;
@@ -56,25 +66,27 @@
 
 .wc-affiliate-modal-close:hover,
 .wc-affiliate-modal-close:focus {
-    color: #000;
+    color: var(--cb-text-primary, #16151c);
 }
 
 .wc-affiliate-modal-icon {
     font-size: 48px;
-    margin-bottom: 15px;
+    margin-bottom: 16px;
 }
 
 .wc-affiliate-modal-title {
-    margin: 0 0 15px;
-    font-size: 24px;
-    color: #333;
+    margin: 0 0 12px;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--cb-text-primary, #16151c);
 }
 
 .wc-affiliate-modal-message {
-    font-size: 16px;
-    color: #666;
+    font-size: 15px;
+    color: var(--cb-text-secondary, #5b5c70);
     line-height: 1.6;
-    margin: 0 0 25px;
+    margin: 0 0 24px;
 }
 
 .wc-affiliate-modal-actions {
@@ -82,62 +94,57 @@
     flex-direction: column;
     gap: 10px;
     align-items: center;
-    margin-bottom: 15px; /* Добавляем отступ снизу */
+    margin-bottom: 12px;
 }
 
 .wc-affiliate-login-link {
     display: block;
-    margin-top: 15px;
+    margin-top: 12px;
     font-size: 14px;
-    color: #0073aa;
+    color: var(--cb-accent, #5b6cf7);
     text-decoration: none;
 }
 
 .wc-affiliate-login-link:hover {
     text-decoration: underline;
+    text-underline-offset: 4px;
 }
 
 .wc-affiliate-btn {
-    padding: 12px 30px;
+    padding: 12px 32px;
     border: none;
-    border-radius: 4px;
-    font-size: 16px;
+    border-radius: var(--cb-radius-pill, 999px);
+    font-size: 15px;
+    font-weight: 600;
     cursor: pointer;
     text-decoration: none;
     display: inline-block;
-    transition: all 0.3s ease;
-    font-weight: var(--wd-btn-font-weight, 500);
-    font-family: var(--wd-font-family, inherit);
+    transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    font-family: inherit;
     width: 100%;
     box-sizing: border-box;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
 }
 
-.wc-affiliate-btn-primary {
-    background-color: var(--wd-primary-color, #0073aa);
-    color: #fff;
-}
-
-.wc-affiliate-btn-primary:hover {
-    filter: brightness(0.9);
-    color: #fff !important;
-}
-
+.wc-affiliate-btn-primary,
 .wc-affiliate-btn-secondary {
-    background-color: var(--wd-primary-color, #0073aa);
-    color: #fff;
+    background-color: var(--cb-accent, #5b6cf7);
+    color: var(--cb-text-on-accent, #fff);
 }
 
+.wc-affiliate-btn-primary:hover,
 .wc-affiliate-btn-secondary:hover {
-    filter: brightness(0.9);
-    color: #fff !important;
+    background-color: var(--cb-accent-hover, #4555e8);
+    color: var(--cb-text-on-accent, #fff) !important;
+    transform: translateY(-1px);
+    box-shadow: var(--cb-shadow-raised, 0 18px 36px -16px rgba(15, 18, 34, 0.14));
 }
 
-/* Адаптивность */
 @media (max-width: 600px) {
     .wc-affiliate-modal-content {
         width: 95%;
         margin: 20% auto;
-        padding: 20px;
+        padding: 24px;
     }
 
     .wc-affiliate-btn {
@@ -145,166 +152,180 @@
     }
 }
 
-/* Дополнительные стили для отладки */
 .wc-affiliate-modal {
     display: block !important;
     visibility: visible !important;
 }
 
-/* Frontend styles for the cashback withdrawal functionality */
+/* --- Withdrawal containers ------------------------------------------- */
+
 .cashback-withdrawal-container {
     margin: 20px 0;
-    padding: 20px;
-    border: 1px solid #ddd;
-    border-radius: 5px;
-    background-color: #f9f9f9;
+    padding: 24px;
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+    border-radius: var(--cb-radius-lg, 20px);
+    background-color: var(--cb-bg-surface, #fff);
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
 }
 
 .cashback-withdrawal-form {
     margin-top: 20px;
     padding: 20px;
-    background-color: #fff;
-    border: 1px solid #ddd;
-    border-radius: 5px;
+    background-color: var(--cb-bg-surface, #fff);
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+    border-radius: var(--cb-radius-md, 16px);
 }
 
 .cashback-withdrawal-form .form-row {
-    margin-bottom: 15px;
+    margin-bottom: 16px;
 }
 
 .cashback-withdrawal-form label {
     display: block;
-    margin-bottom: 5px;
-    font-weight: bold;
+    margin-bottom: 6px;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--cb-text-primary, #16151c);
 }
 
 .cashback-withdrawal-form .input-text {
     width: 100%;
-    padding: 8px 12px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    padding: 10px 14px;
+    border: 1px solid var(--cb-border-strong, rgba(22, 21, 28, 0.12));
+    border-radius: var(--cb-radius-sm, 10px);
     font-size: 14px;
     box-sizing: border-box;
+    background-color: var(--cb-bg-surface, #fff);
+    color: var(--cb-text-primary, #16151c);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-/* Применяем стили темы WoodMart к кнопкам */
+.cashback-withdrawal-form .input-text:focus {
+    outline: none;
+    border-color: var(--cb-border-focus, rgba(91, 108, 247, 0.45));
+    box-shadow: var(--cb-shadow-focus, 0 0 0 3px rgba(91, 108, 247, 0.25));
+}
+
+/* Withdrawal / save-payout primary buttons — coral CTA ("get money") --- */
+
 button[name="withdrawal_submit"],
 button#save_payout_details_btn {
-    border-radius: var(--btn-accented-brd-radius) !important;
-    color: var(--btn-accented-color) !important;
-    box-shadow: var(--btn-accented-box-shadow) !important;
-    background-color: var(--btn-accented-bgcolor) !important;
-    text-transform: var(--btn-accented-transform, var(--btn-transform, uppercase)) !important;
-    font-weight: var(--btn-accented-font-weight, var(--btn-font-weight, 600)) !important;
-    font-family: var(--btn-accented-font-family, var(--btn-font-family, inherit)) !important;
-    font-style: var(--btn-accented-font-style, var(--btn-font-style, unset)) !important;
+    border-radius: var(--cb-radius-pill, 999px) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
+    background-color: var(--cb-warm, #ff8a65) !important;
+    text-transform: none !important;
+    font-weight: 700 !important;
+    font-family: inherit !important;
+    font-style: normal !important;
+    padding: 12px 28px !important;
+    transition: background-color 0.15s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
 }
 
-/* Hover эффект для кнопок */
 button[name="withdrawal_submit"]:hover,
 button#save_payout_details_btn:hover {
-    color: var(--btn-accented-color-hover) !important;
-    box-shadow: var(--btn-accented-box-shadow-hover) !important;
-    background-color: var(--btn-accented-bgcolor-hover) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-raised, 0 18px 36px -16px rgba(15, 18, 34, 0.14)) !important;
+    background-color: var(--cb-warm-hover, #f76b41) !important;
+    transform: translateY(-1px) !important;
 }
 
 #withdrawal-messages {
-    margin-top: 15px;
+    margin-top: 16px;
 }
 
+/* --- Inline messages ------------------------------------------------- */
+
 .success-message {
-    padding: 10px;
-    background-color: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
-    border-radius: 4px;
-    margin-bottom: 10px;
+    padding: 12px 14px;
+    background-color: var(--cb-success-soft, #dcf5eb);
+    color: #14724f;
+    border: none;
+    border-left: 3px solid var(--cb-success, #1fae7f);
+    border-radius: var(--cb-radius-md, 16px);
+    margin-bottom: 12px;
+    font-size: 14px;
 }
 
 .error-message {
-    padding: 10px;
-    background-color: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
-    border-radius: 4px;
-    margin-bottom: 10px;
+    padding: 12px 14px;
+    background-color: var(--cb-danger-soft, #fbe0e1);
+    color: #a32328;
+    border: none;
+    border-left: 3px solid var(--cb-danger, #e5484d);
+    border-radius: var(--cb-radius-md, 16px);
+    margin-bottom: 12px;
+    font-size: 14px;
 }
 
 .balance-display {
-    margin-bottom: 15px;
+    margin-bottom: 16px;
 }
 
 .balance-amount {
-    font-weight: bold;
+    font-weight: 700;
     font-size: 1.2em;
+    font-variant-numeric: tabular-nums;
 }
 
-.balance-green {
-    color: #28a745;
-}
-
-.balance-gray {
-    color: #6c757d;
-}
-
-.balance-pending {
-    color: #e67e22;
-}
-
-.balance-paid {
-    color: #17a2b8;
-}
+.balance-green   { color: var(--cb-success, #1fae7f); }
+.balance-gray    { color: var(--cb-text-muted, #8f8fa3); }
+.balance-pending { color: var(--cb-warning, #e89b0a); }
+.balance-paid    { color: var(--cb-info, #3e8ddd); }
 
 /* ============================================================
-   Навигация вкладок
+   Withdrawal / settings tab navigation — pill segment-control
    ============================================================ */
+
 .cashback-tabs {
     display: flex;
-    gap: 4px;
+    gap: 6px;
     margin-bottom: 0;
-    background: transparent;
-    border-bottom: 2px solid var(--btn-accented-bgcolor, #0073aa);
+    padding: 6px;
+    background: var(--cb-bg-sunken, #eceae3);
+    border-radius: var(--cb-radius-pill, 999px);
+    box-shadow: var(--cb-shadow-inset, inset 0 1px 2px rgba(22, 21, 28, 0.05));
+    border-bottom: none;
 }
 
 .cashback-tabs button.cashback-tab {
     border: none !important;
-    border-radius: 10px 10px 0 0 !important;
-    padding: 12px 24px !important;
+    border-radius: var(--cb-radius-pill, 999px) !important;
+    padding: 10px 22px !important;
     cursor: pointer;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
-    color: #555 !important;
-    background-color: #e0e0e0 !important;
-    transition: background-color 0.2s, color 0.2s, box-shadow 0.2s;
+    color: var(--cb-text-secondary, #5b5c70) !important;
+    background-color: transparent !important;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.2s ease;
     position: relative;
-    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.08) !important;
+    box-shadow: none !important;
 }
 
 .cashback-tabs button.cashback-tab:hover {
-    background-color: #c8c8c8 !important;
-    color: #333 !important;
+    background-color: transparent !important;
+    color: var(--cb-text-primary, #16151c) !important;
 }
 
 .cashback-tabs button.cashback-tab.active {
-    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
-    color: var(--btn-accented-color, #fff) !important;
-    box-shadow: 0 -3px 8px rgba(0, 0, 0, 0.12) !important;
+    background-color: var(--cb-bg-surface, #fff) !important;
+    color: var(--cb-text-primary, #16151c) !important;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
 }
 
 .cashback-tabs button.cashback-tab.active:hover {
-    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
-    color: var(--btn-accented-color, #fff) !important;
+    background-color: var(--cb-bg-surface, #fff) !important;
+    color: var(--cb-text-primary, #16151c) !important;
 }
 
 .cashback-tabs button.cashback-tab.cashback-tab--error {
-    color: #fff !important;
-    background-color: #dc3232 !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    background-color: var(--cb-danger, #e5484d) !important;
 }
 
-/* Контент вкладок */
 .cashback-tab-content {
     display: none;
-    padding-top: 20px;
+    padding-top: 24px;
 }
 
 .cashback-tab-content.active {
@@ -312,76 +333,90 @@ button#save_payout_details_btn:hover {
 }
 
 /* ============================================================
-   Карточки баланса (грид 3 в ряд)
+   Balance cards (3 across)
    ============================================================ */
 .balance-info-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 15px;
-    margin-bottom: 20px;
+    gap: 16px;
+    margin-bottom: 24px;
 }
 
 .balance-info-card {
-    padding: 15px;
-    background: #fff;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
+    padding: 20px;
+    background: var(--cb-bg-surface, #fff);
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+    border-radius: var(--cb-radius-lg, 20px);
     text-align: center;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
 }
 
 .balance-info-label {
     display: block;
-    font-size: 13px;
-    color: #666;
-    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--cb-text-secondary, #5b5c70);
+    margin-bottom: 8px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
 .balance-info-value {
     display: block;
-    font-size: 1.3em;
-    font-weight: 700;
+    font-size: 1.75em;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--cb-text-primary, #16151c);
+    line-height: 1.1;
 }
 
 .min-payout-amount {
-    font-weight: bold;
-    color: #007cba;
+    font-weight: 700;
+    color: var(--cb-warm-hover, #f76b41);
+    font-variant-numeric: tabular-nums;
 }
 
-/* Стили для отображения способа вывода и номера счета */
+/* --- Payout details summary ---------------------------------------- */
+
 .cashback-withdrawal-container .payout-details {
-    background-color: #f9f9f9;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    padding: 15px;
+    background-color: var(--cb-bg-canvas, #f5f4f0);
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+    border-radius: var(--cb-radius-md, 16px);
+    padding: 16px;
     margin-bottom: 20px;
 }
 
 .cashback-withdrawal-container .payout-details p {
-    margin: 5px 0;
+    margin: 6px 0;
     font-size: 14px;
+    color: var(--cb-text-primary, #16151c);
 }
 
 .cashback-withdrawal-container .payout-details .no-payout-details {
-    color: #d63638;
+    color: var(--cb-danger, #e5484d);
     font-style: italic;
 }
 
 .cashback-withdrawal-container .payout-details strong {
-    color: #333;
+    color: var(--cb-text-primary, #16151c);
 }
 
-/* Стили для полей профиля пользователя */
+/* --- WC profile fieldset -------------------------------------------- */
+
 .woocommerce-form .woocommerce-account-fields fieldset {
-    border: 1px solid #d3ced2;
+    border: 1px solid var(--cb-border-strong, rgba(22, 21, 28, 0.12));
     padding: 20px;
     margin: 20px 0;
-    border-radius: 4px;
+    border-radius: var(--cb-radius-md, 16px);
+    background-color: var(--cb-bg-surface, #fff);
 }
 
 .woocommerce-form .woocommerce-account-fields legend {
-    font-weight: bold;
+    font-weight: 600;
     padding: 0 10px;
-    background: white;
+    background: var(--cb-bg-surface, #fff);
+    color: var(--cb-text-primary, #16151c);
 }
 
 .woocommerce-form-row--first,
@@ -391,22 +426,24 @@ button#save_payout_details_btn:hover {
 
 #payout_details_message {
     margin-left: 10px;
-    padding: 5px 10px;
-    border-radius: 3px;
+    padding: 4px 10px;
+    border-radius: var(--cb-radius-pill, 999px);
     display: inline-block;
-    margin-top: 5px;
+    margin-top: 6px;
+    font-size: 13px;
+    font-weight: 500;
 }
 
 #payout_details_message.success {
-    color: #46b450;
-    background-color: #ecf7ee;
-    border: 1px solid #46b450;
+    color: #14724f;
+    background-color: var(--cb-success-soft, #dcf5eb);
+    border: none;
 }
 
 #payout_details_message.error {
-    color: #dc3232;
-    background-color: #ffeae9;
-    border: 1px solid #dc3232;
+    color: #a32328;
+    background-color: var(--cb-danger-soft, #fbe0e1);
+    border: none;
 }
 
 #save_payout_details_btn {
@@ -414,11 +451,11 @@ button#save_payout_details_btn:hover {
 }
 
 .payout-current-data {
-    margin-top: 15px;
-    padding: 10px;
-    background-color: #f9f9f9;
-    border: 1px solid #eee;
-    border-radius: 4px;
+    margin-top: 16px;
+    padding: 14px;
+    background-color: var(--cb-bg-canvas, #f5f4f0);
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+    border-radius: var(--cb-radius-md, 16px);
     transition: all 0.3s ease;
     animation: fadeIn 0.5s ease;
 }
@@ -427,7 +464,6 @@ button#save_payout_details_btn:hover {
     margin: 0;
 }
 
-/* Анимация появления блока с текущими данными */
 @keyframes fadeIn {
     from {
         opacity: 0;
@@ -439,222 +475,219 @@ button#save_payout_details_btn:hover {
     }
 }
 
-/* Анимация обновления блока */
 .payout-current-data.updating {
     opacity: 0.5;
     transform: scale(0.98);
 }
 
-/* Стили для формы настроек вывода на странице вывода кэшбэка */
+/* --- Payout settings form ------------------------------------------- */
+
 .payout-settings-form {
     margin: 20px 0;
-    padding: 20px;
-    background-color: #fff;
-    border: 1px solid #ddd;
-    border-radius: 5px;
+    padding: 24px;
+    background-color: var(--cb-bg-surface, #fff);
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+    border-radius: var(--cb-radius-lg, 20px);
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
 }
 
 .payout-settings-form h3 {
     margin-top: 0;
     margin-bottom: 20px;
     font-size: 18px;
-    font-weight: 600;
+    font-weight: 700;
+    color: var(--cb-text-primary, #16151c);
+    letter-spacing: -0.02em;
 }
 
 #payout_settings_message {
     margin-bottom: 20px;
-    padding: 10px 15px;
-    border-radius: 4px;
+    padding: 12px 14px;
+    border-radius: var(--cb-radius-md, 16px);
     display: none;
+    font-size: 14px;
 }
 
 #payout_settings_message.success {
     display: block;
-    color: #155724;
-    background-color: #d4edda;
-    border: 1px solid #c3e6cb;
+    color: #14724f;
+    background-color: var(--cb-success-soft, #dcf5eb);
+    border: none;
+    border-left: 3px solid var(--cb-success, #1fae7f);
 }
 
 #payout_settings_message.error {
     display: block;
-    color: #721c24;
-    background-color: #f8d7da;
-    border: 1px solid #f5c6cb;
+    color: #a32328;
+    background-color: var(--cb-danger-soft, #fbe0e1);
+    border: none;
+    border-left: 3px solid var(--cb-danger, #e5484d);
 }
 
-/* Стили для кнопки сохранения настроек */
 #save_payout_settings_btn {
-    border-radius: var(--btn-accented-brd-radius, 4px) !important;
-    color: var(--btn-accented-color, #fff) !important;
-    box-shadow: var(--btn-accented-box-shadow) !important;
-    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
-    text-transform: var(--btn-accented-transform, var(--btn-transform, uppercase)) !important;
-    font-weight: var(--btn-accented-font-weight, var(--btn-font-weight, 600)) !important;
-    font-family: var(--btn-accented-font-family, var(--btn-font-family, inherit)) !important;
-    font-style: var(--btn-accented-font-style, var(--btn-font-style, unset)) !important;
+    border-radius: var(--cb-radius-pill, 999px) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
+    background-color: var(--cb-accent, #5b6cf7) !important;
+    text-transform: none !important;
+    font-weight: 600 !important;
+    font-family: inherit !important;
+    font-style: normal !important;
+    padding: 12px 28px !important;
+    transition: background-color 0.15s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
 }
 
 #save_payout_settings_btn:hover {
-    color: var(--btn-accented-color-hover, #fff) !important;
-    box-shadow: var(--btn-accented-box-shadow-hover) !important;
-    background-color: var(--btn-accented-bgcolor-hover, #005a87) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-raised, 0 18px 36px -16px rgba(15, 18, 34, 0.14)) !important;
+    background-color: var(--cb-accent-hover, #4555e8) !important;
+    transform: translateY(-1px) !important;
 }
 
-/* Полная ширина для формы */
 .payout-settings-form .form-row-wide {
     width: 100%;
     clear: both;
     margin-bottom: 1em;
 }
+
 .payout-settings-form .clear {
     clear: both;
 }
 
-/* Стили для секции настроек вывода */
 .payout-settings-section {
     margin: 20px 0;
-    padding: 20px;
-    background-color: #fff;
-    border: 1px solid #ddd;
-    border-radius: 5px;
+    padding: 24px;
+    background-color: var(--cb-bg-surface, #fff);
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+    border-radius: var(--cb-radius-lg, 20px);
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
 }
 
 .payout-settings-section h3 {
     margin-top: 0;
     margin-bottom: 20px;
     font-size: 18px;
-    font-weight: 600;
-    color: #333;
+    font-weight: 700;
+    color: var(--cb-text-primary, #16151c);
+    letter-spacing: -0.02em;
 }
 
-/* Стили для отображения сохраненных данных */
+/* --- Saved payout settings display --------------------------------- */
+
 .payout-settings-display {
-    padding: 15px;
-    background-color: #f9f9f9;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
-    margin-bottom: 15px;
+    padding: 16px;
+    background-color: var(--cb-bg-canvas, #f5f4f0);
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+    border-radius: var(--cb-radius-md, 16px);
+    margin-bottom: 16px;
     transition: all 0.3s ease;
 }
 
 .payout-settings-display p {
-    margin: 10px 0;
+    margin: 8px 0;
     font-size: 15px;
     line-height: 1.6;
+    color: var(--cb-text-primary, #16151c);
 }
 
 .payout-settings-display strong {
     display: inline-block;
     min-width: 200px;
-    color: #333;
+    color: var(--cb-text-secondary, #5b5c70);
     font-weight: 600;
 }
 
-/* Скрытие формы редактирования */
 .payout-settings-form-hidden {
     display: none !important;
 }
 
-/* Кнопки действий */
 #edit_payout_settings_btn,
 #cancel_edit_payout_settings_btn {
-    border-radius: var(--btn-accented-brd-radius, 4px) !important;
-    text-transform: var(--btn-accented-transform, var(--btn-transform, uppercase)) !important;
-    font-weight: var(--btn-accented-font-weight, var(--btn-font-weight, 600)) !important;
-    font-family: var(--btn-accented-font-family, var(--btn-font-family, inherit)) !important;
-    font-style: var(--btn-accented-font-style, var(--btn-font-style, unset)) !important;
-    padding: 10px 20px;
+    border-radius: var(--cb-radius-pill, 999px) !important;
+    text-transform: none !important;
+    font-weight: 600 !important;
+    font-family: inherit !important;
+    font-style: normal !important;
+    padding: 10px 24px;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
 }
 
 #edit_payout_settings_btn {
-    color: var(--btn-accented-color, #fff) !important;
-    box-shadow: var(--btn-accented-box-shadow) !important;
-    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
+    background-color: var(--cb-accent, #5b6cf7) !important;
+    border: none !important;
 }
 
 #edit_payout_settings_btn:hover {
-    color: var(--btn-accented-color-hover, #fff) !important;
-    box-shadow: var(--btn-accented-box-shadow-hover) !important;
-    background-color: var(--btn-accented-bgcolor-hover, #005a87) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-raised, 0 18px 36px -16px rgba(15, 18, 34, 0.14)) !important;
+    background-color: var(--cb-accent-hover, #4555e8) !important;
+    transform: translateY(-1px);
 }
 
 #cancel_edit_payout_settings_btn {
-    color: var(--btn-accented-color, #fff) !important;
-    box-shadow: var(--btn-accented-box-shadow) !important;
-    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
-    margin-left: 10px;
+    color: var(--cb-text-primary, #16151c) !important;
+    box-shadow: none !important;
+    background-color: transparent !important;
+    border: 1px solid var(--cb-border-strong, rgba(22, 21, 28, 0.12)) !important;
+    margin-left: 12px;
 }
 
 #cancel_edit_payout_settings_btn:hover {
-    color: var(--btn-accented-color-hover, #fff) !important;
-    box-shadow: var(--btn-accented-box-shadow-hover) !important;
-    background-color: var(--btn-accented-bgcolor-hover, #005a87) !important;
+    color: var(--cb-text-primary, #16151c) !important;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
+    background-color: var(--cb-bg-surface, #fff) !important;
 }
 
-/* Анимация переключения между режимами */
 .payout-settings-display,
 #payout_settings_form {
     animation: fadeIn 0.3s ease-in-out;
 }
 
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
 /* ============================================================
-   Компонент поиска банков — autocomplete / combobox
+   Bank-search combobox
    ============================================================ */
 
-/* Обёртка combobox */
 .bank-search-wrapper {
     position: relative;
     width: 100%;
 }
 
-/* Поле ввода поиска */
 #bank_search_input {
     width: 100%;
-    padding: 8px 12px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    padding: 10px 14px;
+    border: 1px solid var(--cb-border-strong, rgba(22, 21, 28, 0.12));
+    border-radius: var(--cb-radius-sm, 10px);
     font-size: 14px;
     box-sizing: border-box;
-    background-color: #fff;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    background-color: var(--cb-bg-surface, #fff);
+    color: var(--cb-text-primary, #16151c);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 #bank_search_input:focus {
-    border-color: #0073aa;
-    box-shadow: 0 0 0 1px #0073aa;
+    border-color: var(--cb-border-focus, rgba(91, 108, 247, 0.45));
+    box-shadow: var(--cb-shadow-focus, 0 0 0 3px rgba(91, 108, 247, 0.25));
     outline: none;
 }
 
-/* Ошибка ввода — общий стиль для всех полей формы */
+/* Field error — applies across all forms */
 .payout-settings-form .input--error,
 .payout-settings-form .input--error:focus,
 .cashback-withdrawal-form .input--error,
 .cashback-withdrawal-form .input--error:focus {
-    border-color: #dc3232 !important;
-    box-shadow: 0 0 0 1px #dc3232 !important;
+    border-color: var(--cb-danger, #e5484d) !important;
+    box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.25) !important;
 }
 
-/* Ошибка ввода — поле поиска банка */
 #bank_search_input.bank-search-input--error,
 #bank_search_input.bank-search-input--error:focus {
-    border-color: #dc3232;
-    box-shadow: 0 0 0 1px #dc3232;
+    border-color: var(--cb-danger, #e5484d);
+    box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.25);
 }
 
-/* Выпадающий список банков */
 .bank-search-results {
     display: none;
     position: absolute;
@@ -664,77 +697,69 @@ button#save_payout_details_btn:hover {
     right: 0;
     max-height: 240px;
     overflow-y: auto;
-    margin: 2px 0 0;
-    padding: 0;
+    margin: 4px 0 0;
+    padding: 4px;
     list-style: none;
-    background-color: #fff;
-    border: 1px solid #ccc;
-    border-radius: 0 0 4px 4px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    background-color: var(--cb-bg-surface, #fff);
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+    border-radius: var(--cb-radius-md, 16px);
+    box-shadow: var(--cb-shadow-floating, 0 32px 64px -24px rgba(15, 18, 34, 0.18));
 }
 
-/* Видимое состояние */
 .bank-search-results.bank-search-results--visible {
     display: block;
 }
 
-/* Элемент списка */
 .bank-search-item {
     padding: 10px 12px;
     cursor: pointer;
     font-size: 14px;
-    color: #333;
-    border-bottom: 1px solid #f0f0f0;
-    transition: background-color 0.15s ease;
+    color: var(--cb-text-primary, #16151c);
+    border-radius: var(--cb-radius-sm, 10px);
+    transition: background-color 0.15s ease, color 0.15s ease;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.bank-search-item:last-child {
-    border-bottom: none;
-}
-
-/* Hover / активный (клавиатура) */
 .bank-search-item:hover,
 .bank-search-item.bank-search-item--active {
-    background-color: #f0f7fc;
-    color: #0073aa;
+    background-color: var(--cb-bg-accent-soft, #e8ebff);
+    color: var(--cb-accent-soft-text, #2530a8);
 }
 
-/* Выбранный элемент */
 .bank-search-item[aria-selected="true"] {
     font-weight: 600;
-    background-color: #e8f4fd;
+    background-color: var(--cb-bg-accent-soft, #e8ebff);
+    color: var(--cb-accent-soft-text, #2530a8);
 }
 
-/* Нет результатов */
 .bank-search-no-results {
     padding: 10px 12px;
     font-size: 14px;
-    color: #999;
+    color: var(--cb-text-muted, #8f8fa3);
     font-style: italic;
     cursor: default;
 }
 
-/* Сообщение об ошибке валидации */
 .bank-search-error {
     display: none;
-    margin-top: 4px;
-    padding: 4px 8px;
+    margin-top: 6px;
+    padding: 6px 10px;
     font-size: 13px;
-    color: #dc3232;
-    background-color: #ffeae9;
-    border-radius: 3px;
+    color: var(--cb-danger, #e5484d);
+    background-color: var(--cb-danger-soft, #fbe0e1);
+    border-radius: var(--cb-radius-sm, 10px);
 }
 
-/* Responsive дизайн */
+/* Responsive */
 @media (max-width: 768px) {
     .cashback-tabs {
         flex-direction: column;
         gap: 4px;
         margin-bottom: 20px;
-        border-bottom: 2px solid var(--btn-accented-bgcolor, #0073aa);
+        padding: 4px;
+        border-radius: var(--cb-radius-md, 16px);
         overflow-x: visible;
     }
 
@@ -742,13 +767,12 @@ button#save_payout_details_btn:hover {
         padding: 12px 16px !important;
         font-size: 14px;
         white-space: nowrap;
-        border-radius: 10px 10px 0 0 !important;
-        box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.08) !important;
+        border-radius: var(--cb-radius-md, 16px) !important;
         text-align: center;
     }
 
     .cashback-tabs button.cashback-tab.active {
-        box-shadow: 0 -3px 8px rgba(0, 0, 0, 0.12) !important;
+        box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
     }
 
     .cashback-tab-content {
@@ -767,31 +791,29 @@ button#save_payout_details_btn:hover {
 
     #cancel_edit_payout_settings_btn {
         margin-left: 0;
-        margin-top: 10px;
+        margin-top: 12px;
         display: block;
         width: 100%;
     }
 
-    /* Мобильная адаптация банковского поиска */
     .bank-search-results {
         max-height: 200px;
     }
 
     .bank-search-item {
         padding: 12px 14px;
-        font-size: 16px; /* Увеличиваем для удобства тача */
-        min-height: 44px; /* Минимальный размер для touch targets по WCAG */
+        font-size: 16px;        /* prevent iOS zoom */
+        min-height: 44px;       /* WCAG touch-target */
         display: flex;
         align-items: center;
     }
 
     #bank_search_input {
-        font-size: 16px; /* Предотвращаем zoom на iOS */
+        font-size: 16px;
         min-height: 44px;
     }
 }
 
-/* Маленькие экраны */
 @media (max-width: 480px) {
     .bank-search-results {
         max-height: 180px;
@@ -802,7 +824,7 @@ button#save_payout_details_btn:hover {
     }
 }
 
-/* Screen readers: скрытый текст для a11y */
+/* SR-only text for a11y */
 .sr-only {
     position: absolute;
     width: 1px;
@@ -816,7 +838,7 @@ button#save_payout_details_btn:hover {
 }
 
 /* ============================================================
-   Cashback Display — карточки товаров и страница товара
+   Cashback display — product loop & single product
    ============================================================ */
 
 .cashback-display {
@@ -824,28 +846,25 @@ button#save_payout_details_btn:hover {
     margin-top: 4px;
     font-size: 15px;
     font-weight: 700;
-    color: var(--wd-primary-color, #e44d26);
+    color: var(--cb-warm-hover, #f76b41);
     line-height: 1.4;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
 }
 
-/* Каталог товаров */
 .cashback-display--loop {
     font-size: 15px;
 }
 
-/* Отдельный блок кэшбэка (без цены) */
 .cashback-display--standalone {
     margin-top: 0;
 }
 
-/* Страница товара и quick-view (p.price — только single/modal, не каталог) */
 p.price .cashback-display {
     font-size: inherit;
     margin-top: 8px;
 }
 
-/* Кэшбэк внутри стандартного WooCommerce .price контейнера:
-   наследует font-size и font-weight от темы, задаёт только цвет */
 .price > .cashback-display--standalone {
     font-size: inherit;
     font-weight: inherit;
@@ -865,4 +884,3 @@ p.price .cashback-display {
         font-size: 14px;
     }
 }
-

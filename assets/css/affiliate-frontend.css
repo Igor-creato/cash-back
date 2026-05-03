@@ -1,43 +1,75 @@
-/* Frontend: Партнёрская программа */
+/* =============================================================================
+   Affiliate program frontend — referral link, stats grid, accruals/referrals
+   tables. Restyled to consume --cb-* tokens. Mobile rebuilds tables into
+   stack of soft cards (preserved verbatim).
+   ============================================================================= */
 
 .cashback-affiliate-page {
     max-width: 800px;
 }
 
-/* Warning */
+/* --- Inline warning ------------------------------------------------- */
+
 .cashback-affiliate-warning {
-    background: #fff3cd;
-    border: 1px solid #ffc107;
-    color: #856404;
-    padding: 12px 16px;
-    border-radius: 6px;
-    margin-bottom: 20px;
+    background: var(--cb-warning-soft, #fcefcf);
+    border: none;
+    border-left: 3px solid var(--cb-warning, #e89b0a);
+    color: #8c5c00;
+    padding: 14px 18px;
+    border-radius: var(--cb-radius-md, 16px);
+    margin-bottom: 24px;
+    font-size: 14px;
+    line-height: 1.5;
 }
 
-/* Sections */
+/* --- Sections ------------------------------------------------------- */
+
 .cashback-affiliate-section {
-    margin-bottom: 28px;
+    margin-bottom: 32px;
 }
 
 .cashback-affiliate-section h3 {
-    margin-bottom: 12px;
+    margin-bottom: 14px;
     font-size: 16px;
+    font-weight: 700;
+    color: var(--cb-text-primary, #16151c);
+    letter-spacing: -0.02em;
 }
 
-/* Referral link box */
+/* --- Referral link box --------------------------------------------- */
+
 .cashback-affiliate-link-box {
     display: flex;
     gap: 8px;
     align-items: center;
+    padding: 4px;
+    background: var(--cb-bg-surface, #fff);
+    border: 1px solid var(--cb-border-strong, rgba(22, 21, 28, 0.12));
+    border-radius: var(--cb-radius-pill, 999px);
+    box-shadow: var(--cb-shadow-inset, inset 0 1px 2px rgba(22, 21, 28, 0.05));
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cashback-affiliate-link-box:focus-within {
+    border-color: var(--cb-border-focus, rgba(91, 108, 247, 0.45));
+    box-shadow: var(--cb-shadow-focus, 0 0 0 3px rgba(91, 108, 247, 0.25)),
+                var(--cb-shadow-inset, inset 0 1px 2px rgba(22, 21, 28, 0.05));
 }
 
 .cashback-affiliate-link-input {
     flex: 1;
-    padding: 8px 12px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
+    padding: 8px 16px;
+    border: none;
+    border-radius: var(--cb-radius-pill, 999px);
     font-size: 14px;
-    background: #f9f9f9;
+    background: transparent;
+    color: var(--cb-text-primary, #16151c);
+    font-variant-numeric: tabular-nums;
+}
+
+.cashback-affiliate-link-input:focus {
+    outline: none;
+    box-shadow: none;
 }
 
 .cashback-affiliate-copy-btn {
@@ -45,105 +77,136 @@
 }
 
 .cashback-affiliate-rules {
-    margin-top: 8px;
+    margin-top: 10px;
     font-size: 13px;
+    color: var(--cb-text-secondary, #5b5c70);
 }
 
-/* Stats grid */
+/* --- Stats grid (3 across) ----------------------------------------- */
+
 .cashback-affiliate-stats-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
+    gap: 14px;
 }
 
 .cashback-affiliate-stat {
-    background: #f8f9fa;
-    border: 1px solid #e9ecef;
-    border-radius: 8px;
-    padding: 16px;
+    background: var(--cb-bg-surface, #fff);
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+    border-radius: var(--cb-radius-lg, 20px);
+    padding: 18px;
     text-align: center;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
 }
 
 .cashback-affiliate-stat .stat-value {
     display: block;
-    font-size: 20px;
-    font-weight: 700;
-    color: #333;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--cb-text-primary, #16151c);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
 }
 
 .cashback-affiliate-stat .stat-label {
     display: block;
     font-size: 12px;
-    color: #666;
-    margin-top: 4px;
+    font-weight: 600;
+    color: var(--cb-text-secondary, #5b5c70);
+    margin-top: 6px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
-/* Table */
+/* --- Accruals / referrals table ------------------------------------ */
+
 .cashback-affiliate-table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     font-size: 14px;
+    background: var(--cb-bg-surface, #fff);
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+    border-radius: var(--cb-radius-lg, 20px);
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
+    overflow: hidden;
 }
 
 .cashback-affiliate-table th,
 .cashback-affiliate-table td {
-    padding: 10px 12px;
+    padding: 12px 16px;
     text-align: left;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
 }
 
 .cashback-affiliate-table th {
-    background: #f8f9fa;
+    background: var(--cb-bg-sunken, #eceae3);
     font-weight: 600;
-    font-size: 13px;
-    color: #555;
+    font-size: 12px;
+    color: var(--cb-text-secondary, #5b5c70);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.cashback-affiliate-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.cashback-affiliate-table tbody tr {
+    transition: background-color 0.15s ease;
 }
 
 .cashback-affiliate-table tbody tr:hover {
-    background: #fafbfc;
+    background: var(--cb-bg-canvas, #f5f4f0);
 }
 
 .cashback-affiliate-empty {
-    color: #999;
+    color: var(--cb-text-muted, #8f8fa3);
     font-style: italic;
-    padding: 20px 0;
+    padding: 24px 0;
+    text-align: center;
 }
 
-/* Status */
+/* --- Status pills -------------------------------------------------- */
+
 .cashback-affiliate-status {
     display: inline-block;
-    padding: 2px 8px;
-    border-radius: 10px;
+    padding: 3px 10px;
+    border-radius: var(--cb-radius-pill, 999px);
     font-size: 12px;
     font-weight: 600;
+    letter-spacing: 0;
 }
 
 .status-available {
-    background: #d4edda;
-    color: #155724;
+    background: var(--cb-success-soft, #dcf5eb);
+    color: #14724f;
 }
 
 .status-frozen {
-    background: #fff3cd;
-    color: #856404;
+    background: var(--cb-warning-soft, #fcefcf);
+    color: #8c5c00;
 }
 
 .status-paid {
-    background: #d1ecf1;
-    color: #0c5460;
+    background: var(--cb-info-soft, #dcebfb);
+    color: #1f5a98;
 }
 
 .status-pending {
-    background: #e2e3e5;
-    color: #383d41;
+    background: var(--cb-bg-sunken, #eceae3);
+    color: var(--cb-text-secondary, #5b5c70);
 }
 
 .status-declined {
-    background: #f8d7da;
-    color: #721c24;
+    background: var(--cb-danger-soft, #fbe0e1);
+    color: #a32328;
 }
 
-/* Responsive */
+/* --- Responsive ---------------------------------------------------- */
+
 @media (max-width: 600px) {
     .cashback-affiliate-stats-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -151,10 +214,13 @@
 
     .cashback-affiliate-link-box {
         flex-direction: column;
+        border-radius: var(--cb-radius-md, 16px);
+        padding: 8px;
     }
 
     .cashback-affiliate-link-input {
         width: 100%;
+        text-align: center;
     }
 }
 
@@ -176,6 +242,7 @@
         border: none !important;
         border-collapse: collapse !important;
         background: transparent !important;
+        box-shadow: none !important;
     }
 
     .cashback-affiliate-page .cashback-affiliate-table tbody {
@@ -185,22 +252,23 @@
     }
 
     .cashback-affiliate-page .cashback-affiliate-table tbody tr {
-        background: #fff !important;
-        border: 1px solid #e0e0e0 !important;
-        border-radius: 8px !important;
-        padding: 14px 16px !important;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06) !important;
+        background: var(--cb-bg-surface, #fff) !important;
+        border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06)) !important;
+        border-radius: var(--cb-radius-lg, 20px) !important;
+        padding: 16px 18px !important;
+        box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
     }
 
     .cashback-affiliate-page .cashback-affiliate-table tbody tr td {
         display: flex !important;
         justify-content: space-between !important;
         align-items: center !important;
-        padding: 6px 0 !important;
+        padding: 8px 0 !important;
         border: none !important;
-        border-bottom: 1px solid #f0f0f0 !important;
+        border-bottom: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06)) !important;
         font-size: 14px !important;
         text-align: right !important;
+        color: var(--cb-text-primary, #16151c);
     }
 
     .cashback-affiliate-page .cashback-affiliate-table tbody tr td:last-child {
@@ -212,18 +280,20 @@
         padding-top: 0 !important;
         font-weight: 700 !important;
         font-size: 15px !important;
-        padding-bottom: 8px !important;
-        margin-bottom: 2px !important;
-        border-bottom: 2px solid #2271b1 !important;
+        padding-bottom: 10px !important;
+        margin-bottom: 4px !important;
+        border-bottom: 2px solid var(--cb-accent, #5b6cf7) !important;
     }
 
     .cashback-affiliate-page .cashback-affiliate-table tbody tr td::before {
         content: attr(data-title);
         font-weight: 600;
-        color: #555;
-        font-size: 13px;
+        color: var(--cb-text-secondary, #5b5c70);
+        font-size: 12px;
         flex-shrink: 0;
         margin-right: 12px;
         text-align: left;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
     }
 }

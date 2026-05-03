@@ -1,7 +1,11 @@
-/* Cashback promocodes shortcode styles */
+/* =============================================================================
+   Cashback promocodes shortcode — grid of promo cards on product pages.
+   Restyled to consume --cb-* tokens. The "exclusive" pill, accent border
+   on hover and copy-success state now use the periwinkle accent + warm
+   coral for the discount value (the real attention-grabber).
+   ============================================================================= */
 
 .cashback-promocodes {
-    --cashback-brand: #2271b1;
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 16px;
@@ -13,60 +17,69 @@
 }
 
 .cashback-promocodes--empty {
-    padding: 16px;
-    background: #f6f7f7;
-    border-radius: 6px;
-    color: #666;
+    padding: 18px;
+    background: var(--cb-bg-canvas, #f5f4f0);
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+    border-radius: var(--cb-radius-md, 16px);
+    color: var(--cb-text-secondary, #5b5c70);
     text-align: center;
 }
 
 .cashback-promo-card {
     position: relative;
-    background: #fff;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    padding: 16px;
+    background: var(--cb-bg-surface, #fff);
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+    border-radius: var(--cb-radius-lg, 20px);
+    padding: 18px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    transition: box-shadow .15s, border-color .15s;
+    gap: 10px;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
+    transition: box-shadow 0.18s ease, border-color 0.18s ease,
+                transform 0.18s ease;
 }
 
 .cashback-promo-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-    border-color: var(--cashback-brand);
+    box-shadow: var(--cb-shadow-raised, 0 18px 36px -16px rgba(15, 18, 34, 0.14));
+    border-color: var(--cb-border-strong, rgba(22, 21, 28, 0.12));
+    transform: translateY(-2px);
 }
 
 .cashback-promo-card__exclusive {
     position: absolute;
-    top: 8px;
-    right: 8px;
-    background: var(--cashback-brand);
-    color: #fff;
+    top: 10px;
+    right: 10px;
+    background: var(--cb-warm, #ff8a65);
+    color: var(--cb-text-on-accent, #fff);
     font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 12px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: var(--cb-radius-pill, 999px);
+    letter-spacing: 0.04em;
     text-transform: uppercase;
 }
 
 .cashback-promo-card__discount {
-    font-size: 24px;
-    font-weight: 700;
-    color: var(--cashback-brand);
-    line-height: 1.2;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--cb-warm-hover, #f76b41);
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
 }
 
 .cashback-promo-card__name {
     margin: 0;
     font-size: 15px;
-    font-weight: 600;
-    color: #1d2327;
+    font-weight: 700;
+    color: var(--cb-text-primary, #16151c);
+    letter-spacing: -0.01em;
 }
 
 .cashback-promo-card__description {
     font-size: 13px;
-    color: #555;
-    line-height: 1.4;
+    color: var(--cb-text-secondary, #5b5c70);
+    line-height: 1.5;
 }
 
 .cashback-promo-card__code-row {
@@ -78,38 +91,42 @@
 
 .cashback-promo-card__code {
     flex: 1;
-    background: #f6f7f7;
-    border: 1px dashed #b0b0b0;
-    padding: 8px 12px;
-    border-radius: 4px;
-    font-family: ui-monospace, "Cascadia Mono", "Source Code Pro", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+    background: var(--cb-bg-canvas, #f5f4f0);
+    border: 1px dashed var(--cb-border-strong, rgba(22, 21, 28, 0.12));
+    padding: 9px 14px;
+    border-radius: var(--cb-radius-sm, 10px);
+    font-family: var(--cb-font-mono, ui-monospace, "Cascadia Mono", "Source Code Pro", Menlo, Consolas, monospace);
     font-size: 14px;
-    font-weight: 600;
-    color: #1d2327;
+    font-weight: 700;
+    color: var(--cb-text-primary, #16151c);
     text-align: center;
     user-select: all;
+    letter-spacing: 0.04em;
 }
 
 .cashback-promo-card__btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 8px 14px;
-    border-radius: 4px;
-    border: 1px solid var(--cashback-brand);
-    background: #fff;
-    color: var(--cashback-brand);
+    padding: 9px 16px;
+    border-radius: var(--cb-radius-pill, 999px);
+    border: 1px solid var(--cb-accent, #5b6cf7);
+    background: var(--cb-bg-surface, #fff);
+    color: var(--cb-accent, #5b6cf7);
     cursor: pointer;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     text-decoration: none;
-    transition: background .15s, color .15s;
+    font-family: inherit;
+    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.18s ease;
 }
 
 .cashback-promo-card__btn:hover,
 .cashback-promo-card__btn:focus {
-    background: var(--cashback-brand);
-    color: #fff;
+    background: var(--cb-accent, #5b6cf7);
+    color: var(--cb-text-on-accent, #fff);
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
+    outline: none;
 }
 
 .cashback-promo-card__btn--copy {
@@ -117,17 +134,29 @@
 }
 
 .cashback-promo-card__btn--copy.is-copied {
-    background: var(--cashback-brand);
-    color: #fff;
+    background: var(--cb-success, #1fae7f);
+    color: var(--cb-text-on-accent, #fff);
+    border-color: var(--cb-success, #1fae7f);
 }
 
 .cashback-promo-card__btn--goto {
     margin-top: 4px;
     text-align: center;
+    background: var(--cb-warm, #ff8a65);
+    color: var(--cb-text-on-accent, #fff);
+    border-color: var(--cb-warm, #ff8a65);
+}
+
+.cashback-promo-card__btn--goto:hover,
+.cashback-promo-card__btn--goto:focus {
+    background: var(--cb-warm-hover, #f76b41);
+    color: var(--cb-text-on-accent, #fff);
+    border-color: var(--cb-warm-hover, #f76b41);
 }
 
 .cashback-promo-card__date-end {
     font-size: 11px;
-    color: #888;
+    color: var(--cb-text-muted, #8f8fa3);
     margin-top: auto;
+    padding-top: 4px;
 }
