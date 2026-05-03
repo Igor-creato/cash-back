@@ -762,7 +762,7 @@ class WC_Affiliate_URL_Params {
                 : null;
 
             // Bot detection повышает spam-флаг, но не блокирует редирект.
-            $force_spam = $this->is_bot_user_agent($user_agent ?? '');
+            $force_spam = self::is_bot_user_agent($user_agent ?? '');
 
             $result = Cashback_Click_Session_Service::activate(array(
                 'product_id' => $product_id,
@@ -1420,7 +1420,7 @@ HTML;
      *
      * @return bool true если UA похож на бота/скрипт.
      */
-    public function is_bot_user_agent( string $user_agent ): bool {
+    public static function is_bot_user_agent( string $user_agent ): bool {
         // Пустой UA — однозначно не браузер
         if (trim($user_agent) === '') {
             return true;

@@ -83,7 +83,7 @@ final class Cashback_Promocodes_Redirect {
 
         $force_spam = false;
         if ( class_exists( 'WC_Affiliate_URL_Params' ) ) {
-            $force_spam = WC_Affiliate_URL_Params::instance()->is_bot_user_agent( $user_agent ?? '' );
+            $force_spam = WC_Affiliate_URL_Params::is_bot_user_agent( $user_agent ?? '' );
         }
 
         try {
