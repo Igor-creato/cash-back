@@ -41,7 +41,14 @@ final class Cashback_Promocodes_Click_Backfill {
 
     /** Hook handler регистрируется один раз. */
     public static function init(): void {
-        add_action( self::CRON_HOOK, array( __CLASS__, 'run' ) );
+        // void-wrapper: WP action callback не должен возвращать значения (PHPStan).
+        // run() возвращает summary — оставлено для unit-тестов / manual-вызова.
+        add_action( self::CRON_HOOK, array( __CLASS__, 'cron_handler' ) );
+    }
+
+    /** Void-обёртка над run() для регистрации как WP action callback. */
+    public static function cron_handler(): void {
+        self::run();
     }
 
     /** Регистрация рекуррентного AS-job (вызывается из bootstrap при init). */
