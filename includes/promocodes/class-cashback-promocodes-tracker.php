@@ -113,13 +113,16 @@ final class Cashback_Promocodes_Tracker {
      *
      * Ошибки $wpdb->insert глотаются с error_log — это статистика, не критика.
      *
-     * @param int    $promocode_id ID промокода в cashback_promocodes.
-     * @param ?int   $product_id   Source WC product ID (или null).
-     * @param int    $user_id      WP user ID (0 для гостя).
-     * @param string $ip           Raw IP (хешируется внутри).
-     * @param string $ua           User-Agent (обрезается до 64 символов).
-     * @param ?string $click_id     UUIDv7 (32 hex) из click_session, или null.
-     * @param string $action       'goto' (default) или 'copy'.
+     * @param int    $promocode_id  ID промокода в cashback_promocodes.
+     * @param ?int   $product_id    Source WC product ID (или null).
+     * @param int    $user_id       WP user ID (0 для гостя).
+     * @param string $ip            Raw IP (хешируется внутри).
+     * @param string $ua            User-Agent (обрезается до 64 символов).
+     * @param ?string $click_id      UUIDv7 (32 hex) из click_session, или null.
+     * @param string $action        'goto' (default) или 'copy'.
+     * @param ?string $affiliate_url Полный CPA URL купона (с подставленными subid)
+     *                               для self-verification оператором; null для
+     *                               copy-кликов и fallback-путей.
      */
     public static function record_click_internal(
         int $promocode_id,
@@ -128,7 +131,8 @@ final class Cashback_Promocodes_Tracker {
         string $ip,
         string $ua,
         ?string $click_id,
-        string $action = 'goto'
+        string $action = 'goto',
+        ?string $affiliate_url = null
     ): void {
         if ( $promocode_id <= 0 ) {
             return;
@@ -157,6 +161,14 @@ final class Cashback_Promocodes_Tracker {
         if ( $click_id !== null && $click_id !== '' ) {
             $row['click_id'] = $click_id;
             $fmt[]           = '%s';
+        }
+
+        // affiliate_url опционален — поле добавлено миграцией v11. Тот же
+        // graceful-degrade паттерн что у click_id: пишем только если значение
+        // не-null/не-пустое, иначе insert работает на схеме до v11.
+        if ( $affiliate_url !== null && $affiliate_url !== '' ) {
+            $row['affiliate_url'] = mb_substr( $affiliate_url, 0, 2048 );
+            $fmt[]                = '%s';
         }
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom plugin table; insert is the operation.

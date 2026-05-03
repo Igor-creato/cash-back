@@ -893,6 +893,19 @@ class CashbackPlugin {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback] click_log promocode_id v10 auto-migration failed: ' . $e->getMessage());
             }
+
+            // v11: разделение click-session между товарным и промо-кликом —
+            // ADD promocode_id в cashback_click_sessions (расширяет dedup-key
+            // do_activate(), иначе reuse товарной session подменяет купонный
+            // goto_link на товарный) + ADD affiliate_url в cashback_promocode_clicks
+            // (для self-verification оператором). Идемпотентно через
+            // cashback_db_version >= 11 fast-path.
+            try {
+                Mariadb_Plugin::get_instance()->migrate_promocodes_v11_session_promocode_id();
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] Promocodes v11 session promocode_id auto-migration failed: ' . $e->getMessage());
+            }
         }
 
         // Legal module (Phase 1): создание таблицы wp_cashback_consent_log и

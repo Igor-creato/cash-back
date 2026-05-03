@@ -134,7 +134,10 @@ final class Cashback_Promocodes_Redirect {
             self::redirect_to_partner_or_home( $safe_goto, $promo_id, 'unsafe_scheme' );
         }
 
-        // Параллельно пишем в stat-таблицу промокодов с привязкой к click_id.
+        // Параллельно пишем в stat-таблицу промокодов с привязкой к click_id
+        // и купонным affiliate_url (v11) — чтобы админ-вкладка «Промо клики»
+        // могла отобразить какой именно URL ушёл партнёру (купонный goto_link
+        // с подставленными subid, а не товарный — баг до v11).
         if ( class_exists( 'Cashback_Promocodes_Tracker' ) ) {
             Cashback_Promocodes_Tracker::record_click_internal(
                 $promo_id,
@@ -143,7 +146,8 @@ final class Cashback_Promocodes_Redirect {
                 $ip_address,
                 (string) ( $user_agent ?? '' ),
                 $click_id,
-                'goto'
+                'goto',
+                $affiliate_url
             );
         }
 

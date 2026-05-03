@@ -302,6 +302,14 @@ final class Cashback_Click_Session_Service {
         $spam_flag  = ( $rate_status === 'spam' || $force_spam ) ? 1 : 0;
         $sessions_t = $wpdb->prefix . 'cashback_click_sessions';
 
+        // v11: dedup-key включает promocode_id, чтобы промо-клик не reuse-ил
+        // товарную session (был баг — купонный goto_link терялся, в click_log
+        // писался товарный affiliate_url). NULL для product-кликов остаётся
+        // backwards-совместимо с product-сессиями до v11.
+        $promocode_id_for_dedup = isset($ctx['promocode_id']) && (int) $ctx['promocode_id'] > 0
+            ? (int) $ctx['promocode_id']
+            : null;
+
         // 12i-2 ADR (F-10-001): TX + SELECT FOR UPDATE на click_sessions.
         // Параллельные /activate от одного user'а на тот же product получают
         // одну и ту же сессию через row-lock (без dedup дали бы 2 сессии).
@@ -309,21 +317,40 @@ final class Cashback_Click_Session_Service {
         try {
             $existing = null;
             if ($policy !== 'always_new') {
-                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- FOR UPDATE inside TX (Group 8 pattern).
                 // expires_at пишется через gmdate() (UTC), поэтому сравнение тоже в UTC:
                 // NOW() возвращает server local time — timezone mismatch рушит dedup
                 // (production bug: каждый клик создавал новую сессию при server != UTC).
-                $existing = $wpdb->get_row($wpdb->prepare(
-                    "SELECT id, canonical_click_id, affiliate_url, tap_count
-                       FROM %i
-                      WHERE user_id = %d AND product_id = %d
-                        AND status = 'active' AND expires_at > UTC_TIMESTAMP()
-                      ORDER BY created_at DESC LIMIT 1
-                      FOR UPDATE",
-                    $sessions_t,
-                    $user_id,
-                    $product_id
-                ), ARRAY_A);
+                // wpdb prepare() с %d не умеет NULL → две explicit ветки.
+                if ($promocode_id_for_dedup === null) {
+                    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- FOR UPDATE inside TX (Group 8 pattern).
+                    $existing = $wpdb->get_row($wpdb->prepare(
+                        "SELECT id, canonical_click_id, affiliate_url, tap_count
+                           FROM %i
+                          WHERE user_id = %d AND product_id = %d
+                            AND promocode_id IS NULL
+                            AND status = 'active' AND expires_at > UTC_TIMESTAMP()
+                          ORDER BY created_at DESC LIMIT 1
+                          FOR UPDATE",
+                        $sessions_t,
+                        $user_id,
+                        $product_id
+                    ), ARRAY_A);
+                } else {
+                    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- FOR UPDATE inside TX (Group 8 pattern).
+                    $existing = $wpdb->get_row($wpdb->prepare(
+                        "SELECT id, canonical_click_id, affiliate_url, tap_count
+                           FROM %i
+                          WHERE user_id = %d AND product_id = %d
+                            AND promocode_id = %d
+                            AND status = 'active' AND expires_at > UTC_TIMESTAMP()
+                          ORDER BY created_at DESC LIMIT 1
+                          FOR UPDATE",
+                        $sessions_t,
+                        $user_id,
+                        $product_id,
+                        $promocode_id_for_dedup
+                    ), ARRAY_A);
+                }
             }
 
             if (is_array($existing) && !empty($existing['id'])) {
@@ -351,22 +378,44 @@ final class Cashback_Click_Session_Service {
 
                 $expires_datetime = gmdate('Y-m-d H:i:s.u', time() + $window);
 
-                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Insert inside TX.
-                $wpdb->query($wpdb->prepare(
-                    'INSERT INTO %i
-                        (canonical_click_id, user_id, product_id, merchant_id,
-                         affiliate_url, status, tap_count, expires_at)
-                     VALUES (%s, %d, %d, %d, %s, %s, %d, %s)',
-                    $sessions_t,
-                    $canonical_click_id,
-                    $user_id,
-                    $product_id,
-                    $merchant_id,
-                    $affiliate_url,
-                    'active',
-                    1,
-                    $expires_datetime
-                ));
+                // wpdb prepare с %d не умеет NULL → две explicit ветки INSERT
+                // (для product-клика promocode_id=NULL, для промо — int).
+                if ($promocode_id_for_dedup === null) {
+                    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Insert inside TX.
+                    $wpdb->query($wpdb->prepare(
+                        'INSERT INTO %i
+                            (canonical_click_id, user_id, product_id, promocode_id, merchant_id,
+                             affiliate_url, status, tap_count, expires_at)
+                         VALUES (%s, %d, %d, NULL, %d, %s, %s, %d, %s)',
+                        $sessions_t,
+                        $canonical_click_id,
+                        $user_id,
+                        $product_id,
+                        $merchant_id,
+                        $affiliate_url,
+                        'active',
+                        1,
+                        $expires_datetime
+                    ));
+                } else {
+                    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Insert inside TX.
+                    $wpdb->query($wpdb->prepare(
+                        'INSERT INTO %i
+                            (canonical_click_id, user_id, product_id, promocode_id, merchant_id,
+                             affiliate_url, status, tap_count, expires_at)
+                         VALUES (%s, %d, %d, %d, %d, %s, %s, %d, %s)',
+                        $sessions_t,
+                        $canonical_click_id,
+                        $user_id,
+                        $product_id,
+                        $promocode_id_for_dedup,
+                        $merchant_id,
+                        $affiliate_url,
+                        'active',
+                        1,
+                        $expires_datetime
+                    ));
+                }
                 $session_pk = (int) $wpdb->insert_id;
                 $tap_count  = 1;
                 $is_primary = true;

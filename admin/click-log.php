@@ -469,9 +469,12 @@ class Cashback_Click_Log_Admin {
 
         $total_pages = (int) ceil($total_items / $this->per_page);
 
-        // Выборка с JOIN'ами.
+        // Выборка с JOIN'ами. pc.affiliate_url добавлено в v11 — пишется только
+        // на success-пути активации промо-клика; для legacy-строк и copy/fallback
+        // остаётся NULL, в UI показывается «—».
         $select_sql = "SELECT pc.id, pc.user_id, pc.promocode_id, pc.product_id, pc.action,
                               pc.ip_hash, pc.ua_family, pc.created_at, pc.click_id,
+                              pc.affiliate_url,
                               u.display_name, u.user_email,
                               pr.promocode AS promo_code, pr.name AS promo_name,
                               pr.advcampaign_id, pr.network_id,
@@ -522,13 +525,14 @@ class Cashback_Click_Log_Admin {
                             <th style="width:90px;"><?php esc_html_e('Действие', 'cashback-plugin'); ?></th>
                             <th><?php esc_html_e('Click ID', 'cashback-plugin'); ?></th>
                             <th style="width:90px;"><?php esc_html_e('IP hash', 'cashback-plugin'); ?></th>
+                            <th><?php esc_html_e('Партнёрский URL', 'cashback-plugin'); ?></th>
                             <th><?php esc_html_e('User-Agent', 'cashback-plugin'); ?></th>
                         </tr>
                     </thead>
                     <tbody id="click-log-tbody">
                         <?php if (empty($rows)) : ?>
                             <tr>
-                                <td colspan="9"><?php esc_html_e('Записей не найдено.', 'cashback-plugin'); ?></td>
+                                <td colspan="10"><?php esc_html_e('Записей не найдено.', 'cashback-plugin'); ?></td>
                             </tr>
                         <?php else : ?>
                             <?php foreach ($rows as $row) : ?>
@@ -607,6 +611,22 @@ class Cashback_Click_Log_Admin {
                                         <?php endif; ?>
                                     </td>
                                     <td class="column-url">
+                                        <?php
+                                        $aff_url = (string) ($row['affiliate_url'] ?? '');
+                                        if ($aff_url !== '') {
+                                            $short = mb_strlen($aff_url) > 60 ? mb_substr($aff_url, 0, 60) . '…' : $aff_url;
+                                            printf(
+                                                '<a href="%1$s" target="_blank" rel="noopener" title="%2$s">%3$s</a>',
+                                                esc_url($aff_url),
+                                                esc_attr($aff_url),
+                                                esc_html($short)
+                                            );
+                                        } else {
+                                            echo '<span style="color:#999;" title="' . esc_attr__('NULL — copy-клик или fallback-путь без активации (до v11)', 'cashback-plugin') . '">&mdash;</span>';
+                                        }
+                                        ?>
+                                    </td>
+                                    <td>
                                         <?php
                                         $ua = (string) ($row['ua_family'] ?? '');
                                         echo $ua !== '' ? esc_html($ua) : '&mdash;';

@@ -91,6 +91,7 @@ class Mariadb_Plugin {
             $instance->migrate_promocodes_v8();
             $instance->migrate_promocodes_v9_click_id();
             $instance->migrate_click_log_promocode_id_v10();
+            $instance->migrate_promocodes_v11_session_promocode_id();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -438,6 +439,7 @@ class Mariadb_Plugin {
             `user_id` BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '0 для гостей',
             `guest_session_id` VARCHAR(128) DEFAULT NULL COMMENT 'PHP session id для гостей',
             `product_id` BIGINT UNSIGNED NOT NULL,
+            `promocode_id` BIGINT UNSIGNED DEFAULT NULL COMMENT 'NULL для product-кликов; ID промокода для купонных кликов (v11) — отделяет купонную сессию от товарной, иначе reuse товарной session подменяет goto_link купона на товарный',
             `merchant_id` BIGINT UNSIGNED NOT NULL COMMENT 'FK cashback_affiliate_networks.id',
             `affiliate_url` TEXT NOT NULL COMMENT 'Канонический URL редиректа для сессии',
             `status` ENUM('active','expired','converted','invalidated') NOT NULL DEFAULT 'active',
@@ -449,6 +451,7 @@ class Mariadb_Plugin {
             PRIMARY KEY (`id`),
             UNIQUE KEY `uk_canonical_click_id` (`canonical_click_id`),
             KEY `idx_user_product_active` (`user_id`,`product_id`,`status`,`expires_at`),
+            KEY `idx_user_product_promo_active` (`user_id`,`product_id`,`promocode_id`,`status`,`expires_at`),
             KEY `idx_guest_product_active` (`guest_session_id`,`product_id`,`status`,`expires_at`),
             KEY `idx_expires_status` (`expires_at`,`status`)
         ) ENGINE=InnoDB {$charset_collate} COMMENT='Canonical click sessions (12i, F-10-001 dedup)';";
@@ -609,6 +612,7 @@ class Mariadb_Plugin {
             `action` enum('copy','goto') NOT NULL,
             `ip_hash` char(64) DEFAULT NULL COMMENT 'sha256(ip+salt) — не raw IP (152-ФЗ)',
             `ua_family` varchar(64) DEFAULT NULL,
+            `affiliate_url` varchar(2048) DEFAULT NULL COMMENT 'Полный CPA URL купона с подставленными subid (v11) — для self-verification оператором; NULL для copy-кликов и fallback-путей',
             `created_at` datetime NOT NULL,
             PRIMARY KEY (`id`),
             KEY `idx_user_action` (`user_id`, `action`, `created_at`),
@@ -3854,6 +3858,139 @@ class Mariadb_Plugin {
         }
 
         update_option('cashback_db_version', 10, false);
+    }
+
+    /**
+     * Миграция v11: разделение click-session между товарным и промо-кликом.
+     *
+     * Корневая причина бага: до v11 dedup-key click_session был (user_id,
+     * product_id), без promocode_id. Если юзер сначала кликал товарную кнопку
+     * (создавалась session с affiliate_url=товарный CPA-URL), потом — кнопку
+     * промокода того же магазина, do_activate() находил активную session и
+     * REUSE-ил её, записывая в cashback_click_log товарный affiliate_url
+     * вместо купонного goto_link. Купонная атрибуция в Admitad ломалась
+     * (купонный deep-link имеет отдельный erid и маркер i=3 — он нужен,
+     * чтобы магазин применил скидку).
+     *
+     * Изменения:
+     *   - cashback_click_sessions ADD COLUMN promocode_id BIGINT UNSIGNED NULL
+     *     + index (user_id, product_id, promocode_id, status, expires_at).
+     *     do_activate() расширяет SELECT FOR UPDATE / INSERT этим полем;
+     *     старые product-клики остаются promocode_id=NULL (NULL <=> NULL true).
+     *   - cashback_promocode_clicks ADD COLUMN affiliate_url VARCHAR(2048) NULL
+     *     для self-verification оператором на админ-вкладке «Промо клики».
+     *
+     * Идемпотентность: cashback_db_version >= 11 fast-path + INFORMATION_SCHEMA
+     * проверка обеих колонок. ALTER через raw $wpdb->query (raw query +
+     * post-verify per memory feedback_alter_table_no_prepare).
+     */
+    public function migrate_promocodes_v11_session_promocode_id(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        if ($current_version >= 11) {
+            return;
+        }
+
+        $sessions_table = $wpdb->prefix . 'cashback_click_sessions';
+        $clicks_table   = $wpdb->prefix . 'cashback_promocode_clicks';
+
+        // Skip если базовых таблиц нет (свежая установка ещё не дошла до их CREATE).
+        $sessions_exists = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $sessions_table
+        ));
+        $clicks_exists = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $clicks_table
+        ));
+        if ($sessions_exists === 0 || $clicks_exists === 0) {
+            return;
+        }
+
+        // ---- 1. cashback_click_sessions: ADD COLUMN promocode_id + index ----
+        $sessions_col_exists = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME = %s
+                AND COLUMN_NAME = %s',
+            $sessions_table,
+            'promocode_id'
+        ));
+
+        if ($sessions_col_exists === 0) {
+            $safe_sessions = $this->validate_table_prefix($wpdb->prefix) . 'cashback_click_sessions';
+            $alter_ddl     = "ALTER TABLE `{$safe_sessions}` "
+                . 'ADD COLUMN `promocode_id` BIGINT UNSIGNED DEFAULT NULL '
+                . "COMMENT 'NULL для product-кликов; ID промокода для купонных кликов (v11)' "
+                . 'AFTER `product_id`, '
+                . 'ADD KEY `idx_user_product_promo_active` (`user_id`,`product_id`,`promocode_id`,`status`,`expires_at`)';
+
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL ALTER TABLE с non-ASCII COMMENT, raw query per memory feedback_alter_table_no_prepare.
+            $alter_result = $wpdb->query($alter_ddl);
+            if ($alter_result === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v11] ADD COLUMN click_sessions.promocode_id failed: ' . $wpdb->last_error);
+                return;
+            }
+
+            $verify = (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = %s
+                    AND COLUMN_NAME = %s',
+                $sessions_table,
+                'promocode_id'
+            ));
+            if ($verify === 0) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v11] post-verify failed: click_sessions.promocode_id missing after ALTER');
+                return;
+            }
+        }
+
+        // ---- 2. cashback_promocode_clicks: ADD COLUMN affiliate_url ----
+        $clicks_col_exists = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME = %s
+                AND COLUMN_NAME = %s',
+            $clicks_table,
+            'affiliate_url'
+        ));
+
+        if ($clicks_col_exists === 0) {
+            $safe_clicks = $this->validate_table_prefix($wpdb->prefix) . 'cashback_promocode_clicks';
+            $alter_ddl   = "ALTER TABLE `{$safe_clicks}` "
+                . 'ADD COLUMN `affiliate_url` VARCHAR(2048) DEFAULT NULL '
+                . "COMMENT 'Полный CPA URL купона с подставленными subid (v11)'";
+
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL ALTER TABLE с non-ASCII COMMENT, raw query per memory feedback_alter_table_no_prepare.
+            $alter_result = $wpdb->query($alter_ddl);
+            if ($alter_result === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v11] ADD COLUMN promocode_clicks.affiliate_url failed: ' . $wpdb->last_error);
+                return;
+            }
+
+            $verify = (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = %s
+                    AND COLUMN_NAME = %s',
+                $clicks_table,
+                'affiliate_url'
+            ));
+            if ($verify === 0) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v11] post-verify failed: promocode_clicks.affiliate_url missing after ALTER');
+                return;
+            }
+        }
+
+        update_option('cashback_db_version', 11, false);
     }
 
     /**
