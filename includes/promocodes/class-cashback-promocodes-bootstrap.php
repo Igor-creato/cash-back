@@ -55,6 +55,14 @@ final class Cashback_Promocodes_Bootstrap {
             Cashback_Promocodes_Redirect::init();
         }
 
+        // Safety-backfill cron: дозаписывает в cashback_promocode_clicks записи,
+        // которых нет, но есть в cashback_click_log с promocode_id IS NOT NULL.
+        // Покрывает редкий случай когда runtime stat-INSERT упал после успешного
+        // финансового TX (атомарность кross-таблицу через cron, не TX).
+        if ( class_exists( 'Cashback_Promocodes_Click_Backfill' ) ) {
+            Cashback_Promocodes_Click_Backfill::init();
+        }
+
         // Admin AJAX manual refresh (метабокс «Обновить промокоды»).
         if ( is_admin() && class_exists( 'Cashback_Promocodes_Admin' ) ) {
             Cashback_Promocodes_Admin::init();
@@ -97,10 +105,13 @@ final class Cashback_Promocodes_Bootstrap {
     }
 
     /**
-     * Зарегистрировать рекуррентный AS-job.
+     * Зарегистрировать рекуррентные AS-jobs (fetch + backfill).
      */
     public static function register_cron(): void {
         self::get_fetcher()->register_cron();
+        if ( class_exists( 'Cashback_Promocodes_Click_Backfill' ) ) {
+            Cashback_Promocodes_Click_Backfill::register_cron();
+        }
     }
 
     /**

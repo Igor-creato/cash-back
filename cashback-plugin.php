@@ -616,6 +616,7 @@ class CashbackPlugin {
         $this->require_file('includes/promocodes/class-cashback-promocodes-shortcode.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-tracker.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-redirect.php');
+        $this->require_file('includes/promocodes/class-cashback-promocodes-click-backfill.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-admin.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-bootstrap.php');
 
@@ -881,6 +882,16 @@ class CashbackPlugin {
             } catch (\Throwable $e) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback] Promocodes v9 click_id auto-migration failed: ' . $e->getMessage());
+            }
+
+            // v10: ADD COLUMN promocode_id в cashback_click_log — для safety-backfill
+            // в cashback_promocode_clicks (если runtime stat-INSERT упал, cron через
+            // 6 часов допишет по LEFT JOIN). Идемпотентно через cashback_db_version >= 10.
+            try {
+                Mariadb_Plugin::get_instance()->migrate_click_log_promocode_id_v10();
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] click_log promocode_id v10 auto-migration failed: ' . $e->getMessage());
             }
         }
 

@@ -376,6 +376,9 @@ final class Cashback_Click_Session_Service {
             // Tap event: логируем каждый запрос в click_log, даже если сессия reuse.
             // Для primary тапа click_id == canonical_click_id; для повторов — свой UUID.
             $tap_click_id = $is_primary ? $canonical_click_id : cashback_generate_uuid7(false);
+            $promocode_id = isset($ctx['promocode_id']) && $ctx['promocode_id'] !== null
+                ? (int) $ctx['promocode_id']
+                : null;
             self::log_click(array(
                 'click_id'           => $tap_click_id,
                 'click_session_id'   => $session_pk,
@@ -389,6 +392,7 @@ final class Cashback_Click_Session_Service {
                 'user_agent'         => $user_agent,
                 'spam_click'         => $spam_flag,
                 'referer'            => $referer,
+                'promocode_id'       => $promocode_id,
             ));
 
             $wpdb->query('COMMIT');
@@ -612,6 +616,11 @@ final class Cashback_Click_Session_Service {
 
     /**
      * Логирование клика в cashback_click_log.
+     *
+     * Использует wpdb::insert (а не raw INSERT) ради корректной поддержки
+     * nullable полей (promocode_id для WC-flow = NULL, для promo-flow = id).
+     * 12i-2 ADR (F-10-001): click_session_id / client_request_id / is_session_primary
+     * пишутся явно; legacy-вызовы без этих полей получают NULL/0 (backward-compat).
      */
     private static function log_click( array $data ): bool {
         global $wpdb;
@@ -619,34 +628,32 @@ final class Cashback_Click_Session_Service {
         $table      = $wpdb->prefix . 'cashback_click_log';
         $created_at = ( new \DateTimeImmutable('now', new \DateTimeZone('UTC')) )->format('Y-m-d H:i:s.u');
 
-        // 12i-2 ADR (F-10-001): click_session_id / client_request_id / is_session_primary
-        // пишутся явно; legacy-вызовы без этих полей получают NULL/0 (backward-compat).
-        $click_session_id   = isset($data['click_session_id']) ? (int) $data['click_session_id'] : null;
-        $client_request_id  = isset($data['client_request_id']) ? (string) $data['client_request_id'] : null;
-        $is_session_primary = !empty($data['is_session_primary']) ? 1 : 0;
+        $row = array(
+            'click_id'           => (string) $data['click_id'],
+            'click_session_id'   => isset($data['click_session_id']) ? (int) $data['click_session_id'] : null,
+            'client_request_id'  => isset($data['client_request_id']) ? (string) $data['client_request_id'] : null,
+            'is_session_primary' => !empty($data['is_session_primary']) ? 1 : 0,
+            'user_id'            => (int) $data['user_id'],
+            'product_id'         => (int) $data['product_id'],
+            'cpa_network'        => (string) ( $data['cpa_network'] ?? '' ),
+            'affiliate_url'      => (string) ( $data['affiliate_url'] ?? '' ),
+            'ip_address'         => (string) ( $data['ip_address'] ?? '' ),
+            'user_agent'         => (string) ( $data['user_agent'] ?? '' ),
+            'referer'            => (string) ( $data['referer'] ?? '' ),
+            'spam_click'         => (int) ( $data['spam_click'] ?? 0 ),
+            'created_at'         => $created_at,
+        );
+        $fmt = array( '%s', '%d', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s' );
 
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Custom plugin table.
-        $result = $wpdb->query($wpdb->prepare(
-            'INSERT INTO %i
-                (click_id, click_session_id, client_request_id, is_session_primary,
-                 user_id, product_id, cpa_network, affiliate_url,
-                 ip_address, user_agent, referer, spam_click, created_at)
-             VALUES (%s, %s, %s, %d, %d, %d, %s, %s, %s, %s, %s, %d, %s)',
-            $table,
-            $data['click_id'],
-            $click_session_id !== null ? (string) $click_session_id : null,
-            $client_request_id,
-            $is_session_primary,
-            $data['user_id'],
-            $data['product_id'],
-            $data['cpa_network'] ?? '',
-            $data['affiliate_url'] ?? '',
-            $data['ip_address'] ?? '',
-            $data['user_agent'] ?? '',
-            $data['referer'] ?? '',
-            $data['spam_click'] ?? 0,
-            $created_at
-        ));
+        // promocode_id (v10) — опциональное поле, передаём только при наличии чтобы
+        // INSERT не падал на старых БД до миграции v10.
+        if (isset($data['promocode_id']) && $data['promocode_id'] !== null && (int) $data['promocode_id'] > 0) {
+            $row['promocode_id'] = (int) $data['promocode_id'];
+            $fmt[]               = '%d';
+        }
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom plugin table; insert is the operation.
+        $result = $wpdb->insert($table, $row, $fmt);
 
         if (false === $result) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
