@@ -159,21 +159,25 @@
 
 /* --- Withdrawal containers ------------------------------------------- */
 
+/* Bare wrappers — no inner border/shadow, the parent My-Account card
+   is the only frame. Keeps the panel from looking like a "box-in-box". */
+
 .cashback-withdrawal-container {
-    margin: 20px 0;
-    padding: 24px;
-    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
-    border-radius: var(--cb-radius-lg, 20px);
-    background-color: var(--cb-bg-surface, #fff);
-    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
+    margin: 20px 0 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background-color: transparent;
+    box-shadow: none;
 }
 
 .cashback-withdrawal-form {
     margin-top: 20px;
-    padding: 20px;
-    background-color: var(--cb-bg-surface, #fff);
-    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
-    border-radius: var(--cb-radius-md, 16px);
+    padding: 0;
+    background-color: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
 }
 
 .cashback-withdrawal-form .form-row {
@@ -452,10 +456,10 @@ button#save_payout_details_btn:hover {
 
 .payout-current-data {
     margin-top: 16px;
-    padding: 14px;
-    background-color: var(--cb-bg-canvas, #f5f4f0);
-    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
-    border-radius: var(--cb-radius-md, 16px);
+    padding: 0;
+    background-color: transparent;
+    border: none;
+    border-radius: 0;
     transition: all 0.3s ease;
     animation: fadeIn 0.5s ease;
 }
@@ -483,12 +487,12 @@ button#save_payout_details_btn:hover {
 /* --- Payout settings form ------------------------------------------- */
 
 .payout-settings-form {
-    margin: 20px 0;
-    padding: 24px;
-    background-color: var(--cb-bg-surface, #fff);
-    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
-    border-radius: var(--cb-radius-lg, 20px);
-    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
+    margin: 20px 0 0;
+    padding: 0;
+    background-color: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
 }
 
 .payout-settings-form h3 {
@@ -555,12 +559,12 @@ button#save_payout_details_btn:hover {
 }
 
 .payout-settings-section {
-    margin: 20px 0;
-    padding: 24px;
-    background-color: var(--cb-bg-surface, #fff);
-    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
-    border-radius: var(--cb-radius-lg, 20px);
-    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
+    margin: 20px 0 0;
+    padding: 0;
+    background-color: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
 }
 
 .payout-settings-section h3 {
@@ -575,10 +579,10 @@ button#save_payout_details_btn:hover {
 /* --- Saved payout settings display --------------------------------- */
 
 .payout-settings-display {
-    padding: 16px;
-    background-color: var(--cb-bg-canvas, #f5f4f0);
-    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
-    border-radius: var(--cb-radius-md, 16px);
+    padding: 0;
+    background-color: transparent;
+    border: none;
+    border-radius: 0;
     margin-bottom: 16px;
     transition: all 0.3s ease;
 }
