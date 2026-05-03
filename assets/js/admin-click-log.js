@@ -19,33 +19,34 @@
     $('#filter-submit').on('click', function () {
       var url = new URL(window.location);
 
-      var email = $('#filter-email').val();
-      var dateFrom = $('#filter-date-from').val();
-      var dateTo = $('#filter-date-to').val();
-      var spamOnly = $('#filter-spam-only').is(':checked');
+      // Общие для обоих табов.
+      setOrDelete(url, 'email', $('#filter-email').val());
+      setOrDelete(url, 'date_from', $('#filter-date-from').val());
+      setOrDelete(url, 'date_to', $('#filter-date-to').val());
 
-      if (email) {
-        url.searchParams.set('email', email);
-      } else {
-        url.searchParams.delete('email');
+      // Tab «Все клики»: spam_only.
+      var $spam = $('#filter-spam-only');
+      if ($spam.length) {
+        if ($spam.is(':checked')) {
+          url.searchParams.set('spam_only', '1');
+        } else {
+          url.searchParams.delete('spam_only');
+        }
       }
 
-      if (dateFrom) {
-        url.searchParams.set('date_from', dateFrom);
-      } else {
-        url.searchParams.delete('date_from');
+      // Tab «Промо клики»: promo_action + promo_id.
+      var $promoAction = $('#filter-promo-action');
+      if ($promoAction.length) {
+        setOrDelete(url, 'promo_action', $promoAction.val());
       }
-
-      if (dateTo) {
-        url.searchParams.set('date_to', dateTo);
-      } else {
-        url.searchParams.delete('date_to');
-      }
-
-      if (spamOnly) {
-        url.searchParams.set('spam_only', '1');
-      } else {
-        url.searchParams.delete('spam_only');
+      var $promoId = $('#filter-promo-id');
+      if ($promoId.length) {
+        var pid = parseInt($promoId.val(), 10);
+        if (pid > 0) {
+          url.searchParams.set('promo_id', String(pid));
+        } else {
+          url.searchParams.delete('promo_id');
+        }
       }
 
       url.searchParams.delete('paged');
@@ -54,13 +55,20 @@
 
     $('#filter-reset').on('click', function () {
       var url = new URL(window.location);
-      url.searchParams.delete('email');
-      url.searchParams.delete('date_from');
-      url.searchParams.delete('date_to');
-      url.searchParams.delete('spam_only');
-      url.searchParams.delete('paged');
+      // Не трогаем `tab` и `page` — остаёмся на текущем табе.
+      ['email', 'date_from', 'date_to', 'spam_only', 'promo_action', 'promo_id', 'paged'].forEach(function (k) {
+        url.searchParams.delete(k);
+      });
       window.location.href = url.toString();
     });
+  }
+
+  function setOrDelete(url, key, value) {
+    if (value !== undefined && value !== null && String(value) !== '') {
+      url.searchParams.set(key, String(value));
+    } else {
+      url.searchParams.delete(key);
+    }
   }
 
   /**
