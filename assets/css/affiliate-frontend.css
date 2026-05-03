@@ -56,24 +56,72 @@
                 var(--cb-shadow-inset, inset 0 1px 2px rgba(22, 21, 28, 0.05));
 }
 
-.cashback-affiliate-link-input {
+.cashback-affiliate-link-input,
+input.cashback-affiliate-link-input,
+input[type="text"].cashback-affiliate-link-input {
     flex: 1;
     padding: 8px 16px;
-    border: none;
-    border-radius: var(--cb-radius-pill, 999px);
+    border: none !important;
+    border-radius: var(--cb-radius-pill, 999px) !important;
     font-size: 14px;
-    background: transparent;
+    background: transparent !important;
+    box-shadow: none !important;
     color: var(--cb-text-primary, #16151c);
     font-variant-numeric: tabular-nums;
+    min-height: 0;
+    line-height: 1.4;
 }
 
-.cashback-affiliate-link-input:focus {
-    outline: none;
-    box-shadow: none;
+.cashback-affiliate-link-input:focus,
+input.cashback-affiliate-link-input:focus,
+input[type="text"].cashback-affiliate-link-input:focus {
+    outline: none !important;
+    box-shadow: none !important;
+    border: none !important;
 }
 
-.cashback-affiliate-copy-btn {
+/* "Копировать" button next to the referral link.
+ * Targeting both the dedicated class and the generic .button parent
+ * theme might apply to it; pill, soft accent, no theme conflict. */
+
+.cashback-affiliate-copy-btn,
+button.cashback-affiliate-copy-btn,
+a.cashback-affiliate-copy-btn,
+.button.cashback-affiliate-copy-btn {
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 22px;
+    border: none;
+    border-radius: var(--cb-radius-pill, 999px);
+    background: var(--cb-accent, #5b6cf7);
+    color: var(--cb-text-on-accent, #fff) !important;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    text-decoration: none;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
+    text-transform: none;
+    font-family: inherit;
+    transition: background-color 0.15s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.cashback-affiliate-copy-btn:hover,
+button.cashback-affiliate-copy-btn:hover,
+a.cashback-affiliate-copy-btn:hover,
+.button.cashback-affiliate-copy-btn:hover {
+    background: var(--cb-accent-hover, #4555e8);
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-raised, 0 18px 36px -16px rgba(15, 18, 34, 0.14));
+    transform: translateY(-1px);
+}
+
+.cashback-affiliate-copy-btn.is-copied,
+button.cashback-affiliate-copy-btn.is-copied {
+    background: var(--cb-success, #1fae7f);
+    color: var(--cb-text-on-accent, #fff) !important;
 }
 
 .cashback-affiliate-rules {

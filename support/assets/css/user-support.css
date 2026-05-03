@@ -1,246 +1,363 @@
-/* Стили для модуля поддержки в кабинете пользователя */
+/* =============================================================================
+   User support module — frontend "Поддержка" tab in My Account.
+   Restyled to consume --cb-* tokens (with literal fallbacks so the file
+   degrades gracefully if the theme stylesheet ever fails to load).
+   ============================================================================= */
+
+/* --- Tabs ("НОВЫЙ ТИКЕТ / ИСТОРИЯ ТИКЕТОВ") ------------------------- */
 
 .cashback-support-tabs {
     display: flex;
-    gap: 4px;
+    gap: 6px;
     margin-bottom: 0;
-    background: transparent;
-    border-bottom: 2px solid var(--btn-accented-bgcolor, #0073aa);
+    padding: 6px;
+    background: var(--cb-bg-sunken, #eceae3);
+    border-radius: var(--cb-radius-pill, 999px);
+    box-shadow: var(--cb-shadow-inset, inset 0 1px 2px rgba(22, 21, 28, 0.05));
+    border-bottom: none;
 }
+
 .cashback-support-tabs button.cashback-support-tab {
     border: none !important;
-    border-radius: 10px 10px 0 0 !important;
-    padding: 12px 24px !important;
+    border-radius: var(--cb-radius-pill, 999px) !important;
+    padding: 10px 22px !important;
     cursor: pointer;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
-    color: #555 !important;
-    background-color: #e0e0e0 !important;
-    transition: background-color 0.2s, color 0.2s, box-shadow 0.2s;
+    color: var(--cb-text-secondary, #5b5c70) !important;
+    background-color: transparent !important;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.2s ease;
     position: relative;
-    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.08) !important;
+    box-shadow: none !important;
+    font-family: inherit;
 }
+
 .cashback-support-tabs button.cashback-support-tab:hover {
-    background-color: #c8c8c8 !important;
-    color: #333 !important;
+    background-color: transparent !important;
+    color: var(--cb-text-primary, #16151c) !important;
 }
+
 .cashback-support-tabs button.cashback-support-tab.active {
-    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
-    color: var(--btn-accented-color, #fff) !important;
-    box-shadow: 0 -3px 8px rgba(0, 0, 0, 0.12) !important;
+    background-color: var(--cb-bg-surface, #fff) !important;
+    color: var(--cb-text-primary, #16151c) !important;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
 }
+
 .cashback-support-tabs button.cashback-support-tab.active:hover {
-    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
-    color: var(--btn-accented-color, #fff) !important;
+    background-color: var(--cb-bg-surface, #fff) !important;
+    color: var(--cb-text-primary, #16151c) !important;
 }
+
 .support-tab-badge {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     min-width: 18px;
     height: 18px;
-    line-height: 18px;
-    padding: 0 5px;
-    border-radius: 50%;
-    background: #f44336;
-    color: #fff !important;
+    padding: 0 6px;
+    border-radius: var(--cb-radius-pill, 999px);
+    background: var(--cb-danger, #f44336);
+    color: var(--cb-text-on-accent, #fff) !important;
     font-size: 11px;
-    font-weight: bold;
+    font-weight: 700;
     text-align: center;
-    margin-left: 6px;
+    margin-left: 8px;
     vertical-align: middle;
+    font-variant-numeric: tabular-nums;
 }
+
 .cashback-support-tab-content {
-    padding: 20px 0 10px;
+    padding: 24px 0 10px;
 }
+
+/* --- Ticket list rows ---------------------------------------------- */
+
 .support-ticket-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 14px 18px;
-    border: 1px solid #e0e0e0;
-    margin-bottom: 10px;
+    padding: 16px 20px;
+    background: var(--cb-bg-surface, #fff);
+    border: 1px solid var(--cb-border, #e0e0e0);
+    margin-bottom: 12px;
     cursor: pointer;
-    border-radius: 8px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-    transition: all 0.2s ease;
+    border-radius: var(--cb-radius-lg, 8px);
+    box-shadow: var(--cb-shadow-soft, 0 1px 4px rgba(0, 0, 0, 0.06));
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.15s ease;
 }
+
 .support-ticket-row:hover {
-    background-color: #f5f5f5;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+    background-color: var(--cb-bg-surface, #f5f5f5);
+    box-shadow: var(--cb-shadow-raised, 0 3px 10px rgba(0, 0, 0, 0.1));
+    transform: translateY(-2px);
+    border-color: var(--cb-border-strong, #ccc);
 }
+
 .support-ticket-info {
     flex: 1;
 }
+
 .support-ticket-info strong {
     display: block;
     margin-bottom: 4px;
+    color: var(--cb-text-primary, #16151c);
+    font-weight: 700;
 }
+
 .support-ticket-meta {
     font-size: 0.85em;
-    color: #666;
+    color: var(--cb-text-secondary, #666);
 }
+
 .support-ticket-meta span {
     margin-right: 12px;
 }
+
+/* --- Status / priority badges -------------------------------------- */
+
 .support-badge {
-    display: inline-block;
-    padding: 2px 8px;
-    font-size: 0.8em;
-    border-radius: 3px;
-    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: var(--cb-radius-pill, 3px);
+    color: var(--cb-text-on-accent, #fff);
 }
-.support-badge-open { background: #2196F3; }
-.support-badge-answered { background: #4CAF50; }
-.support-badge-closed { background: #9E9E9E; }
-.support-badge-urgent { background: #f44336; }
-.support-badge-normal { background: #ff9800; }
-.support-badge-not_urgent { background: #607d8b; }
+
+.support-badge-open      { background: var(--cb-info, #2196F3); }
+.support-badge-answered  { background: var(--cb-success, #4CAF50); }
+.support-badge-closed    { background: var(--cb-text-muted, #9E9E9E); }
+.support-badge-urgent    { background: var(--cb-danger, #f44336); }
+.support-badge-normal    { background: var(--cb-warning, #ff9800); }
+.support-badge-not_urgent {
+    background: var(--cb-bg-sunken, #607d8b);
+    color: var(--cb-text-secondary, #fff);
+}
+
+/* --- Message bubbles in ticket conversation ------------------------ */
+
 .support-message {
-    padding: 14px 18px;
-    margin-bottom: 10px;
-    border: 1px solid #e0e0e0;
-    border-left: 4px solid #999;
-    border-radius: 8px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    padding: 16px 20px;
+    margin-bottom: 12px;
+    border: 1px solid var(--cb-border, #e0e0e0);
+    border-left: 3px solid var(--cb-text-muted, #999);
+    border-radius: var(--cb-radius-lg, 8px);
+    box-shadow: var(--cb-shadow-soft, 0 1px 4px rgba(0, 0, 0, 0.06));
+    background: var(--cb-bg-surface, #fff);
 }
+
 .support-message-admin {
-    background: #e8f4f8;
-    border-left-color: #2196F3;
+    background: var(--cb-info-soft, #e8f4f8);
+    border-left-color: var(--cb-info, #2196F3);
 }
+
 .support-message-user {
-    background: #f9f9f9;
-    border-left-color: #999;
+    background: var(--cb-bg-canvas, #f9f9f9);
+    border-left-color: var(--cb-text-muted, #999);
 }
+
 .support-message-header {
     display: flex;
     justify-content: space-between;
     margin-bottom: 8px;
     font-size: 0.9em;
+    color: var(--cb-text-primary, #16151c);
 }
+
 .support-message-header .date {
-    color: #888;
+    color: var(--cb-text-muted, #888);
 }
+
+/* --- Form fields --------------------------------------------------- */
+
 .support-form-group {
-    margin-bottom: 15px;
+    margin-bottom: 18px;
 }
+
 .support-form-group label {
     display: block;
-    margin-bottom: 5px;
-    font-weight: bold;
+    margin-bottom: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--cb-text-primary, #16151c);
 }
+
 .support-form-group input[type="text"],
 .support-form-group select,
 .support-form-group textarea {
     width: 100%;
-    max-width: 600px;
-    padding: 8px;
-    border: 1px solid #ddd;
+    max-width: 100%;
+    padding: 11px 14px;
+    border: 1px solid var(--cb-border-strong, #ddd);
+    border-radius: var(--cb-radius-sm, 0);
+    background: var(--cb-bg-surface, #fff);
+    color: var(--cb-text-primary, #16151c);
+    font-size: 14px;
+    font-family: inherit;
+    box-shadow: var(--cb-shadow-inset, none);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    box-sizing: border-box;
 }
+
+.support-form-group input[type="text"]:focus,
+.support-form-group select:focus,
+.support-form-group textarea:focus {
+    outline: none;
+    border-color: var(--cb-border-focus, #5b6cf7);
+    box-shadow: var(--cb-shadow-focus, 0 0 0 3px rgba(91, 108, 247, 0.25)),
+                var(--cb-shadow-inset, none);
+}
+
 .support-form-group textarea {
-    min-height: 120px;
+    min-height: 140px;
     resize: vertical;
+    line-height: 1.5;
 }
+
+/* --- Buttons ------------------------------------------------------- */
+
 .support-btn {
-    display: inline-block;
-    padding: 10px 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 11px 26px;
     border: none;
     cursor: pointer;
     font-size: 14px;
-    transition: opacity 0.2s, background-color 0.2s;
+    font-weight: 600;
+    font-family: inherit;
+    transition: background-color 0.15s ease, box-shadow 0.2s ease,
+                opacity 0.2s ease, transform 0.2s ease;
 }
-.support-btn:hover { opacity: 0.85; }
+
+.support-btn:hover { opacity: 1; }
+
 .support-btn-primary {
-    border-radius: var(--btn-accented-brd-radius) !important;
-    color: var(--btn-accented-color, #fff) !important;
-    box-shadow: var(--btn-accented-box-shadow) !important;
-    background-color: var(--btn-accented-bgcolor, #333) !important;
-    text-transform: var(--btn-accented-transform, var(--btn-transform, uppercase)) !important;
-    font-weight: var(--btn-accented-font-weight, var(--btn-font-weight, 600)) !important;
-    font-family: var(--btn-accented-font-family, var(--btn-font-family, inherit)) !important;
-    font-style: var(--btn-accented-font-style, var(--btn-font-style, unset)) !important;
+    border-radius: var(--cb-radius-pill, 4px) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-soft, none) !important;
+    background-color: var(--cb-accent, #333) !important;
+    text-transform: none !important;
+    font-weight: 600 !important;
+    font-family: inherit !important;
+    font-style: normal !important;
 }
+
 .support-btn-primary:hover {
-    color: var(--btn-accented-color-hover, #fff) !important;
-    box-shadow: var(--btn-accented-box-shadow-hover) !important;
-    background-color: var(--btn-accented-bgcolor-hover, #555) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-raised, none) !important;
+    background-color: var(--cb-accent-hover, #555) !important;
+    transform: translateY(-1px);
     opacity: 1;
 }
+
 .support-btn-danger {
-    border-radius: var(--btn-accented-brd-radius) !important;
-    color: #fff !important;
-    background-color: #f44336 !important;
-    text-transform: var(--btn-accented-transform, var(--btn-transform, uppercase)) !important;
-    font-weight: var(--btn-accented-font-weight, var(--btn-font-weight, 600)) !important;
-    font-family: var(--btn-accented-font-family, var(--btn-font-family, inherit)) !important;
-    font-style: var(--btn-accented-font-style, var(--btn-font-style, unset)) !important;
+    border-radius: var(--cb-radius-pill, 4px) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    background-color: var(--cb-danger, #f44336) !important;
+    box-shadow: var(--cb-shadow-soft, none) !important;
+    text-transform: none !important;
+    font-weight: 600 !important;
+    font-family: inherit !important;
+    font-style: normal !important;
 }
+
 .support-btn-danger:hover {
-    background-color: #d32f2f !important;
+    background-color: #c82127 !important;
+    box-shadow: var(--cb-shadow-raised, none) !important;
+    transform: translateY(-1px);
     opacity: 1;
 }
+
 .support-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-}
-.support-alert {
-    padding: 12px 16px;
-    margin-bottom: 15px;
-    border: 1px solid;
-}
-.support-alert-success {
-    background: #e8f5e9;
-    border-color: #4CAF50;
-    color: #2e7d32;
-}
-.support-alert-error {
-    background: #ffebee;
-    border-color: #f44336;
-    color: #c62828;
-}
-.support-ticket-actions {
-    margin-top: 15px;
-    display: flex;
-    gap: 10px;
-    align-items: center;
-}
-#support-pagination {
-    margin-top: 15px;
-    padding: 10px 0;
-}
-.support-ticket-row.has-unread {
-    border-left: 4px solid #4CAF50;
-    background-color: #f0f9f0;
-}
-.support-ticket-row.has-unread:hover {
-    background-color: #e5f5e5;
-}
-.support-unread-badge {
-    display: inline-block;
-    min-width: 18px;
-    height: 18px;
-    line-height: 18px;
-    padding: 0 5px;
-    border-radius: 50%;
-    background: #f44336;
-    color: #fff;
-    font-size: 11px;
-    font-weight: bold;
-    text-align: center;
-    margin-left: 8px;
-}
-.support-field-error {
-    border-color: #f44336 !important;
-    box-shadow: 0 0 0 1px #f44336 !important;
+    transform: none !important;
+    box-shadow: none !important;
 }
 
-/* === Вложения файлов === */
-.support-files-info {
-    margin-top: 5px;
-    font-size: 0.85em;
-    color: #666;
+/* --- Inline alert -------------------------------------------------- */
+
+.support-alert {
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    border: none;
+    border-radius: var(--cb-radius-md, 0);
+    font-size: 14px;
+    line-height: 1.5;
 }
+
+.support-alert-success {
+    background: var(--cb-success-soft, #e8f5e9);
+    border-left: 3px solid var(--cb-success, #4CAF50);
+    color: #14724f;
+}
+
+.support-alert-error {
+    background: var(--cb-danger-soft, #ffebee);
+    border-left: 3px solid var(--cb-danger, #f44336);
+    color: #a32328;
+}
+
+.support-ticket-actions {
+    margin-top: 18px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+#support-pagination {
+    margin-top: 18px;
+    padding: 10px 0;
+}
+
+/* --- Unread ticket highlight --------------------------------------- */
+
+.support-ticket-row.has-unread {
+    border-left: 3px solid var(--cb-success, #4CAF50);
+    background-color: var(--cb-success-soft, #f0f9f0);
+}
+
+.support-ticket-row.has-unread:hover {
+    background-color: #c5edd2;
+}
+
+.support-unread-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: var(--cb-radius-pill, 999px);
+    background: var(--cb-danger, #f44336);
+    color: var(--cb-text-on-accent, #fff);
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
+    margin-left: 8px;
+    font-variant-numeric: tabular-nums;
+}
+
+.support-field-error {
+    border-color: var(--cb-danger, #f44336) !important;
+    box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.25) !important;
+}
+
+/* === Attachments === */
+
+.support-files-info {
+    margin-top: 6px;
+    font-size: 0.85em;
+    color: var(--cb-text-secondary, #666);
+}
+
 .support-files-preview {
     margin-top: 8px;
 }
+
 .support-file-item {
     display: flex;
     align-items: center;
@@ -248,47 +365,57 @@
     padding: 4px 0;
     font-size: 0.9em;
 }
+
 .support-file-name {
-    color: #333;
+    color: var(--cb-text-primary, #333);
 }
+
 .support-file-size {
-    color: #888;
+    color: var(--cb-text-muted, #888);
     font-size: 0.85em;
 }
+
 .support-attachments {
-    margin-top: 10px;
-    padding-top: 8px;
-    border-top: 1px dashed #ddd;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--cb-border-strong, #ddd);
 }
+
 .support-attachment-link {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
     margin-right: 12px;
-    margin-bottom: 4px;
-    padding: 3px 8px;
-    background: #f5f5f5;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
+    margin-bottom: 6px;
+    padding: 4px 12px;
+    background: var(--cb-bg-canvas, #f5f5f5);
+    border: 1px solid var(--cb-border, #e0e0e0);
+    border-radius: var(--cb-radius-pill, 4px);
     font-size: 0.85em;
     text-decoration: none;
-    color: #333;
-    transition: background 0.2s;
+    color: var(--cb-text-primary, #333);
+    transition: background 0.15s ease, border-color 0.15s ease;
 }
+
 .support-attachment-link:hover {
-    background: #e8e8e8;
-    color: #333;
+    background: var(--cb-bg-accent-soft, #e8e8e8);
+    border-color: var(--cb-border-strong, #ccc);
+    color: var(--cb-accent-soft-text, #333);
 }
+
 .support-attachment-size {
-    color: #888;
+    color: var(--cb-text-muted, #888);
     font-size: 0.9em;
 }
 
-/* Responsive дизайн для мобильных устройств */
+/* --- Responsive (mobile) ------------------------------------------- */
+
 @media (max-width: 768px) {
     .cashback-support-tabs {
         flex-direction: column;
         gap: 4px;
         margin-bottom: 20px;
-        border-bottom: 2px solid var(--btn-accented-bgcolor, #0073aa);
+        padding: 4px;
+        border-radius: var(--cb-radius-md, 16px);
         overflow-x: visible;
     }
 
@@ -296,115 +423,136 @@
         padding: 12px 16px !important;
         font-size: 14px;
         white-space: nowrap;
-        border-radius: 10px 10px 0 0 !important;
-        box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.08) !important;
+        border-radius: var(--cb-radius-md, 16px) !important;
         text-align: center;
     }
 
     .cashback-support-tabs button.cashback-support-tab.active {
-        box-shadow: 0 -3px 8px rgba(0, 0, 0, 0.12) !important;
+        box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
     }
 }
 
-/* ===== Привязка тикета к сущности ===== */
+/* ===== Related entity card (link to order/payout/accrual) ===== */
 
-/* Карточка связанной записи (в форме создания и в detail) */
 .support-related-card {
-    border: 1px solid #d0e2f2;
-    background: #f5faff;
-    border-radius: 6px;
-    padding: 10px 12px;
-    margin: 0 0 15px;
+    border: 1px solid var(--cb-border, #d0e2f2);
+    background: var(--cb-bg-accent-soft, #f5faff);
+    border-radius: var(--cb-radius-md, 6px);
+    padding: 12px 14px;
+    margin: 0 0 16px;
     font-size: 14px;
 }
+
 .support-related-card--form {
-    background: #f0f9ff;
-    border-color: #b6d6ef;
+    background: var(--cb-bg-accent-soft, #f0f9ff);
+    border-color: var(--cb-border-strong, #b6d6ef);
 }
+
 .support-related-card__header {
     display: flex;
     gap: 8px;
     align-items: center;
     margin-bottom: 6px;
-    color: #5c6b74;
+    color: var(--cb-text-secondary, #5c6b74);
     font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-}
-.support-related-card__type {
     font-weight: 600;
-    color: #2b5e86;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.support-related-card__type {
+    font-weight: 700;
+    color: var(--cb-accent-soft-text, #2b5e86);
     text-transform: none;
     letter-spacing: 0;
     font-size: 13px;
 }
+
 .support-related-card__ref code {
     font-size: 13px;
-    background: #fff;
-    padding: 2px 6px;
-    border-radius: 3px;
-    border: 1px solid #e0e8ef;
+    background: var(--cb-bg-surface, #fff);
+    padding: 2px 8px;
+    border-radius: var(--cb-radius-xs, 3px);
+    border: 1px solid var(--cb-border, #e0e8ef);
+    font-family: var(--cb-font-mono, ui-monospace, Menlo, Consolas, monospace);
 }
+
 .support-related-card__title {
     margin-top: 4px;
     font-weight: 500;
-    color: #333;
+    color: var(--cb-text-primary, #333);
 }
+
 .support-related-card__meta {
-    margin-top: 4px;
+    margin-top: 6px;
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    color: #666;
+    color: var(--cb-text-secondary, #666);
     font-size: 12px;
 }
+
 .support-related-card__status {
-    padding: 1px 6px;
-    border-radius: 3px;
-    background: #e8e8e8;
-    color: #555;
+    padding: 2px 8px;
+    border-radius: var(--cb-radius-pill, 3px);
+    background: var(--cb-bg-sunken, #e8e8e8);
+    color: var(--cb-text-secondary, #555);
+    font-weight: 600;
 }
+
 .support-related-card__status--completed,
 .support-related-card__status--available,
 .support-related-card__status--paid,
 .support-related-card__status--balance {
-    background: #d9f3d9;
-    color: #2a6a2a;
+    background: var(--cb-success-soft, #d9f3d9);
+    color: #14724f;
 }
+
 .support-related-card__status--waiting,
 .support-related-card__status--pending,
 .support-related-card__status--hold,
 .support-related-card__status--frozen {
-    background: #fff3cd;
-    color: #8a6d3b;
-}
-.support-related-card__status--declined {
-    background: #f8d7da;
-    color: #8a2b35;
+    background: var(--cb-warning-soft, #fff3cd);
+    color: #8c5c00;
 }
 
-/* Чип типа привязки в списках тикетов */
+.support-related-card__status--declined {
+    background: var(--cb-danger-soft, #f8d7da);
+    color: #a32328;
+}
+
+/* --- Related-entity chip in ticket list ----------------------------- */
+
 .support-related-chip {
-    display: inline-block;
-    padding: 2px 8px;
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 10px;
     font-size: 11px;
-    border-radius: 10px;
-    background: #e3eef7;
-    color: #2b5e86;
-    margin-left: 4px;
+    font-weight: 600;
+    border-radius: var(--cb-radius-pill, 10px);
+    background: var(--cb-bg-accent-soft, #e3eef7);
+    color: var(--cb-accent-soft-text, #2b5e86);
+    margin-left: 6px;
     vertical-align: middle;
 }
+
 .support-related-chip--affiliate_accrual {
-    background: #f0e4f7;
-    color: #6a2b86;
-}
-.support-related-chip--payout {
-    background: #e4f7ea;
-    color: #2b8648;
+    background: var(--cb-bg-warm-soft, #f0e4f7);
+    color: var(--cb-warm-soft-text, #6a2b86);
 }
 
-/* Кнопка "Вопрос в поддержку" в таблицах истории / партнёрских начислений */
-.col-support-action { width: 44px; text-align: center; }
+.support-related-chip--payout {
+    background: var(--cb-success-soft, #e4f7ea);
+    color: #14724f;
+}
+
+/* --- "Ask support" icon button (in history/payouts/affiliate tables) - */
+
+.col-support-action {
+    width: 44px;
+    text-align: center;
+}
+
 .support-ask-btn {
     display: inline-flex;
     align-items: center;
@@ -413,20 +561,47 @@
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    background: #e3eef7;
-    color: #2b5e86 !important;
+    background: var(--cb-bg-accent-soft, #e3eef7);
+    color: var(--cb-accent-soft-text, #2b5e86) !important;
     font-weight: 700;
     text-decoration: none !important;
     line-height: 1;
-    transition: background 0.15s;
+    transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
-.support-ask-btn:hover { background: #2b5e86; color: #fff !important; }
-.support-ask-btn__icon { font-size: 14px; }
-.support-ask-btn__label { display: none; }
+
+.support-ask-btn:hover {
+    background: var(--cb-accent, #2b5e86);
+    color: var(--cb-text-on-accent, #fff) !important;
+    transform: scale(1.05);
+}
+
+.support-ask-btn__icon {
+    font-size: 14px;
+}
+
+.support-ask-btn__label {
+    display: none;
+}
 
 @media (max-width: 768px) {
-    .col-support-action { width: auto; text-align: right; }
-    .support-ask-btn { width: auto; height: auto; padding: 6px 10px; border-radius: 6px; }
-    .support-ask-btn__icon { display: none; }
-    .support-ask-btn__label { display: inline; font-size: 13px; }
+    .col-support-action {
+        width: auto;
+        text-align: right;
+    }
+
+    .support-ask-btn {
+        width: auto;
+        height: auto;
+        padding: 7px 12px;
+        border-radius: var(--cb-radius-pill, 6px);
+    }
+
+    .support-ask-btn__icon {
+        display: none;
+    }
+
+    .support-ask-btn__label {
+        display: inline;
+        font-size: 13px;
+    }
 }
