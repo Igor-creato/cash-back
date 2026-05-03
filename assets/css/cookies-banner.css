@@ -94,18 +94,22 @@
 
 /* "Подробнее" link — keeps its standalone link look. */
 
-.cashback-legal-cookies-banner__link {
+.cashback-legal-cookies-banner .cashback-legal-cookies-banner__link,
+.cashback-legal-cookies-banner a.cashback-legal-cookies-banner__link {
     color: var(--cb-accent, currentColor);
-    text-decoration: underline;
-    text-underline-offset: 3px;
+    text-decoration: none !important;
     font: inherit;
     padding: 8px;
+    font-weight: 600;
+    transition: color 0.15s ease;
 }
 
-.cashback-legal-cookies-banner__link:hover,
-.cashback-legal-cookies-banner__link:focus-visible {
+.cashback-legal-cookies-banner .cashback-legal-cookies-banner__link:hover,
+.cashback-legal-cookies-banner .cashback-legal-cookies-banner__link:focus-visible,
+.cashback-legal-cookies-banner a.cashback-legal-cookies-banner__link:hover,
+.cashback-legal-cookies-banner a.cashback-legal-cookies-banner__link:focus-visible {
     color: var(--cb-accent-hover, currentColor);
-    text-decoration: none;
+    text-decoration: none !important;
     outline: none;
 }
 
