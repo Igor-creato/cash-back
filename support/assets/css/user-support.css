@@ -8,44 +8,47 @@
 
 .cashback-support-tabs {
     display: flex;
-    gap: 6px;
+    gap: 8px;
     margin-bottom: 0;
-    padding: 6px;
-    background: var(--cb-bg-sunken, #eceae3);
-    border-radius: var(--cb-radius-pill, 999px);
-    box-shadow: var(--cb-shadow-inset, inset 0 1px 2px rgba(22, 21, 28, 0.05));
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
     border-bottom: none;
 }
 
 .cashback-support-tabs button.cashback-support-tab {
-    border: none !important;
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06)) !important;
     border-radius: var(--cb-radius-pill, 999px) !important;
     padding: 10px 22px !important;
     cursor: pointer;
     font-size: 14px;
     font-weight: 600;
-    color: var(--cb-text-secondary, #5b5c70) !important;
-    background-color: transparent !important;
-    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.2s ease;
+    color: var(--cb-text-primary, #16151c) !important;
+    background-color: var(--cb-bg-surface, #fff) !important;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.2s ease, border-color 0.15s ease;
     position: relative;
-    box-shadow: none !important;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
     font-family: inherit;
 }
 
 .cashback-support-tabs button.cashback-support-tab:hover {
-    background-color: transparent !important;
-    color: var(--cb-text-primary, #16151c) !important;
+    background-color: var(--cb-bg-surface, #fff) !important;
+    color: var(--cb-accent, #5b6cf7) !important;
+    border-color: var(--cb-accent, #5b6cf7) !important;
 }
 
 .cashback-support-tabs button.cashback-support-tab.active {
-    background-color: var(--cb-bg-surface, #fff) !important;
-    color: var(--cb-text-primary, #16151c) !important;
-    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
+    background-color: var(--cb-accent, #5b6cf7) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    border-color: var(--cb-accent, #5b6cf7) !important;
+    box-shadow: var(--cb-shadow-raised, 0 18px 36px -16px rgba(15, 18, 34, 0.14)) !important;
 }
 
 .cashback-support-tabs button.cashback-support-tab.active:hover {
-    background-color: var(--cb-bg-surface, #fff) !important;
-    color: var(--cb-text-primary, #16151c) !important;
+    background-color: var(--cb-accent-hover, #4555e8) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    border-color: var(--cb-accent-hover, #4555e8) !important;
 }
 
 .support-tab-badge {

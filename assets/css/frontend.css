@@ -283,48 +283,52 @@ button#save_payout_details_btn:hover {
 
 .cashback-tabs {
     display: flex;
-    gap: 6px;
+    gap: 8px;
     margin-bottom: 0;
-    padding: 6px;
-    background: var(--cb-bg-sunken, #eceae3);
-    border-radius: var(--cb-radius-pill, 999px);
-    box-shadow: var(--cb-shadow-inset, inset 0 1px 2px rgba(22, 21, 28, 0.05));
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
     border-bottom: none;
 }
 
 .cashback-tabs button.cashback-tab {
-    border: none !important;
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06)) !important;
     border-radius: var(--cb-radius-pill, 999px) !important;
     padding: 10px 22px !important;
     cursor: pointer;
     font-size: 14px;
     font-weight: 600;
-    color: var(--cb-text-secondary, #5b5c70) !important;
-    background-color: transparent !important;
-    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.2s ease;
-    position: relative;
-    box-shadow: none !important;
-}
-
-.cashback-tabs button.cashback-tab:hover {
-    background-color: transparent !important;
     color: var(--cb-text-primary, #16151c) !important;
-}
-
-.cashback-tabs button.cashback-tab.active {
     background-color: var(--cb-bg-surface, #fff) !important;
-    color: var(--cb-text-primary, #16151c) !important;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.2s ease, border-color 0.15s ease, transform 0.2s ease;
+    position: relative;
     box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
 }
 
-.cashback-tabs button.cashback-tab.active:hover {
+.cashback-tabs button.cashback-tab:hover {
     background-color: var(--cb-bg-surface, #fff) !important;
-    color: var(--cb-text-primary, #16151c) !important;
+    color: var(--cb-accent, #5b6cf7) !important;
+    border-color: var(--cb-accent, #5b6cf7) !important;
+}
+
+.cashback-tabs button.cashback-tab.active {
+    background-color: var(--cb-accent, #5b6cf7) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    border-color: var(--cb-accent, #5b6cf7) !important;
+    box-shadow: var(--cb-shadow-raised, 0 18px 36px -16px rgba(15, 18, 34, 0.14)) !important;
+}
+
+.cashback-tabs button.cashback-tab.active:hover {
+    background-color: var(--cb-accent-hover, #4555e8) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    border-color: var(--cb-accent-hover, #4555e8) !important;
 }
 
 .cashback-tabs button.cashback-tab.cashback-tab--error {
     color: var(--cb-text-on-accent, #fff) !important;
     background-color: var(--cb-danger, #e5484d) !important;
+    border-color: var(--cb-danger, #e5484d) !important;
 }
 
 .cashback-tab-content {
