@@ -20,11 +20,13 @@
 
   $(document).ready(function () {
     // Перехват кликов — ТОЛЬКО для гостей.
-    // Используем селектор по href (cashback_click=) — это надёжнее, чем CSS-классы,
-    // которые могут отличаться в разных темах (WoodMart, Flavor, и т.д.).
+    // Используем селектор по href — надёжнее CSS-классов (могут отличаться в темах).
+    // Покрываем оба redirect-endpoint'а:
+    //   - cashback_click=        — обычный WC external product
+    //   - cashback_promo_click=  — карточка промокода (Cashback_Promocodes_Redirect)
     $(document).on(
       'click',
-      'a[href*="cashback_click="]',
+      'a[href*="cashback_click="], a[href*="cashback_promo_click="]',
       function (e) {
         // Не перехватываем клик по кнопке «Продолжить» внутри модалки
         if ($(this).closest('#wc-affiliate-warning-modal').length) {

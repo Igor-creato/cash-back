@@ -107,7 +107,7 @@ final class Cashback_Promocodes_Shortcode {
             'cashback-promocodes',
             plugins_url( 'assets/css/promocodes.css', $plugin_root_file ),
             array(),
-            '7.2.0'
+            '7.3.0'
         );
 
         $deps = array();
@@ -119,7 +119,7 @@ final class Cashback_Promocodes_Shortcode {
             'cashback-promocodes',
             plugins_url( 'assets/js/promocodes.js', $plugin_root_file ),
             $deps,
-            '7.2.0',
+            '7.3.0',
             true
         );
 
@@ -195,10 +195,21 @@ final class Cashback_Promocodes_Shortcode {
             );
         }
 
-        $parts[] = sprintf(
+        // href ведёт на серверный redirect-handler (Cashback_Promocodes_Redirect),
+        // который генерирует click_id, подставляет CPA-параметры (subid/uuid/литералы)
+        // в goto_link и пишет в cashback_click_log + cashback_click_sessions —
+        // полный аналог потока обычной WC-кнопки внешнего товара. goto_link напрямую
+        // в HTML больше не светится (плюс — меньше скрейпинга партнёрских ссылок).
+        // Имя query-var дублируется в Cashback_Promocodes_Redirect::QUERY_VAR
+        // (использован литерал, чтобы шорткод оставался unit-тестируемым без redirect-класса).
+        $goto_url = add_query_arg(
+            array( 'cashback_promo_click' => $promo_id ),
+            home_url( '/' )
+        );
+        $parts[]  = sprintf(
             '<a class="cashback-promo-card__btn cashback-promo-card__btn--goto" data-action="goto" data-promo-id="%1$s" href="%2$s" target="_blank" rel="nofollow noopener">%3$s</a>',
             esc_attr( (string) $promo_id ),
-            esc_url( $goto_link ),
+            esc_url( $goto_url ),
             esc_html__( 'Перейти в магазин', 'cashback-plugin' )
         );
 

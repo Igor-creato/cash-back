@@ -50,6 +50,25 @@ final class PromocodesShortcodeTest extends TestCase
                 return $out;
             }
         }
+        if (!function_exists('home_url')) {
+            function home_url(string $path = '', ?string $scheme = null): string {
+                return 'https://example.test' . $path;
+            }
+        }
+        if (!function_exists('add_query_arg')) {
+            function add_query_arg(...$args): string {
+                if (is_array($args[0])) {
+                    $params = $args[0];
+                    $url    = (string) ($args[1] ?? '');
+                } else {
+                    $params = array((string) $args[0] => (string) $args[1]);
+                    $url    = (string) ($args[2] ?? '');
+                }
+                $sep = strpos($url, '?') === false ? '?' : '&';
+                $qs  = http_build_query($params);
+                return $url . $sep . $qs;
+            }
+        }
     }
 
     private function make_repo_stub(array $rows): object
@@ -165,18 +184,31 @@ final class PromocodesShortcodeTest extends TestCase
         $this->assertCount(0, $repo->get_active_calls, 'Без product_id repository не должен вызываться');
     }
 
-    public function test_render_renders_goto_link_with_esc_url(): void
+    public function test_render_goto_button_points_to_promo_redirect_endpoint(): void
     {
+        // С 7.3.0: href ведёт НЕ на goto_link напрямую, а на серверный redirect-handler
+        // /?cashback_promo_click={id} (Cashback_Promocodes_Redirect), который генерирует
+        // click_id, подставляет CPA-параметры и пишет в cashback_click_log. goto_link
+        // напрямую в HTML больше не светится (партнёрский URL не утекает в DOM).
         $repo = $this->make_repo_stub(array(
             $this->sample_row(array(
-                'goto_link' => "https://example.com/go?param=1&q=2",
+                'id'        => 42,
+                'goto_link' => 'https://example.com/go?param=1&q=2',
             )),
         ));
         $sc   = new Cashback_Promocodes_Shortcode($repo);
         $html = $sc->render(array( 'product_id' => 123 ));
 
-        // & должен быть экранирован как &amp; в URL.
-        $this->assertMatchesRegularExpression('/href="[^"]*example\.com[^"]*"/', $html);
+        $this->assertMatchesRegularExpression(
+            '/href="[^"]*cashback_promo_click=42[^"]*"/',
+            $html,
+            'href должен содержать cashback_promo_click={promo_id}'
+        );
+        $this->assertStringNotContainsString(
+            'example.com',
+            $html,
+            'Партнёрский goto_link не должен попадать в DOM (только в БД)'
+        );
     }
 
     public function test_render_includes_copy_button_for_promocode_species(): void

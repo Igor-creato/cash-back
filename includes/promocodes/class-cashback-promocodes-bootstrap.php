@@ -43,9 +43,16 @@ final class Cashback_Promocodes_Bootstrap {
             self::get_shortcode()->register();
         }
 
-        // Click-tracker AJAX (auth + nopriv).
+        // Click-tracker AJAX (auth + nopriv) — для copy-кликов.
         if ( class_exists( 'Cashback_Promocodes_Tracker' ) ) {
             Cashback_Promocodes_Tracker::init();
+        }
+
+        // Серверный redirect-handler для goto-клика (?cashback_promo_click=ID):
+        // зеркалит wc-affiliate-url-params для WC external product, генерирует
+        // click_id, подставляет CPA-параметры в goto_link и пишет в click_log.
+        if ( class_exists( 'Cashback_Promocodes_Redirect' ) ) {
+            Cashback_Promocodes_Redirect::init();
         }
 
         // Admin AJAX manual refresh (метабокс «Обновить промокоды»).

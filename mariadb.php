@@ -89,6 +89,7 @@ class Mariadb_Plugin {
             $instance->migrate_split_ban_reason_v6();
             $instance->migrate_payout_unfreeze_v7();
             $instance->migrate_promocodes_v8();
+            $instance->migrate_promocodes_v9_click_id();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -3703,6 +3704,81 @@ class Mariadb_Plugin {
         $this->migrate_seed_admitad_coupons_config();
 
         update_option('cashback_db_version', 8, false);
+    }
+
+    /**
+     * Миграция v9: добавляет колонку click_id в cashback_promocode_clicks.
+     *
+     * Колонка нужна для связи goto-кликов промокода с записью в cashback_click_log
+     * (UUIDv7). Заполняется только новым серверным redirect-handler'ом
+     * (Cashback_Promocodes_Redirect); legacy AJAX-записи и copy-события остаются NULL.
+     *
+     * Идемпотентность: cashback_db_version >= 9 fast-path + INFORMATION_SCHEMA
+     * проверка колонки. ALTER через raw $wpdb->query (utf8mb4_bin для CHAR(32)
+     * BIN-collation, иначе wpdb может выбрать ascii — см. memory feedback_no_ascii_columns).
+     */
+    public function migrate_promocodes_v9_click_id(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        if ($current_version >= 9) {
+            return;
+        }
+
+        $clicks_table = $wpdb->prefix . 'cashback_promocode_clicks';
+
+        // Skip если базовая v8-таблица не существует (свежая установка ещё
+        // не дошла до migrate_promocodes_v8()).
+        $table_exists = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $clicks_table
+        ));
+        if ($table_exists === 0) {
+            return;
+        }
+
+        $col_exists = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME = %s
+                AND COLUMN_NAME = %s',
+            $clicks_table,
+            'click_id'
+        ));
+
+        if ($col_exists === 0) {
+            $safe_clicks = $this->validate_table_prefix($wpdb->prefix) . 'cashback_promocode_clicks';
+            $alter_ddl   = "ALTER TABLE `{$safe_clicks}` "
+                . 'ADD COLUMN `click_id` CHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL '
+                . "COMMENT 'UUIDv7 связь с cashback_click_log.click_id (goto-клики через серверный redirect, v9)', "
+                . 'ADD KEY `idx_click_id` (`click_id`)';
+
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL ALTER TABLE с non-ASCII COMMENT, raw query per memory feedback_alter_table_no_prepare.
+            $alter_result = $wpdb->query($alter_ddl);
+            if ($alter_result === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v9] ADD COLUMN click_id failed: ' . $wpdb->last_error);
+                return;
+            }
+
+            // Post-verify (per feedback_alter_table_no_prepare).
+            $verify = (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = %s
+                    AND COLUMN_NAME = %s',
+                $clicks_table,
+                'click_id'
+            ));
+            if ($verify === 0) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v9] post-verify failed: click_id missing after ALTER');
+                return;
+            }
+        }
+
+        update_option('cashback_db_version', 9, false);
     }
 
     /**

@@ -811,37 +811,8 @@ class WC_Affiliate_URL_Params {
                 exit;
             }
 
-            // Устанавливаем cookie для браузерного расширения.
-            // chrome.cookies API расширения читает этот cookie на каждое событие onUpdated
-            // и сохраняет активацию в chrome.storage.session — независимо от состояния SW,
-            // кеша userId и SameSite-ограничений WP auth cookie в cross-origin fetch.
-            //
-            // Домен из _store_domain meta (НЕ из affiliate_url, который указывает на CPA-сеть).
-            $raw_domain  = (string) get_post_meta($product_id, '_store_domain', true);
-            $dest_domain = preg_replace('#^https?://#i', '', $raw_domain);
-            $dest_domain = preg_replace('#^www\.#i', '', $dest_domain);
-            $dest_domain = strtolower(explode('/', $dest_domain)[0]);
-
-            if (!empty($dest_domain)) {
-                // F-2-001 п.7: HMAC-поле sig — additive, не ломает старых читателей.
-                $cookie_ts = time();
-                setcookie(
-                    'cb_activation',
-                    (string) wp_json_encode(array(
-                        'click_id' => $click_id,
-                        'domain'   => $dest_domain,
-                        'ts'       => $cookie_ts,
-                        'sig'      => Cashback_Encryption::sign_cookie_payload($click_id, $dest_domain, $cookie_ts),
-                    )),
-                    array(
-                        'expires'  => $cookie_ts + 1800,
-                        'path'     => '/',
-                        'secure'   => is_ssl(),
-                        'httponly' => false,
-                        'samesite' => 'Lax',
-                    )
-                );
-            }
+            // Устанавливаем cookie для браузерного расширения (см. set_activation_cookie).
+            self::set_activation_cookie($product_id, $click_id);
 
             // Гости (неавторизованные) — моментальный редирект без промежуточной страницы.
             // Кешбэк не начисляется, задержка не нужна. HMAC URL-токен для гостей не нужен
@@ -1389,6 +1360,55 @@ HTML;
     }
 
     /**
+     * Устанавливает cookie cb_activation для браузерного расширения.
+     *
+     * Расширение читает этот cookie на каждое событие chrome.cookies.onChanged
+     * и сохраняет активацию в chrome.storage.session — независимо от состояния SW,
+     * кеша userId и SameSite-ограничений WP auth cookie в cross-origin fetch.
+     *
+     * Домен берётся из postmeta `_store_domain` указанного product_id (НЕ из
+     * affiliate_url, который указывает на CPA-сеть). Для промокодов это source
+     * product товара, к которому привязан купон.
+     *
+     * F-2-001 п.7: HMAC-поле sig — additive, не ломает старых читателей.
+     *
+     * @param int    $product_id WC product ID — источник домена магазина.
+     * @param string $click_id   UUID v7 (32 hex без дефисов).
+     */
+    public static function set_activation_cookie( int $product_id, string $click_id ): void {
+        if ($product_id <= 0 || $click_id === '') {
+            return;
+        }
+
+        $raw_domain  = (string) get_post_meta($product_id, '_store_domain', true);
+        $dest_domain = preg_replace('#^https?://#i', '', $raw_domain);
+        $dest_domain = preg_replace('#^www\.#i', '', (string) $dest_domain);
+        $dest_domain = strtolower(explode('/', (string) $dest_domain)[0]);
+
+        if ($dest_domain === '') {
+            return;
+        }
+
+        $cookie_ts = time();
+        setcookie(
+            'cb_activation',
+            (string) wp_json_encode(array(
+                'click_id' => $click_id,
+                'domain'   => $dest_domain,
+                'ts'       => $cookie_ts,
+                'sig'      => Cashback_Encryption::sign_cookie_payload($click_id, $dest_domain, $cookie_ts),
+            )),
+            array(
+                'expires'  => $cookie_ts + 1800,
+                'path'     => '/',
+                'secure'   => is_ssl(),
+                'httponly' => false,
+                'samesite' => 'Lax',
+            )
+        );
+    }
+
+    /**
      * Проверяет User-Agent на известные бот-сигнатуры.
      *
      * Не блокирует поисковых ботов (они не кликают по affiliate ссылкам,
@@ -1400,7 +1420,7 @@ HTML;
      *
      * @return bool true если UA похож на бота/скрипт.
      */
-    private function is_bot_user_agent( string $user_agent ): bool {
+    public function is_bot_user_agent( string $user_agent ): bool {
         // Пустой UA — однозначно не браузер
         if (trim($user_agent) === '') {
             return true;
@@ -1733,7 +1753,7 @@ HTML;
                 'wc-affiliate-url-params',
                 plugins_url('assets/js/affiliate-guest-warning.js', __FILE__),
                 array( 'jquery' ),
-                '4.1.1',
+                '4.2.0',
                 true
             );
 

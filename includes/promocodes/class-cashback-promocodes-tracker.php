@@ -104,6 +104,70 @@ final class Cashback_Promocodes_Tracker {
     }
 
     /**
+     * Внутренняя запись goto-клика из серверного redirect-handler'а.
+     *
+     * В отличие от AJAX handle_click(): принимает уже валидированные значения,
+     * пишет click_id (UUIDv7 из click_session) для связи с cashback_click_log.
+     * Нет nonce/rate-limit — caller обязан их обеспечить (rate-limit делает
+     * Cashback_Click_Session_Service::activate_for_promocode).
+     *
+     * Ошибки $wpdb->insert глотаются с error_log — это статистика, не критика.
+     *
+     * @param int    $promocode_id ID промокода в cashback_promocodes.
+     * @param ?int   $product_id   Source WC product ID (или null).
+     * @param int    $user_id      WP user ID (0 для гостя).
+     * @param string $ip           Raw IP (хешируется внутри).
+     * @param string $ua           User-Agent (обрезается до 64 символов).
+     * @param ?string $click_id     UUIDv7 (32 hex) из click_session, или null.
+     * @param string $action       'goto' (default) или 'copy'.
+     */
+    public static function record_click_internal(
+        int $promocode_id,
+        ?int $product_id,
+        int $user_id,
+        string $ip,
+        string $ua,
+        ?string $click_id,
+        string $action = 'goto'
+    ): void {
+        if ( $promocode_id <= 0 ) {
+            return;
+        }
+        if ( ! in_array( $action, array( 'copy', 'goto' ), true ) ) {
+            return;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'cashback_promocode_clicks';
+        $now   = gmdate( 'Y-m-d H:i:s' );
+
+        $row = array(
+            'user_id'      => $user_id,
+            'promocode_id' => $promocode_id,
+            'product_id'   => $product_id !== null && $product_id > 0 ? $product_id : null,
+            'action'       => $action,
+            'ip_hash'      => self::hash_ip( $ip ),
+            'ua_family'    => mb_substr( $ua, 0, 64 ),
+            'created_at'   => $now,
+        );
+        $fmt = array( '%d', '%d', '%d', '%s', '%s', '%s', '%s' );
+
+        // click_id опционален — поле добавлено миграцией v9. Передаём только если выставлен,
+        // чтобы insert не падал на старых БД, где колонки ещё нет.
+        if ( $click_id !== null && $click_id !== '' ) {
+            $row['click_id'] = $click_id;
+            $fmt[]           = '%s';
+        }
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom plugin table; insert is the operation.
+        $result = $wpdb->insert( $table, $row, $fmt );
+        if ( false === $result ) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Diagnostic.
+            error_log( '[Cashback Promocodes Tracker] record_click_internal failed: ' . $wpdb->last_error );
+        }
+    }
+
+    /**
      * sha256(ip + salt) — обратимое только при знании salt'а.
      * Salt лежит в wp_options, генерируется один раз.
      */

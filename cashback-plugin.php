@@ -615,6 +615,7 @@ class CashbackPlugin {
         $this->require_file('includes/promocodes/class-cashback-promocodes-fetcher.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-shortcode.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-tracker.php');
+        $this->require_file('includes/promocodes/class-cashback-promocodes-redirect.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-admin.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-bootstrap.php');
 
@@ -870,6 +871,16 @@ class CashbackPlugin {
             } catch (\Throwable $e) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback] Promocodes v8 auto-migration failed: ' . $e->getMessage());
+            }
+
+            // Промокоды v9: ADD COLUMN click_id в cashback_promocode_clicks
+            // (UUIDv7 связь с cashback_click_log для goto-кликов).
+            // Идемпотентно через cashback_db_version >= 9 fast-path.
+            try {
+                Mariadb_Plugin::get_instance()->migrate_promocodes_v9_click_id();
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] Promocodes v9 click_id auto-migration failed: ' . $e->getMessage());
             }
         }
 

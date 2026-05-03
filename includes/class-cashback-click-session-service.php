@@ -71,6 +71,21 @@ final class Cashback_Click_Session_Service {
     }
 
     /**
+     * Принимаем только http/https в финальном destination URL.
+     *
+     * Используется как последний барьер перед wp_redirect — отсекает javascript:,
+     * data:, file: и другие schema-injection vectors.
+     */
+    public static function is_safe_http_url( string $url ): bool {
+        if ($url === '') {
+            return false;
+        }
+        $scheme = wp_parse_url($url, PHP_URL_SCHEME);
+
+        return in_array($scheme, array( 'http', 'https' ), true);
+    }
+
+    /**
      * Активация click-session для (user_id, product_id).
      *
      * Атомарно резервирует или переиспользует сессию через SELECT FOR UPDATE,
@@ -102,8 +117,6 @@ final class Cashback_Click_Session_Service {
      * }
      */
     public static function activate( array $args ): array {
-        global $wpdb;
-
         $product_id        = isset($args['product_id']) ? (int) $args['product_id'] : 0;
         $user_id           = isset($args['user_id']) ? (int) $args['user_id'] : 0;
         $ip_address        = isset($args['ip_address']) ? (string) $args['ip_address'] : '';
@@ -124,6 +137,125 @@ final class Cashback_Click_Session_Service {
             return array( 'status' => 'no_url' );
         }
 
+        $network_id  = (int) get_post_meta($product_id, '_affiliate_network_id', true);
+        $cpa_network = self::get_network_slug_by_id($network_id);
+
+        return self::do_activate(array(
+            'source'            => 'wc_product',
+            'product_id'        => $product_id,
+            'network_id'        => $network_id,
+            'cpa_network'       => $cpa_network,
+            'base_url'          => $base_url,
+            'user_id'           => $user_id,
+            'ip_address'        => $ip_address,
+            'user_agent'        => $user_agent,
+            'referer'           => $referer,
+            'client_request_id' => $client_request_id,
+            'force_spam'        => $force_spam,
+            'promocode_id'      => null,
+        ));
+    }
+
+    /**
+     * Активация click-session для клика по карточке промокода.
+     *
+     * Тот же return-shape, что и у activate(). Использует тот же TX-сценарий
+     * (FOR UPDATE dedup на click_sessions, log_click), но base_url берётся из
+     * goto_link купона, а network_id — из строки промокода.
+     *
+     * Требования к caller'у:
+     *   - product_id ОБЯЗАТЕЛЕН (cashback_click_log.product_id NOT NULL); это
+     *     source product (товар, к которому привязан промокод по network+offer).
+     *   - goto_link ОБЯЗАТЕЛЕН и должен быть валидным http/https URL.
+     *   - network_id > 0 (для подстановки CPA-параметров).
+     *
+     * @param array{
+     *   promocode_id: int,
+     *   product_id: int,
+     *   network_id: int,
+     *   goto_link: string,
+     *   user_id: int,
+     *   ip_address: string,
+     *   user_agent?: ?string,
+     *   referer?: ?string,
+     *   client_request_id?: ?string,
+     *   force_spam?: bool,
+     * } $args
+     *
+     * @return array see activate()
+     */
+    public static function activate_for_promocode( array $args ): array {
+        $promocode_id      = isset($args['promocode_id']) ? (int) $args['promocode_id'] : 0;
+        $product_id        = isset($args['product_id']) ? (int) $args['product_id'] : 0;
+        $network_id        = isset($args['network_id']) ? (int) $args['network_id'] : 0;
+        $goto_link         = isset($args['goto_link']) ? (string) $args['goto_link'] : '';
+        $user_id           = isset($args['user_id']) ? (int) $args['user_id'] : 0;
+        $ip_address        = isset($args['ip_address']) ? (string) $args['ip_address'] : '';
+        $user_agent        = array_key_exists('user_agent', $args) ? ( $args['user_agent'] !== null ? (string) $args['user_agent'] : null ) : null;
+        $referer           = array_key_exists('referer', $args) ? ( $args['referer'] !== null ? (string) $args['referer'] : null ) : null;
+        $client_request_id = array_key_exists('client_request_id', $args) && $args['client_request_id'] !== null
+            ? (string) $args['client_request_id']
+            : null;
+        $force_spam        = !empty($args['force_spam']);
+
+        if ($promocode_id <= 0 || $product_id <= 0 || $network_id <= 0) {
+            return array( 'status' => 'invalid_product' );
+        }
+
+        if ($goto_link === '' || !self::is_safe_http_url($goto_link)) {
+            return array( 'status' => 'no_url' );
+        }
+
+        $cpa_network = self::get_network_slug_by_id($network_id);
+
+        return self::do_activate(array(
+            'source'            => 'promocode',
+            'product_id'        => $product_id,
+            'network_id'        => $network_id,
+            'cpa_network'       => $cpa_network,
+            'base_url'          => $goto_link,
+            'user_id'           => $user_id,
+            'ip_address'        => $ip_address,
+            'user_agent'        => $user_agent,
+            'referer'           => $referer,
+            'client_request_id' => $client_request_id,
+            'force_spam'        => $force_spam,
+            'promocode_id'      => $promocode_id,
+        ));
+    }
+
+    /**
+     * Общий TX-блок активации click-session.
+     *
+     * @param array{
+     *   source: 'wc_product'|'promocode',
+     *   product_id: int,
+     *   network_id: int,
+     *   cpa_network: ?string,
+     *   base_url: string,
+     *   user_id: int,
+     *   ip_address: string,
+     *   user_agent: ?string,
+     *   referer: ?string,
+     *   client_request_id: ?string,
+     *   force_spam: bool,
+     *   promocode_id: ?int,
+     * } $ctx
+     */
+    private static function do_activate( array $ctx ): array {
+        global $wpdb;
+
+        $product_id        = (int) $ctx['product_id'];
+        $network_id        = (int) $ctx['network_id'];
+        $cpa_network       = $ctx['cpa_network'];
+        $base_url          = (string) $ctx['base_url'];
+        $user_id           = (int) $ctx['user_id'];
+        $ip_address        = (string) $ctx['ip_address'];
+        $user_agent        = $ctx['user_agent'];
+        $referer           = $ctx['referer'];
+        $client_request_id = $ctx['client_request_id'];
+        $force_spam        = (bool) $ctx['force_spam'];
+
         $rate_status = self::get_click_rate_status($user_id, $ip_address, (string) ( $user_agent ?? '' ), $product_id);
         if ($rate_status === 'blocked') {
             return array(
@@ -139,7 +271,6 @@ final class Cashback_Click_Session_Service {
         // credentials не нужны — нужны только policy/window, которые имеют
         // fail-safe дефолты. Глотаем исключение, чтобы активация не падала в 500
         // из-за проблемы ключей, требующей действия администратора.
-        $cpa_network     = self::get_network_slug($product_id);
         $merchant_config = null;
         if ($cpa_network) {
             try {
@@ -213,7 +344,7 @@ final class Cashback_Click_Session_Service {
             } else {
                 // New session: canonical_click_id = UUID v7 (time-ordered).
                 $canonical_click_id = cashback_generate_uuid7(false);
-                $affiliate_url      = self::build_affiliate_url($product_id, $user_id, $canonical_click_id);
+                $affiliate_url      = self::build_affiliate_url_with_parts($base_url, $network_id, $product_id, $user_id, $canonical_click_id);
                 if (empty($affiliate_url)) {
                     $affiliate_url = $base_url;
                 }
@@ -356,22 +487,23 @@ final class Cashback_Click_Session_Service {
     }
 
     /**
-     * Построение affiliate URL с подстановкой параметров.
+     * Построение affiliate URL с подстановкой CPA-параметров.
+     *
+     * Универсальная версия: принимает base_url + network_id напрямую, чтобы
+     * можно было использовать как для WC external product (base = product_url),
+     * так и для промокода (base = goto_link купона).
+     *
+     * Если product_id > 0 — мерджит postmeta `_affiliate_product_params` поверх
+     * сетевых (overrides по ключу + добавление новых). Для промокодов передаём
+     * source product_id, к которому привязан купон по network+offer.
      */
-    private static function build_affiliate_url( int $product_id, int $user_id, string $click_id ): ?string {
+    private static function build_affiliate_url_with_parts( string $base_url, int $network_id, ?int $product_id, int $user_id, string $click_id ): ?string {
         global $wpdb;
 
-        $product = wc_get_product($product_id);
-        if (!$product || $product->get_type() !== 'external') {
+        if ($base_url === '') {
             return null;
         }
 
-        $base_url = $product->get_product_url();
-        if (empty($base_url)) {
-            return null;
-        }
-
-        $network_id = (int) get_post_meta($product_id, '_affiliate_network_id', true);
         if ($network_id <= 0) {
             return $base_url;
         }
@@ -399,19 +531,21 @@ final class Cashback_Click_Session_Service {
         }
 
         // Мерж индивидуальных параметров товара: переопределяют или дополняют сетевые
-        $product_params = get_post_meta($product_id, '_affiliate_product_params', true);
-        if (is_array($product_params) && !empty($product_params)) {
-            foreach ($product_params as $pp) {
-                if (empty($pp['key'])) {
-                    continue;
-                }
-                if (isset($key_to_index[ $pp['key'] ])) {
-                    $merged[ $key_to_index[ $pp['key'] ] ]['value'] = $pp['value'];
-                } else {
-                    $merged[] = array(
-                        'key'   => $pp['key'],
-                        'value' => $pp['value'],
-                    );
+        if ($product_id !== null && $product_id > 0) {
+            $product_params = get_post_meta($product_id, '_affiliate_product_params', true);
+            if (is_array($product_params) && !empty($product_params)) {
+                foreach ($product_params as $pp) {
+                    if (empty($pp['key'])) {
+                        continue;
+                    }
+                    if (isset($key_to_index[ $pp['key'] ])) {
+                        $merged[ $key_to_index[ $pp['key'] ] ]['value'] = $pp['value'];
+                    } else {
+                        $merged[] = array(
+                            'key'   => $pp['key'],
+                            'value' => $pp['value'],
+                        );
+                    }
                 }
             }
         }
@@ -456,12 +590,11 @@ final class Cashback_Click_Session_Service {
     }
 
     /**
-     * Получение slug CPA-сети для товара.
+     * Получение slug CPA-сети по ID сети.
      */
-    private static function get_network_slug( int $product_id ): ?string {
+    private static function get_network_slug_by_id( int $network_id ): ?string {
         global $wpdb;
 
-        $network_id = (int) get_post_meta($product_id, '_affiliate_network_id', true);
         if ($network_id <= 0) {
             return null;
         }

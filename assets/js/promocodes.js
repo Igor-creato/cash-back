@@ -87,12 +87,8 @@
         document.body.removeChild(ta);
     }
 
-    // Goto buttons — track перед переходом.
-    document.querySelectorAll('.cashback-promo-card__btn--goto').forEach(function (link) {
-        link.addEventListener('click', function () {
-            var promoId = link.getAttribute('data-promo-id') || '';
-            trackClick(promoId, 'goto');
-            // Не preventDefault: target=_blank открывает новую вкладку, fetch keepalive дотянет.
-        });
-    });
+    // Goto-кнопка ведёт на серверный redirect-handler /?cashback_promo_click={id}
+    // (Cashback_Promocodes_Redirect), который сам пишет в cashback_click_log /
+    // cashback_click_sessions / cashback_promocode_clicks. JS-учёт здесь больше
+    // не нужен — это убирает гонку «AJAX vs навигация» полностью.
 }());
