@@ -1,104 +1,128 @@
-/* Claims Module Styles */
+/* =============================================================================
+   Claims module styles — used both on the frontend "Lost cashback" tab AND
+   in WP admin (single file, two contexts).
 
-/* Support-style tabs for frontend claims */
+   Restyled in 2026-05 to consume --cb-* tokens via var(..., fallback). On
+   the frontend the woodmart-child theme provides --cb-* and --wd-* so
+   everything renders in soft / neumorphic-lite. In wp-admin those vars
+   are not loaded, so the literal fallback values kick in and the admin
+   UI keeps its previous look. No PHP changes needed.
+   ============================================================================= */
+
+/* --- Frontend support-style tabs (МОИ ПЕРЕХОДЫ / МОИ ЗАЯВКИ) --------- */
+
 .cashback-support-tabs {
     display: flex;
-    gap: 4px;
+    gap: 6px;
     margin-bottom: 0;
-    background: transparent;
-    border-bottom: 2px solid var(--btn-accented-bgcolor, #0073aa);
+    padding: 6px;
+    background: var(--cb-bg-sunken, #eceae3);
+    border-radius: var(--cb-radius-pill, 999px);
+    box-shadow: var(--cb-shadow-inset, inset 0 1px 2px rgba(22, 21, 28, 0.05));
+    border-bottom: none;
 }
+
 .cashback-support-tabs button.cashback-support-tab {
     border: none !important;
-    border-radius: 10px 10px 0 0 !important;
-    padding: 12px 24px !important;
+    border-radius: var(--cb-radius-pill, 999px) !important;
+    padding: 10px 22px !important;
     cursor: pointer;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
-    color: #555 !important;
-    background-color: #e0e0e0 !important;
-    transition: background-color 0.2s, color 0.2s, box-shadow 0.2s;
+    color: var(--cb-text-secondary, #5b5c70) !important;
+    background-color: transparent !important;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.2s ease;
     position: relative;
-    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.08) !important;
+    box-shadow: none !important;
+    font-family: inherit;
 }
+
 .cashback-support-tabs button.cashback-support-tab:hover {
-    background-color: #c8c8c8 !important;
-    color: #333 !important;
+    background-color: transparent !important;
+    color: var(--cb-text-primary, #16151c) !important;
 }
+
 .cashback-support-tabs button.cashback-support-tab.active {
-    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
-    color: var(--btn-accented-color, #fff) !important;
-    box-shadow: 0 -3px 8px rgba(0, 0, 0, 0.12) !important;
+    background-color: var(--cb-bg-surface, #fff) !important;
+    color: var(--cb-text-primary, #16151c) !important;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
 }
+
 .cashback-support-tabs button.cashback-support-tab.active:hover {
-    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
-    color: var(--btn-accented-color, #fff) !important;
+    background-color: var(--cb-bg-surface, #fff) !important;
+    color: var(--cb-text-primary, #16151c) !important;
 }
 
 /* Tab unread badge */
 .claims-tab-badge {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     min-width: 18px;
     height: 18px;
-    line-height: 18px;
-    padding: 0 5px;
-    border-radius: 50%;
-    background: #f44336;
-    color: #fff !important;
+    padding: 0 6px;
+    border-radius: var(--cb-radius-pill, 999px);
+    background: var(--cb-danger, #f44336);
+    color: var(--cb-text-on-accent, #fff) !important;
     font-size: 11px;
-    font-weight: bold;
+    font-weight: 700;
     text-align: center;
-    margin-left: 6px;
+    margin-left: 8px;
     vertical-align: middle;
+    font-variant-numeric: tabular-nums;
 }
 
-/* Status badges */
+/* --- Status badges (used both frontend & admin) --------------------- */
+
 .claim-status {
-    display: inline-block;
-    padding: 3px 8px;
-    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: var(--cb-radius-pill, 999px);
     font-size: 12px;
     font-weight: 600;
-    text-transform: uppercase;
+    letter-spacing: 0;
+    text-transform: none;
 }
 
 .claim-status--draft {
-    background: #f0f0f1;
-    color: #50575e;
+    background: var(--cb-bg-sunken, #f0f0f1);
+    color: var(--cb-text-secondary, #50575e);
 }
 
 .claim-status--submitted {
-    background: #fff8e5;
-    color: #b27800;
+    background: var(--cb-warning-soft, #fff8e5);
+    color: #8c5c00;
 }
 
 .claim-status--sent_to_network {
-    background: #e5f5fa;
-    color: #0073aa;
+    background: var(--cb-info-soft, #e5f5fa);
+    color: #1f5a98;
 }
 
 .claim-status--approved {
-    background: #edfaef;
-    color: #00a32a;
+    background: var(--cb-success-soft, #edfaef);
+    color: #14724f;
 }
 
 .claim-status--declined {
-    background: #fcf0f1;
-    color: #d63638;
+    background: var(--cb-danger-soft, #fcf0f1);
+    color: #a32328;
 }
 
-/* Clicks filters */
+/* --- Filters bar ----------------------------------------------------- */
+
 .clicks-filters {
-    margin-bottom: 16px;
-    padding: 14px 16px;
-    background: #f9f9f9;
-    border: 1px solid #e0e0e0;
-    border-radius: 6px;
+    margin-bottom: 20px;
+    padding: 16px 18px;
+    background: var(--cb-bg-canvas, #f9f9f9);
+    border: 1px solid var(--cb-border, #e0e0e0);
+    border-radius: var(--cb-radius-md, 16px);
 }
 
 .clicks-filters-row {
     display: flex;
-    gap: 10px;
+    gap: 12px;
     flex-wrap: wrap;
     align-items: flex-end;
 }
@@ -106,20 +130,32 @@
 .clicks-filter-group {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
 }
 
 .clicks-filter-group label {
     font-size: 12px;
     font-weight: 600;
-    color: #555;
+    color: var(--cb-text-secondary, #555);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
 .clicks-filter-input {
-    padding: 6px 10px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    padding: 8px 12px;
+    border: 1px solid var(--cb-border-strong, #ccc);
+    border-radius: var(--cb-radius-sm, 10px);
     font-size: 14px;
+    background-color: var(--cb-bg-surface, #fff);
+    color: var(--cb-text-primary, #16151c);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    font-family: inherit;
+}
+
+.clicks-filter-input:focus {
+    outline: none;
+    border-color: var(--cb-border-focus, #5b6cf7);
+    box-shadow: var(--cb-shadow-focus, 0 0 0 3px rgba(91, 108, 247, 0.25));
 }
 
 input#clicks-search {
@@ -133,54 +169,57 @@ input#clicks-date-to {
 
 .clicks-filter-buttons {
     flex-direction: row;
-    gap: 6px;
+    gap: 8px;
     align-items: center;
     padding-top: 18px;
 }
 
-/* Apply button — theme accented style */
+/* --- Apply / Reset buttons ----------------------------------------- */
+
 #clicks-filter-apply,
 #claims-filter-apply {
     border: none !important;
-    border-radius: var(--btn-accented-brd-radius, 4px) !important;
-    color: var(--btn-accented-color, #fff) !important;
-    box-shadow: var(--btn-accented-box-shadow) !important;
-    background-color: var(--btn-accented-bgcolor, #0073aa) !important;
-    text-transform: var(--btn-accented-transform, var(--btn-transform, uppercase)) !important;
-    font-weight: var(--btn-accented-font-weight, var(--btn-font-weight, 600)) !important;
-    font-family: var(--btn-accented-font-family, var(--btn-font-family, inherit)) !important;
-    font-style: var(--btn-accented-font-style, var(--btn-font-style, unset)) !important;
-    padding: 8px 18px !important;
+    border-radius: var(--cb-radius-pill, 4px) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-soft, none) !important;
+    background-color: var(--cb-accent, #0073aa) !important;
+    text-transform: none !important;
+    font-weight: 600 !important;
+    font-family: inherit !important;
+    font-style: normal !important;
+    padding: 9px 22px !important;
     cursor: pointer;
+    transition: background-color 0.15s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
 }
 
 #clicks-filter-apply:hover,
 #claims-filter-apply:hover {
-    color: var(--btn-accented-color-hover, #fff) !important;
-    box-shadow: var(--btn-accented-box-shadow-hover) !important;
-    background-color: var(--btn-accented-bgcolor-hover, #005a87) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-raised, none) !important;
+    background-color: var(--cb-accent-hover, #005a87) !important;
+    transform: translateY(-1px);
 }
 
-/* Reset button — subtle outline style matching theme */
 #clicks-filter-reset,
 #claims-filter-reset {
-    border: 1px solid var(--btn-accented-bgcolor, #0073aa) !important;
-    border-radius: var(--btn-accented-brd-radius, 4px) !important;
-    color: var(--btn-accented-bgcolor, #0073aa) !important;
+    border: 1px solid var(--cb-border-strong, #0073aa) !important;
+    border-radius: var(--cb-radius-pill, 4px) !important;
+    color: var(--cb-text-primary, #0073aa) !important;
     background-color: transparent !important;
-    text-transform: var(--btn-accented-transform, var(--btn-transform, uppercase)) !important;
-    font-weight: var(--btn-accented-font-weight, var(--btn-font-weight, 600)) !important;
-    font-family: var(--btn-accented-font-family, var(--btn-font-family, inherit)) !important;
-    font-style: var(--btn-accented-font-style, var(--btn-font-style, unset)) !important;
-    padding: 8px 18px !important;
+    text-transform: none !important;
+    font-weight: 600 !important;
+    font-family: inherit !important;
+    font-style: normal !important;
+    padding: 9px 22px !important;
     cursor: pointer;
+    transition: background-color 0.15s ease, box-shadow 0.2s ease !important;
 }
 
 #clicks-filter-reset:hover,
 #claims-filter-reset:hover {
-    color: var(--btn-accented-color-hover, #fff) !important;
-    box-shadow: var(--btn-accented-box-shadow-hover) !important;
-    background-color: var(--btn-accented-bgcolor-hover, #005a87) !important;
+    color: var(--cb-text-primary, #fff) !important;
+    box-shadow: var(--cb-shadow-soft, none) !important;
+    background-color: var(--cb-bg-surface, #005a87) !important;
 }
 
 @media (max-width: 768px) {
@@ -203,24 +242,69 @@ input#clicks-date-to {
     }
 }
 
-/* Cashback status on clicks page */
+/* --- Cashback status (table cell) ----------------------------------- */
+
 .cashback-status--yes {
-    color: #00a32a;
+    color: var(--cb-success, #00a32a);
     font-weight: 600;
 }
 
 .cashback-status--no {
-    color: #d63638;
+    color: var(--cb-danger, #d63638);
+    font-weight: 600;
 }
 
-/* Modal */
+/* --- "Подать заявку" / .claim-btn (frontend clicks table action) ---- */
+
+.button.claim-btn,
+a.claim-btn,
+button.claim-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 18px;
+    border: none;
+    border-radius: var(--cb-radius-pill, 4px);
+    background: var(--cb-warm, #ff8a65);
+    color: var(--cb-text-on-accent, #fff) !important;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    text-decoration: none;
+    box-shadow: var(--cb-shadow-soft, none);
+    font-family: inherit;
+    transition: background-color 0.15s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.button.claim-btn:hover,
+a.claim-btn:hover,
+button.claim-btn:hover {
+    background: var(--cb-warm-hover, #f76b41);
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-raised, none);
+    transform: translateY(-1px);
+}
+
+.button.claim-btn[disabled],
+a.claim-btn.is-disabled,
+button.claim-btn[disabled] {
+    background: var(--cb-bg-sunken, #e0e0e0);
+    color: var(--cb-text-muted, #888) !important;
+    box-shadow: none;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* --- Modals (claim submit + admin detail) --------------------------- */
+
 .claim-modal {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0,0,0,0.5);
+    background: rgba(22, 21, 28, 0.5);
     z-index: 99999;
     display: flex;
     align-items: center;
@@ -228,98 +312,103 @@ input#clicks-date-to {
 }
 
 .claim-modal-content {
-    background: #fff;
-    padding: 30px;
-    border-radius: 8px;
+    background: var(--cb-bg-surface, #fff);
+    padding: 32px;
+    border-radius: var(--cb-radius-lg, 8px);
     max-width: 500px;
     width: 90%;
     max-height: 90vh;
     overflow-y: auto;
     position: relative;
+    box-shadow: var(--cb-shadow-floating, 0 32px 64px -24px rgba(15, 18, 34, 0.18));
 }
 
 .claim-modal-close {
     position: absolute;
-    top: 10px;
-    right: 15px;
-    font-size: 28px;
+    top: 12px;
+    right: 16px;
+    font-size: 24px;
     cursor: pointer;
-    color: #666;
+    color: var(--cb-text-muted, #666);
+    transition: color 0.15s ease;
 }
 
 .claim-modal-close:hover {
-    color: #000;
+    color: var(--cb-text-primary, #000);
 }
 
 /* Score display */
 .claim-score {
-    margin: 15px 0;
-    padding: 15px;
-    border-radius: 6px;
-    background: #f9f9f9;
+    margin: 16px 0;
+    padding: 16px;
+    border-radius: var(--cb-radius-md, 6px);
+    background: var(--cb-bg-canvas, #f9f9f9);
 }
 
 .claim-score-bar {
     height: 8px;
-    background: #e0e0e0;
-    border-radius: 4px;
+    background: var(--cb-bg-sunken, #e0e0e0);
+    border-radius: var(--cb-radius-pill, 4px);
     margin-top: 8px;
     overflow: hidden;
 }
 
 .claim-score-bar-fill {
     height: 100%;
-    border-radius: 4px;
+    border-radius: var(--cb-radius-pill, 4px);
     transition: width 0.3s ease, background 0.3s ease;
 }
 
 .claim-score-bar-fill.high {
-    background: #00a32a;
+    background: var(--cb-success, #00a32a);
 }
 
 .claim-score-bar-fill.medium {
-    background: #dba617;
+    background: var(--cb-warning, #dba617);
 }
 
 .claim-score-bar-fill.low {
-    background: #d63638;
+    background: var(--cb-danger, #d63638);
 }
 
 /* Claim preload info */
 .claim-preload {
-    background: #f0f6fc;
-    padding: 12px;
-    border-radius: 6px;
-    margin-bottom: 15px;
+    background: var(--cb-bg-accent-soft, #f0f6fc);
+    color: var(--cb-text-primary, #16151c);
+    padding: 14px;
+    border-radius: var(--cb-radius-md, 6px);
+    margin-bottom: 16px;
 }
 
 /* Result message */
 .claim-result {
-    padding: 15px;
-    border-radius: 6px;
-    margin-top: 15px;
+    padding: 14px 16px;
+    border-radius: var(--cb-radius-md, 6px);
+    margin-top: 16px;
+    border: none;
 }
 
 .claim-result.success {
-    background: #edfaef;
-    border: 1px solid #00a32a;
-    color: #00a32a;
+    background: var(--cb-success-soft, #edfaef);
+    border-left: 3px solid var(--cb-success, #00a32a);
+    color: #14724f;
 }
 
 .claim-result.error {
-    background: #fcf0f1;
-    border: 1px solid #d63638;
-    color: #d63638;
+    background: var(--cb-danger-soft, #fcf0f1);
+    border-left: 3px solid var(--cb-danger, #d63638);
+    color: #a32328;
 }
 
-/* Admin detail modal */
+/* --- Admin detail modal --------------------------------------------- */
+
 .claim-detail-modal {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0,0,0,0.6);
+    background: rgba(22, 21, 28, 0.6);
     z-index: 99999;
     display: flex;
     align-items: flex-start;
@@ -329,22 +418,28 @@ input#clicks-date-to {
 }
 
 .claim-detail-content {
-    background: #fff;
-    padding: 30px;
-    border-radius: 8px;
+    background: var(--cb-bg-surface, #fff);
+    padding: 32px;
+    border-radius: var(--cb-radius-lg, 8px);
     max-width: 900px;
     width: 95%;
     position: relative;
     margin-bottom: 40px;
+    box-shadow: var(--cb-shadow-floating, 0 32px 64px -24px rgba(15, 18, 34, 0.18));
 }
 
 .claim-detail-close {
     position: absolute;
-    top: 10px;
-    right: 15px;
-    font-size: 28px;
+    top: 12px;
+    right: 16px;
+    font-size: 24px;
     cursor: pointer;
-    color: #666;
+    color: var(--cb-text-muted, #666);
+    transition: color 0.15s ease;
+}
+
+.claim-detail-close:hover {
+    color: var(--cb-text-primary, #000);
 }
 
 .claim-detail-grid {
@@ -356,18 +451,18 @@ input#clicks-date-to {
 
 .claim-detail-section h3 {
     margin-top: 0;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--cb-border, #eee);
     padding-bottom: 8px;
 }
 
 .claim-actions {
     margin-top: 20px;
     padding-top: 20px;
-    border-top: 1px solid #eee;
+    border-top: 1px solid var(--cb-border, #eee);
 }
 
 .claim-action-buttons {
-    margin-bottom: 15px;
+    margin-bottom: 16px;
 }
 
 .claim-action-buttons .button {
@@ -376,7 +471,7 @@ input#clicks-date-to {
 }
 
 .claim-note-form {
-    margin-top: 15px;
+    margin-top: 16px;
 }
 
 .claim-note-form textarea {
@@ -384,7 +479,8 @@ input#clicks-date-to {
     margin-bottom: 8px;
 }
 
-/* Admin stats cards */
+/* --- Admin stats cards --------------------------------------------- */
+
 .claims-stats {
     display: flex;
     gap: 12px;
@@ -393,33 +489,42 @@ input#clicks-date-to {
 }
 
 .stat-card {
-    background: #fff;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    padding: 12px 20px;
+    background: var(--cb-bg-surface, #fff);
+    border: 1px solid var(--cb-border, #ddd);
+    border-radius: var(--cb-radius-md, 6px);
+    padding: 14px 22px;
     text-align: center;
     min-width: 120px;
+    box-shadow: var(--cb-shadow-soft, none);
 }
 
 .stat-value {
     display: block;
     font-size: 24px;
-    font-weight: 700;
-    color: #2271b1;
+    font-weight: 800;
+    color: var(--cb-accent, #2271b1);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
 }
 
 .stat-label {
     font-size: 12px;
-    color: #666;
+    font-weight: 600;
+    color: var(--cb-text-secondary, #666);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-top: 4px;
+    display: block;
 }
 
-.stat-submitted .stat-value { color: #dba617; }
-.stat-sent .stat-value { color: #0073aa; }
-.stat-approved .stat-value { color: #00a32a; }
-.stat-declined .stat-value { color: #d63638; }
-.stat-suspicious .stat-value { color: #d63638; }
+.stat-submitted .stat-value  { color: var(--cb-warning, #dba617); }
+.stat-sent .stat-value       { color: var(--cb-info, #0073aa); }
+.stat-approved .stat-value   { color: var(--cb-success, #00a32a); }
+.stat-declined .stat-value   { color: var(--cb-danger, #d63638); }
+.stat-suspicious .stat-value { color: var(--cb-danger, #d63638); }
 
-/* Admin filters form */
+/* --- Admin filters form -------------------------------------------- */
+
 .claims-filters-form {
     margin: 20px 0;
     display: flex;
@@ -434,13 +539,14 @@ input#clicks-date-to {
     padding: 4px 8px;
 }
 
-/* Score mini bar in admin table */
+/* --- Score mini-bar (admin table) ---------------------------------- */
+
 .claim-score-mini {
     display: inline-block;
     width: 60px;
     height: 6px;
-    background: #e0e0e0;
-    border-radius: 3px;
+    background: var(--cb-bg-sunken, #e0e0e0);
+    border-radius: var(--cb-radius-pill, 3px);
     overflow: hidden;
     vertical-align: middle;
     margin-right: 4px;
@@ -448,22 +554,24 @@ input#clicks-date-to {
 
 .claim-score-mini-bar {
     height: 100%;
-    background: #2271b1;
-    border-radius: 3px;
+    background: var(--cb-accent, #2271b1);
+    border-radius: var(--cb-radius-pill, 3px);
 }
 
-/* Pagination */
+/* --- Pagination ---------------------------------------------------- */
+
 .claims-page-link {
     cursor: pointer;
 }
 
-/* Expandable claim rows */
+/* --- Expandable claim rows ----------------------------------------- */
+
 .claim-row.has-events {
     cursor: pointer;
 }
 
 .claim-row.has-events:hover {
-    background-color: #f0f6fc !important;
+    background-color: var(--cb-bg-accent-soft, #f0f6fc) !important;
 }
 
 .claim-events-list {
@@ -471,10 +579,11 @@ input#clicks-date-to {
 }
 
 .claim-event-item {
-    padding: 8px 12px;
+    padding: 10px 14px;
     margin: 4px 0;
-    border-left: 3px solid #ddd;
-    background: #fafafa;
+    border-left: 3px solid var(--cb-border-strong, #ddd);
+    background: var(--cb-bg-canvas, #fafafa);
+    border-radius: var(--cb-radius-sm, 0);
     font-size: 13px;
     display: flex;
     flex-wrap: wrap;
@@ -483,8 +592,8 @@ input#clicks-date-to {
 }
 
 .claim-event-item.claim-event-unread {
-    border-left-color: #f44336;
-    background: #fff8f8;
+    border-left-color: var(--cb-danger, #f44336);
+    background: var(--cb-danger-soft, #fff8f8);
 }
 
 .claim-row.claim-row-unread > td,
@@ -493,7 +602,7 @@ tr.claim-row-unread > td {
 }
 
 .claim-event-date {
-    color: #888;
+    color: var(--cb-text-muted, #888);
     font-size: 12px;
     min-width: 110px;
 }
@@ -501,39 +610,43 @@ tr.claim-row-unread > td {
 .claim-event-actor {
     font-weight: 600;
     min-width: 110px;
+    color: var(--cb-text-primary, #16151c);
 }
 
 .claim-event-note {
     flex: 1;
+    color: var(--cb-text-primary, #16151c);
 }
 
-/* Inline AJAX notifications */
+/* --- Inline AJAX notifications ------------------------------------- */
+
 .claims-notice {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 14px;
-    margin: 12px 0;
-    border-radius: 4px;
+    gap: 10px;
+    padding: 12px 16px;
+    margin: 14px 0;
+    border-radius: var(--cb-radius-md, 4px);
     font-size: 14px;
+    border: none;
     animation: claimsNoticeIn 0.3s ease;
 }
 
 @keyframes claimsNoticeIn {
     from { opacity: 0; transform: translateY(-8px); }
-    to { opacity: 1; transform: translateY(0); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 
 .claims-notice--success {
-    background: #edfaef;
-    border-left: 4px solid #00a32a;
-    color: #1e4620;
+    background: var(--cb-success-soft, #edfaef);
+    border-left: 3px solid var(--cb-success, #00a32a);
+    color: #14724f;
 }
 
 .claims-notice--error {
-    background: #fcf0f1;
-    border-left: 4px solid #d63638;
-    color: #8a1215;
+    background: var(--cb-danger-soft, #fcf0f1);
+    border-left: 3px solid var(--cb-danger, #d63638);
+    color: #a32328;
 }
 
 .claims-notice .dashicons {
@@ -543,8 +656,8 @@ tr.claim-row-unread > td {
     line-height: 18px;
 }
 
-.claims-notice--success .dashicons { color: #00a32a; }
-.claims-notice--error .dashicons { color: #d63638; }
+.claims-notice--success .dashicons { color: var(--cb-success, #00a32a); }
+.claims-notice--error .dashicons   { color: var(--cb-danger, #d63638); }
 
 .claims-notice-dismiss {
     margin-left: auto;
@@ -552,23 +665,25 @@ tr.claim-row-unread > td {
     border: none;
     font-size: 18px;
     cursor: pointer;
-    color: #999;
+    color: var(--cb-text-muted, #999);
     padding: 0 4px;
     line-height: 1;
+    transition: color 0.15s ease;
 }
 
 .claims-notice-dismiss:hover {
-    color: #333;
+    color: var(--cb-text-primary, #333);
 }
 
-/* Confirm dialog overlay */
+/* --- Confirm dialog overlay (admin) -------------------------------- */
+
 .claims-confirm-overlay {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0,0,0,0.5);
+    background: rgba(22, 21, 28, 0.5);
     z-index: 999999;
     display: flex;
     align-items: center;
@@ -576,18 +691,19 @@ tr.claim-row-unread > td {
 }
 
 .claims-confirm-box {
-    background: #fff;
-    padding: 24px 30px;
-    border-radius: 8px;
+    background: var(--cb-bg-surface, #fff);
+    padding: 26px 30px;
+    border-radius: var(--cb-radius-lg, 8px);
     max-width: 400px;
     width: 90%;
     text-align: center;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    box-shadow: var(--cb-shadow-floating, 0 4px 20px rgba(0, 0, 0, 0.2));
 }
 
 .claims-confirm-box p {
     font-size: 15px;
     margin: 0 0 18px;
+    color: var(--cb-text-primary, #16151c);
 }
 
 .claims-confirm-buttons {
@@ -600,7 +716,8 @@ tr.claim-row-unread > td {
     min-width: 80px;
 }
 
-/* Responsive — admin */
+/* --- Responsive — admin -------------------------------------------- */
+
 @media (max-width: 768px) {
     .claim-detail-grid {
         grid-template-columns: 1fr;
@@ -616,9 +733,11 @@ tr.claim-row-unread > td {
     }
 }
 
-/* =============================================
-   Mobile cards — frontend clicks & claims tables
-   ============================================= */
+/* =============================================================================
+   Mobile cards — frontend clicks & claims tables (preserved verbatim,
+   tokenised colours)
+   ============================================================================= */
+
 @media (max-width: 768px) {
     /* Hide table header on mobile */
     #tab-clicks .shop_table thead,
@@ -644,11 +763,11 @@ tr.claim-row-unread > td {
     #tab-claims .shop_table tbody tr.claim-row {
         display: flex;
         flex-direction: column;
-        background: #fff;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-        padding: 14px 16px;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+        background: var(--cb-bg-surface, #fff);
+        border: 1px solid var(--cb-border, #e0e0e0);
+        border-radius: var(--cb-radius-lg, 8px);
+        padding: 16px 18px;
+        box-shadow: var(--cb-shadow-soft, 0 1px 4px rgba(0, 0, 0, 0.06));
     }
 
     /* Each cell = labelled row inside the card */
@@ -657,10 +776,11 @@ tr.claim-row-unread > td {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 6px 0;
+        padding: 8px 0;
         border: none;
-        border-bottom: 1px solid #f0f0f0;
+        border-bottom: 1px solid var(--cb-border, #f0f0f0);
         font-size: 14px;
+        color: var(--cb-text-primary, #16151c);
     }
 
     #tab-clicks .shop_table tbody tr td:last-child,
@@ -679,10 +799,12 @@ tr.claim-row-unread > td {
     #tab-claims .shop_table tbody tr.claim-row td::before {
         content: attr(data-title);
         font-weight: 600;
-        color: #555;
-        font-size: 13px;
+        color: var(--cb-text-secondary, #555);
+        font-size: 12px;
         flex-shrink: 0;
         margin-right: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
     }
 
     /* Product name — make it stand out as a card header */
@@ -690,16 +812,16 @@ tr.claim-row-unread > td {
     #tab-claims .shop_table tbody tr.claim-row td:nth-child(2) {
         font-weight: 700;
         font-size: 15px;
-        padding-bottom: 8px;
-        margin-bottom: 2px;
-        border-bottom: 2px solid var(--btn-accented-bgcolor, #0073aa);
+        padding-bottom: 10px;
+        margin-bottom: 4px;
+        border-bottom: 2px solid var(--cb-accent, #0073aa);
     }
 
     /* Action button — full width at the bottom */
     #tab-clicks .shop_table tbody tr td:last-child {
         flex-direction: column;
         align-items: stretch;
-        padding-top: 10px;
+        padding-top: 12px;
     }
 
     #tab-clicks .shop_table tbody tr td:last-child::before {
@@ -714,7 +836,7 @@ tr.claim-row-unread > td {
     #tab-clicks .shop_table tbody tr td:last-child .na {
         text-align: center;
         display: block;
-        color: #888;
+        color: var(--cb-text-muted, #888);
         font-size: 13px;
         font-style: italic;
     }
@@ -722,12 +844,12 @@ tr.claim-row-unread > td {
     /* Events expandable row */
     #tab-claims .shop_table tbody tr.claim-events-row {
         display: none;
-        border: 1px solid #e0e0e0;
+        border: 1px solid var(--cb-border, #e0e0e0);
         border-top: none;
-        border-radius: 0 0 8px 8px;
+        border-radius: 0 0 var(--cb-radius-lg, 8px) var(--cb-radius-lg, 8px);
         margin-top: -13px;
         padding: 0 16px 14px;
-        background: #fafafa;
+        background: var(--cb-bg-canvas, #fafafa);
     }
 
     #tab-claims .shop_table tbody tr.claim-events-row[style*="table-row"],
@@ -747,7 +869,7 @@ tr.claim-row-unread > td {
 
     /* When events row is open, remove bottom radius from card above */
     #tab-claims .shop_table tbody tr.claim-row.events-open {
-        border-radius: 8px 8px 0 0;
+        border-radius: var(--cb-radius-lg, 8px) var(--cb-radius-lg, 8px) 0 0;
         border-bottom-color: transparent;
         margin-bottom: -1px;
     }
@@ -766,13 +888,17 @@ tr.claim-row-unread > td {
     /* Tabs responsive */
     .cashback-support-tabs {
         flex-wrap: wrap;
+        flex-direction: column;
+        padding: 4px;
+        border-radius: var(--cb-radius-md, 16px);
     }
 
     .cashback-support-tabs button.cashback-support-tab {
         flex: 1;
         min-width: 0;
-        padding: 10px 12px !important;
-        font-size: 13px;
+        padding: 12px 16px !important;
+        font-size: 14px;
         text-align: center;
+        border-radius: var(--cb-radius-md, 16px) !important;
     }
 }
