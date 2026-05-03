@@ -231,6 +231,12 @@ final class Cashback_Promocodes_Redirect {
         }
 
         global $wpdb;
+        // post_status whitelist: publish + draft + private + pending — это
+        // «живые» товары админа. Trash / auto-draft / inherit (revisions) исключены.
+        // Draft нужен потому что админ часто создаёт товар-магазин ДО публикации,
+        // а промокоды от CPA-сети уже синхронизированы и должны редиректить
+        // с полной атрибуцией (если шорткод [cashback_promocodes] на странице
+        // отрендерил их, значит товар существует и сетап готов).
         // %i для имён таблиц (postmeta/posts) — безопасный prepare.
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- direct postmeta lookup, cached via transient.
         $product_id = (int) $wpdb->get_var( $wpdb->prepare(
@@ -240,7 +246,9 @@ final class Cashback_Promocodes_Redirect {
                JOIN %i p ON p.ID = pm1.post_id
               WHERE pm1.meta_key = %s AND pm1.meta_value = %s
                 AND pm2.meta_key = %s AND pm2.meta_value = %s
-                AND p.post_type = %s AND p.post_status = %s
+                AND p.post_type = %s
+                AND p.post_status IN (%s, %s, %s, %s)
+              ORDER BY FIELD(p.post_status, %s, %s, %s, %s), p.ID DESC
               LIMIT 1',
             $wpdb->postmeta,
             $wpdb->postmeta,
@@ -250,7 +258,16 @@ final class Cashback_Promocodes_Redirect {
             '_offer_id',
             $advcampaign_id,
             'product',
-            'publish'
+            'publish',
+            'private',
+            'pending',
+            'draft',
+            // ORDER BY FIELD: при наличии нескольких товаров для одной кампании
+            // предпочитаем publish > private > pending > draft.
+            'publish',
+            'private',
+            'pending',
+            'draft'
         ) );
 
         if ( $product_id > 0 ) {
