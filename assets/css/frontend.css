@@ -310,6 +310,8 @@ button#save_payout_details_btn:hover {
     background-color: var(--cb-bg-surface, #fff) !important;
     color: var(--cb-accent, #5b6cf7) !important;
     border-color: var(--cb-accent, #5b6cf7) !important;
+    box-shadow: var(--cb-shadow-raised, 0 18px 36px -16px rgba(15, 18, 34, 0.14)) !important;
+    transform: translateY(-1px);
 }
 
 .cashback-tabs button.cashback-tab.active {
