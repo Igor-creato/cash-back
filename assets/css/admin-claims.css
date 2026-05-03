@@ -254,6 +254,48 @@ input#clicks-date-to {
     font-weight: 600;
 }
 
+/* --- "Отправить заявку" (submit inside claim modal) ----------------- */
+
+#claim-submit-btn,
+.claim-modal-content #claim-submit-btn,
+.claim-modal-content button[type="submit"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--cb-accent, #5b6cf7) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    border: none !important;
+    border-radius: var(--cb-radius-pill, 4px) !important;
+    box-shadow: var(--cb-shadow-soft, none) !important;
+    padding: 11px 28px !important;
+    min-height: 2.625rem !important;
+    font-family: inherit !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+    cursor: pointer !important;
+    transition: background-color 0.15s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
+}
+
+#claim-submit-btn:hover,
+.claim-modal-content #claim-submit-btn:hover,
+.claim-modal-content button[type="submit"]:hover {
+    background: var(--cb-accent-hover, #4555e8) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-raised, none) !important;
+    transform: translateY(-1px);
+}
+
+#claim-submit-btn:disabled,
+.claim-modal-content #claim-submit-btn:disabled,
+.claim-modal-content button[type="submit"]:disabled {
+    opacity: 0.6;
+    cursor: not-allowed !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
 /* --- "Подать заявку" / .claim-btn (frontend clicks table action) ---- */
 
 .button.claim-btn,
