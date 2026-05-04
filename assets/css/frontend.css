@@ -870,6 +870,17 @@ button#save_payout_details_btn:hover {
     margin-top: 0;
 }
 
+/* Cashback display rendered as standalone Gutenberg block
+   (cashback/cashback-display). Block wrapper sets its own spacing,
+   so the inner span doesn't add an extra margin-top. */
+.cashback-display--block {
+    margin-top: 0;
+}
+
+.wp-block-cashback-cashback-display {
+    display: block;
+}
+
 p.price .cashback-display {
     font-size: inherit;
     margin-top: 8px;
