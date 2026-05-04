@@ -6,12 +6,6 @@
     "category": "woocommerce",
     "description": "Отображает кэшбэк товара отдельным блоком — независимо от цены.",
     "textdomain": "cashback-plugin",
-    "ancestor": [
-        "woocommerce/single-product",
-        "core/post-template",
-        "woocommerce/product-template",
-        "woocommerce/all-products"
-    ],
     "usesContext": ["postId"],
     "supports": {
         "html": false,
