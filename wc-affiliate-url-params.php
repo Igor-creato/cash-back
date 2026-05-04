@@ -58,92 +58,10 @@ class WC_Affiliate_URL_Params {
         // перезапишет нашу промежуточную страницу.
         add_action('template_redirect', array( $this, 'handle_click_redirect' ), 1);
 
-        // Отображение кэшбэка на карточках товаров и странице товара.
-        // Регистрируется только в режиме 'classic' (option `cashback_display_mode`).
-        // В режиме 'block' кэшбэк показывается через Gutenberg-блок
-        // cashback/cashback-display, который ставится в FSE-шаблоне отдельно.
-        if ('block' !== get_option('cashback_display_mode', 'classic')) {
-            add_filter('woocommerce_get_price_html', array( $this, 'append_cashback_to_price' ), 10, 2);
-            add_action('woocommerce_after_shop_loop_item_title', array( $this, 'display_cashback_standalone_loop' ), 15);
-            add_action('woocommerce_single_product_summary', array( $this, 'display_cashback_single_product' ), 11);
-        }
-
-        // Регистрация Gutenberg-блока и REST-meta — независимо от режима,
-        // блок должен быть доступен в редакторе всегда.
-        add_action('init', array( $this, 'register_cashback_display_meta' ), 5);
-        add_action('init', array( $this, 'register_cashback_display_block' ), 10);
-    }
-
-    /**
-     * Регистрирует мета-поля товара для REST API.
-     *
-     * Это нужно, чтобы Gutenberg-редактор мог читать `_cashback_display_value`
-     * и `_cashback_display_label` через REST для preview блока. Запись возможна
-     * только пользователем с правами edit_post на конкретный товар.
-     *
-     * @since 3.1.0
-     *
-     * @return void
-     */
-    public function register_cashback_display_meta(): void {
-        if (!function_exists('register_post_meta')) {
-            return;
-        }
-
-        $auth_callback = static function ( bool $allowed, string $meta_key, int $object_id ): bool {
-            unset($meta_key);
-            return current_user_can('edit_post', $object_id);
-        };
-
-        register_post_meta(
-            'product',
-            '_cashback_display_value',
-            array(
-                'type'              => 'string',
-                'description'       => 'Cashback display value, e.g. "до 10%".',
-                'single'            => true,
-                'show_in_rest'      => true,
-                'sanitize_callback' => 'sanitize_text_field',
-                'auth_callback'     => $auth_callback,
-            )
-        );
-
-        register_post_meta(
-            'product',
-            '_cashback_display_label',
-            array(
-                'type'              => 'string',
-                'description'       => 'Cashback display label, e.g. "Кэшбэк".',
-                'single'            => true,
-                'show_in_rest'      => true,
-                'sanitize_callback' => 'sanitize_text_field',
-                'auth_callback'     => $auth_callback,
-            )
-        );
-    }
-
-    /**
-     * Регистрирует Gutenberg-блок cashback/cashback-display.
-     *
-     * Блок server-rendered (см. blocks/cashback-display/render.php).
-     * Доступен в FSE/Site Editor — пользователь вставляет его в шаблон
-     * карточки товара отдельно от блока «Цена товара».
-     *
-     * @since 3.1.0
-     *
-     * @return void
-     */
-    public function register_cashback_display_block(): void {
-        if (!function_exists('register_block_type')) {
-            return;
-        }
-
-        $block_dir = __DIR__ . '/blocks/cashback-display';
-        if (!is_dir($block_dir) || !file_exists($block_dir . '/block.json')) {
-            return;
-        }
-
-        register_block_type($block_dir);
+        // Отображение кэшбэка на карточках товаров и странице товара
+        add_filter('woocommerce_get_price_html', array( $this, 'append_cashback_to_price' ), 10, 2);
+        add_action('woocommerce_after_shop_loop_item_title', array( $this, 'display_cashback_standalone_loop' ), 15);
+        add_action('woocommerce_single_product_summary', array( $this, 'display_cashback_single_product' ), 11);
     }
 
     /**
@@ -1692,40 +1610,12 @@ HTML;
      * @since 3.0.0
      *
      * @param int    $product_id ID товара.
-     * @param string $context    Контекст отображения: 'loop', 'single' или 'block'.
+     * @param string $context    Контекст отображения: 'loop' или 'single'.
      * @param bool   $standalone Отображение вместо цены (без цены).
      *
      * @return string HTML-строка или пустая строка если кэшбэк не задан.
      */
     private function get_cashback_html( int $product_id, string $context = 'loop', bool $standalone = false ): string {
-        return self::render_cashback_html($product_id, $context, $standalone);
-    }
-
-    /**
-     * Чистый рендер HTML кэшбэка по post-meta товара.
-     *
-     * Используется как из {@see self::append_cashback_to_price()} (через
-     * приватный wrapper {@see self::get_cashback_html()}), так и из server-side
-     * рендера Gutenberg-блока cashback/cashback-display
-     * (`blocks/cashback-display/render.php`).
-     *
-     * Метод статичный — нет зависимости от `$this`, не вызывает побочных
-     * эффектов и не регистрирует хуки.
-     *
-     * @since 3.1.0
-     *
-     * @param int    $product_id ID товара.
-     * @param string $context    Контекст отображения: 'loop', 'single', 'block'.
-     * @param bool   $standalone Отображение вместо цены (без цены).
-     *
-     * @return string HTML-строка или пустая строка если кэшбэк не задан.
-     */
-    public static function render_cashback_html( int $product_id, string $context = 'block', bool $standalone = true ): string {
-        $allowed_contexts = array( 'loop', 'single', 'block' );
-        if (!in_array($context, $allowed_contexts, true)) {
-            $context = 'loop';
-        }
-
         $value = get_post_meta($product_id, '_cashback_display_value', true);
         if (empty($value)) {
             return '';
@@ -1736,7 +1626,7 @@ HTML;
             $label = 'Кэшбэк';
         }
 
-        $classes = 'cashback-display cashback-display--' . $context;
+        $classes = 'cashback-display cashback-display--' . esc_attr($context);
         if ($standalone) {
             $classes .= ' cashback-display--standalone';
         }

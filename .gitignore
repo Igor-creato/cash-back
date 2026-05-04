@@ -1,6 +1,5 @@
 # Claude settings
 .claude/settings.local.json
-.claude/scheduled_tasks.lock
 
 # Composer dependencies (в development/)
 /vendor/

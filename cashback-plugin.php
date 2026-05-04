@@ -11,7 +11,7 @@ declare(strict_types=1);
  * Author URI: https://example.com
  * Text Domain: cashback-plugin
  * Domain Path: /languages
- * Requires at least: 6.3
+ * Requires at least: 6.2
  * Requires PHP: 8.3
  * WC requires at least: 5.0
  * WC tested up to: 9.5
@@ -26,7 +26,7 @@ defined('ABSPATH') || die('No script kiddies please!');
 
 // Минимальные требования к версиям
 define('CASHBACK_MIN_PHP_VERSION', '8.3');
-define('CASHBACK_MIN_WP_VERSION', '6.3');
+define('CASHBACK_MIN_WP_VERSION', '6.2');
 define('CASHBACK_MIN_WC_VERSION', '5.0');
 
 /**
@@ -711,7 +711,6 @@ class CashbackPlugin {
             $this->require_file('antifraud/class-fraud-admin.php');
             $this->require_file('admin/class-cashback-admin-api-validation.php');
             $this->require_file('admin/class-cashback-admin-outbound-allowlist.php');
-            $this->require_file('admin/class-cashback-display-admin.php');
             $this->require_file('affiliate/class-affiliate-admin.php');
             $this->require_file('claims/class-claims-admin.php');
             $this->require_file('notifications/class-cashback-notifications-admin.php');
@@ -1011,11 +1010,6 @@ class CashbackPlugin {
 
         if (is_admin() && class_exists('Cashback_Fraud_Admin')) {
             new Cashback_Fraud_Admin();
-        }
-
-        // Кэшбэк → Отображение (toggle classic / block для cashback display).
-        if (is_admin() && class_exists('Cashback_Display_Admin')) {
-            new Cashback_Display_Admin();
         }
 
         if (is_admin() && class_exists('Cashback_Rate_History_Admin')) {
