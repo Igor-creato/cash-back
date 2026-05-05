@@ -1,8 +1,9 @@
 /* Шорткод [cashback_coupons_icons] — иконки активных купонов товара. */
 
+span.cashback-coupons-icons,
 .cashback-coupons-icons {
     display: inline-flex !important;
-    flex-direction: row;
+    flex-direction: row !important;
     flex-wrap: wrap;
     gap: 6px;
     align-items: center;
@@ -11,13 +12,14 @@
     max-width: 100%;
 }
 
+a.cashback-coupons-icons__item,
 .cashback-coupons-icons__item {
     position: relative;
     display: inline-flex !important;
-    flex: 0 0 auto;
+    flex: 0 0 auto !important;
     align-items: center;
     justify-content: center;
-    width: auto;
+    width: auto !important;
     text-decoration: none;
     color: inherit;
     transition: transform 0.15s ease, opacity 0.15s ease;
