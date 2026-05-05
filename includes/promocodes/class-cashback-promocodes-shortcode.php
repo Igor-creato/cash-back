@@ -163,7 +163,6 @@ final class Cashback_Promocodes_Shortcode {
         $name        = (string) ( $row['name'] ?? '' );
         $promocode   = isset( $row['promocode'] ) ? (string) $row['promocode'] : '';
         $discount    = (string) ( $row['discount'] ?? '' );
-        $goto_link   = (string) ( $row['goto_link'] ?? '' );
         $date_end    = (string) ( $row['date_end'] ?? '' );
         $is_excl     = ! empty( $row['is_exclusive'] );
         $promo_id    = (int) ( $row['id'] ?? 0 );
