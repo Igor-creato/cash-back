@@ -193,6 +193,39 @@ final class Cashback_Promocodes_Shortcode {
                 esc_attr( (string) $promo_id ),
                 esc_html__( 'Скопировать', 'cashback-plugin' )
             );
+        } else {
+            $img_html = '';
+            if ( class_exists( 'Cashback_Coupons_Icon_Resolver' ) ) {
+                $icon_type = Cashback_Coupons_Icon_Resolver::resolve(
+                    array(
+                        'species'     => $species,
+                        'name'        => $name,
+                        'description' => $description,
+                    )
+                );
+
+                $option_name  = class_exists( 'Cashback_Coupons_Icons_Shortcode' )
+                    ? Cashback_Coupons_Icons_Shortcode::OPTION_NAME
+                    : 'cashback_coupons_icons_settings';
+                $icons_option = function_exists( 'get_option' ) ? get_option( $option_name, array() ) : array();
+                $icons_option = is_array( $icons_option ) ? $icons_option : array();
+                $aid          = isset( $icons_option[ $icon_type ] ) ? (int) $icons_option[ $icon_type ] : 0;
+
+                if ( $aid > 0 && function_exists( 'wp_get_attachment_image' ) ) {
+                    $img_html = (string) wp_get_attachment_image(
+                        $aid,
+                        array( 96, 96 ),
+                        false,
+                        array(
+                            'alt'         => '',
+                            'loading'     => 'lazy',
+                            'aria-hidden' => 'true',
+                        )
+                    );
+                }
+            }
+
+            $parts[] = '<div class="cashback-promo-card__icon-slot" aria-hidden="true">' . $img_html . '</div>';
         }
 
         // href ведёт на серверный redirect-handler (Cashback_Promocodes_Redirect),

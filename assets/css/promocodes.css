@@ -89,6 +89,23 @@
     margin-top: 4px;
 }
 
+.cashback-promo-card__icon-slot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    margin-top: 4px;
+}
+
+.cashback-promo-card__icon-slot img {
+    max-width: 96px;
+    max-height: 96px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    display: block;
+}
+
 .cashback-promo-card__code {
     flex: 1;
     background: var(--cb-bg-canvas, #f5f4f0);
@@ -140,7 +157,7 @@
 }
 
 .cashback-promo-card__btn--goto {
-    margin-top: 4px;
+    margin-top: auto;
     text-align: center;
     background: var(--cb-warm, #ff8a65);
     color: var(--cb-text-on-accent, #fff);
@@ -157,6 +174,6 @@
 .cashback-promo-card__date-end {
     font-size: 11px;
     color: var(--cb-text-muted, #8f8fa3);
-    margin-top: auto;
+    margin-top: 6px;
     padding-top: 4px;
 }
