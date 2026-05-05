@@ -238,17 +238,17 @@ final class Cashback_Promocodes_Shortcode {
             array( 'cashback_promo_click' => $promo_id ),
             home_url( '/' )
         );
+        if ( $date_end !== '' ) {
+            /* translators: %s — дата окончания купона. */
+            $parts[] = '<div class="cashback-promo-card__date-end">' . esc_html( sprintf( __( 'до %s', 'cashback-plugin' ), $date_end ) ) . '</div>';
+        }
+
         $parts[]  = sprintf(
             '<a class="cashback-promo-card__btn cashback-promo-card__btn--goto" data-action="goto" data-promo-id="%1$s" href="%2$s" target="_blank" rel="nofollow noopener">%3$s</a>',
             esc_attr( (string) $promo_id ),
             esc_url( $goto_url ),
             esc_html__( 'Перейти в магазин', 'cashback-plugin' )
         );
-
-        if ( $date_end !== '' ) {
-            /* translators: %s — дата окончания купона. */
-            $parts[] = '<div class="cashback-promo-card__date-end">' . esc_html( sprintf( __( 'до %s', 'cashback-plugin' ), $date_end ) ) . '</div>';
-        }
 
         $parts[] = '</article>';
 

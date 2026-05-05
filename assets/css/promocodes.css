@@ -157,11 +157,14 @@
 }
 
 .cashback-promo-card__btn--goto {
-    margin-top: auto;
     text-align: center;
     background: var(--cb-warm, #ff8a65);
     color: var(--cb-text-on-accent, #fff);
     border-color: var(--cb-warm, #ff8a65);
+}
+
+.cashback-promo-card:not(:has(.cashback-promo-card__date-end)) .cashback-promo-card__btn--goto {
+    margin-top: auto;
 }
 
 .cashback-promo-card__btn--goto:hover,
@@ -174,6 +177,6 @@
 .cashback-promo-card__date-end {
     font-size: 11px;
     color: var(--cb-text-muted, #8f8fa3);
-    margin-top: 6px;
+    margin-top: auto;
     padding-top: 4px;
 }
