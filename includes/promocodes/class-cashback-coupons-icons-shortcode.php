@@ -209,8 +209,13 @@ final class Cashback_Coupons_Icons_Shortcode {
         // Inline-style: defense-in-depth против тем (Woodmart),
         // которые навязывают `display: block` ссылкам внутри карточки
         // товара через высокоспецифичные селекторы.
+        // Inline-style: defense-in-depth против тем (Woodmart),
+        // которые навязывают `display: block` ссылкам внутри карточки
+        // товара через высокоспецифичные селекторы. flex-wrap: nowrap +
+        // white-space: nowrap — гарантия линейного расположения даже
+        // в узких колонках Woodmart Custom Loop Layout.
         return sprintf(
-            '<span class="cashback-coupons-icons cashback-coupons-icons--%1$s%2$s" data-product-id="%3$d" style="display:inline-flex;flex-direction:row;flex-wrap:wrap;gap:6px;align-items:center;line-height:1;">%4$s</span>',
+            '<span class="cashback-coupons-icons cashback-coupons-icons--%1$s%2$s" data-product-id="%3$d" style="display:inline-flex;flex-direction:row;flex-wrap:nowrap;gap:6px;align-items:center;line-height:1;white-space:nowrap;">%4$s</span>',
             esc_attr( $size ),
             $extra_class,
             $product_id,
@@ -238,8 +243,10 @@ final class Cashback_Coupons_Icons_Shortcode {
             )
             : '';
 
+        // title= НЕ выставляем — иначе браузер показывает native-tooltip
+        // дополнительно к нашему CSS-баблу. aria-label остаётся для скрин-ридеров.
         return sprintf(
-            '<a class="cashback-coupons-icons__item cashback-coupons-icons__item--%1$s" href="%2$s" data-cb-icon-type="%1$s" aria-label="%3$s" title="%3$s" style="display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;">%4$s<span class="cashback-coupons-icons__tooltip">%3$s</span></a>',
+            '<a class="cashback-coupons-icons__item cashback-coupons-icons__item--%1$s" href="%2$s" data-cb-icon-type="%1$s" aria-label="%3$s" style="display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;">%4$s<span class="cashback-coupons-icons__tooltip">%3$s</span></a>',
             esc_attr( $type ),
             esc_url( $href_base ),
             esc_attr( $label ),
@@ -258,7 +265,7 @@ final class Cashback_Coupons_Icons_Shortcode {
             'cashback-coupons-icons',
             plugins_url( 'assets/css/coupons-icons.css', $plugin_root_file ),
             array(),
-            '7.5.2'
+            '7.5.3'
         );
     }
 }

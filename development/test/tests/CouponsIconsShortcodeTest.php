@@ -371,9 +371,13 @@ final class CouponsIconsShortcodeTest extends TestCase
         $sc   = new Cashback_Coupons_Icons_Shortcode($repo);
         $html = $sc->render(array('id' => '123'));
 
-        $this->assertStringContainsString('title="Купон на скидку"', $html);
-        $this->assertStringContainsString('title="Подарок при покупке"', $html);
-        $this->assertStringContainsString('title="Бесплатная доставка"', $html);
+        // title= НЕ выставляем (иначе браузер показывает дублирующий native tooltip).
+        // Текст подсказки доступен через aria-label (a11y) + CSS-tooltip span.
+        $this->assertStringContainsString('aria-label="Купон на скидку"', $html);
+        $this->assertStringContainsString('aria-label="Подарок при покупке"', $html);
+        $this->assertStringContainsString('aria-label="Бесплатная доставка"', $html);
+        $this->assertStringContainsString('cashback-coupons-icons__tooltip">Купон на скидку</span>', $html);
+        $this->assertStringNotContainsString(' title="', $html, 'native-tooltip атрибут title не должен присутствовать');
     }
 
     public function test_render_icons_attribute_filters_to_subset(): void
