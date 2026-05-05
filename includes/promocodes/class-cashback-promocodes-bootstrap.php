@@ -101,7 +101,7 @@ final class Cashback_Promocodes_Bootstrap {
      * @return array<string,array<string,mixed>>
      */
     public static function apply_shortcodes_to_extra_tabs( array $tabs ): array {
-        foreach ( $tabs as $key => &$tab ) {
+        foreach ( $tabs as &$tab ) {
             if ( ! isset( $tab['content'] ) || ! is_string( $tab['content'] ) || $tab['content'] === '' ) {
                 // Кастомные WoodMart-табы передают callback, который читает content
                 // из $product_tab['content']. Если callback указан, но content нет —
@@ -156,7 +156,7 @@ final class Cashback_Promocodes_Bootstrap {
             'cashback-coupons-tab',
             plugins_url( 'assets/js/cashback-coupons-tab.js', $plugin_root_file ),
             array(),
-            '7.5.0',
+            '7.5.3',
             true
         );
     }
