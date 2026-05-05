@@ -21,6 +21,24 @@ class WC_Affiliate_URL_Params {
     private const CACHE_EXPIRATION = 3600;
 
     /**
+     * Auto-suppress: product_id => true. Заполняется в pre-render Woodmart Custom
+     * Layout если в content layout'а присутствует шорткод [cashback_display].
+     * Фильтр {@see self::append_cashback_to_price()} проверяет этот флаг и
+     * возвращает HTML цены без кэшбэка (избегаем дубля цена + шорткод).
+     *
+     * @var array<int, bool>
+     */
+    private static array $suppress_filter_for_product = array();
+
+    /**
+     * Кэш has_shortcode по post_id Woodmart Layout — чтобы не парсить content
+     * по N раз для каждого продукта в loop.
+     *
+     * @var array<int, bool>
+     */
+    private static array $layout_has_shortcode_cache = array();
+
+    /**
      * Конструктор класса.
      *
      * @since 2.0.0
@@ -62,6 +80,106 @@ class WC_Affiliate_URL_Params {
         add_filter('woocommerce_get_price_html', array( $this, 'append_cashback_to_price' ), 10, 2);
         add_action('woocommerce_after_shop_loop_item_title', array( $this, 'display_cashback_standalone_loop' ), 15);
         add_action('woocommerce_single_product_summary', array( $this, 'display_cashback_single_product' ), 11);
+
+        // Auto-suppress: если в Woodmart Custom Loop Layout присутствует шорткод
+        // [cashback_display], классический фильтр НЕ дописывает кэшбэк в цену
+        // (избегаем дубля). Priority 5 — раньше Woodmart's output_display_template (10).
+        add_action('woodmart_loop_item_content', array( $this, 'maybe_suppress_filter_for_layout' ), 5, 1);
+        add_action('woodmart_loop_item_content', array( $this, 'reset_suppress_filter' ), 100, 1);
+    }
+
+    /**
+     * Включает подавление фильтра append_cashback_to_price для текущего товара,
+     * если в content Woodmart Layout есть шорткод [cashback_display].
+     *
+     * Вызывается на action woodmart_loop_item_content приоритет 5 (до основного
+     * Woodmart-handler'а с приоритетом 10), $layout_post_id — ID layout-поста
+     * (CPT woodmart_layout). Глобальный $post в этот момент = текущий product
+     * loop'а (Woodmart выставляет его через the_post()).
+     *
+     * @since 3.1.0
+     *
+     * @param int $layout_post_id ID Woodmart Layout-поста.
+     *
+     * @return void
+     */
+    public function maybe_suppress_filter_for_layout( $layout_post_id ): void {
+        $layout_post_id = (int) $layout_post_id;
+        if (0 === $layout_post_id) {
+            return;
+        }
+
+        if (!isset(self::$layout_has_shortcode_cache[ $layout_post_id ])) {
+            $content                                            = get_post_field('post_content', $layout_post_id);
+            self::$layout_has_shortcode_cache[ $layout_post_id ] = is_string($content)
+                && function_exists('has_shortcode')
+                && has_shortcode($content, 'cashback_display');
+        }
+
+        if (!self::$layout_has_shortcode_cache[ $layout_post_id ]) {
+            return;
+        }
+
+        $product_id = (int) get_the_ID();
+        if (0 === $product_id) {
+            return;
+        }
+
+        self::$suppress_filter_for_product[ $product_id ] = true;
+    }
+
+    /**
+     * Сбрасывает подавление фильтра после рендера layout'а конкретного товара.
+     *
+     * Вызывается на action woodmart_loop_item_content priority 100 (после
+     * основного Woodmart-handler'а 10) — Woodmart уже отрендерил content и
+     * filter не нужен в текущем product context.
+     *
+     * @since 3.1.0
+     *
+     * @param int $layout_post_id ID Woodmart Layout-поста (не используется).
+     *
+     * @return void
+     */
+    public function reset_suppress_filter( $layout_post_id ): void {
+        unset($layout_post_id);
+
+        $product_id = (int) get_the_ID();
+        if (0 === $product_id) {
+            return;
+        }
+
+        unset(self::$suppress_filter_for_product[ $product_id ]);
+    }
+
+    /**
+     * Тест-helper: проверить установлен ли suppress-флаг для товара.
+     * Используется только в unit-тестах CashbackPriceFilterSuppressTest.
+     *
+     * @since 3.1.0
+     *
+     * @internal
+     *
+     * @param int $product_id ID товара.
+     *
+     * @return bool
+     */
+    public static function is_filter_suppressed_for_product( int $product_id ): bool {
+        return !empty(self::$suppress_filter_for_product[ $product_id ]);
+    }
+
+    /**
+     * Тест-helper: сбросить весь suppress state и кэш has_shortcode между тестами.
+     *
+     * @since 3.1.0
+     *
+     * @internal
+     *
+     * @return void
+     */
+    public static function reset_suppress_state(): void {
+        self::$suppress_filter_for_product = array();
+        self::$layout_has_shortcode_cache  = array();
     }
 
     /**
@@ -1717,6 +1835,14 @@ HTML;
         }
 
         $product_id = $product->get_id();
+
+        // Auto-suppress: пользователь поставил [cashback_display] в Woodmart
+        // Custom Layout — кэшбэк уже отрендерится отдельным узлом, не дублируем
+        // его в HTML цены.
+        if (isset(self::$suppress_filter_for_product[ $product_id ])) {
+            return $price_html;
+        }
+
         $is_single  = function_exists('is_product') && is_product();
         $context    = $is_single ? 'single' : 'loop';
         $standalone = empty(trim($price_html));
