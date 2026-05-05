@@ -1640,6 +1640,53 @@ HTML;
     }
 
     /**
+     * Публичный статический рендер HTML кэшбэка из post-meta товара.
+     *
+     * Используется шорткодом [cashback_display] (см. Cashback_Shortcodes::render_cashback_display())
+     * и любыми другими внешними потребителями. Не дублирует регистрацию хуков —
+     * это чистая функция, читающая meta и формирующая HTML.
+     *
+     * Поддерживаемые контексты: 'loop', 'single', 'shortcode'. Невалидный
+     * контекст приводится к 'loop'.
+     *
+     * @since 3.1.0
+     *
+     * @param int    $product_id ID товара.
+     * @param string $context    Контекст отображения.
+     * @param bool   $standalone Отображение вместо цены (без цены).
+     *
+     * @return string HTML-строка или пустая строка если кэшбэк не задан.
+     */
+    public static function render_cashback_html( int $product_id, string $context = 'shortcode', bool $standalone = true ): string {
+        $allowed_contexts = array( 'loop', 'single', 'shortcode' );
+        if (!in_array($context, $allowed_contexts, true)) {
+            $context = 'loop';
+        }
+
+        $value = get_post_meta($product_id, '_cashback_display_value', true);
+        if (empty($value)) {
+            return '';
+        }
+
+        $label = get_post_meta($product_id, '_cashback_display_label', true);
+        if (empty($label)) {
+            $label = 'Кэшбэк';
+        }
+
+        $classes = 'cashback-display cashback-display--' . $context;
+        if ($standalone) {
+            $classes .= ' cashback-display--standalone';
+        }
+
+        return sprintf(
+            '<span class="%s"><span class="cashback-display__label">%s</span> <span class="cashback-display__value">%s</span></span>',
+            esc_attr($classes),
+            esc_html($label),
+            esc_html($value)
+        );
+    }
+
+    /**
      * Добавляет кэшбэк к HTML цены товара.
      *
      * Для товаров с ценой — дописывает кэшбэк после цены.

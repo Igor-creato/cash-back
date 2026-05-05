@@ -455,6 +455,63 @@ class Cashback_Statistics_Admin {
                 </div>
             </details>
 
+            <!-- [cashback_display] -->
+            <details class="cb-shortcode-section">
+                <summary>[cashback_display] — <?php echo esc_html__('Кэшбэк товара (для Woodmart Custom Layout)', 'cashback-plugin'); ?></summary>
+                <div class="cb-shortcode-body">
+                        <p><?php echo esc_html__('Выводит кэшбэк товара отдельным HTML-узлом. Используется в Woodmart Product Loop Item Layout (Layouts → Loop item → Edit Kartochka), чтобы кэшбэк отображался независимо от блока «Цена товара» — и был виден даже если у товара цена не задана.', 'cashback-plugin'); ?></p>
+                        <p><?php echo esc_html__('Значение и метка читаются из полей товара «Размер кэшбэка» и «Текст метки» (раздел «Отображение кэшбэка» в Product Data). Если в шорткоде передан атрибут value — он перекрывает meta.', 'cashback-plugin'); ?></p>
+                        <table class="widefat striped" style="margin-bottom: 12px;">
+                            <thead>
+                                <tr>
+                                    <th style="width: 42%;"><?php echo esc_html__('Шорткод', 'cashback-plugin'); ?></th>
+                                    <th><?php echo esc_html__('Описание', 'cashback-plugin'); ?></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                $display_rows = array(
+                                    array( '[cashback_display]', __('Кэшбэк текущего товара (внутри shop loop / страницы товара / Woodmart Custom Layout)', 'cashback-plugin') ),
+                                    array( '[cashback_display id="123"]', __('Кэшбэк конкретного товара по ID — для произвольных страниц вне loop', 'cashback-plugin') ),
+                                    array( '[cashback_display value="до 5%"]', __('Статичный override значения — без чтения post-meta', 'cashback-plugin') ),
+                                    array( '[cashback_display label="Бонус" value="100 ₽"]', __('Кастомные label + value (например, для рекламной плашки)', 'cashback-plugin') ),
+                                    array( '[cashback_display class="my-custom-class"]', __('Дополнительный CSS-класс для стилизации', 'cashback-plugin') ),
+                                );
+                                foreach ($display_rows as $row) :
+                                ?>
+                                <tr>
+                                    <td>
+                                        <span class="cb-shortcode-copy" data-shortcode="<?php echo esc_attr($row[0]); ?>" title="<?php echo esc_attr__('Нажмите, чтобы скопировать', 'cashback-plugin'); ?>">
+                                            <span class="cb-copy-icon">⎘</span><?php echo esc_html($row[0]); ?>
+                                        </span>
+                                    </td>
+                                    <td><?php echo esc_html($row[1]); ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        <p class="cb-shortcode-attrs">
+                            <strong><?php echo esc_html__('Атрибуты:', 'cashback-plugin'); ?></strong>
+                            <code>id</code> — <?php echo esc_html__('ID товара (по умолчанию текущий пост)', 'cashback-plugin'); ?> &nbsp;|&nbsp;
+                            <code>label</code> — <?php echo esc_html__('override метки (по умолчанию из мета или «Кэшбэк»)', 'cashback-plugin'); ?> &nbsp;|&nbsp;
+                            <code>value</code> — <?php echo esc_html__('override значения (если задан, post-meta игнорируется)', 'cashback-plugin'); ?> &nbsp;|&nbsp;
+                            <code>class</code> — <?php echo esc_html__('доп. CSS-классы', 'cashback-plugin'); ?>
+                        </p>
+                        <div class="cb-how-to">
+                            <strong><?php echo esc_html__('Как использовать в Woodmart Custom Layout:', 'cashback-plugin'); ?></strong>
+                            <ol>
+                                <li><?php echo esc_html__('Откройте Темы → Theme settings → Product archive → Products loop → Edit Kartochka.', 'cashback-plugin'); ?></li>
+                                <li><?php echo esc_html__('В Gutenberg-редакторе шаблона добавьте блок «Шорткод» (через "+", найдите по слову «шорткод»).', 'cashback-plugin'); ?></li>
+                                <li><?php echo esc_html__('Введите [cashback_display] и сохраните шаблон.', 'cashback-plugin'); ?></li>
+                                <li><?php echo esc_html__('На фронте каталога кэшбэк появится отдельным узлом в указанном месте карточки.', 'cashback-plugin'); ?></li>
+                            </ol>
+                        </div>
+                        <div class="cb-notice-info">
+                            <?php echo esc_html__('Чтобы избежать «слипания» цены и кэшбэка, удалите блок «Цена товара» из Custom Layout или замените его на Woodmart Price-элемент. Иначе фильтр woocommerce_get_price_html продолжит дописывать кэшбэк в HTML цены параллельно с шорткодом.', 'cashback-plugin'); ?>
+                        </div>
+                </div>
+            </details>
+
             <!-- [cashback_contact_form] -->
             <details class="cb-shortcode-section">
                 <summary>[cashback_contact_form] — <?php echo esc_html__('Форма обратной связи', 'cashback-plugin'); ?></summary>
