@@ -101,9 +101,9 @@
 }
 
 #payout-filter-reset {
-    border: 1px solid var(--cb-border-strong, rgba(22, 21, 28, 0.12)) !important;
-    border-radius: var(--cb-radius-pill, 999px) !important;
-    color: var(--cb-text-primary, #16151c) !important;
+    border: 1px solid var(--cb-accent, rgb(69, 85, 232)) !important;
+    border-radius: var(--cb-radius-pill, 10px) !important;
+    color: var(--cb-accent, rgb(69, 85, 232)) !important;
     background-color: transparent !important;
     text-transform: none !important;
     font-weight: 600 !important;
@@ -111,13 +111,15 @@
     font-style: normal !important;
     padding: 9px 22px !important;
     cursor: pointer;
-    transition: background-color 0.15s ease, box-shadow 0.2s ease !important;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
 }
 
 #payout-filter-reset:hover {
-    color: var(--cb-text-primary, #16151c) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    background-color: var(--cb-accent, rgb(69, 85, 232)) !important;
+    border-color: var(--cb-accent, rgb(69, 85, 232)) !important;
     box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
-    background-color: var(--cb-bg-surface, #fff) !important;
+    transform: translateY(-1px);
 }
 
 /* --- Status colors (desktop table) --------------------------------- */

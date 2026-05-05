@@ -227,6 +227,28 @@ input#clicks-date-to {
     background-color: var(--cb-bg-surface, #005a87) !important;
 }
 
+/* Frontend-only override (Заявки кэшбэка → Мои переходы / Мои заявки):
+   приводит "Сбросить" к единому виду со страницами История покупок /
+   История выплат — outline-accent в default, filled-accent на hover.
+   На админ-странице (body.wp-admin) override не активируется. */
+body:not(.wp-admin) #clicks-filter-reset,
+body:not(.wp-admin) #claims-filter-reset {
+    border: 1px solid var(--cb-accent, rgb(69, 85, 232)) !important;
+    border-radius: var(--cb-radius-pill, 10px) !important;
+    color: var(--cb-accent, rgb(69, 85, 232)) !important;
+    background-color: transparent !important;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
+}
+
+body:not(.wp-admin) #clicks-filter-reset:hover,
+body:not(.wp-admin) #claims-filter-reset:hover {
+    color: var(--cb-text-on-accent, #fff) !important;
+    background-color: var(--cb-accent, rgb(69, 85, 232)) !important;
+    border-color: var(--cb-accent, rgb(69, 85, 232)) !important;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
+    transform: translateY(-1px);
+}
+
 @media (max-width: 768px) {
     .clicks-filters-row {
         flex-direction: column;
