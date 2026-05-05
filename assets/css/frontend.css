@@ -870,6 +870,15 @@ button#save_payout_details_btn:hover {
     margin-top: 0;
 }
 
+/* Шорткод [cashback_display] (Woodmart Custom Loop Layout, виджеты, страницы):
+   рендерится как block-узел и по умолчанию центрируется. Если нужно left/right,
+   пользователь либо передаёт class=... либо оборачивает шорткод в Woodmart Container
+   с собственным выравниванием. */
+.cashback-display--shortcode {
+    text-align: center;
+    margin-top: 0;
+}
+
 p.price .cashback-display {
     font-size: inherit;
     margin-top: 8px;
