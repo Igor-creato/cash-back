@@ -4,16 +4,21 @@
  * Стратегия (по убыванию надёжности):
  *   1. Поиск таб-pane с реальным [cashback_promocodes] внутри
  *      (.cashback-promocodes → ближайший `[id^="tab-"]` → anchor по href).
- *   2. Серверный маркер [data-cb-coupons-tab] в title таба.
- *   3. WC-стандарт: li.{slug}_tab > a / li.tab-{slug} > a.
- *   4. Fallback: a[href="#tab-{slug}"].
+ *   2. WC-стандарт по slug (li.{slug}_tab > a / a[href="#tab-{slug}"]).
+ *   3. Серверный маркер [data-cb-coupons-tab] (на случай если был внедрён).
+ *
+ * Активация (multi-strategy, для совместимости с разными темами):
+ *   а. native click() — стандартный WC handler привязан к ul.tabs > li > a.
+ *   б. jQuery .trigger('click') — если jQuery доступен (Woodmart использует).
+ *   в. Manual class-toggle: removeClass active/wd-active со всех табов и
+ *      panes, addClass только нужным. Защита от случаев, когда click
+ *      handler ещё не привязан (race с DOMContentLoaded).
+ *
+ * Retry с возрастающими задержками (200ms / 600ms / 1500ms) — на случай,
+ * если WC/Woodmart JS инициализируется отложенно (lazy-load ассетов).
  *
  * Используется шорткодом [cashback_coupons_icons] для перехода со страницы
  * каталога на single-product с автоматически открытой вкладкой «Купоны».
- *
- * Активация: native click() — jQuery-делегат WC tabs его поймает; затем
- * scrollIntoView smooth до контейнера табов. retry с задержкой решает
- * race против отложенной jQuery-инициализации Woodmart.
  *
  * @since 7.5.0
  */
@@ -42,21 +47,38 @@
         return value.replace(/([!"#$%&'()*+,./:;<=>?@\[\\\]^`{|}~])/g, '\\$1');
     }
 
-    function findTabAnchor(slug) {
-        // 1. Самый надёжный путь — найти таб-pane с фактическим
-        // содержимым [cashback_promocodes], затем найти anchor по его id.
+    /**
+     * @returns {{anchor: HTMLElement, paneId: string} | null}
+     */
+    function findTab(slug) {
+        // 1. По содержимому: ищем реальный [cashback_promocodes].
         var promocodesEl = document.querySelector('.cashback-promocodes');
         if (promocodesEl) {
             var pane = promocodesEl.closest('[id^="tab-"]');
-            if (pane && pane.id) {
+            if (pane && pane.id && pane.id.indexOf('tab-title-') !== 0) {
                 var byContent = document.querySelector(
                     'a[href="#' + escapeForSelector(pane.id) + '"]'
                 );
-                if (byContent) { return byContent; }
+                if (byContent) {
+                    return { anchor: byContent, paneId: pane.id };
+                }
             }
         }
 
-        // 2. Серверный маркер в title таба.
+        // 2. WC-стандарт по slug.
+        var byClass = document.querySelector(
+            'li.' + escapeForSelector(slug) + '_tab > a, li.tab-' + escapeForSelector(slug) + ' > a'
+        );
+        if (byClass && byClass.getAttribute('href')) {
+            return { anchor: byClass, paneId: byClass.getAttribute('href').replace(/^#/, '') };
+        }
+
+        var byHref = document.querySelector('a[href="#tab-' + slug + '"]');
+        if (byHref) {
+            return { anchor: byHref, paneId: 'tab-' + slug };
+        }
+
+        // 3. Маркер в title (если внедрён сервером).
         var marker = document.querySelector(
             '.wc-tabs [data-cb-coupons-tab], .wd-nav-tabs [data-cb-coupons-tab], .woocommerce-tabs [data-cb-coupons-tab]'
         );
@@ -64,28 +86,67 @@
             var li = marker.closest('li');
             if (li) {
                 var a = li.querySelector('a');
-                if (a) { return a; }
+                if (a && a.getAttribute('href')) {
+                    return { anchor: a, paneId: a.getAttribute('href').replace(/^#/, '') };
+                }
             }
         }
 
-        // 3. WC-стандарт по slug.
-        var byClass = document.querySelector(
-            'li.' + escapeForSelector(slug) + '_tab > a, li.tab-' + escapeForSelector(slug) + ' > a'
-        );
-        if (byClass) { return byClass; }
+        return null;
+    }
 
-        // 4. Anchor по href.
-        return document.querySelector('a[href="#tab-' + slug + '"]');
+    function manualActivate(anchor, paneId) {
+        var tabsWrapper = anchor.closest('.wc-tabs-wrapper, .woocommerce-tabs');
+        if (!tabsWrapper) { return; }
+
+        // Все <li> в навигации tabs.
+        var navLis = tabsWrapper.querySelectorAll(
+            'ul.wc-tabs > li, ul.tabs > li, ul.wd-nav-tabs > li'
+        );
+        navLis.forEach(function (li) {
+            li.classList.remove('active', 'wd-active');
+        });
+
+        var anchorLi = anchor.closest('li');
+        if (anchorLi) {
+            anchorLi.classList.add('active', 'wd-active');
+        }
+
+        // Все таб-панели (контентные, не titles).
+        var panes = tabsWrapper.querySelectorAll('[id^="tab-"]');
+        panes.forEach(function (pane) {
+            if (pane.id && pane.id.indexOf('tab-title-') === 0) { return; }
+            pane.style.display = 'none';
+            pane.classList.remove('wd-active', 'wd-in', 'active');
+        });
+
+        var targetPane = document.getElementById(paneId);
+        if (targetPane) {
+            targetPane.style.display = '';
+            targetPane.classList.add('wd-active', 'wd-in', 'active');
+        }
     }
 
     function activate() {
-        var anchor = findTabAnchor(safeSlug);
-        if (!anchor) { return false; }
+        var found = findTab(safeSlug);
+        if (!found) { return false; }
 
-        // Native click — jQuery-делегат WC/Woodmart его поймает.
+        var anchor = found.anchor;
+        var paneId = found.paneId;
+
+        // 1. Native click — стандартный WC handler.
         try { anchor.click(); } catch (e) {}
 
-        var container = anchor.closest('.woocommerce-tabs, .wd-tabs') || anchor;
+        // 2. jQuery trigger — если доступен (Woodmart использует).
+        if (window.jQuery) {
+            try { window.jQuery(anchor).trigger('click'); } catch (e) {}
+        }
+
+        // 3. Manual class-toggle как защита от не-привязанного handler'а.
+        try { manualActivate(anchor, paneId); } catch (e) {}
+
+        // Скролл к контейнеру табов.
+        var container = anchor.closest('.woocommerce-tabs, .wd-tabs, .wc-tabs-wrapper') || anchor;
         if (container && typeof container.scrollIntoView === 'function') {
             container.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
@@ -93,13 +154,19 @@
     }
 
     function activateWithRetry() {
-        // Пробуем сразу.
-        if (activate()) { return; }
-        // Retry через 200ms — на случай, если jQuery WC tabs ещё не привязал
-        // обработчик. И финальный retry через 800ms (медленные темы / lazy-load JS).
-        window.setTimeout(function () {
-            if (activate()) { return; }
+        if (activate()) {
+            // Сделаем ещё одну попытку через 600ms — Woodmart's
+            // singleProductTabsAccordion на ready дёргает первый таб обратно;
+            // эта вторая попытка перезапишет его выбор.
             window.setTimeout(activate, 600);
+            return;
+        }
+        window.setTimeout(function () {
+            if (activate()) {
+                window.setTimeout(activate, 600);
+                return;
+            }
+            window.setTimeout(activate, 1500);
         }, 200);
     }
 
