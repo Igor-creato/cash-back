@@ -249,6 +249,76 @@ body:not(.wp-admin) #claims-filter-reset:hover {
     transform: translateY(-1px);
 }
 
+/* Frontend-only override: приводит форму фильтров на claims-frontend
+   (Мои переходы / Мои заявки) к единому виду со страницей "История
+   покупок" (cashback-history.css). Свойства копируются 1:1 из
+   .wd-cashback-history .clicks-filters* — те же токены, те же fallback'и,
+   те же отступы. Админ-страница (body.wp-admin) не затрагивается. */
+body:not(.wp-admin) .clicks-filters {
+    margin-bottom: 20px;
+    padding: 16px 18px;
+    background: var(--cb-bg-canvas, #f5f4f0);
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+    border-radius: var(--cb-radius-md, 16px);
+}
+
+body:not(.wp-admin) .clicks-filters-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+}
+
+body:not(.wp-admin) .clicks-filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+body:not(.wp-admin) .clicks-filter-group label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--cb-text-secondary, #5b5c70);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+body:not(.wp-admin) .clicks-filter-input {
+    padding: 8px 12px;
+    border: 1px solid var(--cb-border-strong, rgba(22, 21, 28, 0.12));
+    border-radius: var(--cb-radius-sm, 10px);
+    font-size: 14px;
+    background-color: var(--cb-bg-surface, #fff);
+    color: var(--cb-text-primary, #16151c);
+    font-family: inherit;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+body:not(.wp-admin) .clicks-filter-input:focus {
+    outline: none;
+    border-color: var(--cb-border-focus, rgba(91, 108, 247, 0.45));
+    box-shadow: var(--cb-shadow-focus, 0 0 0 3px rgba(91, 108, 247, 0.25));
+}
+
+body:not(.wp-admin) input#clicks-search,
+body:not(.wp-admin) input#claims-search {
+    min-width: 180px;
+}
+
+body:not(.wp-admin) input#clicks-date-from,
+body:not(.wp-admin) input#clicks-date-to,
+body:not(.wp-admin) input#claims-date-from,
+body:not(.wp-admin) input#claims-date-to {
+    max-width: 160px;
+}
+
+body:not(.wp-admin) .clicks-filter-buttons {
+    flex-direction: row;
+    gap: 8px;
+    align-items: center;
+    padding-top: 18px;
+}
+
 @media (max-width: 768px) {
     .clicks-filters-row {
         flex-direction: column;
