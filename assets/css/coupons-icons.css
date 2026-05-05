@@ -43,13 +43,13 @@
     height: 44px;
 }
 
-/* Tooltip с position: fixed — не обрезается overflow родительских карточек.
-   Координаты top/left вычисляются JS-обработчиком (coupons-icons.js). */
+/* CSS-only fallback (когда JS не загрузился). Может обрезаться `overflow: hidden`
+   карточек темы — это компромисс ради a11y / no-JS. */
 .cashback-coupons-icons__tooltip {
-    position: fixed;
-    top: 0;
-    left: 0;
-    transform: translate(-50%, calc(-100% - 8px));
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
     padding: 4px 8px;
     background: #f76b41;
     color: #fff;
@@ -60,8 +60,8 @@
     pointer-events: none;
     opacity: 0;
     visibility: hidden;
-    transition: opacity 0.15s ease, visibility 0.15s;
-    z-index: 1000;
+    transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+    z-index: 10;
 }
 
 .cashback-coupons-icons__tooltip::after {
@@ -78,11 +78,56 @@
 .cashback-coupons-icons__item:focus-visible .cashback-coupons-icons__tooltip {
     opacity: 1;
     visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* Когда JS загружен — он добавляет класс на <html> и работает через DOM-portal в <body>.
+   Inline-tooltip скрывается, чтобы не дублировать floating-версию. */
+html.cashback-coupons-icons-js .cashback-coupons-icons__tooltip {
+    display: none;
+}
+
+/* Floating-tooltip монтируется JS-ом прямо в <body> — над ним нет
+   transform/will-change/overflow родителей темы (Woodmart product card),
+   которые ломают `position: fixed` и `position: absolute`. */
+.cashback-coupons-icons__floating {
+    position: fixed;
+    top: 0;
+    left: 0;
+    transform: translate(-50%, calc(-100% - 8px));
+    padding: 4px 8px;
+    background: #f76b41;
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.3;
+    white-space: nowrap;
+    border-radius: 4px;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s;
+    z-index: 100000;
+}
+
+.cashback-coupons-icons__floating.is-visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.cashback-coupons-icons__floating::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -4px;
+    border: 4px solid transparent;
+    border-top-color: #f76b41;
 }
 
 @media (prefers-reduced-motion: reduce) {
     .cashback-coupons-icons__item,
-    .cashback-coupons-icons__tooltip {
+    .cashback-coupons-icons__tooltip,
+    .cashback-coupons-icons__floating {
         transition: none;
     }
 }
