@@ -265,7 +265,17 @@ final class Cashback_Coupons_Icons_Shortcode {
             'cashback-coupons-icons',
             plugins_url( 'assets/css/coupons-icons.css', $plugin_root_file ),
             array(),
-            '7.5.3'
+            '7.5.4'
         );
+
+        if ( function_exists( 'wp_enqueue_script' ) ) {
+            wp_enqueue_script(
+                'cashback-coupons-icons',
+                plugins_url( 'assets/js/coupons-icons.js', $plugin_root_file ),
+                array(),
+                '7.5.4',
+                true
+            );
+        }
     }
 }
