@@ -226,4 +226,45 @@ final class PromocodesRepositoryTest extends TestCase
         );
         $this->assertNotEmpty($deactivate_calls);
     }
+
+    public function test_get_distinct_species_returns_empty_for_invalid_args(): void
+    {
+        $wpdb            = $this->make_wpdb_mock();
+        $GLOBALS['wpdb'] = $wpdb;
+
+        $repo = new Cashback_Promocodes_Repository();
+
+        $this->assertSame(array(), $repo->get_distinct_species_for_campaign(0, '35530'));
+        $this->assertSame(array(), $repo->get_distinct_species_for_campaign(-5, '35530'));
+        $this->assertSame(array(), $repo->get_distinct_species_for_campaign(1, ''));
+
+        // Не должно быть SQL-вызовов: ранний return.
+        $this->assertEmpty($wpdb->queries, 'Не должно быть запросов при некорректных аргументах');
+    }
+
+    public function test_get_distinct_species_groups_by_species_with_filters(): void
+    {
+        $wpdb                          = $this->make_wpdb_mock();
+        $wpdb->get_results_response = array(
+            array( 'species' => 'promocode', 'name' => 'Промо',  'description' => 'д' ),
+            array( 'species' => 'gift',      'name' => 'Подарок','description' => '' ),
+        );
+        $GLOBALS['wpdb']               = $wpdb;
+
+        $repo = new Cashback_Promocodes_Repository();
+        $rows = $repo->get_distinct_species_for_campaign(1, '35530');
+
+        $this->assertCount(2, $rows);
+        $this->assertSame('promocode', $rows[0]['species']);
+        $this->assertSame('gift',      $rows[1]['species']);
+
+        $select_sqls = array_filter($wpdb->queries, fn($q) => str_contains(strtoupper($q['sql']), 'SELECT'));
+        $all_sql     = strtolower(implode(' ', array_map(fn($q) => $q['sql'], $select_sqls)));
+
+        $this->assertStringContainsString('group by species', $all_sql, 'GROUP BY species обязателен');
+        $this->assertStringContainsString('is_active', $all_sql, 'Фильтр is_active');
+        $this->assertStringContainsString('find_in_set', $all_sql, 'RU-фильтр через FIND_IN_SET');
+        $this->assertStringContainsString('date_start', $all_sql, 'Фильтр по date_start');
+        $this->assertStringContainsString('date_end',   $all_sql, 'Фильтр по date_end');
+    }
 }

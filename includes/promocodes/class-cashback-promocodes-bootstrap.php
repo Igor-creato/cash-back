@@ -27,6 +27,7 @@ final class Cashback_Promocodes_Bootstrap {
     private static ?Cashback_Promocodes_Repository $repository = null;
     private static ?Cashback_Promocodes_Fetcher $fetcher = null;
     private static ?Cashback_Promocodes_Shortcode $shortcode = null;
+    private static ?Cashback_Coupons_Icons_Shortcode $icons_shortcode = null;
 
     public static function init(): void {
         // AS-hook handler для cron.
@@ -42,6 +43,20 @@ final class Cashback_Promocodes_Bootstrap {
         if ( class_exists( 'Cashback_Promocodes_Shortcode' ) ) {
             self::get_shortcode()->register();
         }
+
+        // Register шорткод [cashback_coupons_icons] (иконки активных купонов
+        // товара с tooltip и переходом на таб «Купоны»).
+        if ( class_exists( 'Cashback_Coupons_Icons_Shortcode' ) ) {
+            self::get_icons_shortcode()->register();
+        }
+
+        // Settings API + admin-блок в подвкладке «Шорткоды».
+        if ( class_exists( 'Cashback_Coupons_Icons_Admin' ) ) {
+            Cashback_Coupons_Icons_Admin::init();
+        }
+
+        // JS-активатор таба товара по ?cb_tab= (single-product only).
+        add_action( 'wp_enqueue_scripts', array( __CLASS__, 'enqueue_tab_activator' ) );
 
         // Click-tracker AJAX (auth + nopriv) — для copy-кликов.
         if ( class_exists( 'Cashback_Promocodes_Tracker' ) ) {
@@ -87,12 +102,27 @@ final class Cashback_Promocodes_Bootstrap {
      */
     public static function apply_shortcodes_to_extra_tabs( array $tabs ): array {
         foreach ( $tabs as $key => &$tab ) {
-            if ( isset( $tab['content'] ) && is_string( $tab['content'] ) && $tab['content'] !== '' ) {
-                $tab['content'] = do_shortcode( $tab['content'] );
+            if ( ! isset( $tab['content'] ) || ! is_string( $tab['content'] ) || $tab['content'] === '' ) {
+                // Кастомные WoodMart-табы передают callback, который читает content
+                // из $product_tab['content']. Если callback указан, но content нет —
+                // не модифицируем (не наш кейс).
+                continue;
             }
-            // Кастомные WoodMart-табы передают callback, который читает content
-            // из $product_tab['content']. Если callback указан, но content нет —
-            // не модифицируем (не наш кейс).
+            $had_promocodes = function_exists( 'has_shortcode' )
+                && has_shortcode( $tab['content'], 'cashback_promocodes' );
+
+            $tab['content'] = do_shortcode( $tab['content'] );
+
+            // Невидимый маркер в title таба для JS-активатора шорткода
+            // [cashback_coupons_icons] (?cb_tab=coupons → click + scrollIntoView).
+            // Идемпотентно: повторный вызов не дублирует маркер.
+            if ( $had_promocodes
+                && isset( $tab['title'] )
+                && is_string( $tab['title'] )
+                && strpos( $tab['title'], 'data-cb-coupons-tab' ) === false
+            ) {
+                $tab['title'] = '<span data-cb-coupons-tab="1" hidden></span>' . $tab['title'];
+            }
         }
         return $tabs;
     }
@@ -102,6 +132,33 @@ final class Cashback_Promocodes_Bootstrap {
             self::$shortcode = new Cashback_Promocodes_Shortcode( self::get_repository() );
         }
         return self::$shortcode;
+    }
+
+    public static function get_icons_shortcode(): Cashback_Coupons_Icons_Shortcode {
+        if ( self::$icons_shortcode === null ) {
+            self::$icons_shortcode = new Cashback_Coupons_Icons_Shortcode( self::get_repository() );
+        }
+        return self::$icons_shortcode;
+    }
+
+    /**
+     * Подключает JS-активатор таба товара (cb_tab=...) только на single-product.
+     */
+    public static function enqueue_tab_activator(): void {
+        if ( ! function_exists( 'is_singular' ) || ! is_singular( 'product' ) ) {
+            return;
+        }
+        if ( ! function_exists( 'wp_enqueue_script' ) ) {
+            return;
+        }
+        $plugin_root_file = dirname( __DIR__, 2 ) . '/cashback-plugin.php';
+        wp_enqueue_script(
+            'cashback-coupons-tab',
+            plugins_url( 'assets/js/cashback-coupons-tab.js', $plugin_root_file ),
+            array(),
+            '7.5.0',
+            true
+        );
     }
 
     /**

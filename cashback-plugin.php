@@ -614,6 +614,9 @@ class CashbackPlugin {
         $this->require_file('includes/promocodes/class-cashback-promocodes-repository.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-fetcher.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-shortcode.php');
+        $this->require_file('includes/promocodes/class-cashback-coupons-icon-resolver.php');
+        $this->require_file('includes/promocodes/class-cashback-coupons-icons-shortcode.php');
+        $this->require_file('includes/promocodes/class-cashback-coupons-icons-admin.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-tracker.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-redirect.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-click-backfill.php');

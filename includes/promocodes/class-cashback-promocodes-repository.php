@@ -165,6 +165,48 @@ class Cashback_Promocodes_Repository {
     }
 
     /**
+     * Получить уникальные species (1 строка-репрезентант на species)
+     * для активных купонов кампании. Используется шорткодом
+     * [cashback_coupons_icons] для определения какие иконки выводить.
+     *
+     * Репрезентантные name/description нужны для keyword-эвристики
+     * resolver'а (legacy-рядки с species='other' до cron-fetch'а).
+     *
+     * @return array<int,array{species:string,name:string,description:string}>
+     */
+    public function get_distinct_species_for_campaign( int $network_id, string $advcampaign_id ): array {
+        if ( $network_id <= 0 || $advcampaign_id === '' ) {
+            return array();
+        }
+
+        global $wpdb;
+        $table = $this->table_name();
+
+        $sql = $wpdb->prepare(
+            "SELECT species, MAX(name) AS name, MAX(description) AS description FROM %i WHERE network_id = %d AND advcampaign_id = %s AND is_active = 1 AND ( date_start IS NULL OR date_start <= UTC_TIMESTAMP() ) AND ( date_end IS NULL OR date_end >= UTC_TIMESTAMP() ) AND ( regions IS NULL OR regions = '' OR FIND_IN_SET('RU', regions) > 0 ) GROUP BY species LIMIT 10",
+            $table,
+            $network_id,
+            $advcampaign_id
+        );
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- prepared above.
+        $rows = $wpdb->get_results( $sql, ARRAY_A );
+
+        if ( ! is_array( $rows ) ) {
+            return array();
+        }
+
+        $out = array();
+        foreach ( $rows as $row ) {
+            $out[] = array(
+                'species'     => isset( $row['species'] ) ? (string) $row['species'] : '',
+                'name'        => isset( $row['name'] ) ? (string) $row['name'] : '',
+                'description' => isset( $row['description'] ) ? (string) $row['description'] : '',
+            );
+        }
+        return $out;
+    }
+
+    /**
      * @return array<string,mixed>
      */
     private function dto_to_row( Cashback_Coupon_DTO $coupon, int $network_id, string $advcampaign_id ): array {

@@ -25,11 +25,17 @@ if (!defined('ABSPATH')) {
 final class Cashback_Coupons_Field_Mapper {
 
     /**
+     * Канонический набор species. Должен совпадать с тем, что принимает
+     * DTO/repository.
+     */
+    public const ALLOWED_SPECIES = array( 'promocode', 'deal', 'gift', 'free_shipping', 'other' );
+
+    /**
      * Преобразовать raw coupon из API в DTO-совместимый массив.
      *
      * @param array<string,mixed>  $raw          Один купон из API-ответа.
      * @param array<string,string> $field_map    raw_key → dto_key.
-     * @param array<string,string> $species_map  raw_species → canonical (promocode|deal|...).
+     * @param array<string,string> $species_map  raw_species → canonical (promocode|deal|gift|free_shipping|other).
      * @return array<string,mixed> Готовый для Cashback_Coupon_DTO::from_array().
      */
     public function map( array $raw, array $field_map, array $species_map ): array {
@@ -47,14 +53,27 @@ final class Cashback_Coupons_Field_Mapper {
             $mapped[ $dto_key ] = $value;
         }
 
-        // Normalize species через species_map. Канонические значения: promocode|deal.
+        // Normalize species через species_map.
+        // Канонические значения: promocode | deal | gift | free_shipping | other.
         // Всё незнакомое → 'other' (не падаем).
         $species_raw = $mapped['species_raw'] ?? null;
         if ( is_string( $species_raw ) && $species_raw !== '' ) {
-            $key = strtolower( $species_raw );
+            $key               = strtolower( $species_raw );
             $mapped['species'] = $species_map[ $key ] ?? $species_map[ $species_raw ] ?? 'other';
         } elseif ( ! isset( $mapped['species'] ) ) {
             $mapped['species'] = 'other';
+        }
+
+        // Upgrade-only: только если species_map дал 'other' (или пусто) — пробуем
+        // text-эвристику по name+description. Явный mapping ('promocode'/'deal'/
+        // 'gift'/'free_shipping') никогда не downgrade-ится.
+        if ( 'other' === $mapped['species'] && class_exists( 'Cashback_Coupons_Icon_Resolver' ) ) {
+            $name        = isset( $mapped['name'] ) && is_string( $mapped['name'] ) ? $mapped['name'] : '';
+            $description = isset( $mapped['description'] ) && is_string( $mapped['description'] ) ? $mapped['description'] : '';
+            $hint        = Cashback_Coupons_Icon_Resolver::detect_from_text( $name . ' ' . $description );
+            if ( 'gift' === $hint || 'free_shipping' === $hint ) {
+                $mapped['species'] = $hint;
+            }
         }
 
         // Сохраняем raw для DTO.raw_payload (DTO::from_array распаковывает его явно).

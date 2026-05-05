@@ -706,6 +706,14 @@ class Cashback_Statistics_Admin {
                 </div>
             </details>
 
+            <?php
+            // [cashback_coupons_icons] — иконки купонов товара с tooltip и
+            // переходом на вкладку «Купоны». Блок описания + 3 picker'а иконок.
+            if ( class_exists( 'Cashback_Coupons_Icons_Admin' ) ) {
+                Cashback_Coupons_Icons_Admin::render_section();
+            }
+            ?>
+
             <script>
             (function() {
                 function copyText(text) {

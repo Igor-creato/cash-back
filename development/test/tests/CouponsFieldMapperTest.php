@@ -29,6 +29,7 @@ final class CouponsFieldMapperTest extends TestCase
         $files = array(
             self::$plugin_root . '/includes/promocodes/dto/class-coupon-dto.php',
             self::$plugin_root . '/includes/promocodes/class-coupons-field-mapper.php',
+            self::$plugin_root . '/includes/promocodes/class-cashback-coupons-icon-resolver.php',
         );
         foreach ($files as $f) {
             if (!file_exists($f)) {
@@ -37,6 +38,9 @@ final class CouponsFieldMapperTest extends TestCase
         }
         if (!class_exists('Cashback_Coupon_DTO')) {
             require_once $files[0];
+        }
+        if (!class_exists('Cashback_Coupons_Icon_Resolver')) {
+            require_once $files[2];
         }
         if (!class_exists('Cashback_Coupons_Field_Mapper')) {
             require_once $files[1];
@@ -204,5 +208,73 @@ final class CouponsFieldMapperTest extends TestCase
         $dto    = Cashback_Coupon_DTO::from_array($mapped);
 
         $this->assertSame(array( 'RU', 'BY' ), $dto->regions);
+    }
+
+    public function test_species_map_can_yield_canonical_gift(): void
+    {
+        $mapper = new Cashback_Coupons_Field_Mapper();
+        $species_map = array_merge($this->admitad_species_map(), array(
+            'gift'        => 'gift',
+            'present'     => 'gift',
+        ));
+        $raw    = $this->admitad_raw_coupon(array( 'type' => 'gift', 'promocode' => null ));
+        $mapped = $mapper->map($raw, $this->admitad_field_map(), $species_map);
+
+        $this->assertSame('gift', $mapped['species']);
+    }
+
+    public function test_species_map_can_yield_canonical_free_shipping(): void
+    {
+        $mapper = new Cashback_Coupons_Field_Mapper();
+        $species_map = array_merge($this->admitad_species_map(), array(
+            'free_shipping' => 'free_shipping',
+            'shipping'      => 'free_shipping',
+        ));
+        $raw    = $this->admitad_raw_coupon(array( 'type' => 'free_shipping', 'promocode' => null ));
+        $mapped = $mapper->map($raw, $this->admitad_field_map(), $species_map);
+
+        $this->assertSame('free_shipping', $mapped['species']);
+    }
+
+    public function test_other_with_gift_keyword_in_name_is_upgraded_to_gift(): void
+    {
+        $mapper = new Cashback_Coupons_Field_Mapper();
+        $raw    = $this->admitad_raw_coupon(array(
+            'type' => 'unknown_xyz',
+            'name' => 'Подарок при покупке от 3000₽',
+            'promocode' => null,
+        ));
+        $mapped = $mapper->map($raw, $this->admitad_field_map(), $this->admitad_species_map());
+
+        // Mapper-result 'other' проходит через text-эвристику и апгрейдится до 'gift'.
+        $this->assertSame('gift', $mapped['species']);
+    }
+
+    public function test_other_with_free_shipping_keyword_is_upgraded(): void
+    {
+        $mapper = new Cashback_Coupons_Field_Mapper();
+        $raw    = $this->admitad_raw_coupon(array(
+            'type'        => 'unknown_xyz',
+            'name'        => 'Free shipping for orders > $50',
+            'description' => 'на все категории',
+            'promocode'   => null,
+        ));
+        $mapped = $mapper->map($raw, $this->admitad_field_map(), $this->admitad_species_map());
+
+        $this->assertSame('free_shipping', $mapped['species']);
+    }
+
+    public function test_explicit_promocode_species_is_not_downgraded_by_text(): void
+    {
+        $mapper = new Cashback_Coupons_Field_Mapper();
+        // type=promo_code → species=promocode (явный mapping). Слово «подарок» в name
+        // НЕ должно перебить.
+        $raw    = $this->admitad_raw_coupon(array(
+            'type' => 'promo_code',
+            'name' => 'Подарок к покупке',
+        ));
+        $mapped = $mapper->map($raw, $this->admitad_field_map(), $this->admitad_species_map());
+
+        $this->assertSame('promocode', $mapped['species']);
     }
 }
