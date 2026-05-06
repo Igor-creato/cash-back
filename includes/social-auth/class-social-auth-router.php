@@ -81,6 +81,26 @@ class Cashback_Social_Auth_Router {
 
         register_rest_route(
             self::NAMESPACE,
+            '/social/register-consent-form',
+            array(
+                'methods'             => 'GET',
+                'callback'            => array( $this, 'handle_register_consent_form' ),
+                'permission_callback' => '__return_true',
+            )
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/social/register-consent',
+            array(
+                'methods'             => 'POST',
+                'callback'            => array( $this, 'handle_register_consent' ),
+                'permission_callback' => '__return_true',
+            )
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
             '/social/confirm',
             array(
                 'methods'             => 'GET',
@@ -450,6 +470,127 @@ class Cashback_Social_Auth_Router {
     public function handle_email_prompt_form( \WP_REST_Request $request ) {
         $token = sanitize_text_field((string) $request->get_param('token'));
         return $this->render_email_prompt_form($token, '');
+    }
+
+    /**
+     * GET /social/register-consent-form — выделенная страница согласий
+     * (post-OAuth conditional consent для НОВОГО юзера, Branch D).
+     */
+    public function handle_register_consent_form( \WP_REST_Request $request ) {
+        $token = sanitize_text_field((string) $request->get_param('token'));
+        return $this->render_register_consent_form($token, '');
+    }
+
+    /**
+     * POST /social/register-consent — обработка submit'а формы согласий.
+     */
+    public function handle_register_consent( \WP_REST_Request $request ) {
+        $ip = $this->get_client_ip();
+
+        if (class_exists('Cashback_Rate_Limiter')) {
+            $check = Cashback_Rate_Limiter::check('social_register_consent', get_current_user_id(), $ip);
+            if (empty($check['allowed'])) {
+                Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_RATE_LIMITED, array(
+                    'stage' => 'register_consent',
+                    'ip'    => $ip,
+                ));
+                return new \WP_Error('social_rate_limited', __('Слишком много попыток.', 'cashback-plugin'), array( 'status' => 429 ));
+            }
+        }
+
+        $nonce = $request->get_header('x_wp_nonce');
+        if (!$nonce) {
+            $nonce = (string) $request->get_param('_wpnonce');
+        }
+        if (!$nonce || !wp_verify_nonce((string) $nonce, 'wp_rest')) {
+            return $this->render_register_consent_form(
+                (string) $request->get_param('token'),
+                __('Срок действия формы истёк. Обновите страницу и попробуйте снова.', 'cashback-plugin')
+            );
+        }
+
+        $result = Cashback_Social_Auth_Account_Manager::instance()->handle_register_consent_submission($request);
+
+        $action = isset($result['action']) ? (string) $result['action'] : 'error';
+
+        if ($action === 'login') {
+            $target = isset($result['redirect_url']) ? (string) $result['redirect_url'] : home_url('/');
+            $target = wp_validate_redirect($target, home_url('/'));
+            wp_safe_redirect($target);
+            exit;
+        }
+
+        $msg = isset($result['message']) ? (string) $result['message'] : __('Ошибка регистрации.', 'cashback-plugin');
+        return $this->render_register_consent_form((string) $request->get_param('token'), $msg);
+    }
+
+    /**
+     * Отрисовать страницу согласий (выделенная REST-страница).
+     */
+    private function render_register_consent_form( string $token, string $error_message ): \WP_REST_Response {
+        $template  = plugin_dir_path(__FILE__) . 'templates/register-consent.php';
+        $endpoint  = rest_url('cashback/v1/social/register-consent');
+        $site_name = (string) get_bloginfo('name');
+        $cb_error  = $error_message;
+
+        // Дефолты — переопределяются ниже, если pending-токен валиден.
+        $email          = '';
+        $provider_label = '';
+        $pd_url         = '';
+        $policy_url     = '';
+        $offer_url      = '';
+        $fraud_url      = '';
+
+        if (
+            $token !== ''
+            && class_exists('Cashback_Social_Auth_DB')
+            && class_exists('Cashback_Social_Auth_Account_Manager')
+        ) {
+            $pending = Cashback_Social_Auth_DB::peek_pending($token);
+            if (
+                is_array($pending)
+                && ( $pending['kind'] ?? '' ) === Cashback_Social_Auth_Account_Manager::KIND_REGISTER_VIA_SOCIAL
+            ) {
+                $payload = is_array($pending['payload'] ?? null) ? $pending['payload'] : array();
+                $email   = isset($payload['email']) ? (string) $payload['email'] : '';
+
+                $provider_id = isset($payload['provider']) ? (string) $payload['provider'] : '';
+                if ($provider_id !== '' && class_exists('Cashback_Social_Auth_Providers')) {
+                    $labels = Cashback_Social_Auth_Providers::labels();
+                    if (isset($labels[ $provider_id ])) {
+                        $provider_label = (string) $labels[ $provider_id ];
+                    }
+                }
+            } else {
+                // Токен невалиден / истёк / не того типа — показываем «ссылка устарела».
+                $this->render_expired_link_page(
+                    __('Ссылка устарела или уже использована. Запросите новый вход через социальную сеть.', 'cashback-plugin')
+                );
+                // render_expired_link_page() exit'ит, сюда не дойдёт.
+                exit; // защита.
+            }
+        }
+
+        // URL'ы юр. документов (есть в плагинной системе legal/pages-installer).
+        if (class_exists('Cashback_Legal_Pages_Installer') && class_exists('Cashback_Legal_Documents')) {
+            $pd_url     = (string) Cashback_Legal_Pages_Installer::get_url_for_type(Cashback_Legal_Documents::TYPE_PD_CONSENT);
+            $policy_url = (string) Cashback_Legal_Pages_Installer::get_url_for_type(Cashback_Legal_Documents::TYPE_PD_POLICY);
+            $offer_url  = (string) Cashback_Legal_Pages_Installer::get_url_for_type(Cashback_Legal_Documents::TYPE_TERMS_OFFER);
+            $fraud_url  = (string) Cashback_Legal_Pages_Installer::get_url_for_type(Cashback_Legal_Documents::TYPE_TECH_DATA);
+        }
+
+        ob_start();
+        if (file_exists($template)) {
+            include $template;
+        } else {
+            unset($token, $cb_error, $email, $provider_label, $pd_url, $policy_url, $offer_url, $fraud_url);
+            echo '<p>' . esc_html__('Шаблон формы не найден.', 'cashback-plugin') . '</p>';
+        }
+        $html = (string) ob_get_clean();
+
+        $response = new \WP_REST_Response($html, 200);
+        $response->header('Content-Type', 'text/html; charset=UTF-8');
+        return $response;
     }
 
     /**

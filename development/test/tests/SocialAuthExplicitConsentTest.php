@@ -236,37 +236,41 @@ class SocialAuthExplicitConsentTest extends TestCase
 		);
 	}
 
-	public function test_register_bridge_class_exists(): void
+	public function test_register_consent_template_exists(): void
 	{
-		$path = $this->plugin_root . '/includes/social-auth/class-social-auth-register-bridge.php';
+		$path = $this->plugin_root . '/includes/social-auth/templates/register-consent.php';
 		self::assertFileExists(
 			$path,
-			'Cashback_Social_Auth_Register_Bridge должен быть создан для post-OAuth conditional consent (1.x.0)'
+			'Шаблон выделенной consent-страницы register-consent.php должен существовать (post-OAuth Branch D)'
 		);
 	}
 
-	public function test_register_bridge_hooks_register_form_and_customer_data(): void
+	public function test_router_registers_register_consent_routes(): void
 	{
-		$path = $this->plugin_root . '/includes/social-auth/class-social-auth-register-bridge.php';
-		if (!file_exists($path)) {
-			self::markTestSkipped('Register_Bridge файл ещё не создан');
-		}
+		$path    = $this->plugin_root . '/includes/social-auth/class-social-auth-router.php';
 		$content = (string) file_get_contents($path);
 
 		self::assertStringContainsString(
-			"add_action('woocommerce_register_form_start'",
+			"'/social/register-consent-form'",
 			$content,
-			'Register_Bridge должен подцепиться на woocommerce_register_form_start для prefill email'
+			'Router должен регистрировать GET /social/register-consent-form (отрисовка выделенной страницы)'
 		);
 		self::assertStringContainsString(
-			"add_filter('woocommerce_new_customer_data'",
+			"'/social/register-consent'",
 			$content,
-			'Register_Bridge должен подцепиться на woocommerce_new_customer_data для override email'
+			'Router должен регистрировать POST /social/register-consent (обработка submit)'
 		);
+	}
+
+	public function test_account_manager_has_handle_register_consent_submission(): void
+	{
+		$path    = $this->plugin_root . '/includes/social-auth/class-social-auth-account-manager.php';
+		$content = (string) file_get_contents($path);
+
 		self::assertStringContainsString(
-			"add_action('woocommerce_created_customer'",
+			'public function handle_register_consent_submission',
 			$content,
-			'Register_Bridge должен подцепиться на woocommerce_created_customer для линковки соц-аккаунта'
+			'Account_Manager::handle_register_consent_submission() обрабатывает submit формы согласий'
 		);
 	}
 

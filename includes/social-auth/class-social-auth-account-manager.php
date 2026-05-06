@@ -39,12 +39,6 @@ class Cashback_Social_Auth_Account_Manager {
     public const KIND_REGISTER_VIA_SOCIAL = 'social_register';
 
     /**
-     * GET-параметр для редиректа на register-форму с pending social-token'ом
-     * (post-OAuth conditional consent, см. Cashback_Social_Auth_Register_Bridge).
-     */
-    public const REGISTER_TOKEN_PARAM = 'cashback_social_register';
-
-    /**
      * Типы уведомлений (email templates).
      */
     public const NOTIFY_CONFIRM_LINK = 'social_confirm_link';
@@ -300,14 +294,16 @@ class Cashback_Social_Auth_Account_Manager {
         }
 
         // -----------------------------------------------------------------
-        // Ветка D: email есть, WP-юзера нет → редирект на register-форму.
+        // Ветка D: email есть, WP-юзера нет → редирект на выделенную
+        // consent-страницу.
         //
         // Post-OAuth conditional consent (1.x.0, Auth0/GDPR pattern): новый юзер
         // не создаётся автоматически; стэшим OAuth-данные и отправляем на
-        // /my-account/?cashback_social_register=<token>. Юзер ставит 3 явных
-        // consent-чекбокса (152-ФЗ ст. 9, ПД+Политика, ГК 437) и нажимает
-        // РЕГИСТРАЦИЯ. Cashback_Social_Auth_Register_Bridge линкует social-аккаунт
-        // в hook'е woocommerce_created_customer.
+        // /wp-json/cashback/v1/social/register-consent-form?token=<X>.
+        // Юзер ставит 3 явных consent-чекбокса (152-ФЗ ст. 9, ПД+Политика, ГК 437)
+        // и нажимает «Даю согласие и регистрируюсь». POST-обработчик в
+        // Account_Manager::handle_register_consent_submission создаёт юзера,
+        // пишет consent-записи и линкует социальный аккаунт.
         // -----------------------------------------------------------------
         $payload = array(
             'provider'          => $provider_id,
@@ -335,17 +331,17 @@ class Cashback_Social_Auth_Account_Manager {
         ));
         Cashback_Social_Auth_Session::clear($provider_id);
 
-        $register_url = function_exists('wc_get_page_permalink')
-            ? (string) wc_get_page_permalink('myaccount')
-            : home_url('/my-account/');
-        if ($register_url === '') {
-            $register_url = home_url('/my-account/');
-        }
-        $register_url = add_query_arg(array( self::REGISTER_TOKEN_PARAM => $token ), $register_url);
+        // Выделенная страница согласий (post-OAuth conditional consent).
+        // Юзер видит чёткий promotion: «Завершение регистрации через Яндекс ID»,
+        // 3 чекбокса согласий, кнопка «Даю согласие и регистрируюсь». Это
+        // отличает шаг от обычной /my-account/ register-формы и убирает
+        // ощущение «кнопка не сработала».
+        $consent_url = rest_url('cashback/v1/social/register-consent-form');
+        $consent_url = add_query_arg(array( 'token' => $token ), $consent_url);
 
         return array(
             'action'       => 'redirect_register',
-            'redirect_url' => $register_url,
+            'redirect_url' => $consent_url,
         );
     }
 
@@ -803,6 +799,170 @@ class Cashback_Social_Auth_Account_Manager {
             'token'   => $verify_token,
             'user_id' => $user_id,
             'link_id' => $link_id,
+        );
+    }
+
+    /**
+     * POST /social/register-consent — обработка submit'а формы согласий.
+     *
+     * Создаёт WP-юзера, пишет 3 consent-записи (fraud + pd + terms_offer),
+     * линкует социальный аккаунт через link_provider_to_user(), логинит юзера,
+     * возвращает action=login с redirect_url из payload.
+     *
+     * @return array{action:string, redirect_url?:string, message?:string}
+     */
+    public function handle_register_consent_submission( \WP_REST_Request $request ): array {
+        $token         = sanitize_text_field((string) $request->get_param('token'));
+        $consent_fraud = (string) $request->get_param('consent_fraud');
+        $consent_pd    = (string) $request->get_param('consent_pd');
+        $consent_offer = (string) $request->get_param('consent_offer');
+
+        if ($token === '') {
+            return array(
+                'action'  => 'error',
+                'message' => __('Отсутствует токен сессии. Повторите вход через социальную сеть.', 'cashback-plugin'),
+            );
+        }
+        if ($consent_fraud !== '1' || $consent_pd !== '1' || $consent_offer !== '1') {
+            return array(
+                'action'  => 'error',
+                'message' => __('Необходимо отметить все обязательные согласия.', 'cashback-plugin'),
+            );
+        }
+
+        $pending = Cashback_Social_Auth_DB::consume_pending($token);
+        if (!is_array($pending) || ( $pending['kind'] ?? '' ) !== self::KIND_REGISTER_VIA_SOCIAL) {
+            return array(
+                'action'  => 'error',
+                'message' => __('Ссылка устарела или уже использована. Запросите новый вход через социальную сеть.', 'cashback-plugin'),
+            );
+        }
+
+        $payload     = is_array($pending['payload'] ?? null) ? $pending['payload'] : array();
+        $provider_id = isset($payload['provider']) ? (string) $payload['provider'] : '';
+        $email       = isset($payload['email']) ? (string) $payload['email'] : '';
+        $profile     = is_array($payload['profile'] ?? null) ? $payload['profile'] : array();
+        $token_set   = is_array($payload['token_set'] ?? null) ? $payload['token_set'] : array();
+        $ip          = isset($payload['ip']) ? (string) $payload['ip'] : '';
+        $user_agent  = isset($payload['user_agent']) ? (string) $payload['user_agent'] : '';
+        $referral    = is_array($payload['referral_snapshot'] ?? null) ? $payload['referral_snapshot'] : array();
+        $redirect    = isset($payload['redirect_after']) ? (string) $payload['redirect_after'] : home_url('/');
+        $redirect    = (string) wp_validate_redirect($redirect, home_url('/'));
+
+        if ($provider_id === '' || $email === '' || !is_email($email)) {
+            return array(
+                'action'  => 'error',
+                'message' => __('Повреждённые данные сессии. Повторите вход.', 'cashback-plugin'),
+            );
+        }
+
+        $provider = $this->resolve_provider($provider_id);
+        if (!$provider) {
+            return array(
+                'action'  => 'error',
+                'message' => __('Провайдер недоступен.', 'cashback-plugin'),
+            );
+        }
+
+        // Race-проверка: email мог быть занят между Branch D и submit'ом.
+        if (get_user_by('email', $email) instanceof WP_User) {
+            return array(
+                'action'  => 'error',
+                'message' => __('Этот email уже зарегистрирован. Войдите с паролем или используйте «Войти через Яндекс ID».', 'cashback-plugin'),
+            );
+        }
+
+        // Восстанавливаем referral cookies в $_COOKIE до wp_insert_user,
+        // чтобы affiliate-хук (user_register priority 20) их подхватил.
+        if (!empty($referral)) {
+            Cashback_Social_Auth_Session::restore_referral_snapshot($referral);
+        }
+
+        $user_login = $this->generate_unique_login($email, $profile);
+        $password   = wp_generate_password(24, true, true);
+
+        $user_data = array(
+            'user_login'   => $user_login,
+            'user_email'   => $email,
+            'user_pass'    => $password,
+            'first_name'   => isset($profile['first_name']) ? (string) $profile['first_name'] : '',
+            'last_name'    => isset($profile['last_name']) ? (string) $profile['last_name'] : '',
+            'display_name' => isset($profile['name']) && (string) $profile['name'] !== ''
+                ? (string) $profile['name']
+                : $user_login,
+            'role'         => $this->default_role(),
+        );
+
+        $user_id = wp_insert_user($user_data);
+        if (is_wp_error($user_id)) {
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'provider' => $provider_id,
+                'stage'    => 'register_consent_insert_user',
+                'error'    => $user_id->get_error_message(),
+            ));
+            return array(
+                'action'  => 'error',
+                'message' => __('Не удалось создать аккаунт. Попробуйте ещё раз.', 'cashback-plugin'),
+            );
+        }
+        $user_id = (int) $user_id;
+
+        // Consent-записи (fraud user_meta + 2 legal в журнале).
+        if (class_exists('Cashback_Fraud_Consent')) {
+            Cashback_Fraud_Consent::record_consent($user_id, $ip);
+        }
+
+        if (class_exists('Cashback_Legal_Consent_Manager') && class_exists('Cashback_Legal_Documents')) {
+            $base_request_id = Cashback_Legal_Consent_Manager::generate_request_id();
+            $extra           = array(
+                'ip_address' => $ip,
+                'user_agent' => $user_agent,
+                'extra_meta' => array( 'provider' => $provider_id, 'source' => 'social_register_consent' ),
+            );
+            $type_request    = static function ( string $suffix ) use ( $base_request_id ): string {
+                return substr($base_request_id, 0, 24) . $suffix;
+            };
+            Cashback_Legal_Consent_Manager::record_consent(
+                $user_id,
+                Cashback_Legal_Documents::TYPE_PD_CONSENT,
+                'social_auth',
+                $type_request('00000001'),
+                $extra
+            );
+            Cashback_Legal_Consent_Manager::record_consent(
+                $user_id,
+                Cashback_Legal_Documents::TYPE_TERMS_OFFER,
+                'social_auth',
+                $type_request('00000002'),
+                $extra
+            );
+        }
+
+        // Линковка соц-аккаунта.
+        $link = $this->link_provider_to_user($user_id, $provider, $profile + array( 'email' => $email ), $token_set, $ip, $user_agent);
+        if (!empty($link['error'])) {
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'provider' => $provider_id,
+                'stage'    => 'register_consent_link',
+                'user_id'  => $user_id,
+                'error'    => (string) $link['error'],
+            ));
+            // Юзер уже создан и согласия записаны; продолжаем (привязать соцаккаунт можно позже из ЛК).
+        }
+
+        // Логиним юзера.
+        $this->login_user($user_id);
+
+        Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_LINK_CREATED, array(
+            'provider' => $provider_id,
+            'user_id'  => $user_id,
+            'link_id'  => isset($link['link_id']) ? (int) $link['link_id'] : 0,
+            'via'      => 'register_consent_form',
+        ));
+
+        return array(
+            'action'       => 'login',
+            'redirect_url' => $redirect,
         );
     }
 

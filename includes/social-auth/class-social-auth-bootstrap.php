@@ -66,7 +66,6 @@ class Cashback_Social_Auth_Bootstrap {
             $base . 'class-social-auth-renderer.php',
             $base . 'class-social-auth-my-account.php',
             $base . 'class-social-auth-router.php',
-            $base . 'class-social-auth-register-bridge.php',
         );
 
         foreach ($files as $file) {
@@ -152,12 +151,6 @@ class Cashback_Social_Auth_Bootstrap {
             $router->register();
         }
 
-        // Post-OAuth conditional consent bridge (1.x.0): новый юзер из social-auth
-        // редиректится на стандартную register-форму /my-account/, где собирает
-        // 3 явных consent-чекбокса. Bridge линкует social-аккаунт после создания.
-        if (class_exists('Cashback_Social_Auth_Register_Bridge')) {
-            Cashback_Social_Auth_Register_Bridge::init();
-        }
 
         // Блокировка входа по паролю для юзеров, ожидающих подтверждения email (double opt-in).
         if (class_exists('Cashback_Social_Auth_Account_Manager')) {
