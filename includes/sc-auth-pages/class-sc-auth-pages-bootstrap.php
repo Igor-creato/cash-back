@@ -46,6 +46,11 @@ class Cashback_SC_Auth_Pages_Bootstrap {
 
         add_action('wp_enqueue_scripts', array( __CLASS__, 'enqueue_assets' ));
 
+        // Меню: для авторизованных юзеров заменяем «Вход / Регистрация» на имя.
+        if (class_exists('Cashback_SC_Auth_Pages_Menu_Filter')) {
+            add_filter('wp_get_nav_menu_items', array( 'Cashback_SC_Auth_Pages_Menu_Filter', 'filter_items' ), 10, 3);
+        }
+
         // wp_loaded — после plugins_loaded и init: к этому моменту social-auth
         // уже зарегистрировал свои callback'и на woocommerce_(login|register)_form_end.
         // Перенесём кнопки социальной авторизации на наш собственный хук в начало
