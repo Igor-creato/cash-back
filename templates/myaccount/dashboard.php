@@ -19,6 +19,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // Exit if accessed directly.
 }
 
+/** @var WP_User $current_user Передаётся WooCommerce через wc_get_template(). */
+
 $allowed_html = array(
 	'a' => array(
 		'href' => array(),
