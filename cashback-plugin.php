@@ -731,6 +731,12 @@ class CashbackPlugin {
         $this->require_file('includes/sc-auth-pages/class-sc-auth-pages-header-replacer.php');
         $this->require_file('includes/sc-auth-pages/class-sc-auth-pages-bootstrap.php');
 
+        // Defense-in-depth: WoodMart customizer CSS file fallback (если физ.файл
+        // отсутствует — подменяет <link> на inline из DB-опции). Лечит race между
+        // обновлением Styles_Storage и физическим созданием файла, который ловится
+        // nginx fastcgi_cache на 30 мин и выдаёт гостям битый top-bar.
+        $this->require_file('includes/class-cashback-woodmart-css-fallback.php');
+
         // Контактная форма (шорткод, доступен без авторизации)
         $this->require_file('includes/class-cashback-contact-form.php');
 
@@ -1131,6 +1137,11 @@ class CashbackPlugin {
         // POST на template_redirect и guest-redirector /my-account/ → /login/.
         if (class_exists('Cashback_SC_Auth_Pages_Bootstrap')) {
             Cashback_SC_Auth_Pages_Bootstrap::init();
+        }
+
+        // WoodMart customizer CSS fallback (см. require выше — lazy-init на wp_print_styles).
+        if (class_exists('Cashback_Woodmart_Css_Fallback')) {
+            Cashback_Woodmart_Css_Fallback::register();
         }
 
         // Контактная форма
