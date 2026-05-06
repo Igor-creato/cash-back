@@ -32,10 +32,11 @@ class Cashback_Social_Auth_Account_Manager {
     /**
      * Типы pending-записей.
      */
-    public const KIND_CONFIRM_LINK       = 'confirm_link';
-    public const KIND_EMAIL_PROMPT       = 'email_prompt';
-    public const KIND_EMAIL_VERIFY       = 'email_verify';
-    public const KIND_REGISTER_VIA_SOCIAL = 'register_via_social';
+    public const KIND_CONFIRM_LINK        = 'confirm_link';
+    public const KIND_EMAIL_PROMPT        = 'email_prompt';
+    public const KIND_EMAIL_VERIFY        = 'email_verify';
+    // Значение ограничено до 15 символов — колонка wp_cashback_social_pending.kind = varchar(16).
+    public const KIND_REGISTER_VIA_SOCIAL = 'social_register';
 
     /**
      * GET-параметр для редиректа на register-форму с pending social-token'ом
