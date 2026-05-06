@@ -49,11 +49,21 @@
 
 /**
  * Social-auth кнопки сверху формы (sc_auth_pages_(login|register)_form_top).
- * Cash-back social-auth модуль рендерит их через свои классы (.cashback-social-buttons),
- * мы только корректируем margin-bottom + визуальный разделитель «или».
+ * Cash-back social-auth модуль рендерит их через .cashback-social-buttons,
+ * мы корректируем margin и убираем встроенный «или».
+ *
+ * Native social-auth блок имеет data-label="или" → CSS добавляет ::before с
+ * текстом «или» НАД кнопками. В стандартном WC layout (кнопки внизу) это
+ * работает как разделитель между формой и кнопками. У нас кнопки сверху,
+ * поэтому встроенный «или» создаёт визуальный мусор — скрываем его и
+ * используем наш собственный .sc-auth-pages-form-divider под кнопками.
  */
 .sc-auth-pages-form .cashback-social-buttons {
-    margin-bottom: 14px;
+    margin: 0 0 6px;
+}
+
+.sc-auth-pages-form .cashback-social-buttons[data-label]::before {
+    display: none;
 }
 
 .sc-auth-pages-form-divider {
