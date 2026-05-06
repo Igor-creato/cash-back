@@ -193,16 +193,29 @@
 .support-form-group textarea {
     width: 100%;
     max-width: 100%;
+    min-height: 48px;
     padding: 11px 14px;
     border: 1px solid var(--cb-border-strong, #ddd);
     border-radius: var(--cb-radius-sm, 0);
     background: var(--cb-bg-surface, #fff);
     color: var(--cb-text-primary, #16151c);
     font-size: 14px;
+    line-height: 1.5;
     font-family: inherit;
     box-shadow: var(--cb-shadow-inset, none);
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
     box-sizing: border-box;
+}
+
+.support-form-group input[type="text"]::placeholder,
+.support-form-group textarea::placeholder {
+    color: var(--cb-text-muted, #999);
+    opacity: 1;
+}
+
+.support-form-group select:invalid,
+.support-form-group select option[value=""][disabled] {
+    color: var(--cb-text-muted, #999);
 }
 
 .support-form-group input[type="text"]:focus,
