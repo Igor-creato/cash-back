@@ -55,6 +55,14 @@ class Cashback_SC_Auth_Pages_Bootstrap {
             add_filter('wp_get_nav_menu_items', array( 'Cashback_SC_Auth_Pages_Menu_Filter', 'filter_items' ), 10, 3);
         }
 
+        // Header builder / static-HTML ссылки на /login/ /register/: глобальная
+        // замена на имя юзера через inline CSS+JS в head/footer (для WoodMart
+        // Header Builder и других статических placement'ов, где WP-меню filter
+        // не работает).
+        if (class_exists('Cashback_SC_Auth_Pages_Header_Replacer')) {
+            Cashback_SC_Auth_Pages_Header_Replacer::register();
+        }
+
         // wp_loaded — после plugins_loaded и init: к этому моменту social-auth
         // уже зарегистрировал свои callback'и на woocommerce_(login|register)_form_end.
         // Перенесём кнопки социальной авторизации на наш собственный хук в начало

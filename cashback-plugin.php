@@ -728,6 +728,7 @@ class CashbackPlugin {
         $this->require_file('includes/sc-auth-pages/class-sc-auth-pages-register.php');
         $this->require_file('includes/sc-auth-pages/class-sc-auth-pages-redirector.php');
         $this->require_file('includes/sc-auth-pages/class-sc-auth-pages-menu-filter.php');
+        $this->require_file('includes/sc-auth-pages/class-sc-auth-pages-header-replacer.php');
         $this->require_file('includes/sc-auth-pages/class-sc-auth-pages-bootstrap.php');
 
         // Контактная форма (шорткод, доступен без авторизации)
