@@ -8,6 +8,8 @@
     document.documentElement.classList.add('cashback-coupons-icons-js');
 
     var tooltip = null;
+    var currentItem = null;
+    var rafId = 0;
 
     function ensureTooltip() {
         if (tooltip && tooltip.isConnected) {
@@ -20,6 +22,16 @@
         return tooltip;
     }
 
+    function applyPosition(item) {
+        var r = item.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) {
+            return false;
+        }
+        tooltip.style.left = (r.left + r.width / 2) + 'px';
+        tooltip.style.top = r.top + 'px';
+        return true;
+    }
+
     function show(item) {
         var label = item.getAttribute('aria-label');
         if (!label) {
@@ -27,16 +39,44 @@
         }
         var t = ensureTooltip();
         t.textContent = label;
-        var r = item.getBoundingClientRect();
-        t.style.left = (r.left + r.width / 2) + 'px';
-        t.style.top = r.top + 'px';
+        if (!applyPosition(item)) {
+            return;
+        }
         t.classList.add('is-visible');
+        currentItem = item;
     }
 
     function hide() {
         if (tooltip) {
             tooltip.classList.remove('is-visible');
         }
+        currentItem = null;
+    }
+
+    function reposition() {
+        if (!currentItem || !tooltip) {
+            return;
+        }
+        if (!currentItem.isConnected) {
+            hide();
+            return;
+        }
+        if (!applyPosition(currentItem)) {
+            hide();
+        }
+    }
+
+    function onScrollOrResize() {
+        if (!currentItem) {
+            return;
+        }
+        if (rafId) {
+            return;
+        }
+        rafId = window.requestAnimationFrame(function () {
+            rafId = 0;
+            reposition();
+        });
     }
 
     function findItem(node) {
@@ -74,6 +114,6 @@
         }
     }, true);
 
-    window.addEventListener('scroll', hide, true);
-    window.addEventListener('resize', hide, true);
+    window.addEventListener('scroll', onScrollOrResize, true);
+    window.addEventListener('resize', onScrollOrResize, true);
 })();

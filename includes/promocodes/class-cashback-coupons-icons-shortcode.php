@@ -273,7 +273,7 @@ final class Cashback_Coupons_Icons_Shortcode {
                 'cashback-coupons-icons',
                 plugins_url( 'assets/js/coupons-icons.js', $plugin_root_file ),
                 array(),
-                '7.5.5',
+                '7.5.9',
                 true
             );
         }
