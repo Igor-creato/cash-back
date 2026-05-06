@@ -538,21 +538,15 @@ class Cashback_Social_Auth_Router {
 
     /**
      * POST /social/register-consent — обработка submit'а формы согласий.
+     *
+     * Endpoint защищён:
+     *  - nonce wp_rest (см. ниже)
+     *  - одноразовым токеном KIND_REGISTER_VIA_SOCIAL (consume_pending атомарен)
+     *  - валидацией всех 3 чекбоксов
+     * Дополнительный rate-limit здесь избыточен и затрудняет легитимный
+     * retry при ошибке формы (юзеру пришлось бы ждать).
      */
     public function handle_register_consent( \WP_REST_Request $request ) {
-        $ip = $this->get_client_ip();
-
-        if (class_exists('Cashback_Rate_Limiter')) {
-            $check = Cashback_Rate_Limiter::check('social_register_consent', get_current_user_id(), $ip);
-            if (empty($check['allowed'])) {
-                Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_RATE_LIMITED, array(
-                    'stage' => 'register_consent',
-                    'ip'    => $ip,
-                ));
-                return new \WP_Error('social_rate_limited', __('Слишком много попыток.', 'cashback-plugin'), array( 'status' => 429 ));
-            }
-        }
-
         $nonce = $request->get_header('x_wp_nonce');
         if (!$nonce) {
             $nonce = (string) $request->get_param('_wpnonce');
