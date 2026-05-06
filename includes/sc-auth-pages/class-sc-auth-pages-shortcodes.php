@@ -100,6 +100,15 @@ class Cashback_SC_Auth_Pages_Shortcodes {
             return false;
         }
 
+        // НЕ редиректим в admin / REST / AJAX / preview / customize:
+        // - Gutenberg рендерит блок [sc_login] через REST для preview — редирект
+        //   ломает редактор (302 в block-renderer endpoint).
+        // - В admin-list страниц шорткод не рендерится, но `is_admin()` гарантирует.
+        // - Customize/preview даёт админу увидеть форму как guest.
+        if (self::is_non_render_context()) {
+            return false;
+        }
+
         $target = self::default_logged_in_target();
         $target = (string) apply_filters('sc_auth_pages_logged_in_redirect', $target);
 
@@ -114,6 +123,39 @@ class Cashback_SC_Auth_Pages_Shortcodes {
         Cashback_SC_Auth_Pages_Redirect_Helper::send($safe);
 
         return true;
+    }
+
+    /**
+     * Контексты, в которых шорткод НЕ должен делать wp_safe_redirect (он сломает
+     * Gutenberg block-renderer, customizer preview, AJAX renderer и т.п.).
+     *
+     * Также пропускаем редирект для пользователей с capability `edit_pages` —
+     * админы и редакторы должны иметь возможность открыть /login/ и /register/
+     * на frontend через «View Page» в admin-bar чтобы посмотреть верстку.
+     */
+    private static function is_non_render_context(): bool {
+        if (function_exists('is_admin') && is_admin()) {
+            return true;
+        }
+        if (defined('REST_REQUEST') && REST_REQUEST) {
+            return true;
+        }
+        if (function_exists('wp_doing_ajax') && wp_doing_ajax()) {
+            return true;
+        }
+        if (function_exists('wp_doing_cron') && wp_doing_cron()) {
+            return true;
+        }
+        if (function_exists('is_preview') && is_preview()) {
+            return true;
+        }
+        if (function_exists('is_customize_preview') && is_customize_preview()) {
+            return true;
+        }
+        if (function_exists('current_user_can') && current_user_can('edit_pages')) {
+            return true;
+        }
+        return false;
     }
 
     /**

@@ -132,6 +132,8 @@ final class SCAuthPagesShortcodesTest extends TestCase
             200 => 'http://localhost/register/',
         );
         $GLOBALS['_cb_test_is_logged_in']           = false;
+        // Default: рядовой юзер (не админ); тесты на admin-bypass guard ставят true.
+        $GLOBALS['_cb_test_current_user_can']       = false;
         $GLOBALS['_cb_test_wc_notices_printed']     = false;
         $_GET                                       = array();
         $_POST                                      = array();
@@ -229,6 +231,35 @@ final class SCAuthPagesShortcodesTest extends TestCase
             'http://localhost/dashboard/',
             $GLOBALS['_cb_test_redirects'][0]['url']
         );
+    }
+
+    public function test_admin_user_with_edit_pages_capability_sees_form_instead_of_redirect(): void
+    {
+        // Залогиненный админ открывает /login/ через «View Page» в admin-bar:
+        // должен увидеть форму, не редирект (иначе не может проверить верстку).
+        $GLOBALS['_cb_test_is_logged_in']     = true;
+        $GLOBALS['_cb_test_current_user_can'] = true;
+
+        $html = Cashback_SC_Auth_Pages_Shortcodes::render_login();
+
+        $this->assertStringContainsString('<form', $html, 'Админ должен увидеть форму');
+        $this->assertCount(0, $GLOBALS['_cb_test_redirects'], 'Не должно быть редиректа для админа');
+    }
+
+    public function test_rest_request_does_not_redirect_logged_in_user(): void
+    {
+        // Эмулируем REST-context (Gutenberg block-renderer): редирект убил бы редактор.
+        $GLOBALS['_cb_test_is_logged_in']     = true;
+        $GLOBALS['_cb_test_current_user_can'] = false;
+
+        if (!defined('REST_REQUEST')) {
+            define('REST_REQUEST', true);
+        }
+
+        $html = Cashback_SC_Auth_Pages_Shortcodes::render_login();
+
+        $this->assertStringContainsString('<form', $html);
+        $this->assertCount(0, $GLOBALS['_cb_test_redirects']);
     }
 
     public function test_login_form_carries_redirect_to_from_query(): void
