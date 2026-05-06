@@ -59,7 +59,7 @@
  * используем наш собственный .sc-auth-pages-form-divider под кнопками.
  */
 .sc-auth-pages-form .cashback-social-buttons {
-    margin: 0 0 6px;
+    margin: 0;
 }
 
 .sc-auth-pages-form .cashback-social-buttons[data-label]::before {
@@ -70,7 +70,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    margin: 6px 0 22px;
+    margin: 22px 0;
     font-size: 13px;
     color: #888;
     text-transform: uppercase;
