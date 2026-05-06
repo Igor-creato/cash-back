@@ -85,30 +85,9 @@ jQuery(document).ready(function ($) {
       idempotency_key: withdrawalIdempotencyKey,
     };
 
-    // Юр. чекбокс согласия на обработку платёжных данных (161-ФЗ).
-    // Передаётся только если присутствует на форме (рендерится при первом
-    // обращении пользователя — Cashback_Legal_Payout_Consent::render_checkbox).
-    var $legalConsent = $('#withdrawal-form input[name="cashback_legal_payment_pd_consent"]');
-    if ($legalConsent.length) {
-      // UX-валидация: при отсутствии отметки — красная рамка + сообщение
-      // под чекбоксом + focus, без отправки на сервер. Серверная валидация
-      // в Cashback_Legal_Payout_Consent::enforce_or_error остаётся как fallback.
-      if (!$legalConsent.is(':checked') && window.CashbackConsentValidate) {
-        var legalMsg = (typeof cashback_ajax !== 'undefined' && cashback_ajax.legal_payment_pd_required_message)
-          ? cashback_ajax.legal_payment_pd_required_message
-          : 'Подтвердите согласие на обработку платёжных данных (161-ФЗ).';
-        window.CashbackConsentValidate.validateRequired([$legalConsent[0]], legalMsg);
-        submitBtn.prop('disabled', false);
-        withdrawalAmount.prop('disabled', false);
-        submitBtn.val('Вывести');
-        return false;
-      }
-      if (window.CashbackConsentValidate) {
-        window.CashbackConsentValidate.bindAutoClear($legalConsent[0]);
-      }
-      data.cashback_legal_payment_pd_consent = $legalConsent.is(':checked') ? '1' : '0';
-      data.cashback_legal_payment_pd_request_id = $('#withdrawal-form input[name="cashback_legal_payment_pd_request_id"]').val() || '';
-    }
+    // Согласие 161-ФЗ собирается в форме «Настройки выплаты». На форме вывода
+    // чекбокса нет — серверный enforce_or_error('payout') проверяет журнал
+    // и при revoked/superseded возвращает show_form=true (редирект на настройки).
 
     // Отправляем AJAX запрос
     $.ajax({

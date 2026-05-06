@@ -677,11 +677,8 @@ class CashbackWithdrawal {
         if (class_exists('Cashback_Captcha')) {
             echo wp_kses_post( Cashback_Captcha::render_container('cb-captcha-withdrawal') ); // Pre-built captcha HTML container.
         }
-        // Юр. чекбокс согласия на обработку платёжных данных (161-ФЗ).
-        // Рендерится только при первой выплате — повторно не показывается, если согласие уже зафиксировано.
-        if (class_exists('Cashback_Legal_Payout_Consent')) {
-            Cashback_Legal_Payout_Consent::render_checkbox(get_current_user_id());
-        }
+        // Юр. согласие 161-ФЗ собирается в форме «Настройки выплаты» (единая точка).
+        // Сохранение настроек невозможно без согласия → к моменту вывода оно уже в журнале.
         echo '<p class="form-row">';
         echo '<button type="submit" class="woocommerce-Button button" id="withdrawal-submit" name="withdrawal_submit" value="' . esc_attr__('Вывести', 'cashback-plugin') . '">' . esc_html__('Вывести', 'cashback-plugin') . '</button>';
         echo '</p>';
@@ -866,16 +863,6 @@ class CashbackWithdrawal {
             return;
         }
 
-        // Юр. согласие на обработку платёжных данных (161-ФЗ). Проверяется
-        // ДО валидации суммы — пользователь сразу видит причину отказа.
-        if (class_exists('Cashback_Legal_Payout_Consent')) {
-            $consent_check = Cashback_Legal_Payout_Consent::enforce_or_error($user_id, 'payout');
-            if ($consent_check !== true) {
-                wp_send_json_error($consent_check);
-                return;
-            }
-        }
-
         // === 1.5. Антифрод: cooling period (детерминистичная проверка, до транзакции) ===
         if (class_exists('Cashback_Fraud_Settings') && Cashback_Fraud_Settings::is_enabled()) {
             $cooling_days = Cashback_Fraud_Settings::get_new_account_cooling_days();
@@ -966,6 +953,22 @@ class CashbackWithdrawal {
                 'show_form' => true,
             ));
             return;
+        }
+
+        // Юр. согласие 161-ФЗ. Чекбокс собирается только в форме «Настройки выплаты»;
+        // здесь подтверждаем, что согласие активно в журнале. Если revoked/superseded
+        // (bump major-версии политики) — отправляем на вкладку настроек, где
+        // render_checkbox() покажет чекбокс новой редакции.
+        if (class_exists('Cashback_Legal_Payout_Consent')) {
+            $consent_check = Cashback_Legal_Payout_Consent::enforce_or_error($user_id, 'payout');
+            if ($consent_check !== true) {
+                $consent_payload = is_array($consent_check)
+                    ? $consent_check
+                    : array( 'message' => (string) $consent_check );
+                $consent_payload['show_form'] = true;
+                wp_send_json_error($consent_payload);
+                return;
+            }
         }
 
         // === 3. Идемпотентная проверка ДО транзакции (fast path) ===
