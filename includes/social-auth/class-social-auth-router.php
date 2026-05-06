@@ -22,10 +22,65 @@ class Cashback_Social_Auth_Router {
 
     private const NAMESPACE = 'cashback/v1';
 
+    /**
+     * REST endpoints, которые возвращают сырой HTML вместо JSON (выделенные
+     * страницы форм). WP REST по умолчанию JSON-кодирует тело ответа независимо
+     * от Content-Type заголовка; чтобы вернуть HTML, нужно перехватить через
+     * фильтр rest_pre_serve_request.
+     *
+     * @var array<int, string>
+     */
+    private const HTML_ROUTES = array(
+        '/cashback/v1/social/email-prompt-form',
+        '/cashback/v1/social/register-consent-form',
+        '/cashback/v1/social/register-consent',
+    );
+
     public function register(): void {
         add_action('rest_api_init', array( $this, 'register_routes' ));
         add_filter('login_message', array( $this, 'filter_login_message' ));
         add_action('woocommerce_before_customer_login_form', array( $this, 'render_wc_login_message' ));
+        add_filter('rest_pre_serve_request', array( $this, 'serve_html_routes' ), 10, 3);
+    }
+
+    /**
+     * Перехватывает рендер REST-ответа для HTML_ROUTES и отдаёт сырой HTML
+     * вместо JSON-кодированной строки.
+     *
+     * @param bool             $served
+     * @param \WP_HTTP_Response $result
+     * @param \WP_REST_Request  $request
+     * @return bool
+     */
+    public function serve_html_routes( $served, $result, $request ): bool {
+        if ($served) {
+            return $served;
+        }
+        if (!( $result instanceof \WP_HTTP_Response ) || !( $request instanceof \WP_REST_Request )) {
+            return $served;
+        }
+
+        $route = (string) $request->get_route();
+        if (!in_array($route, self::HTML_ROUTES, true)) {
+            return $served;
+        }
+
+        $data = $result->get_data();
+        if (!is_string($data)) {
+            return $served;
+        }
+
+        $headers = $result->get_headers();
+        if (!array_key_exists('Content-Type', $headers)) {
+            header('Content-Type: text/html; charset=UTF-8');
+        }
+        // Заголовки самого WP_REST_Response уже отправлены WP_REST_Server::serve_request()
+        // через send_header() ДО этого фильтра — повторно не дёргаем.
+
+        status_header($result->get_status());
+        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Pre-rendered template HTML, escaping выполнено в шаблоне.
+        echo $data;
+        return true;
     }
 
     public function register_routes(): void {
