@@ -181,6 +181,10 @@ class CashbackPlugin {
             $custom = (string) get_option('cashback_email_sender_name', '');
             return trim($custom) !== '' ? $custom : $name;
         }, 20);
+        // Override WC-шаблона myaccount/dashboard.php — убираем стандартный
+        // описательный абзац «From your account dashboard…» (нерелевантен:
+        // у сервиса нет реальных WC-заказов, вкладки кабинета свои).
+        add_filter('wc_get_template', array( $this, 'override_wc_dashboard_template' ), 10, 5);
     }
 
     /**
@@ -216,6 +220,39 @@ class CashbackPlugin {
             array(),
             '1.0.0'
         );
+    }
+
+    /**
+     * Подменяет стандартный WC-шаблон myaccount/dashboard.php на версию плагина
+     * (без описательного абзаца «From your account dashboard…»).
+     *
+     * Уважает theme override: если активная тема (или плагин с более высоким
+     * приоритетом) уже переопределили шаблон, возвращаем $template без изменений.
+     *
+     * @param string $template      Текущий путь к шаблону.
+     * @param string $template_name Имя шаблона (например 'myaccount/dashboard.php').
+     * @param array  $args          Аргументы шаблона.
+     * @param string $template_path Путь шаблона в теме.
+     * @param string $default_path  Путь шаблона по умолчанию (внутри WC).
+     * @return string
+     */
+    public function override_wc_dashboard_template(
+        string $template,
+        string $template_name,
+        array $args,
+        string $template_path,
+        string $default_path
+    ): string {
+        unset($args, $template_path);
+        if ('myaccount/dashboard.php' !== $template_name) {
+            return $template;
+        }
+        // Если тема уже переопределила — не трогаем (theme override приоритетнее).
+        if ($template !== trailingslashit($default_path) . $template_name) {
+            return $template;
+        }
+        $plugin_template = plugin_dir_path(__FILE__) . 'templates/myaccount/dashboard.php';
+        return file_exists($plugin_template) ? $plugin_template : $template;
     }
 
     /**
