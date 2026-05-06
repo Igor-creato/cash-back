@@ -117,8 +117,15 @@ class Cashback_SC_Auth_Pages_Shortcodes {
         }
 
         $safe = function_exists('wp_validate_redirect')
-            ? wp_validate_redirect($target, self::default_logged_in_target())
+            ? (string) wp_validate_redirect($target, self::default_logged_in_target())
             : $target;
+
+        // Defensive guard: если после wp_validate_redirect URL пустой (filter или
+        // невалидный host), НЕ обрывать рендер через wp_safe_redirect+exit —
+        // иначе юзер видит белую страницу. Просто возвращаем форму как guest.
+        if ($safe === '') {
+            return false;
+        }
 
         Cashback_SC_Auth_Pages_Redirect_Helper::send($safe);
 

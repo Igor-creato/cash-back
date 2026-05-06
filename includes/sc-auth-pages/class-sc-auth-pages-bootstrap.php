@@ -39,8 +39,12 @@ class Cashback_SC_Auth_Pages_Bootstrap {
         add_action('init', array( 'Cashback_SC_Auth_Pages_Shortcodes', 'register' ));
 
         // template_redirect: prio 1 — самый ранний gate (guest /my-account/ → /login/),
+        // prio 2 — залогиненный на /login/ или /register/ → /my-account/ (ДО любого
+        // output темы, иначе headers_sent() блокирует wp_safe_redirect и exit обрывает
+        // вывод — юзер видит обрезанную страницу).
         // prio 5 — POST-handler'ы. Между ними другие плагины могут добавиться.
         add_action('template_redirect', array( 'Cashback_SC_Auth_Pages_Redirector', 'maybe_redirect' ), 1);
+        add_action('template_redirect', array( __CLASS__, 'redirect_logged_in_from_auth_pages' ), 2);
         add_action('template_redirect', array( 'Cashback_SC_Auth_Pages_Login', 'maybe_handle' ), 5);
         add_action('template_redirect', array( 'Cashback_SC_Auth_Pages_Register', 'maybe_handle' ), 5);
 
@@ -56,6 +60,65 @@ class Cashback_SC_Auth_Pages_Bootstrap {
         // Перенесём кнопки социальной авторизации на наш собственный хук в начало
         // формы (sc_auth_pages_(login|register)_form_top) — отключаемо через filter.
         add_action('wp_loaded', array( __CLASS__, 'relocate_social_auth_buttons' ), 20);
+    }
+
+    /**
+     * Раннее перенаправление залогиненного юзера со страницы /login/ или /register/
+     * на /my-account/.
+     *
+     * Срабатывает на template_redirect prio 2 — ДО рендера content страницы темой.
+     * Это безопасно для wp_safe_redirect (headers ещё не отправлены) и для exit
+     * (нет частично выведенного HTML).
+     *
+     * Guard'ы: admin / customizer preview / редакторы (current_user_can edit_pages) —
+     * пропускаем, чтобы они могли посмотреть верстку через «View Page».
+     */
+    public static function redirect_logged_in_from_auth_pages(): void {
+        if (!function_exists('is_user_logged_in') || !is_user_logged_in()) {
+            return;
+        }
+        if (function_exists('is_admin') && is_admin()) {
+            return;
+        }
+        if (function_exists('is_preview') && is_preview()) {
+            return;
+        }
+        if (function_exists('is_customize_preview') && is_customize_preview()) {
+            return;
+        }
+        if (function_exists('current_user_can') && current_user_can('edit_pages')) {
+            return;
+        }
+        if (!function_exists('is_page')) {
+            return;
+        }
+
+        $login_id    = (int) get_option(Cashback_SC_Auth_Pages_Activator::OPTION_LOGIN_PAGE_ID, 0);
+        $register_id = (int) get_option(Cashback_SC_Auth_Pages_Activator::OPTION_REGISTER_PAGE_ID, 0);
+
+        $on_auth_page = ($login_id > 0 && is_page($login_id))
+            || ($register_id > 0 && is_page($register_id));
+
+        if (!$on_auth_page) {
+            return;
+        }
+
+        $target = class_exists('Cashback_SC_Auth_Pages_Redirect_Helper')
+            ? Cashback_SC_Auth_Pages_Redirect_Helper::get_my_account_url()
+            : '';
+        $target = (string) apply_filters('sc_auth_pages_logged_in_redirect', $target);
+        if ($target === '') {
+            return;
+        }
+
+        if (function_exists('wp_validate_redirect')) {
+            $target = (string) wp_validate_redirect($target, $target);
+        }
+        if ($target === '') {
+            return;
+        }
+
+        Cashback_SC_Auth_Pages_Redirect_Helper::send($target);
     }
 
     /**
