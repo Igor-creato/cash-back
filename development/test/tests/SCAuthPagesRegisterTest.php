@@ -346,6 +346,49 @@ final class SCAuthPagesRegisterTest extends TestCase
         );
     }
 
+    public function test_auto_password_mode_skips_password_validation_and_passes_empty_to_wc(): void
+    {
+        // WC настройка: автогенерация пароля.
+        update_option('woocommerce_registration_generate_password', 'yes');
+
+        $_POST = array(
+            'sc_auth_action' => 'register',
+            '_sc_auth_nonce' => 'valid',
+            'email'          => 'newuser@example.com',
+            // password / password_confirm НЕ передаём — формы их не показывает.
+        );
+        $GLOBALS['_cb_test_wc_create_result'] = 555;
+
+        Cashback_SC_Auth_Pages_Register::maybe_handle();
+
+        $this->assertCount(1, $GLOBALS['_cb_test_wc_create_calls']);
+        $this->assertSame(
+            '',
+            $GLOBALS['_cb_test_wc_create_calls'][0]['password'],
+            'В auto-password режиме password передаётся пустым (WC сгенерирует сам)'
+        );
+
+        // Auto-login НЕ должен сработать — юзер пройдёт по ссылке из email.
+        $this->assertSame([], $GLOBALS['_cb_test_wp_set_auth_cookie_calls']);
+
+        // Должен быть success notice.
+        $success_notices = array_filter(
+            $GLOBALS['_cb_test_wc_notices'],
+            static fn( $n ) => $n['type'] === 'success'
+        );
+        $this->assertCount(1, $success_notices);
+    }
+
+    public function test_auto_password_filter_overrides_wc_setting(): void
+    {
+        // WC: НЕ генерировать пароль.
+        update_option('woocommerce_registration_generate_password', 'no');
+        // Filter: всё-таки генерировать.
+        add_filter('sc_auth_pages_auto_generate_password', static fn() => true);
+
+        $this->assertTrue(Cashback_SC_Auth_Pages_Register::is_auto_password_mode());
+    }
+
     public function test_rate_limit_cleared_after_successful_registration(): void
     {
         $key = Cashback_SC_Auth_Pages_Register::RATE_LIMIT_PREFIX . md5('203.0.113.10');

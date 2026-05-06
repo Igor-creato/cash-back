@@ -69,12 +69,22 @@ class Cashback_SC_Auth_Pages_Register {
 
         // phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce проверен в verify_nonce().
         $email = isset($_POST['email']) ? sanitize_email(wp_unslash((string) $_POST['email'])) : '';
-        // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- nonce проверен; пароль НЕ sanitize и НЕ unslash (WC ждёт raw).
-        $password = isset($_POST['password']) ? (string) $_POST['password'] : '';
-        // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- то же.
-        $password_confirm = isset($_POST['password_confirm']) ? (string) $_POST['password_confirm'] : '';
 
-        $error = self::validate_inputs($email, $password, $password_confirm);
+        $auto_password = self::is_auto_password_mode();
+
+        if ($auto_password) {
+            // WC сам сгенерирует пароль через wp_generate_password() и отправит
+            // customer_new_account email со ссылкой на установку пароля.
+            $password = '';
+            $password_confirm = '';
+        } else {
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- nonce проверен; пароль НЕ sanitize и НЕ unslash (WC ждёт raw).
+            $password = isset($_POST['password']) ? (string) $_POST['password'] : '';
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- то же.
+            $password_confirm = isset($_POST['password_confirm']) ? (string) $_POST['password_confirm'] : '';
+        }
+
+        $error = self::validate_inputs($email, $password, $password_confirm, $auto_password);
         if ($error !== null) {
             self::add_error_notice($error);
             self::register_violation($client_ip);
@@ -99,12 +109,30 @@ class Cashback_SC_Auth_Pages_Register {
 
         self::clear_rate_limit($client_ip);
 
-        if ((bool) apply_filters('sc_auth_pages_auto_login', true, $user_id)) {
+        // Auto-login возможен только если юзер сам задал пароль. При сгенерированном
+        // пароле логин невозможен — юзер должен пройти по ссылке из welcome email.
+        if (!$auto_password && (bool) apply_filters('sc_auth_pages_auto_login', true, $user_id)) {
             self::auto_login($user_id);
+        }
+
+        if ($auto_password) {
+            self::add_success_notice(__('Регистрация успешна! Мы отправили вам письмо со ссылкой на установку пароля.', 'cashback-plugin'));
         }
 
         $redirect = self::resolve_register_redirect_target($user_id);
         Cashback_SC_Auth_Pages_Redirect_Helper::send($redirect);
+    }
+
+    /**
+     * Включён ли режим автоматической генерации пароля (WC настройка
+     * «При создании аккаунта автоматически генерировать пароль»).
+     *
+     * Можно override через filter sc_auth_pages_auto_generate_password.
+     */
+    public static function is_auto_password_mode(): bool {
+        $wc_setting = (string) get_option('woocommerce_registration_generate_password', 'no');
+        $enabled    = $wc_setting === 'yes';
+        return (bool) apply_filters('sc_auth_pages_auto_generate_password', $enabled);
     }
 
     /**
@@ -145,9 +173,14 @@ class Cashback_SC_Auth_Pages_Register {
     /**
      * @return string|null Сообщение об ошибке или null если всё ок.
      */
-    private static function validate_inputs( string $email, string $password, string $password_confirm ): ?string {
+    private static function validate_inputs( string $email, string $password, string $password_confirm, bool $auto_password ): ?string {
         if ($email === '' || (function_exists('is_email') && !is_email($email))) {
             return __('Введите корректный email.', 'cashback-plugin');
+        }
+
+        // В режиме автогенерации поля password в форме нет — валидация не нужна.
+        if ($auto_password) {
+            return null;
         }
 
         if ($password === '' || strlen($password) < self::MIN_PASSWORD_LEN) {
@@ -268,5 +301,11 @@ class Cashback_SC_Auth_Pages_Register {
         $bucket = (array) get_transient('cb_sc_auth_pages_notices') ?: array();
         $bucket[] = $message;
         set_transient('cb_sc_auth_pages_notices', $bucket, MINUTE_IN_SECONDS);
+    }
+
+    private static function add_success_notice( string $message ): void {
+        if (function_exists('wc_add_notice')) {
+            wc_add_notice($message, 'success');
+        }
     }
 }

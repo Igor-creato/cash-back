@@ -49,38 +49,53 @@ if (!defined('ABSPATH')) {
         >
     </p>
 
-    <p class="form-row form-row-wide">
-        <label for="sc_auth_pwd">
-            <?php esc_html_e('Пароль', 'cashback-plugin'); ?>&nbsp;<span class="required" aria-hidden="true">*</span>
-        </label>
-        <input
-            type="password"
-            class="woocommerce-Input woocommerce-Input--text input-text"
-            name="password"
-            id="sc_auth_pwd"
-            autocomplete="new-password"
-            minlength="8"
-            required
-        >
-        <small class="sc-auth-pages-hint">
-            <?php esc_html_e('Минимум 8 символов.', 'cashback-plugin'); ?>
-        </small>
-    </p>
+    <?php
+    $sc_auto_password = class_exists('Cashback_SC_Auth_Pages_Register')
+        && Cashback_SC_Auth_Pages_Register::is_auto_password_mode();
 
-    <p class="form-row form-row-wide">
-        <label for="sc_auth_pwd2">
-            <?php esc_html_e('Повторите пароль', 'cashback-plugin'); ?>&nbsp;<span class="required" aria-hidden="true">*</span>
-        </label>
-        <input
-            type="password"
-            class="woocommerce-Input woocommerce-Input--text input-text"
-            name="password_confirm"
-            id="sc_auth_pwd2"
-            autocomplete="new-password"
-            minlength="8"
-            required
-        >
-    </p>
+    if ($sc_auto_password) :
+        ?>
+        <p class="form-row form-row-wide sc-auth-pages-info">
+            <?php esc_html_e('После регистрации мы отправим вам письмо со ссылкой на установку пароля.', 'cashback-plugin'); ?>
+        </p>
+        <?php
+    else :
+        ?>
+        <p class="form-row form-row-wide">
+            <label for="sc_auth_pwd">
+                <?php esc_html_e('Пароль', 'cashback-plugin'); ?>&nbsp;<span class="required" aria-hidden="true">*</span>
+            </label>
+            <input
+                type="password"
+                class="woocommerce-Input woocommerce-Input--text input-text"
+                name="password"
+                id="sc_auth_pwd"
+                autocomplete="new-password"
+                minlength="8"
+                required
+            >
+            <small class="sc-auth-pages-hint">
+                <?php esc_html_e('Минимум 8 символов.', 'cashback-plugin'); ?>
+            </small>
+        </p>
+
+        <p class="form-row form-row-wide">
+            <label for="sc_auth_pwd2">
+                <?php esc_html_e('Повторите пароль', 'cashback-plugin'); ?>&nbsp;<span class="required" aria-hidden="true">*</span>
+            </label>
+            <input
+                type="password"
+                class="woocommerce-Input woocommerce-Input--text input-text"
+                name="password_confirm"
+                id="sc_auth_pwd2"
+                autocomplete="new-password"
+                minlength="8"
+                required
+            >
+        </p>
+        <?php
+    endif;
+    ?>
 
     <p class="sc-auth-pages-hp" aria-hidden="true">
         <label>
