@@ -1041,12 +1041,8 @@ class Cashback_Social_Auth_Account_Manager {
         update_user_meta($user_id, self::META_PROVIDER, $provider_id);
         update_user_meta($user_id, self::META_VIA, 1);
 
-        Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_LINK_CREATED, array(
-            'provider' => $provider_id,
-            'user_id'  => $user_id,
-            'link_id'  => $link_id,
-            'via'      => 'register_bridge',
-        ));
+        // NB: audit-логирование событие link_created оставлено caller'у —
+        // он знает контекст (register_consent_form / account_link / ...).
 
         return array( 'link_id' => $link_id );
     }
