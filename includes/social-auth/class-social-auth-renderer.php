@@ -204,36 +204,6 @@ class Cashback_Social_Auth_Renderer {
     }
 
     /**
-     * URL публичной страницы юр. документа (с graceful fallback).
-     */
-    private static function get_legal_doc_url( string $type_const_suffix ): string {
-        if (!class_exists('Cashback_Legal_Pages_Installer') || !class_exists('Cashback_Legal_Documents')) {
-            return '';
-        }
-        $type_map = array(
-            'pd_consent'  => Cashback_Legal_Documents::TYPE_PD_CONSENT,
-            'terms_offer' => Cashback_Legal_Documents::TYPE_TERMS_OFFER,
-        );
-        $type = $type_map[ $type_const_suffix ] ?? '';
-        if ($type === '') {
-            return '';
-        }
-        return Cashback_Legal_Pages_Installer::get_url_for_type($type);
-    }
-
-    private static function link_or_text( string $url, string $text ): string {
-        $text_escaped = esc_html($text);
-        if ($url === '') {
-            return $text_escaped;
-        }
-        return sprintf(
-            '<a href="%s" target="_blank" rel="noopener noreferrer">%s</a>',
-            esc_url($url),
-            $text_escaped
-        );
-    }
-
-    /**
      * Сформировать одну кнопку провайдера.
      *
      * Post-OAuth conditional consent (1.x.0): кнопка активна по умолчанию.

@@ -317,7 +317,7 @@ class Cashback_Social_Auth_Register_Bridge {
             return null;
         }
         $providers = Cashback_Social_Auth_Providers::instance()->all();
-        if (!is_array($providers) || !isset($providers[ $provider_id ])) {
+        if (!isset($providers[ $provider_id ])) {
             return null;
         }
         $provider = $providers[ $provider_id ];
