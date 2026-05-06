@@ -89,3 +89,17 @@
 .cashback-legal-toggle-status.is-error {
     color: #a82b10;
 }
+
+/* Перенос WC email-hint «Ссылка для установки нового пароля...» под кнопку
+   регистрации. Параграф вшит в WC-шаблон form-login.php без класса —
+   единственный <p> без класса внутри form.woocommerce-form-register.
+   Кнопка остаётся под обязательными чекбоксами (ADR legal-compliance-152fz). */
+form.woocommerce-form-register {
+    display: flex;
+    flex-direction: column;
+}
+
+form.woocommerce-form-register > p:not([class]) {
+    order: 99;
+    margin-top: 1em;
+}

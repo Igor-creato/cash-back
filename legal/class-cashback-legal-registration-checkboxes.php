@@ -45,6 +45,13 @@ class Cashback_Legal_Registration_Checkboxes {
         add_filter('woocommerce_registration_errors', array( __CLASS__, 'validate_checkboxes' ), 11, 3);
         add_action('woocommerce_created_customer', array( __CLASS__, 'save_consents_on_registration' ), 11, 1);
 
+        // WC-default privacy-text дублирует наш чекбокс «согласие на ПД + Политика»
+        // (chекбокс уже содержит обе обязательные ссылки и реализует механизм
+        // информирования по 152-ФЗ ст. 18). См. ADR legal-compliance-152fz.
+        if (function_exists('remove_action')) {
+            remove_action('woocommerce_register_form', 'wc_registration_privacy_policy_text', 20);
+        }
+
         // UX-валидация (красная подсветка + сообщение под чекбоксом).
         // Defense-in-depth: серверная validate_checkboxes остаётся, JS только улучшает UX.
         add_action('wp_enqueue_scripts', array( __CLASS__, 'enqueue_validation_assets' ));
