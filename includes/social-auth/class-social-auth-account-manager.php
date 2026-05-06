@@ -586,6 +586,8 @@ class Cashback_Social_Auth_Account_Manager {
 
         Cashback_Social_Auth_DB::touch_last_login($link_id, $ip, $user_agent);
 
+        $this->clear_default_password_nag($current_user_id);
+
         Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_LINK_CREATED, array(
             'provider' => $provider_id,
             'user_id'  => $current_user_id,
@@ -788,6 +790,8 @@ class Cashback_Social_Auth_Account_Manager {
 
         $this->send_verify_email_email($user_id, $provider_id, $verify_token);
 
+        $this->clear_default_password_nag($user_id);
+
         Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_LINK_CREATED, array(
             'provider' => $provider_id,
             'user_id'  => $user_id,
@@ -953,6 +957,8 @@ class Cashback_Social_Auth_Account_Manager {
         // Логиним юзера.
         $this->login_user($user_id);
 
+        $this->clear_default_password_nag($user_id);
+
         Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_LINK_CREATED, array(
             'provider' => $provider_id,
             'user_id'  => $user_id,
@@ -1048,6 +1054,24 @@ class Cashback_Social_Auth_Account_Manager {
     }
 
     /**
+     * Очистить default_password_nag user-меты после успешной привязки соц-аккаунта.
+     *
+     * WC ставит этот флаг при регистрации с авто-генерируемым паролем
+     * (wc_create_new_customer → update_user_option). Флаг триггерит баннер
+     * «В вашей учётной записи используется временный пароль...» в ЛК.
+     * Когда юзер привязал OAuth-провайдера — у него есть альтернатива логину
+     * без пароля, баннер становится бессмысленным.
+     */
+    private function clear_default_password_nag( int $user_id ): void {
+        if ($user_id <= 0) {
+            return;
+        }
+        if (function_exists('delete_user_option')) {
+            delete_user_option($user_id, 'default_password_nag', true);
+        }
+    }
+
+    /**
      * Завершение ветки B (подтверждение привязки существующему юзеру).
      *
      * @param array<string, mixed> $payload
@@ -1122,6 +1146,8 @@ class Cashback_Social_Auth_Account_Manager {
         Cashback_Social_Auth_DB::touch_last_login($link_id, $ip, $user_agent);
 
         $this->login_user($user_id);
+
+        $this->clear_default_password_nag($user_id);
 
         Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_LINK_CREATED, array(
             'provider' => $provider_id,
