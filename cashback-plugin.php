@@ -229,6 +229,10 @@ class CashbackPlugin {
      * Уважает theme override: если активная тема (или плагин с более высоким
      * приоритетом) уже переопределили шаблон, возвращаем $template без изменений.
      *
+     * Заметка: $default_path в фильтре wc_get_template — это исходный параметр
+     * функции wc_get_template(), он почти всегда пустой. Поэтому сравниваем с
+     * фактическим default-путём WC через WC()->plugin_path().
+     *
      * @param string $template      Текущий путь к шаблону.
      * @param string $template_name Имя шаблона (например 'myaccount/dashboard.php').
      * @param array  $args          Аргументы шаблона.
@@ -243,12 +247,16 @@ class CashbackPlugin {
         string $template_path,
         string $default_path
     ): string {
-        unset($args, $template_path);
+        unset($args, $template_path, $default_path);
         if ('myaccount/dashboard.php' !== $template_name) {
             return $template;
         }
+        if (! function_exists('WC')) {
+            return $template;
+        }
         // Если тема уже переопределила — не трогаем (theme override приоритетнее).
-        if ($template !== trailingslashit($default_path) . $template_name) {
+        $wc_default = wp_normalize_path(WC()->plugin_path() . '/templates/' . $template_name);
+        if (wp_normalize_path($template) !== $wc_default) {
             return $template;
         }
         $plugin_template = plugin_dir_path(__FILE__) . 'templates/myaccount/dashboard.php';
