@@ -80,8 +80,14 @@ class Cashback_SC_Auth_Pages_Redirector {
     private static function is_whitelisted_endpoint(): bool {
         $endpoint = '';
 
-        if (function_exists('WC') && WC() && isset(WC()->query) && method_exists(WC()->query, 'get_current_endpoint')) {
-            $endpoint = (string) WC()->query->get_current_endpoint();
+        if (function_exists('WC')) {
+            $wc = WC();
+            // WooCommerce::$query — WC_Query (not-nullable) при инициализированном инстансе;
+            // при guard через function_exists + property_exists мы покрываем кейс,
+            // когда WC ещё не bootstrap'нул query (очень ранний template_redirect).
+            if ($wc !== null && property_exists($wc, 'query') && is_object($wc->query) && method_exists($wc->query, 'get_current_endpoint')) {
+                $endpoint = (string) $wc->query->get_current_endpoint();
+            }
         }
 
         if ($endpoint === '') {

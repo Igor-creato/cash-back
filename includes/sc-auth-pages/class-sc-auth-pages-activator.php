@@ -114,9 +114,8 @@ class Cashback_SC_Auth_Pages_Activator {
             return null;
         }
 
-        // get_page_by_path возвращает WP_Post, у которого ID — int. В тестах
-        // объект stdClass с полем ID (число) — поведение совпадает.
-        $id = isset($page->ID) ? (int) $page->ID : 0;
+        // get_page_by_path возвращает WP_Post, у которого ID — int (not-nullable).
+        $id = (int) $page->ID;
         return $id > 0 ? $id : null;
     }
 
