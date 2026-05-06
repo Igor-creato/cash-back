@@ -103,3 +103,43 @@ form.woocommerce-form-register > p:not([class]) {
     order: 99;
     margin-top: 1em;
 }
+
+/* Post-OAuth conditional consent — инфо-баннер для юзера, прилетевшего
+   с OAuth-callback'а на register-форму. Объясняет, что нужно сделать. */
+.cashback-social-register-notice {
+    order: -1; /* всегда первым в flex-форме register */
+    margin: 0 0 1em;
+    padding: 0.85em 1em;
+    border-radius: 8px;
+    background: #eef3ff;
+    border-left: 4px solid #4047d6;
+    color: #1a1f3a;
+    line-height: 1.5;
+    font-size: 0.95em;
+}
+
+.cashback-social-register-notice strong {
+    display: block;
+    margin-bottom: 0.25em;
+    color: #1a1f3a;
+}
+
+/* Pulse-подсветка обязательных чекбоксов (4 секунды после рендера),
+   чтобы юзер сразу понял куда смотреть. */
+@keyframes cashback-social-register-pulse-anim {
+    0%, 100% {
+        background-color: transparent;
+        outline: 2px solid transparent;
+        outline-offset: 2px;
+    }
+    50% {
+        background-color: #fff7e0;
+        outline: 2px solid #f0b400;
+        outline-offset: 2px;
+    }
+}
+
+.cashback-social-register-pulse {
+    animation: cashback-social-register-pulse-anim 1.2s ease-in-out 0s 3;
+    border-radius: 4px;
+}

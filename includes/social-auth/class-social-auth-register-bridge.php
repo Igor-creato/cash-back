@@ -99,6 +99,22 @@ class Cashback_Social_Auth_Register_Bridge {
             return;
         }
 
+        // Инфо-баннер: объясняем юзеру, что от него требуется на этом шаге.
+        // Без баннера редирект на register-форму выглядит загадочно — не очевидно,
+        // что нужно отметить чекбоксы и нажать «РЕГИСТРАЦИЯ».
+        $provider_label = self::resolve_provider_label(isset($payload['provider']) ? (string) $payload['provider'] : '');
+        printf(
+            '<div class="cashback-social-register-notice" role="status">' .
+                '<strong>%s</strong> %s' .
+            '</div>',
+            esc_html(sprintf(
+                /* translators: %s: provider human label, e.g. "Яндекс ID" */
+                __('Авторизация через %s почти завершена.', 'cashback-plugin'),
+                $provider_label
+            )),
+            esc_html__('Чтобы создать аккаунт, отметьте все обязательные согласия ниже и нажмите «Регистрация». Email уже подставлен из вашей соцсети.', 'cashback-plugin')
+        );
+
         // Hidden inputs внутри form (HTML добавит их в POST).
         printf(
             '<input type="hidden" name="cashback_social_register_token" value="%s">',
@@ -114,15 +130,49 @@ class Cashback_Social_Auth_Register_Bridge {
         $email_json = (string) wp_json_encode($email);
         $inline_js  = 'document.addEventListener("DOMContentLoaded", function () {' .
             'var emailInput = document.getElementById("reg_email");' .
-            'if (!emailInput) { return; }' .
-            'emailInput.value = ' . $email_json . ';' .
-            'emailInput.setAttribute("readonly", "readonly");' .
-            'emailInput.setAttribute("aria-readonly", "true");' .
+            'if (emailInput) {' .
+                'emailInput.value = ' . $email_json . ';' .
+                'emailInput.setAttribute("readonly", "readonly");' .
+                'emailInput.setAttribute("aria-readonly", "true");' .
+            '}' .
+            // Скроллим к форме, чтобы юзер сразу увидел инфо-баннер.
+            'var form = document.querySelector("form.woocommerce-form-register");' .
+            'if (form && typeof form.scrollIntoView === "function") {' .
+                'try { form.scrollIntoView({behavior: "smooth", block: "start"}); } catch (e) {}' .
+            '}' .
+            // Подсветка обязательных чекбоксов на 4с — обращаем внимание на действия.
+            'var checkboxes = document.querySelectorAll(' .
+                '"input[name=\"cashback_fraud_consent\"], ' .
+                'input[name=\"cashback_legal_consent_pd\"], ' .
+                'input[name=\"cashback_legal_consent_offer\"]"' .
+            ');' .
+            'checkboxes.forEach(function (cb) {' .
+                'var row = cb.closest("p, div, label");' .
+                'if (row) { row.classList.add("cashback-social-register-pulse"); }' .
+            '});' .
+            'setTimeout(function () {' .
+                'document.querySelectorAll(".cashback-social-register-pulse").forEach(function (el) {' .
+                    'el.classList.remove("cashback-social-register-pulse");' .
+                '});' .
+            '}, 4000);' .
             '});';
         printf(
             '<script>%s</script>',
             $inline_js // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Statically-built JS со значением через wp_json_encode (escapes для JS-контекста).
         );
+    }
+
+    /**
+     * Человеко-читаемое название провайдера для текста баннера.
+     */
+    private static function resolve_provider_label( string $provider_id ): string {
+        if ($provider_id !== '' && class_exists('Cashback_Social_Auth_Providers')) {
+            $labels = Cashback_Social_Auth_Providers::labels();
+            if (isset($labels[ $provider_id ])) {
+                return (string) $labels[ $provider_id ];
+            }
+        }
+        return __('социальную сеть', 'cashback-plugin');
     }
 
     // ------------------------------------------------------------------
