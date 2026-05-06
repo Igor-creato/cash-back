@@ -473,6 +473,18 @@ class Cashback_User_Anonymizer {
             $user_id
         ));
 
+        // КРИТИЧНО: сбросить WP object cache (Redis на нашем стеке).
+        // Прямой UPDATE wp_users не инвалидирует cache, и `useremail[old_email]`
+        // продолжает указывать на этого user_id. Соц-авторизация через тот же
+        // email (Branch B в social-auth) по stale-cache попадёт в Branch B и
+        // создаст новую связку для удалённого юзера, фактически «оживляя» его.
+        // clean_user_cache() сбрасывает users[$id]; WP self-heal'ит useremail
+        // mapping при следующем чтении (проверяет, что cached email совпадает
+        // с user_email в свежей записи).
+        if (function_exists('clean_user_cache')) {
+            clean_user_cache($user_id);
+        }
+
         return self::record_query('wp_users') ? 1 : 0;
     }
 
