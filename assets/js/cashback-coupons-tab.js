@@ -2,6 +2,10 @@
  * Активатор таба товара по query-параметру cb_tab.
  *
  * Стратегия поиска (по убыванию надёжности):
+ *   0. Видимый Woodmart mobile accordion-title по data-accordion-index
+ *      (.wd-accordion-title[data-accordion-index="{slug}"]). На viewport
+ *      ≤ 1024px тема рендерит accordion вместо табов; click-handler
+ *      привязан к .wd-accordion-title, а не к десктопному <a href="#tab-...">.
  *   1. Поиск таб-pane с реальным [cashback_promocodes] внутри
  *      (.cashback-promocodes → ближайший `[id^="tab-"]` → anchor по href).
  *   2. WC-стандарт по slug (li.{slug}_tab > a / a[href="#tab-{slug}"]).
@@ -49,6 +53,17 @@
     }
 
     function findTabAnchor(slug) {
+        // 0. Woodmart mobile accordion: .wd-accordion-title[data-accordion-index="{slug}"].
+        //    На viewport ≤ 1024px тема рендерит accordion вместо табов; click-handler
+        //    Woodmart привязан к .wd-accordion-title, а не к <a href="#tab-...">.
+        //    offsetParent !== null = элемент видим (не display:none, в DOM).
+        var accordionTitle = document.querySelector(
+            '.wd-accordion-title[data-accordion-index="' + escapeForSelector(slug) + '"]'
+        );
+        if (accordionTitle && accordionTitle.offsetParent !== null) {
+            return accordionTitle;
+        }
+
         // 1. По содержимому: ищем реальный [cashback_promocodes].
         var promocodesEl = document.querySelector('.cashback-promocodes');
         if (promocodesEl) {

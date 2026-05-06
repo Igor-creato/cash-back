@@ -156,7 +156,7 @@ final class Cashback_Promocodes_Bootstrap {
             'cashback-coupons-tab',
             plugins_url( 'assets/js/cashback-coupons-tab.js', $plugin_root_file ),
             array(),
-            '7.5.5',
+            '7.5.6',
             true
         );
     }
