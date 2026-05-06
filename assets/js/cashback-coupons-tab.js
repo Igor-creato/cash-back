@@ -132,9 +132,33 @@
         return null;
     }
 
+    // Проверка «таб уже активен» — защита от toggle при повторных retry.
+    // Woodmart accordion и WC tabs трактуют click по активной вкладке как
+    // «закрыть/переключить»: повторный click на уже открытый промокод-таб
+    // схлопнет его обратно (визуально это «открылось → через секунду
+    // закрылось»). Поэтому retry должен NO-OP, если активация уже сработала.
+    function isAlreadyActive(el) {
+        if (!el || !el.classList) { return false; }
+        // Mobile accordion-title: класс wd-active.
+        if (el.classList.contains('wd-active')) { return true; }
+        // Desktop <a>: активность хранится на родителе <li>.
+        var parent = el.parentElement;
+        if (parent && parent.classList) {
+            if (parent.classList.contains('active')
+                || parent.classList.contains('wd-active')
+            ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     function activate() {
         var anchor = findTabAnchor(safeSlug);
         if (!anchor) { return false; }
+
+        // Idempotency-guard: если таб уже активен — не кликаем (toggle = close).
+        if (isAlreadyActive(anchor)) { return true; }
 
         // jQuery .trigger('click') — Woodmart использует jQuery, и WC tabs
         // привязывает обработчик через jQuery .on(). Triggers полный
