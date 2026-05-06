@@ -32,9 +32,16 @@ class Cashback_Social_Auth_Account_Manager {
     /**
      * Типы pending-записей.
      */
-    public const KIND_CONFIRM_LINK = 'confirm_link';
-    public const KIND_EMAIL_PROMPT = 'email_prompt';
-    public const KIND_EMAIL_VERIFY = 'email_verify';
+    public const KIND_CONFIRM_LINK       = 'confirm_link';
+    public const KIND_EMAIL_PROMPT       = 'email_prompt';
+    public const KIND_EMAIL_VERIFY       = 'email_verify';
+    public const KIND_REGISTER_VIA_SOCIAL = 'register_via_social';
+
+    /**
+     * GET-параметр для редиректа на register-форму с pending social-token'ом
+     * (post-OAuth conditional consent, см. Cashback_Social_Auth_Register_Bridge).
+     */
+    public const REGISTER_TOKEN_PARAM = 'cashback_social_register';
 
     /**
      * Типы уведомлений (email templates).
@@ -292,22 +299,52 @@ class Cashback_Social_Auth_Account_Manager {
         }
 
         // -----------------------------------------------------------------
-        // Ветка D: email есть, WP-юзера нет → создаём (pending=1) + verify-письмо.
+        // Ветка D: email есть, WP-юзера нет → редирект на register-форму.
+        //
+        // Post-OAuth conditional consent (1.x.0, Auth0/GDPR pattern): новый юзер
+        // не создаётся автоматически; стэшим OAuth-данные и отправляем на
+        // /my-account/?cashback_social_register=<token>. Юзер ставит 3 явных
+        // consent-чекбокса (152-ФЗ ст. 9, ПД+Политика, ГК 437) и нажимает
+        // РЕГИСТРАЦИЯ. Cashback_Social_Auth_Register_Bridge линкует social-аккаунт
+        // в hook'е woocommerce_created_customer.
         // -----------------------------------------------------------------
-        $created = $this->create_pending_user_and_link($provider, $profile, $token_set, $session_data, $email);
-        if (!empty($created['error'])) {
+        $payload = array(
+            'provider'          => $provider_id,
+            'external_id'       => $external_id,
+            'profile'           => $this->sanitize_profile($profile),
+            'token_set'         => $this->filter_token_set($token_set),
+            'email'             => $email,
+            'redirect_after'    => $safe_redirect,
+            'referral_snapshot' => $referral,
+            'ip'                => $ip,
+            'user_agent'        => $user_agent,
+        );
+        $token   = Cashback_Social_Auth_DB::save_pending(self::KIND_REGISTER_VIA_SOCIAL, $payload, $ip);
+        if ($token === '') {
             return array(
                 'action'  => 'error',
-                'message' => (string) $created['error'],
+                'message' => __('Не удалось подготовить регистрацию через социальную сеть. Повторите попытку позже.', 'cashback-plugin'),
             );
         }
 
+        Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_PENDING_CREATED, array(
+            'kind'     => self::KIND_REGISTER_VIA_SOCIAL,
+            'provider' => $provider_id,
+            'ip'       => $ip,
+        ));
         Cashback_Social_Auth_Session::clear($provider_id);
 
+        $register_url = function_exists('wc_get_page_permalink')
+            ? (string) wc_get_page_permalink('myaccount')
+            : home_url('/my-account/');
+        if ($register_url === '') {
+            $register_url = home_url('/my-account/');
+        }
+        $register_url = add_query_arg(array( self::REGISTER_TOKEN_PARAM => $token ), $register_url);
+
         return array(
-            'action'  => 'pending',
-            'message' => __('Мы отправили письмо для подтверждения регистрации. Проверьте почту.', 'cashback-plugin'),
-            'token'   => isset($created['token']) ? (string) $created['token'] : '',
+            'action'       => 'redirect_register',
+            'redirect_url' => $register_url,
         );
     }
 
@@ -766,6 +803,91 @@ class Cashback_Social_Auth_Account_Manager {
             'user_id' => $user_id,
             'link_id' => $link_id,
         );
+    }
+
+    /**
+     * Привязать OAuth-провайдера к существующему WP-юзеру (post-OAuth conditional
+     * consent flow, используется Cashback_Social_Auth_Register_Bridge после того,
+     * как юзер зарегистрировался через стандартную register-форму с предзаполненным
+     * email и social-token'ом).
+     *
+     * НЕ создаёт пользователя, НЕ записывает consent-меты (это уже сделано
+     * стандартными хуками регистрации Cashback_Fraud_Consent +
+     * Cashback_Legal_Registration_Checkboxes), НЕ отправляет verify-email
+     * (юзер уже подтвердил email через WC password-set link).
+     *
+     * Делает только: insert в links table + save tokens + meta META_PROVIDER/META_VIA.
+     *
+     * @param array<string, mixed> $profile   Sanitized профиль (external_id, email, name, avatar, ...).
+     * @param array<string, mixed> $token_set Filtered token_set из exchange_code.
+     * @return array{link_id?:int, error?:string}
+     */
+    public function link_provider_to_user(
+        int $user_id,
+        Cashback_Social_Provider_Interface $provider,
+        array $profile,
+        array $token_set,
+        string $ip,
+        string $user_agent
+    ): array {
+        if ($user_id <= 0) {
+            return array( 'error' => 'invalid_user_id' );
+        }
+        $external_id = isset($profile['external_id']) ? (string) $profile['external_id'] : '';
+        if ($external_id === '') {
+            return array( 'error' => 'missing_external_id' );
+        }
+        $provider_id = $provider->get_id();
+        $email       = isset($profile['email']) ? (string) $profile['email'] : '';
+
+        $link_id = Cashback_Social_Auth_DB::save_link(array(
+            'user_id'            => $user_id,
+            'provider'           => $provider_id,
+            'sub_provider'       => isset($profile['sub_provider']) ? $profile['sub_provider'] : null,
+            'external_id'        => $external_id,
+            'email_at_link_time' => $email,
+            'display_name'       => isset($profile['name']) ? (string) $profile['name'] : null,
+            'avatar_url'         => isset($profile['avatar']) ? (string) $profile['avatar'] : null,
+            'link_ip'            => $ip,
+            'link_user_agent'    => $user_agent,
+        ));
+
+        if ($link_id <= 0) {
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'provider' => $provider_id,
+                'stage'    => 'register_bridge_save_link',
+                'user_id'  => $user_id,
+            ));
+            return array( 'error' => 'save_link_failed' );
+        }
+
+        $refresh = isset($token_set['refresh_token']) && is_string($token_set['refresh_token'])
+            ? $token_set['refresh_token']
+            : '';
+        if ($refresh !== '') {
+            $expires_at = null;
+            if (!empty($token_set['expires_in'])) {
+                $expires_at = gmdate('Y-m-d H:i:s', time() + (int) $token_set['expires_in']);
+            }
+            Cashback_Social_Auth_Token_Store::save_tokens(
+                $link_id,
+                $refresh,
+                $expires_at,
+                isset($token_set['scope']) ? (string) $token_set['scope'] : ''
+            );
+        }
+
+        update_user_meta($user_id, self::META_PROVIDER, $provider_id);
+        update_user_meta($user_id, self::META_VIA, 1);
+
+        Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_LINK_CREATED, array(
+            'provider' => $provider_id,
+            'user_id'  => $user_id,
+            'link_id'  => $link_id,
+            'via'      => 'register_bridge',
+        ));
+
+        return array( 'link_id' => $link_id );
     }
 
     /**

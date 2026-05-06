@@ -370,6 +370,16 @@ class Cashback_Social_Auth_Router {
             exit;
         }
 
+        if ($action === 'redirect_register') {
+            // Post-OAuth conditional consent (1.x.0): новый юзер через social-auth
+            // отправляется на стандартную register-форму /my-account/ с предзаполненным
+            // email и social-token'ом. Явный consent собирается там же 3 чекбоксами.
+            $target = isset($result['redirect_url']) ? (string) $result['redirect_url'] : home_url('/my-account/');
+            $target = wp_validate_redirect($target, home_url('/my-account/'));
+            wp_safe_redirect($target);
+            exit;
+        }
+
         if ($action === 'pending') {
             $this->redirect_to_login_with_message('check_email');
             return null;

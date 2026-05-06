@@ -447,6 +447,74 @@ class Cashback_Social_Auth_DB {
     }
 
     /**
+     * Read-only инспекция pending-токена: вернуть payload без отметки consumed.
+     *
+     * Для случаев, когда нужно прочитать данные на одном шаге flow (например,
+     * предзаполнить форму регистрации на GET), а consume произвести позже
+     * на submit'е (POST). Двухфазный flow реализован для post-OAuth conditional
+     * consent (Cashback_Social_Auth_Register_Bridge).
+     *
+     * Возвращает структуру [id, token, kind, payload, expires_at, ip] идентичную
+     * consume_pending, либо null если токен невалиден/истёк/потреблён.
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function peek_pending( string $token ): ?array {
+        global $wpdb;
+
+        if (strlen($token) !== 64 || !ctype_xdigit($token)) {
+            return null;
+        }
+
+        $table = self::table_pending();
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Read-only inspection (no row-lock).
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from $wpdb->prefix.
+                "SELECT * FROM {$table} WHERE token = %s LIMIT 1",
+                $token
+            ),
+            ARRAY_A
+        );
+
+        if (!$row) {
+            return null;
+        }
+
+        if (!empty($row['consumed_at'])) {
+            return null;
+        }
+
+        if (Cashback_Time::parse((string) $row['expires_at']) < time()) {
+            return null;
+        }
+
+        try {
+            $decrypted = Cashback_Encryption::decrypt((string) $row['payload_json']);
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[cashback-social] peek_pending decrypt error: ' . $e->getMessage());
+            return null;
+        }
+
+        $payload = json_decode($decrypted, true);
+        if (!is_array($payload)) {
+            $payload = array();
+        }
+
+        return array(
+            'id'         => (int) $row['id'],
+            'token'      => (string) $row['token'],
+            'kind'       => (string) $row['kind'],
+            'payload'    => $payload,
+            'created_at' => (string) $row['created_at'],
+            'expires_at' => (string) $row['expires_at'],
+            'ip'         => $row['ip'] !== null ? (string) $row['ip'] : null,
+        );
+    }
+
+    /**
      * Удалить истёкшие/потреблённые pending-записи старше суток.
      * Предполагается вызов из cron.
      */

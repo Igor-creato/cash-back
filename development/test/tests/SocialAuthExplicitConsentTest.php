@@ -6,23 +6,33 @@ use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Группа 11b-3 ADR — explicit consent checkbox для social-auth (VK/Yandex).
+ * Group 11b-3 ADR — post-OAuth conditional consent для social-auth (VK/Yandex).
  *
- * Closes iter-11 (social-auth consent-basis).
+ * Эволюция модели (1.x.0): pre-OAuth checkbox убран в пользу post-OAuth flow
+ * (Auth0/GDPR pattern, см. Cashback_Social_Auth_Register_Bridge). Существующие
+ * юзеры логинятся тихо. Новые юзеры через social-auth редиректятся на
+ * стандартную register-форму /my-account/?cashback_social_register=<token>,
+ * где собирают 3 явных consent-чекбокса (152-ФЗ ст. 9 + ПД+Политика + ГК 437).
  *
- * Контракт (source-grep для server-side refactor'а, 2026-04-23):
+ * Контракт (source-grep, 1.x.0):
  *  1. `Cashback_Fraud_Consent::init()` НЕ вешает hook на `user_register` для
  *     `maybe_save_consent_for_social` — авто-consent на OAuth регистрацию удалён.
- *  2. `Cashback_Social_Auth_Router::handle_start()` требует query-param
- *     `cashback_social_consent=1`; без него — fail-closed (error/redirect).
- *  3. Session-data, сохраняемая в `handle_start`, содержит ключ `consent_given` (bool).
- *  4. `Cashback_Social_Auth_Account_Manager::create_pending_user_and_link()` вызывает
- *     `Cashback_Fraud_Consent::record_consent()` explicit'но при session consent_given=true.
- *  5. Client-side: render_single_button генерирует href БЕЗ consent-param, и
- *     атрибут data-consent-href С consent-param — JS включает OAuth только при checked
- *     checkbox, переключая href.
- *  6. render_buttons добавляет checkbox ДО массива кнопок (контекст register/login/
- *     checkout/wp_login — все register-capable; account_link исключается).
+ *  2. `Cashback_Social_Auth_Account_Manager::create_pending_user_and_link()`
+ *     остаётся определённым (используется branch C / email-prompt-form) и
+ *     по-прежнему вызывает `Cashback_Fraud_Consent::record_consent()` при
+ *     session consent_given=true.
+ *  3. `Cashback_Social_Auth_Renderer::render_consent_checkbox()` всегда
+ *     возвращает '' — pre-OAuth checkbox убран.
+ *  4. Кнопки активны по умолчанию (build_start_url + cashback_social_consent=1
+ *     добавляется к href через render_single_button).
+ *  5. consent-toggle.js файл сохранён (deprecated шапка) — handle тоже
+ *     зарегистрирован для обратной совместимости.
+ *  6. `Cashback_Social_Auth_Account_Manager::KIND_REGISTER_VIA_SOCIAL`
+ *     и `Cashback_Social_Auth_Account_Manager::REGISTER_TOKEN_PARAM`
+ *     определены — Branch D в handle_callback редиректит на register-форму.
+ *  7. `Cashback_Social_Auth_Register_Bridge` подключает hooks
+ *     `woocommerce_register_form_start`, `woocommerce_new_customer_data`,
+ *     `woocommerce_created_customer`, `woocommerce_registration_redirect`.
  */
 #[Group('security')]
 #[Group('group11')]
@@ -120,41 +130,62 @@ class SocialAuthExplicitConsentTest extends TestCase
 	}
 
 	// ================================================================
-	// 4. Renderer: checkbox + data-consent-href
+	// 4. Renderer: post-OAuth model — checkbox убран, кнопки активны
 	// ================================================================
 
-	public function test_renderer_renders_consent_checkbox(): void
+	public function test_renderer_does_not_render_pre_oauth_checkbox(): void
 	{
+		// Pre-OAuth consent-checkbox удалён в пользу post-OAuth conditional consent
+		// (Cashback_Social_Auth_Register_Bridge собирает explicit consent на
+		// стандартной register-форме после OAuth-callback'а для новых юзеров).
 		$path    = $this->plugin_root . '/includes/social-auth/class-social-auth-renderer.php';
 		$content = (string) file_get_contents($path);
 
-		self::assertMatchesRegularExpression(
-			'/data-cashback-social-consent|cashback-social-consent__checkbox/',
+		// render_consent_checkbox должен всегда возвращать '' (без HTML).
+		$matched = preg_match(
+			"/private\s+function\s+render_consent_checkbox\s*\([^)]*\)\s*:\s*string\s*\{([\s\S]*?)^\s*\}/m",
 			$content,
-			'render_buttons должен вставлять checkbox с маркером data-cashback-social-consent (или CSS-class)'
+			$m
+		);
+		if ($matched !== 1) {
+			self::fail('Не найден render_consent_checkbox() — структура renderer\'а изменилась?');
+		}
+		$body = $m[1];
+
+		self::assertDoesNotMatchRegularExpression(
+			'/data-cashback-social-consent|cashback-social-consent__checkbox/',
+			$body,
+			'render_consent_checkbox больше не должен выводить pre-OAuth checkbox HTML'
+		);
+		self::assertMatchesRegularExpression(
+			"/return\s+''\s*;/",
+			$body,
+			'render_consent_checkbox должен возвращать пустую строку (post-OAuth model, 1.x.0)'
 		);
 	}
 
 	public function test_renderer_anchor_has_data_consent_href(): void
 	{
+		// Атрибут data-consent-href сохранён для обратной совместимости с
+		// legacy consent-toggle.js (deprecated). Может быть удалён в 2.0.
 		$path    = $this->plugin_root . '/includes/social-auth/class-social-auth-renderer.php';
 		$content = (string) file_get_contents($path);
 
 		self::assertStringContainsString(
 			'data-consent-href',
 			$content,
-			'render_single_button должен ставить data-consent-href на <a> — JS переключит href при checked checkbox'
+			'render_single_button сохраняет data-consent-href для bc legacy JS'
 		);
 	}
 
 	public function test_renderer_default_anchor_href_lacks_consent_param(): void
 	{
-		// Базовый href не должен содержать cashback_social_consent=1 — иначе checkbox
-		// теряет смысл (любой прямой GET сработает).
+		// Базовый href, формируемый build_start_url(), не должен содержать
+		// cashback_social_consent=1 — параметр добавляется отдельно
+		// в render_single_button уже к итоговому URL кнопки.
 		$path    = $this->plugin_root . '/includes/social-auth/class-social-auth-renderer.php';
 		$content = (string) file_get_contents($path);
 
-		// build_start_url() не должен добавлять consent=1 в URL по умолчанию.
 		$matched = preg_match(
 			"/private\s+function\s+build_start_url\s*\([^)]*\)\s*:\s*string\s*\{([\s\S]*?)^\s*\}/m",
 			$content,
@@ -168,7 +199,86 @@ class SocialAuthExplicitConsentTest extends TestCase
 		self::assertDoesNotMatchRegularExpression(
 			"/'cashback_social_consent'\s*=>\s*'?1/",
 			$body,
-			'build_start_url НЕ должен добавлять cashback_social_consent=1 (базовый href без consent); параметр добавляется только JS\'ом при checked checkbox'
+			'build_start_url НЕ должен добавлять cashback_social_consent=1 (param добавляется отдельно в render_single_button)'
+		);
+	}
+
+	// ================================================================
+	// 6. Post-OAuth model: Account_Manager / Register_Bridge
+	// ================================================================
+
+	public function test_account_manager_has_register_via_social_constants(): void
+	{
+		$path    = $this->plugin_root . '/includes/social-auth/class-social-auth-account-manager.php';
+		$content = (string) file_get_contents($path);
+
+		self::assertStringContainsString(
+			'KIND_REGISTER_VIA_SOCIAL',
+			$content,
+			'Cashback_Social_Auth_Account_Manager должен иметь константу KIND_REGISTER_VIA_SOCIAL для post-OAuth flow'
+		);
+		self::assertStringContainsString(
+			'REGISTER_TOKEN_PARAM',
+			$content,
+			'Cashback_Social_Auth_Account_Manager должен иметь константу REGISTER_TOKEN_PARAM (имя query-param для редиректа на register-форму)'
+		);
+	}
+
+	public function test_account_manager_branch_d_redirects_to_register_form(): void
+	{
+		$path    = $this->plugin_root . '/includes/social-auth/class-social-auth-account-manager.php';
+		$content = (string) file_get_contents($path);
+
+		self::assertMatchesRegularExpression(
+			"/'action'\s*=>\s*'redirect_register'/",
+			$content,
+			'Branch D handle_callback должен возвращать action=redirect_register вместо авто-создания юзера'
+		);
+	}
+
+	public function test_register_bridge_class_exists(): void
+	{
+		$path = $this->plugin_root . '/includes/social-auth/class-social-auth-register-bridge.php';
+		self::assertFileExists(
+			$path,
+			'Cashback_Social_Auth_Register_Bridge должен быть создан для post-OAuth conditional consent (1.x.0)'
+		);
+	}
+
+	public function test_register_bridge_hooks_register_form_and_customer_data(): void
+	{
+		$path = $this->plugin_root . '/includes/social-auth/class-social-auth-register-bridge.php';
+		if (!file_exists($path)) {
+			self::markTestSkipped('Register_Bridge файл ещё не создан');
+		}
+		$content = (string) file_get_contents($path);
+
+		self::assertStringContainsString(
+			"add_action('woocommerce_register_form_start'",
+			$content,
+			'Register_Bridge должен подцепиться на woocommerce_register_form_start для prefill email'
+		);
+		self::assertStringContainsString(
+			"add_filter('woocommerce_new_customer_data'",
+			$content,
+			'Register_Bridge должен подцепиться на woocommerce_new_customer_data для override email'
+		);
+		self::assertStringContainsString(
+			"add_action('woocommerce_created_customer'",
+			$content,
+			'Register_Bridge должен подцепиться на woocommerce_created_customer для линковки соц-аккаунта'
+		);
+	}
+
+	public function test_db_has_peek_pending_method(): void
+	{
+		$path    = $this->plugin_root . '/includes/social-auth/class-social-auth-db.php';
+		$content = (string) file_get_contents($path);
+
+		self::assertStringContainsString(
+			'public static function peek_pending',
+			$content,
+			'Cashback_Social_Auth_DB::peek_pending() нужен для read-only инспекции токена в Register_Bridge'
 		);
 	}
 

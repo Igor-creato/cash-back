@@ -1,16 +1,19 @@
 /**
  * Cashback Social Auth — consent toggle (Group 11b-3, iter-11).
  *
- * Чекбокс «Согласен на обработку технических данных устройства» ставится рядом
- * с кнопками VK/Yandex. До его тика кнопки отключены (aria-disabled + класс
- * cashback-social-btn--disabled + href="#"). После тика — href переключается
- * на значение из data-consent-href (URL содержит &cashback_social_consent=1),
- * и клик отправляет пользователя на OAuth-start endpoint, который на сервере
- * проверит параметр и сохранит consent_given=true в session-data.
+ * @deprecated 1.x.0 Pre-OAuth consent-чекбокс убран в пользу post-OAuth
+ *   conditional consent (Auth0/GDPR pattern, см. Cashback_Social_Auth_Register_Bridge).
+ *   Кнопки активны по умолчанию, JS-toggle больше не выполняет функциональной
+ *   роли. Файл сохранён для обратной совместимости (тесты, browser-cache,
+ *   сторонние интеграции). Регистрация handle 'cashback-social-consent' в
+ *   class-social-auth-renderer.php также сохранена. Может быть удалён в 2.0.
  *
- * Без этого JS (если он не загрузился) кнопки остаются с href="#" и клик
- * ничего не делает — fail-closed UX. Прямой GET на OAuth-start без параметра
- * cashback_social_consent=1 отвергается на сервере.
+ * Исторический контекст:
+ * Чекбокс «Согласен на обработку технических данных устройства» ставился рядом
+ * с кнопками VK/Yandex. До его тика кнопки отключены (aria-disabled + класс
+ * cashback-social-btn--disabled + href="#"). После тика — href переключался
+ * на значение из data-consent-href (URL содержит &cashback_social_consent=1),
+ * и клик отправлял пользователя на OAuth-start endpoint.
  */
 (function () {
     'use strict';

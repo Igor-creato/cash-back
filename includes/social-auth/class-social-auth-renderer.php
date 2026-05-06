@@ -49,6 +49,10 @@ class Cashback_Social_Auth_Renderer {
 
     /**
      * Зарегистрировать стиль (не подгружает, только register).
+     *
+     * Post-OAuth conditional consent (1.x.0): JS-handle `cashback-social-consent`
+     * больше не активен функционально — pre-OAuth checkbox убран. Регистрация
+     * хэндла оставлена для обратной совместимости (тесты, сторонние интеграции).
      */
     public static function register_assets(): void {
         if (self::$style_registered) {
@@ -69,32 +73,18 @@ class Cashback_Social_Auth_Renderer {
             $css_version
         );
 
-        // 11b-3 (iter-11): JS управляет state кнопок в зависимости от checkbox'а.
-        // Без JS кнопки остаются с href="#" (fail-closed UX). Backend всё равно
-        // требует cashback_social_consent=1 в URL — см. Cashback_Social_Auth_Router.
+        // Legacy handle: до 1.x.0 управлял state кнопок через checkbox.
+        // Файл оставлен (deprecated шапка) на случай browser-cache; не enqueue'им автоматически.
         $js_path    = dirname(__DIR__, 2) . '/assets/social-auth/js/consent-toggle.js';
         $js_url     = plugins_url('assets/social-auth/js/consent-toggle.js', $plugin_root_file);
         $js_version = file_exists($js_path) ? (string) filemtime($js_path) : '1.0.0';
 
-        // Общий хелпер UX-валидации (показывает сообщение/рамку при клике
-        // на disabled-кнопку без отметки).
-        if (class_exists('Cashback_Legal_Bootstrap')) {
-            Cashback_Legal_Bootstrap::register_common_assets();
-        }
-
         wp_register_script(
             'cashback-social-consent',
             $js_url,
-            array( 'cashback-consent-validate' ),
+            array(),
             $js_version,
             true
-        );
-        wp_localize_script(
-            'cashback-social-consent',
-            'cashbackSocialConsentI18n',
-            array(
-                'consentRequiredMessage' => esc_html__('Поставьте отметку, чтобы продолжить.', 'cashback-plugin'),
-            )
         );
     }
 
@@ -107,8 +97,6 @@ class Cashback_Social_Auth_Renderer {
         }
         self::register_assets();
         wp_enqueue_style('cashback-social-buttons');
-        wp_enqueue_style('cashback-consent-validate');
-        wp_enqueue_script('cashback-social-consent');
     }
 
     /**
@@ -120,8 +108,6 @@ class Cashback_Social_Auth_Renderer {
         }
         self::register_assets();
         wp_enqueue_style('cashback-social-buttons');
-        wp_enqueue_style('cashback-consent-validate');
-        wp_enqueue_script('cashback-social-consent');
     }
 
     /**
@@ -181,12 +167,6 @@ class Cashback_Social_Auth_Renderer {
         if (function_exists('wp_style_is') && !wp_style_is('cashback-social-buttons', 'enqueued')) {
             wp_enqueue_style('cashback-social-buttons');
         }
-        if (function_exists('wp_style_is') && !wp_style_is('cashback-consent-validate', 'enqueued')) {
-            wp_enqueue_style('cashback-consent-validate');
-        }
-        if (function_exists('wp_script_is') && !wp_script_is('cashback-social-consent', 'enqueued')) {
-            wp_enqueue_script('cashback-social-consent');
-        }
 
         $label_or = esc_attr__('или', 'cashback-plugin');
         $show_or  = ( $context !== 'account_link' );
@@ -202,61 +182,25 @@ class Cashback_Social_Auth_Renderer {
     }
 
     /**
-     * 11b-3 (iter-11): чекбокс explicit consent над social-кнопками.
-     * До тика кнопки отключены и их href=# (см. render_single_button + consent-toggle.js).
-     * account_link-контекст (привязка второго аккаунта уже залогиненному юзеру) чекбокс
-     * не показывает — consent уже был записан при первой регистрации.
+     * Post-OAuth conditional consent (industry-standard pattern, Auth0/GDPR practice).
      *
-     * Phase 3 (2026-04-25): текст расширен для покрытия требований 152-ФЗ
-     * (обработка ПД), ГК ст. 437 (акцепт оферты) и сохранения существующего
-     * согласия на обработку технических данных. JS (consent-toggle.js)
-     * по-прежнему ждёт отметку одного чекбокса; запись в consent_log
-     * отдельными типами (pd_consent + terms_offer) выполняется в
-     * Cashback_Social_Auth_Account_Manager после создания пользователя.
+     * До 1.x.0 здесь рендерился pre-OAuth чекбокс (iter-11, Group 11). Подход
+     * сменился на post-OAuth: явный consent собирается ПОСЛЕ возврата с OAuth,
+     * только если пользователь новый (Branch D в Account_Manager → редирект
+     * на register-форму /my-account/?cashback_social_register=<token>, где
+     * стоят 3 обычных consent-чекбокса). Существующие пользователи не видят
+     * повторного запроса согласия — у них запись в журнале уже есть.
      *
-     * Trade-off: РКН с 01.09.2025 рекомендует отдельные чекбоксы для разных
-     * согласий. Social-flow со сторонним OAuth-провайдером существенно
-     * усложняется при разделении (pre-flight bundle несёт всё в state).
-     * Здесь применяется единый чекбокс с явным текстом-перечислением
-     * («…даю согласие на обработку ПД, принимаю условия оферты, согласен
-     * с обработкой технических данных…») — каждый юр. факт фиксируется
-     * отдельной строкой в журнале.
+     * Метод оставлен для возможной обратной совместимости и всегда возвращает
+     * '' для всех контекстов. Не удаляется — на случай ручного вызова из
+     * темы / шорткода / сторонней интеграции.
+     *
+     * @param string $context Контекст (login|register|checkout|wp_login|account_link).
+     * @return string Всегда пустая строка.
      */
     private function render_consent_checkbox( string $context ): string {
-        if ($context === 'account_link') {
-            return '';
-        }
-
-        $unique_id = 'cashback-social-consent-' . wp_generate_uuid4();
-
-        $pd_url    = self::get_legal_doc_url('pd_consent');
-        $offer_url = self::get_legal_doc_url('terms_offer');
-
-        $label_html = esc_html__('Я даю', 'cashback-plugin') . ' ';
-        $label_html .= self::link_or_text($pd_url, __('согласие на обработку персональных данных', 'cashback-plugin'));
-        $label_html .= ', ' . esc_html__('принимаю условия', 'cashback-plugin') . ' ';
-        $label_html .= self::link_or_text($offer_url, __('Пользовательского соглашения (публичной оферты)', 'cashback-plugin'));
-        $label_html .= ' ' . esc_html__('и согласен на обработку технических данных устройства для защиты от мошенничества (152-ФЗ ст. 9).', 'cashback-plugin');
-
-        $html  = '<div class="cashback-social-consent">';
-        $html .= '<input type="checkbox" class="cashback-social-consent__checkbox"';
-        $html .= ' id="' . esc_attr($unique_id) . '"';
-        $html .= ' data-cashback-social-consent>';
-        $html .= '<label for="' . esc_attr($unique_id) . '" class="cashback-social-consent__label">';
-        $html .= wp_kses(
-            $label_html,
-            array(
-                'a' => array(
-                    'href'   => true,
-                    'target' => true,
-                    'rel'    => true,
-                ),
-            )
-        );
-        $html .= '</label>';
-        $html .= '</div>';
-
-        return $html;
+        unset($context);
+        return '';
     }
 
     /**
@@ -291,6 +235,15 @@ class Cashback_Social_Auth_Renderer {
 
     /**
      * Сформировать одну кнопку провайдера.
+     *
+     * Post-OAuth conditional consent (1.x.0): кнопка активна по умолчанию.
+     * Параметр `cashback_social_consent=1` сохранён в URL — Cashback_Social_Auth_Router
+     * читает его как маркер «pre-OAuth consent screen passed». Реальный явный
+     * consent для новых юзеров собирается на register-форме после возврата
+     * из OAuth (см. Cashback_Social_Auth_Account_Manager Branch D).
+     *
+     * Атрибут `data-consent-href` сохранён для обратной совместимости с
+     * legacy consent-toggle.js (deprecated). Может быть удалён в будущей версии.
      */
     private function render_single_button( string $provider_id, string $context ): string {
         $options = get_option('cashback_social_provider_' . $provider_id, array());
@@ -304,21 +257,11 @@ class Cashback_Social_Auth_Renderer {
         $start_url   = $this->build_start_url($provider_id, $context);
         $consent_url = add_query_arg(array( 'cashback_social_consent' => '1' ), $start_url);
 
-        // 11b-3 (iter-11): начальный href=# и --disabled до тика consent-чекбокса.
-        // JS (consent-toggle.js) подменит href на data-consent-href при checked.
-        // account_link-контекст всегда рабочий — повторный link не требует consent.
-        $is_account_link = ( $context === 'account_link' );
-        $classes         = 'cashback-social-btn cashback-social-btn--' . sanitize_html_class($provider_id);
-        if (!$is_account_link) {
-            $classes .= ' cashback-social-btn--disabled';
-        }
-
-        $href          = $is_account_link ? esc_url($consent_url) : '#';
-        $aria_disabled = $is_account_link ? 'false' : 'true';
-        $data_consent  = esc_url($consent_url);
+        $classes      = 'cashback-social-btn cashback-social-btn--' . sanitize_html_class($provider_id);
+        $href         = esc_url($consent_url);
+        $data_consent = esc_url($consent_url);
 
         $html  = '<a href="' . $href . '" class="' . esc_attr($classes) . '"';
-        $html .= ' aria-disabled="' . esc_attr($aria_disabled) . '"';
         $html .= ' data-consent-href="' . $data_consent . '" rel="nofollow">';
         // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Icon HTML is pre-sanitized (wp_kses SVG или esc_url img).
         $html .= $icon;
