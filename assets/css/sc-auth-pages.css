@@ -31,6 +31,18 @@
     box-sizing: border-box;
 }
 
+.sc-auth-pages-form__title {
+    margin: 0 0 22px;
+    padding: 0 0 14px;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--sc-auth-pages-text);
+    text-align: center;
+    border-bottom: 1px solid var(--sc-auth-pages-border);
+    letter-spacing: 0.2px;
+}
+
 .sc-auth-pages-form .form-row {
     margin-bottom: 18px;
 }

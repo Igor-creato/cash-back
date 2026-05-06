@@ -21,6 +21,14 @@ if (!defined('ABSPATH')) {
 /** @var string $login_url */
 ?>
 <form class="woocommerce-form woocommerce-form-register sc-auth-pages-form sc-auth-pages-form--register" method="post" novalidate aria-label="<?php esc_attr_e('Форма регистрации', 'cashback-plugin'); ?>">
+    <?php
+    $sc_register_title = (string) apply_filters('sc_auth_pages_register_form_title', __('Регистрация', 'cashback-plugin'));
+    if ($sc_register_title !== '') :
+        ?>
+        <h2 class="sc-auth-pages-form__title"><?php echo esc_html($sc_register_title); ?></h2>
+        <?php
+    endif;
+    ?>
     <?php wp_nonce_field('sc_auth_pages_register', '_sc_auth_nonce'); ?>
     <input type="hidden" name="sc_auth_action" value="register">
 

@@ -19,6 +19,14 @@ if (!defined('ABSPATH')) {
 /** @var string $register_url */
 ?>
 <form class="woocommerce-form woocommerce-form-login sc-auth-pages-form sc-auth-pages-form--login" method="post" novalidate aria-label="<?php esc_attr_e('Форма входа', 'cashback-plugin'); ?>">
+    <?php
+    $sc_login_title = (string) apply_filters('sc_auth_pages_login_form_title', __('Вход', 'cashback-plugin'));
+    if ($sc_login_title !== '') :
+        ?>
+        <h2 class="sc-auth-pages-form__title"><?php echo esc_html($sc_login_title); ?></h2>
+        <?php
+    endif;
+    ?>
     <?php wp_nonce_field('sc_auth_pages_login', '_sc_auth_nonce'); ?>
     <input type="hidden" name="sc_auth_action" value="login">
     <input type="hidden" name="redirect_to" value="<?php echo esc_attr($redirect_to); ?>">

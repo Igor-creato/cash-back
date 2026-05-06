@@ -164,6 +164,8 @@ final class SCAuthPagesShortcodesTest extends TestCase
         $html = Cashback_SC_Auth_Pages_Shortcodes::render_login();
 
         $this->assertStringContainsString('<form', $html);
+        $this->assertStringContainsString('sc-auth-pages-form__title', $html, 'Должен быть заголовок формы');
+        $this->assertStringContainsString('Вход', $html, 'Заголовок «Вход» должен быть на странице входа');
         $this->assertStringContainsString('name="log"', $html);
         $this->assertStringContainsString('name="pwd"', $html);
         $this->assertStringContainsString('name="rememberme"', $html);
@@ -173,11 +175,23 @@ final class SCAuthPagesShortcodesTest extends TestCase
         $this->assertTrue($GLOBALS['_cb_test_wc_notices_printed'], 'wc_print_notices должен вызваться');
     }
 
+    public function test_login_title_can_be_overridden_via_filter(): void
+    {
+        add_filter('sc_auth_pages_login_form_title', static fn() => 'Авторизация');
+
+        $html = Cashback_SC_Auth_Pages_Shortcodes::render_login();
+
+        $this->assertStringContainsString('>Авторизация<', $html);
+        $this->assertStringNotContainsString('>Вход<', $html);
+    }
+
     public function test_render_register_for_guest_outputs_form_and_fires_woocommerce_register_form_hook(): void
     {
         $html = Cashback_SC_Auth_Pages_Shortcodes::render_register();
 
         $this->assertStringContainsString('<form', $html);
+        $this->assertStringContainsString('sc-auth-pages-form__title', $html);
+        $this->assertStringContainsString('Регистрация', $html, 'Заголовок «Регистрация» должен быть');
         $this->assertStringContainsString('name="email"', $html);
         $this->assertStringContainsString('name="password"', $html);
         $this->assertStringContainsString('name="password_confirm"', $html);
