@@ -2,14 +2,18 @@
  * Активатор таба товара по query-параметру cb_tab.
  *
  * Стратегия поиска (по убыванию надёжности):
- *   0. Видимый Woodmart mobile accordion-title по data-accordion-index
- *      (.wd-accordion-title[data-accordion-index="{slug}"]). На viewport
- *      ≤ 1024px тема рендерит accordion вместо табов; click-handler
- *      привязан к .wd-accordion-title, а не к десктопному <a href="#tab-...">.
- *   1. Поиск таб-pane с реальным [cashback_promocodes] внутри
- *      (.cashback-promocodes → ближайший `[id^="tab-"]` → anchor по href).
- *   2. WC-стандарт по slug (li.{slug}_tab > a / a[href="#tab-{slug}"]).
- *   3. Серверный маркер [data-cb-coupons-tab] (на случай если был внедрён).
+ *   1. Поиск таб-pane с реальным [cashback_promocodes] → реальный key из
+ *      data-accordion-index (или id="tab-{key}") → resolveByKey(): сначала
+ *      видимый Woodmart accordion-title (.wd-accordion-title[data-...="{key}"])
+ *      на mobile, иначе desktop <a href="#tab-{key}">.
+ *   2. По slug из URL (resolveByKey(slug)) — fallback если pane не найден.
+ *   3. WC-стандарт по slug-классу (li.{slug}_tab > a) — для старых тем.
+ *   4. Серверный маркер [data-cb-coupons-tab] (mobile accordion-title или <li>).
+ *
+ * Реальный key таба может НЕ совпадать с URL slug ("coupons"): WoodMart
+ * использует транслит русского title (e.g. «Промокоды» → "promokody") или
+ * кастомный slug Custom Tab CPT. Поэтому primary-стратегия — определить key
+ * по DOM-pane, а не по URL.
  *
  * Активация: только jQuery .trigger('click'). Ручную смену классов мы НЕ
  * делаем — Woodmart лениво инициализирует/настраивает содержимое таба через
@@ -52,44 +56,72 @@
         return value.replace(/([!"#$%&'()*+,./:;<=>?@\[\\\]^`{|}~])/g, '\\$1');
     }
 
-    function findTabAnchor(slug) {
-        // 0. Woodmart mobile accordion: .wd-accordion-title[data-accordion-index="{slug}"].
-        //    На viewport ≤ 1024px тема рендерит accordion вместо табов; click-handler
-        //    Woodmart привязан к .wd-accordion-title, а не к <a href="#tab-...">.
-        //    offsetParent !== null = элемент видим (не display:none, в DOM).
+    function isVisible(el) {
+        return el && el.offsetParent !== null;
+    }
+
+    // По key таба находим кликабельный элемент: видимый mobile accordion-title
+    // приоритетнее, иначе desktop <a>.
+    function resolveByKey(key) {
+        if (!key) { return null; }
+        var safeKey = escapeForSelector(key);
+
         var accordionTitle = document.querySelector(
-            '.wd-accordion-title[data-accordion-index="' + escapeForSelector(slug) + '"]'
+            '.wd-accordion-title[data-accordion-index="' + safeKey + '"]'
         );
-        if (accordionTitle && accordionTitle.offsetParent !== null) {
+        if (isVisible(accordionTitle)) {
             return accordionTitle;
         }
 
-        // 1. По содержимому: ищем реальный [cashback_promocodes].
+        var anchor = document.querySelector('a[href="#tab-' + safeKey + '"]');
+        if (anchor) { return anchor; }
+
+        // Desktop tab может быть скрыт CSS на mobile, но если accordion-title
+        // нет (другая разметка темы) — вернём accordion-title даже скрытый.
+        if (accordionTitle) { return accordionTitle; }
+
+        return null;
+    }
+
+    function findTabAnchor(slug) {
+        // 1. По содержимому: ищем реальный [cashback_promocodes] и его pane.
+        //    pane имеет id="tab-{key}" и data-accordion-index="{key}";
+        //    реальный {key} ≠ slug из URL когда тема использует
+        //    транслитерированный/кастомный ключ (напр. «Промокоды» → "promokody"
+        //    вместо "coupons").
         var promocodesEl = document.querySelector('.cashback-promocodes');
         if (promocodesEl) {
-            var pane = promocodesEl.closest('[id^="tab-"]');
-            if (pane && pane.id && pane.id.indexOf('tab-title-') !== 0) {
-                var byContent = document.querySelector(
-                    'a[href="#' + escapeForSelector(pane.id) + '"]'
-                );
+            var pane = promocodesEl.closest('[data-accordion-index]')
+                || promocodesEl.closest('[id^="tab-"]');
+            if (pane) {
+                var realKey = pane.getAttribute('data-accordion-index');
+                if (!realKey && pane.id
+                    && pane.id.indexOf('tab-') === 0
+                    && pane.id.indexOf('tab-title-') !== 0
+                ) {
+                    realKey = pane.id.substring(4); // strip "tab-"
+                }
+                var byContent = resolveByKey(realKey);
                 if (byContent) { return byContent; }
             }
         }
 
-        // 2. WC-стандарт по slug.
+        // 2. По slug из URL (legacy / fallback если pane не найден).
+        var bySlug = resolveByKey(slug);
+        if (bySlug) { return bySlug; }
+
+        // 3. WC-стандарт по slug-классу (старые темы).
         var byClass = document.querySelector(
             'li.' + escapeForSelector(slug) + '_tab > a, li.tab-' + escapeForSelector(slug) + ' > a'
         );
         if (byClass) { return byClass; }
 
-        var byHref = document.querySelector('a[href="#tab-' + slug + '"]');
-        if (byHref) { return byHref; }
-
-        // 3. Маркер в title (если внедрён сервером).
-        var marker = document.querySelector(
-            '.wc-tabs [data-cb-coupons-tab], .wd-nav-tabs [data-cb-coupons-tab], .woocommerce-tabs [data-cb-coupons-tab]'
-        );
+        // 4. Маркер в title (если внедрён сервером): mobile accordion-title
+        //    приоритетнее, иначе <li> на desktop.
+        var marker = document.querySelector('[data-cb-coupons-tab]');
         if (marker) {
+            var accordionMarker = marker.closest('.wd-accordion-title');
+            if (isVisible(accordionMarker)) { return accordionMarker; }
             var li = marker.closest('li');
             if (li) {
                 var a = li.querySelector('a');
