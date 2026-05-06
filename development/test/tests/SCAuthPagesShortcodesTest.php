@@ -96,6 +96,13 @@ final class SCAuthPagesShortcodesTest extends TestCase
                 echo htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
             }
         }
+        if (!function_exists('has_action')) {
+            function has_action( string $hook_name, $callback = false )
+            {
+                $filters = $GLOBALS['_cb_test_filters'][ $hook_name ] ?? array();
+                return !empty($filters);
+            }
+        }
         if (!function_exists('esc_attr_e')) {
             function esc_attr_e( string $text, string $domain = 'default' ): void
             {
@@ -173,6 +180,14 @@ final class SCAuthPagesShortcodesTest extends TestCase
         $this->assertStringContainsString('http://localhost/my-account/lost-password/', $html);
         $this->assertStringContainsString('http://localhost/register/', $html);
         $this->assertTrue($GLOBALS['_cb_test_wc_notices_printed'], 'wc_print_notices должен вызваться');
+
+        // Хук для social-auth кнопок сверху.
+        $hooks_fired = array_column($GLOBALS['_cb_test_actions_fired'], 'hook');
+        $this->assertContains(
+            'sc_auth_pages_login_form_top',
+            $hooks_fired,
+            'Хук sc_auth_pages_login_form_top должен сработать после заголовка'
+        );
     }
 
     public function test_login_title_can_be_overridden_via_filter(): void
@@ -208,6 +223,11 @@ final class SCAuthPagesShortcodesTest extends TestCase
         );
         $this->assertContains('woocommerce_register_form_start', $hooks_fired);
         $this->assertContains('woocommerce_register_form_end', $hooks_fired);
+        $this->assertContains(
+            'sc_auth_pages_register_form_top',
+            $hooks_fired,
+            'Хук sc_auth_pages_register_form_top должен сработать после заголовка'
+        );
     }
 
     public function test_render_login_for_logged_in_user_redirects_to_my_account(): void

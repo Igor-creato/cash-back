@@ -27,6 +27,16 @@ if (!defined('ABSPATH')) {
         <?php
     endif;
     ?>
+    <?php
+    do_action('sc_auth_pages_login_form_top'); // social-auth кнопки сверху
+    if (has_action('sc_auth_pages_login_form_top')) :
+        ?>
+        <div class="sc-auth-pages-form-divider" aria-hidden="true">
+            <?php esc_html_e('или', 'cashback-plugin'); ?>
+        </div>
+        <?php
+    endif;
+    ?>
     <?php wp_nonce_field('sc_auth_pages_login', '_sc_auth_nonce'); ?>
     <input type="hidden" name="sc_auth_action" value="login">
     <input type="hidden" name="redirect_to" value="<?php echo esc_attr($redirect_to); ?>">

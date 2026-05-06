@@ -47,6 +47,34 @@
     margin-bottom: 18px;
 }
 
+/**
+ * Social-auth кнопки сверху формы (sc_auth_pages_(login|register)_form_top).
+ * Cash-back social-auth модуль рендерит их через свои классы (.cashback-social-buttons),
+ * мы только корректируем margin-bottom + визуальный разделитель «или».
+ */
+.sc-auth-pages-form .cashback-social-buttons {
+    margin-bottom: 14px;
+}
+
+.sc-auth-pages-form-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 6px 0 22px;
+    font-size: 13px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.sc-auth-pages-form-divider::before,
+.sc-auth-pages-form-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--sc-auth-pages-border);
+}
+
 .sc-auth-pages-form label {
     display: block;
     font-weight: 500;

@@ -45,6 +45,40 @@ class Cashback_SC_Auth_Pages_Bootstrap {
         add_action('template_redirect', array( 'Cashback_SC_Auth_Pages_Register', 'maybe_handle' ), 5);
 
         add_action('wp_enqueue_scripts', array( __CLASS__, 'enqueue_assets' ));
+
+        // wp_loaded — после plugins_loaded и init: к этому моменту social-auth
+        // уже зарегистрировал свои callback'и на woocommerce_(login|register)_form_end.
+        // Перенесём кнопки социальной авторизации на наш собственный хук в начало
+        // формы (sc_auth_pages_(login|register)_form_top) — отключаемо через filter.
+        add_action('wp_loaded', array( __CLASS__, 'relocate_social_auth_buttons' ), 20);
+    }
+
+    /**
+     * Перенос social-auth кнопок из конца формы в начало (после заголовка).
+     *
+     * Отключается через filter sc_auth_pages_relocate_social_auth = false —
+     * тогда кнопки остаются внизу через стандартный woocommerce_(login|register)_form_end.
+     */
+    public static function relocate_social_auth_buttons(): void {
+        if (!(bool) apply_filters('sc_auth_pages_relocate_social_auth', true)) {
+            return;
+        }
+
+        if (!class_exists('Cashback_Social_Auth_Renderer')) {
+            return;
+        }
+
+        $renderer = Cashback_Social_Auth_Renderer::instance();
+
+        if (method_exists($renderer, 'print_login_buttons')) {
+            remove_action('woocommerce_login_form_end', array( $renderer, 'print_login_buttons' ), 15);
+            add_action('sc_auth_pages_login_form_top', array( $renderer, 'print_login_buttons' ));
+        }
+
+        if (method_exists($renderer, 'print_register_buttons')) {
+            remove_action('woocommerce_register_form_end', array( $renderer, 'print_register_buttons' ), 15);
+            add_action('sc_auth_pages_register_form_top', array( $renderer, 'print_register_buttons' ));
+        }
     }
 
     /**
