@@ -405,6 +405,12 @@ class CashbackPlugin {
             Cashback_Social_Auth_Bootstrap::activate();
         }
 
+        // SC Auth Pages: идемпотентный upsert WP-страниц /login/ и /register/.
+        $this->require_file('includes/sc-auth-pages/class-sc-auth-pages-activator.php');
+        if (class_exists('Cashback_SC_Auth_Pages_Activator')) {
+            Cashback_SC_Auth_Pages_Activator::activate();
+        }
+
         // Планируем cron для антифрод-детекции (ежечасно)
         if (!wp_next_scheduled('cashback_fraud_detection_cron')) {
             wp_schedule_event(time(), 'hourly', 'cashback_fraud_detection_cron');
@@ -712,6 +718,16 @@ class CashbackPlugin {
 
         // Шорткоды (доступны на фронтенде и в превью редактора)
         $this->require_file('includes/class-cashback-shortcodes.php');
+
+        // SC Auth Pages: отдельные страницы /login/ и /register/ (шорткоды [sc_login]/[sc_register]).
+        // Заменяет стандартную объединённую WC-форму на /my-account/ для гостей.
+        $this->require_file('includes/sc-auth-pages/class-sc-auth-pages-activator.php');
+        $this->require_file('includes/sc-auth-pages/class-sc-auth-pages-redirect-helper.php');
+        $this->require_file('includes/sc-auth-pages/class-sc-auth-pages-shortcodes.php');
+        $this->require_file('includes/sc-auth-pages/class-sc-auth-pages-login.php');
+        $this->require_file('includes/sc-auth-pages/class-sc-auth-pages-register.php');
+        $this->require_file('includes/sc-auth-pages/class-sc-auth-pages-redirector.php');
+        $this->require_file('includes/sc-auth-pages/class-sc-auth-pages-bootstrap.php');
 
         // Контактная форма (шорткод, доступен без авторизации)
         $this->require_file('includes/class-cashback-contact-form.php');
@@ -1107,6 +1123,12 @@ class CashbackPlugin {
         // Шорткоды
         if (class_exists('Cashback_Shortcodes')) {
             Cashback_Shortcodes::get_instance();
+        }
+
+        // SC Auth Pages: bootstrap регистрирует [sc_login]/[sc_register] + handler'ы
+        // POST на template_redirect и guest-redirector /my-account/ → /login/.
+        if (class_exists('Cashback_SC_Auth_Pages_Bootstrap')) {
+            Cashback_SC_Auth_Pages_Bootstrap::init();
         }
 
         // Контактная форма
