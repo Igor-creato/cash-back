@@ -522,6 +522,52 @@
     });
 
     // =========================================================================
+    // Сохранение окна API-синхронизации (опция cashback_api_sync_window_days)
+    // =========================================================================
+
+    $(document).on('click', '#cashback-save-sync-window', function () {
+        const $btn = $(this);
+        const $input = $('#cashback-sync-window-days');
+        const $status = $('#cashback-sync-window-status');
+
+        const raw = String($input.val() || '').trim();
+        const days = parseInt(raw, 10);
+
+        if (!Number.isInteger(days) || days < 1 || days > 365 || String(days) !== raw) {
+            $status.text('❌ Введите целое число от 1 до 365.').css('color', 'red');
+            return;
+        }
+
+        $btn.prop('disabled', true);
+        $status.text(i18n.saving || 'Сохранение...').css('color', '#666');
+
+        $.ajax({
+            url: config.ajaxUrl,
+            method: 'POST',
+            data: {
+                action: 'cashback_save_sync_window',
+                nonce: config.nonce,
+                days: days,
+            },
+            success: function (response) {
+                $btn.prop('disabled', false);
+                if (response.success) {
+                    $status.text('✅ ' + (response.data?.message || (i18n.saved || 'Сохранено'))).css('color', 'green');
+                    setTimeout(function () {
+                        $status.text('').css('color', '');
+                    }, 3000);
+                } else {
+                    $status.text('❌ ' + (response.data?.message || 'Ошибка')).css('color', 'red');
+                }
+            },
+            error: function () {
+                $btn.prop('disabled', false);
+                $status.text('❌ Ошибка сети').css('color', 'red');
+            },
+        });
+    });
+
+    // =========================================================================
     // Ручная синхронизация
     // =========================================================================
 

@@ -798,22 +798,33 @@ class Cashback_API_Client {
     // =========================================================================
 
     /**
-     * Дата начала окна выборки по умолчанию: today − 180 дней в формате d.m.Y.
+     * Дата начала окна выборки по умолчанию в формате d.m.Y.
      *
-     * Используется как fallback во всех ветках валидации/синка, где нет ни
-     * checkpoint'а, ни user_registered, чтобы не уходить в 6-летнее окно
-     * (хардкод 1 января 2020-го). На широких окнах `/statistics/actions/`
-     * Admitad стабильно деградирует — наблюдалось чередование HTTP 500 без
-     * JSON и cURL timeout 60s даже при пустой выборке. Узкое окно отвечает
-     * мгновенно. 180 дней — компромисс: покрывает hold-периоды большинства
-     * CPA-офферов и держит API-движок Admitad в зелёной зоне.
+     * Глубина окна задаётся админом через опцию `cashback_api_sync_window_days`
+     * (страница «API Валидация» → вкладка «Синхронизация»). Дефолт 180,
+     * значение clamped в [1, 365] — защита от случайного возврата к 6-летнему
+     * окну, которое стабильно ронит `/statistics/actions/` Admitad в HTTP 500
+     * и cURL timeout 60s даже при пустой выборке. 180 дней — рекомендуемый
+     * баланс: покрывает hold-периоды большинства CPA-офферов и держит API
+     * Admitad в зелёной зоне.
+     *
+     * Применяется ко всем CPA-сетям (Admitad, EPN и любым будущим): метод
+     * вызывается из `validate_user`, `validate_unregistered` и
+     * `do_background_sync` (foreach по `get_all_active_networks()`).
      *
      * Дата считается в UTC: после ADR utc-everywhere весь plugin работает в
      * UTC, и Admitad принимает date_start без timezone-уточнения как UTC-day.
      */
     private function default_lookback_date_dmy(): string {
+        $days = (int) get_option('cashback_api_sync_window_days', 180);
+        if ($days < 1) {
+            $days = 180;
+        } elseif ($days > 365) {
+            $days = 365;
+        }
+
         return ( new DateTimeImmutable('now', new DateTimeZone('UTC')) )
-            ->modify('-180 days')
+            ->modify('-' . $days . ' days')
             ->format('d.m.Y');
     }
 

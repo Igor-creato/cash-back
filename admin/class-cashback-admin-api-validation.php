@@ -47,6 +47,7 @@ class Cashback_Admin_API_Validation {
         add_action('wp_ajax_cashback_manual_sync', array( $this, 'ajax_manual_sync' ));
         add_action('wp_ajax_cashback_get_sync_log', array( $this, 'ajax_get_sync_log' ));
         add_action('wp_ajax_cashback_get_validation_status', array( $this, 'ajax_get_validation_status' ));
+        add_action('wp_ajax_cashback_save_sync_window', array( $this, 'ajax_save_sync_window' ));
 
         // Тест подключения к API
         add_action('wp_ajax_cashback_test_connection', array( $this, 'ajax_test_connection' ));
@@ -662,9 +663,30 @@ echo 'style="display:none"';}
      * Вкладка «Синхронизация»
      */
     private function render_sync_tab(): void {
-        $last_sync = get_option('cashback_last_sync_result', null);
+        $last_sync        = get_option('cashback_last_sync_result', null);
+        $sync_window_days = (int) get_option('cashback_api_sync_window_days', 180);
+        if ($sync_window_days < 1 || $sync_window_days > 365) {
+            $sync_window_days = 180;
+        }
     ?>
         <div id="cashback-sync-tab">
+            <div id="cashback-sync-window-settings" style="background:#fff;border:1px solid #c3c4c7;padding:12px 18px;margin-bottom:20px;max-width:600px;">
+                <h2 style="margin-top:0;">Настройка окна синхронизации в днях</h2>
+                <p>
+                    <label for="cashback-sync-window-days">Введите количество дней:</label>
+                    <input type="number" id="cashback-sync-window-days" name="cashback_sync_window_days"
+                        value="<?php echo esc_attr((string) $sync_window_days); ?>"
+                        min="1" max="365" step="1" class="small-text" />
+                    <button type="button" id="cashback-save-sync-window" class="button button-primary">Сохранить</button>
+                    <span id="cashback-sync-window-status" style="margin-left:10px;"></span>
+                </p>
+                <p class="description">
+                    Применяется ко всем CPA-сетям (Admitad, EPN и любым будущим). По умолчанию: 180. Допустимый диапазон: 1–365.
+                    Рекомендуется не больше 180 — широкие окна нестабильны на <code>/statistics/actions/</code> Admitad
+                    (HTTP 500 / cURL timeout 60s).
+                </p>
+            </div>
+
             <h2>Фоновая синхронизация статусов</h2>
             <p class="description">
                 Cron каждые 2 часа запрашивает обновлённые статусы транзакций из CPA-сетей
@@ -1121,6 +1143,35 @@ echo 'style="display:none"';}
         } else {
             wp_send_json_error(array( 'message' => $result['message'] ));
         }
+    }
+
+    /**
+     * AJAX: Сохранение окна API-синхронизации (опция cashback_api_sync_window_days).
+     *
+     * Применяется ко всем CPA-сетям через Cashback_API_Client::default_lookback_date_dmy().
+     * Диапазон [1, 365] — защита от широких окон, ронящих /statistics/actions/ Admitad.
+     */
+    public function ajax_save_sync_window(): void {
+        check_ajax_referer('cashback_api_validation', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array( 'message' => 'Недостаточно прав' ));
+        }
+
+        $days = absint( wp_unslash( $_POST['days'] ?? 0 ) );
+        if ($days < 1 || $days > 365) {
+            wp_send_json_error(array(
+                'message' => 'Введите целое число от 1 до 365.',
+                'code'    => 'invalid_range',
+            ));
+        }
+
+        update_option('cashback_api_sync_window_days', $days, false);
+
+        wp_send_json_success(array(
+            'message' => 'Сохранено: окно ' . $days . ' дн.',
+            'days'    => $days,
+        ));
     }
 
     /**
