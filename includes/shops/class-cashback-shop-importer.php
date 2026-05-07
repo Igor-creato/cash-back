@@ -917,7 +917,33 @@ class Cashback_Shop_Importer {
                 'mimes'     => array( 'svg' => 'image/svg+xml' ),
             );
 
-            $sideloaded = wp_handle_sideload($file_array, $overrides);
+            // WP-core wp_check_filetype_and_ext через finfo_file часто возвращает
+            // для SVG mime «text/xml» / «text/html», и WP сбрасывает type=false
+            // → wp_handle_sideload отдаёт «Извините, вам не разрешено загружать
+            // SVG файлы». Локальные фильтры (только на время этого вызова)
+            // форсят корректный mime+ext. Фильтры removed в finally.
+            $force_svg_check = static function ( array $check, string $file_path, string $filename, $mimes, string $real_mime = '' ): array {
+                if (preg_match('/\.svgz?$/i', $filename)) {
+                    $check['ext']             = 'svg';
+                    $check['type']            = 'image/svg+xml';
+                    $check['proper_filename'] = $filename;
+                }
+                return $check;
+            };
+            $allow_svg_mime = static function ( array $mimes ): array {
+                $mimes['svg'] = 'image/svg+xml';
+                return $mimes;
+            };
+
+            add_filter('wp_check_filetype_and_ext', $force_svg_check, 99, 5);
+            add_filter('upload_mimes', $allow_svg_mime, 99);
+            try {
+                $sideloaded = wp_handle_sideload($file_array, $overrides);
+            } finally {
+                remove_filter('wp_check_filetype_and_ext', $force_svg_check, 99);
+                remove_filter('upload_mimes', $allow_svg_mime, 99);
+            }
+
             if (! is_array($sideloaded) || isset($sideloaded['error'])) {
                 $err = is_array($sideloaded) ? (string) ($sideloaded['error'] ?? '?') : 'non-array';
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.

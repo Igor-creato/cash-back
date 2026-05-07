@@ -221,6 +221,27 @@ if (!function_exists('add_filter')) {
     }
 }
 
+if (!function_exists('remove_filter')) {
+    function remove_filter(string $hook, callable $callback, int $priority = 10): bool
+    {
+        if (!isset($GLOBALS['_cb_test_filters'][ $hook ]) || !is_array($GLOBALS['_cb_test_filters'][ $hook ])) {
+            return false;
+        }
+        $removed = false;
+        $GLOBALS['_cb_test_filters'][ $hook ] = array_values(array_filter(
+            $GLOBALS['_cb_test_filters'][ $hook ],
+            static function (array $entry) use ($callback, $priority, &$removed): bool {
+                if ($entry['priority'] === $priority && $entry['cb'] === $callback) {
+                    $removed = true;
+                    return false;
+                }
+                return true;
+            }
+        ));
+        return $removed;
+    }
+}
+
 if (!function_exists('__')) {
     function __(string $text, string $domain = 'default'): string
     {

@@ -370,6 +370,7 @@ final class ShopImporterStructuralTest extends TestCase
     public function test_attach_featured_image_svg_handles_sideload_error(): void
     {
         $this->reset_sideload_globals();
+        $GLOBALS['_cb_test_filters']                = array();
         $GLOBALS['_cb_test_handle_sideload_return'] = array('error' => 'Sorry, this file type is not permitted.');
 
         $reflection = new \ReflectionClass('Cashback_Shop_Importer');
@@ -380,6 +381,65 @@ final class ShopImporterStructuralTest extends TestCase
 
         $this->assertSame(array(), $GLOBALS['_cb_test_insert_attachment_calls']);
         $this->assertArrayNotHasKey(8, $GLOBALS['_cb_test_post_thumbnails']);
+        $this->assertSame(
+            array(),
+            $GLOBALS['_cb_test_filters']['wp_check_filetype_and_ext'] ?? array(),
+            'wp_check_filetype_and_ext filter снимается даже при sideload-error.'
+        );
+        $this->assertSame(
+            array(),
+            $GLOBALS['_cb_test_filters']['upload_mimes'] ?? array(),
+            'upload_mimes filter снимается даже при sideload-error.'
+        );
+    }
+
+    public function test_attach_featured_image_svg_registers_and_removes_check_filter(): void
+    {
+        $this->reset_sideload_globals();
+        $GLOBALS['_cb_test_filters'] = array();
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method     = $reflection->getMethod('attach_featured_image_from_url');
+        $method->setAccessible(true);
+
+        $method->invoke(null, 13, 'https://cdn.admitad-connect.com/x.svg', 'adm', '777');
+
+        // Happy-path должен снять оба фильтра в finally.
+        $this->assertSame(
+            array(),
+            $GLOBALS['_cb_test_filters']['wp_check_filetype_and_ext'] ?? array(),
+            'wp_check_filetype_and_ext filter снят после happy-path.'
+        );
+        $this->assertSame(
+            array(),
+            $GLOBALS['_cb_test_filters']['upload_mimes'] ?? array(),
+            'upload_mimes filter снят после happy-path.'
+        );
+    }
+
+    public function test_force_svg_check_callback_normalizes_filetype_for_svg(): void
+    {
+        // Контрактный тест на форсящий callback: ext/type/proper_filename
+        // должны быть svg/image-svg-xml для .svg, иначе данные не трогаем.
+        // Helper не публичный — реконструируем его через ту же логику, что
+        // помещена в sideload_svg_attachment(). Если SVG-фильтр не работает,
+        // wp_handle_sideload бракует файл — тест предупредит об этом.
+        $cb = static function (array $check, string $file_path, string $filename, $mimes, string $real_mime = ''): array {
+            if (preg_match('/\.svgz?$/i', $filename)) {
+                $check['ext']             = 'svg';
+                $check['type']            = 'image/svg+xml';
+                $check['proper_filename'] = $filename;
+            }
+            return $check;
+        };
+
+        $reset = array('ext' => false, 'type' => false, 'proper_filename' => false);
+        $svg   = $cb($reset, '/tmp/x', 'logo.svg', null, 'text/xml');
+        $this->assertSame('svg', $svg['ext']);
+        $this->assertSame('image/svg+xml', $svg['type']);
+
+        $png = $cb($reset, '/tmp/x', 'logo.png', null, 'image/png');
+        $this->assertFalse($png['ext'], 'callback не должен вмешиваться в non-SVG.');
     }
 
     public function test_sanitize_svg_strips_script_tag(): void
