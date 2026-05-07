@@ -722,6 +722,11 @@ class CashbackPlugin {
         // Группа 15: admin-UI поверх сверки (подстраница + Summary + таблицы + ручной запуск).
         $this->require_file('admin/class-cashback-balance-reconciliation-admin.php');
 
+        // Shop Importer admin UI (v12)
+        $this->require_file('admin/class-cashback-settings-admin.php');
+        $this->require_file('admin/class-cashback-shop-import-admin.php');
+        $this->require_file('admin/class-cashback-shop-groups-admin.php');
+
         // --- Click-session service (12i-2 ADR) — общий сервис для /activate и ?cashback_click= ---
         $this->require_file('includes/class-cashback-click-session-service.php');
 
@@ -1060,6 +1065,19 @@ class CashbackPlugin {
         // Recurring schedule + admin-кнопка добавятся в Этапе 9.
         if (class_exists('Cashback_Shop_Importer')) {
             Cashback_Shop_Importer::init();
+        }
+
+        // Admin UI Этапа 8: Settings + Import + Groups submenu pages.
+        if (is_admin()) {
+            if (class_exists('Cashback_Settings_Admin')) {
+                Cashback_Settings_Admin::init();
+            }
+            if (class_exists('Cashback_Shop_Import_Admin')) {
+                Cashback_Shop_Import_Admin::init();
+            }
+            if (class_exists('Cashback_Shop_Groups_Admin')) {
+                Cashback_Shop_Groups_Admin::init();
+            }
         }
 
         // Механизм аварийного восстановления шифрования: admin-страница + AS-action.

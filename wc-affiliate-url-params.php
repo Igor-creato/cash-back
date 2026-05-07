@@ -427,12 +427,43 @@ class WC_Affiliate_URL_Params {
 
         woocommerce_wp_text_input(array(
             'id'          => '_cashback_display_value',
-            'label'       => __('Размер кэшбэка', 'wc-affiliate-url-params'),
-            'description' => __('Например: до 81%, 388р., до 800р.', 'wc-affiliate-url-params'),
+            'label'       => __('Размер кэшбэка (legacy)', 'wc-affiliate-url-params'),
+            'description' => __('Используется только если у товара нет импортированных тарифов или manual override.', 'wc-affiliate-url-params'),
             'desc_tip'    => true,
             'placeholder' => 'до 81%',
             'type'        => 'text',
         ));
+
+        // v12 Manual override (Cashback_Cashback_Display_Calculator).
+        woocommerce_wp_text_input(array(
+            'id'          => '_manual_advertiser_rate',
+            'label'       => __('Manual override ставки', 'wc-affiliate-url-params'),
+            'description' => __('Если задано вместе с галкой ниже — рендерится напрямую без user_rate расчёта (для акций / коррекции ошибок API).', 'wc-affiliate-url-params'),
+            'desc_tip'    => true,
+            'placeholder' => '9.99% или 65 ₽',
+            'type'        => 'text',
+        ));
+
+        woocommerce_wp_checkbox(array(
+            'id'          => '_rate_locked',
+            'label'       => __('Заблокировать ставку (manual override)', 'wc-affiliate-url-params'),
+            'description' => __('При sync импортёр НЕ перезаписывает товар; рендер использует Manual override выше.', 'wc-affiliate-url-params'),
+            'desc_tip'    => true,
+        ));
+
+        // Read-only превью текущего динамического расчёта (если есть тарифы).
+        if (class_exists('Cashback_Cashback_Display_Calculator')) {
+            $current_post = get_post();
+            $product_id   = $current_post instanceof WP_Post ? (int) $current_post->ID : 0;
+            if ($product_id > 0) {
+                $compute = Cashback_Cashback_Display_Calculator::compute($product_id, 0);
+                if (! empty($compute) && ! empty($compute['formatted'])) {
+                    echo '<p class="form-field" style="padding-left:12px"><strong>'
+                        . esc_html__('Текущий расчёт (для гостя):', 'wc-affiliate-url-params')
+                        . '</strong> ' . esc_html((string) $compute['formatted']) . '</p>';
+                }
+            }
+        }
 
         echo '</div>';
     }
@@ -628,6 +659,20 @@ class WC_Affiliate_URL_Params {
 
         update_post_meta($post_id, '_cashback_display_label', $cashback_label);
         update_post_meta($post_id, '_cashback_display_value', $cashback_value);
+
+        // v12: manual override + rate lock (Cashback_Cashback_Display_Calculator).
+        $manual_rate = isset($_POST['_manual_advertiser_rate'])
+            ? sanitize_text_field(wp_unslash($_POST['_manual_advertiser_rate']))
+            : '';
+        $rate_locked = ! empty($_POST['_rate_locked']) ? '1' : '';
+
+        update_post_meta($post_id, '_manual_advertiser_rate', $manual_rate);
+        update_post_meta($post_id, '_rate_locked', $rate_locked);
+
+        // Сбрасываем кеш Display_Calculator для этого product (учитывая что ставка изменилась).
+        if (class_exists('Cashback_Cashback_Display_Calculator')) {
+            Cashback_Cashback_Display_Calculator::bust_cache_for_product($post_id);
+        }
 
         // Проверяем активность выбранной сети
         global $wpdb;
