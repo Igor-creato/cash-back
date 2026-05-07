@@ -176,6 +176,30 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             }
         }
 
+        // 5xx — Admitad-side ошибка либо timeout их балансера; даём 2 retry с
+        // экспоненциальным backoff. У `/statistics/actions/` это типичный
+        // паттерн при широких окнах: видим чередование 500 и стабильный 200
+        // на следующем запросе. Backoff filter-able, чтобы тесты не спали.
+        $retry_5xx_attempt = (int) ( $params['_retry_5xx_attempt'] ?? 0 );
+        if ($code >= 500 && $code < 600 && $retry_5xx_attempt < 2) {
+            $next_attempt = $retry_5xx_attempt + 1;
+            $delay        = (int) apply_filters(
+                'cashback_admitad_5xx_retry_delay_seconds',
+                $next_attempt,
+                $next_attempt,
+                $code
+            );
+            if ($delay > 0) {
+                sleep($delay);
+            }
+
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log("Cashback Admitad: HTTP {$code} on actions, retry attempt {$next_attempt} of 2");
+
+            $params['_retry_5xx_attempt'] = $next_attempt;
+            return $this->fetch_actions($credentials, $params, $network_config);
+        }
+
         if ($code !== 200) {
             return $this->fetch_error("HTTP {$code}: " . $this->safe_error_summary($body));
         }

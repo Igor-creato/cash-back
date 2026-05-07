@@ -798,6 +798,26 @@ class Cashback_API_Client {
     // =========================================================================
 
     /**
+     * Дата начала окна выборки по умолчанию: today − 180 дней в формате d.m.Y.
+     *
+     * Используется как fallback во всех ветках валидации/синка, где нет ни
+     * checkpoint'а, ни user_registered, чтобы не уходить в 6-летнее окно
+     * (хардкод 1 января 2020-го). На широких окнах `/statistics/actions/`
+     * Admitad стабильно деградирует — наблюдалось чередование HTTP 500 без
+     * JSON и cURL timeout 60s даже при пустой выборке. Узкое окно отвечает
+     * мгновенно. 180 дней — компромисс: покрывает hold-периоды большинства
+     * CPA-офферов и держит API-движок Admitad в зелёной зоне.
+     *
+     * Дата считается в UTC: после ADR utc-everywhere весь plugin работает в
+     * UTC, и Admitad принимает date_start без timezone-уточнения как UTC-day.
+     */
+    private function default_lookback_date_dmy(): string {
+        return ( new DateTimeImmutable('now', new DateTimeZone('UTC')) )
+            ->modify('-180 days')
+            ->format('d.m.Y');
+    }
+
+    /**
      * Валидация пользователя: сравнение данных API с локальными транзакциями
      *
      * Стратегия (индустриальный стандарт кэшбэк-сервисов):
@@ -825,7 +845,9 @@ class Cashback_API_Client {
         }
 
         // ─── Определяем дату начала ───
-        $date_start = '01.01.2020';
+        // Fallback 180 дней: см. default_lookback_date_dmy() — широкие 6-летние
+        // окна ронят /statistics/actions/ Admitad в HTTP 500/timeout.
+        $date_start = $this->default_lookback_date_dmy();
 
         if ($use_checkpoint) {
             $checkpoint = $this->get_checkpoint($user_id, $network_slug);
@@ -1301,7 +1323,8 @@ class Cashback_API_Client {
         }
 
         // ─── Определяем дату начала ───
-        $date_start = '01.01.2020';
+        // Fallback 180 дней: см. default_lookback_date_dmy().
+        $date_start = $this->default_lookback_date_dmy();
 
         if ($use_checkpoint) {
             // user_id = 0 для чекпоинта незарегистрированных
@@ -1756,11 +1779,13 @@ class Cashback_API_Client {
 
             $date_end = ( new DateTime() )->format('d.m.Y');
 
-            // Запрос по status_updated_start — получаем все действия с обновлёнными статусами
+            // Запрос по status_updated_start — получаем все действия с обновлёнными статусами.
+            // date_start задан 180-дневным fallback'ом, не от 2020 — широкие окна
+            // ронят /statistics/actions/ Admitad в HTTP 500/timeout (см. default_lookback_date_dmy).
             $sync_params = array(
                 'status_updated_start' => $date_start . ' 00:00:00',
                 'status_updated_end'   => $date_end . ' 23:59:59',
-                'date_start'           => '01.01.2020',
+                'date_start'           => $this->default_lookback_date_dmy(),
                 'date_end'             => $date_end,
             );
 

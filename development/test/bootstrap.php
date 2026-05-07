@@ -841,6 +841,14 @@ if (!function_exists('wp_remote_get')) {
             'url'    => $url,
             'args'   => $args,
         );
+        // Тесты, которым нужны разные ответы на серию запросов (retry-логика
+        // адаптеров), задают Closure в `_cb_test_http_response_callback`.
+        // Closure получает (url, args) и возвращает array|WP_Error. Если callback
+        // не задан — возвращаем статичный `_cb_test_http_response` как раньше.
+        $cb = $GLOBALS['_cb_test_http_response_callback'] ?? null;
+        if ($cb instanceof Closure) {
+            return $cb($url, $args);
+        }
         return $GLOBALS['_cb_test_http_response'];
     }
 }
@@ -853,6 +861,10 @@ if (!function_exists('wp_remote_post')) {
             'url'    => $url,
             'args'   => $args,
         );
+        $cb = $GLOBALS['_cb_test_http_response_callback'] ?? null;
+        if ($cb instanceof Closure) {
+            return $cb($url, $args);
+        }
         return $GLOBALS['_cb_test_http_response'];
     }
 }
