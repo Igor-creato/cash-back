@@ -205,6 +205,20 @@ if (!isset($GLOBALS['_cb_test_filters'])) {
     $GLOBALS['_cb_test_filters'] = array();
 }
 
+if (!function_exists('__return_true')) {
+    function __return_true(): bool
+    {
+        return true;
+    }
+}
+
+if (!function_exists('__return_false')) {
+    function __return_false(): bool
+    {
+        return false;
+    }
+}
+
 if (!function_exists('add_filter')) {
     function add_filter(string $hook, callable $callback, int $priority = 10, int $accepted_args = 1): bool
     {

@@ -956,11 +956,19 @@ class Cashback_Shop_Importer {
             add_filter('wp_check_filetype_and_ext', $force_svg_check, 99, 5);
             // phpcs:ignore WordPressVIPMinimum.Hooks.RestrictedHooks.upload_mimes -- SVG разрешается ТОЛЬКО на время этого sideload (remove_filter в finally); content санитизируется выше через sanitize_svg().
             add_filter('upload_mimes', $allow_svg_mime, 99);
+            // safe-svg блокирует SVG-upload для guest user (на AS-cron user=0)
+            // через wp_handle_upload_prefilter → check_for_svg → ! current_user_can_upload_svg
+            // → 'Sorry, you are not allowed to upload SVG files.' Снимаем restriction
+            // через документированный filter safe-svg ТОЛЬКО на время sideload —
+            // контент уже санитизирован нашим sanitize_svg(); safe-svg внутри
+            // дополнительно прогонит enshrined/svg-sanitize (defense-in-depth).
+            add_filter('safe_svg_current_user_can_upload', '__return_true', 99);
             try {
                 $sideloaded = wp_handle_sideload($file_array, $overrides);
             } finally {
                 remove_filter('wp_check_filetype_and_ext', $force_svg_check, 99);
                 remove_filter('upload_mimes', $allow_svg_mime, 99);
+                remove_filter('safe_svg_current_user_can_upload', '__return_true', 99);
             }
 
             if (! is_array($sideloaded) || isset($sideloaded['error'])) {

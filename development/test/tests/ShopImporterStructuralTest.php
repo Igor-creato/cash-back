@@ -391,6 +391,11 @@ final class ShopImporterStructuralTest extends TestCase
             $GLOBALS['_cb_test_filters']['upload_mimes'] ?? array(),
             'upload_mimes filter снимается даже при sideload-error.'
         );
+        $this->assertSame(
+            array(),
+            $GLOBALS['_cb_test_filters']['safe_svg_current_user_can_upload'] ?? array(),
+            'safe_svg filter снимается даже при sideload-error.'
+        );
     }
 
     public function test_attach_featured_image_svg_registers_and_removes_check_filter(): void
@@ -404,7 +409,7 @@ final class ShopImporterStructuralTest extends TestCase
 
         $method->invoke(null, 13, 'https://cdn.admitad-connect.com/x.svg', 'adm', '777');
 
-        // Happy-path должен снять оба фильтра в finally.
+        // Happy-path должен снять все три фильтра в finally.
         $this->assertSame(
             array(),
             $GLOBALS['_cb_test_filters']['wp_check_filetype_and_ext'] ?? array(),
@@ -414,6 +419,11 @@ final class ShopImporterStructuralTest extends TestCase
             array(),
             $GLOBALS['_cb_test_filters']['upload_mimes'] ?? array(),
             'upload_mimes filter снят после happy-path.'
+        );
+        $this->assertSame(
+            array(),
+            $GLOBALS['_cb_test_filters']['safe_svg_current_user_can_upload'] ?? array(),
+            'safe_svg_current_user_can_upload filter снят после happy-path.'
         );
     }
 
