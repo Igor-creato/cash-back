@@ -35,6 +35,12 @@ final class Cashback_Campaign_Detail_DTO {
     public string $description;
     public string $status_raw;
     public bool $is_active;
+    /**
+     * Статус подключения паблишера к программе (Admitad-only).
+     * Значения: 'active' / 'pending' / 'declined' / 'suspend'.
+     * '' если адаптер не возвращает (старый endpoint или не-Admitad сеть).
+     */
+    public string $connection_status;
     /** @var array<int, string> */
     public array $regions;
     /** @var array<int, string> */
@@ -52,24 +58,26 @@ final class Cashback_Campaign_Detail_DTO {
         string $description,
         string $status_raw,
         bool $is_active,
+        string $connection_status,
         array $regions,
         array $categories,
         string $currency,
         string $goto_link,
         array $raw
     ) {
-        $this->id          = $id;
-        $this->name        = $name;
-        $this->site_url    = $site_url;
-        $this->image_url   = $image_url;
-        $this->description = $description;
-        $this->status_raw  = $status_raw;
-        $this->is_active   = $is_active;
-        $this->regions     = $regions;
-        $this->categories  = $categories;
-        $this->currency    = $currency;
-        $this->goto_link   = $goto_link;
-        $this->raw         = $raw;
+        $this->id                = $id;
+        $this->name              = $name;
+        $this->site_url          = $site_url;
+        $this->image_url         = $image_url;
+        $this->description       = $description;
+        $this->status_raw        = $status_raw;
+        $this->is_active         = $is_active;
+        $this->connection_status = $connection_status;
+        $this->regions           = $regions;
+        $this->categories        = $categories;
+        $this->currency          = $currency;
+        $this->goto_link         = $goto_link;
+        $this->raw               = $raw;
     }
 
     /**
@@ -99,6 +107,10 @@ final class Cashback_Campaign_Detail_DTO {
             $currency = 'RUB';
         }
 
+        $connection_status = isset($data['connection_status'])
+            ? strtolower(trim((string) $data['connection_status']))
+            : '';
+
         return new self(
             $id,
             isset($data['name']) ? (string) $data['name'] : '',
@@ -107,6 +119,7 @@ final class Cashback_Campaign_Detail_DTO {
             isset($data['description']) ? (string) $data['description'] : '',
             isset($data['status_raw']) ? (string) $data['status_raw'] : '',
             ! empty($data['is_active']),
+            $connection_status,
             $regions,
             $categories,
             $currency,
@@ -122,18 +135,19 @@ final class Cashback_Campaign_Detail_DTO {
      */
     public function to_array(): array {
         return array(
-            'id'          => $this->id,
-            'name'        => $this->name,
-            'site_url'    => $this->site_url,
-            'image_url'   => $this->image_url,
-            'description' => $this->description,
-            'status_raw'  => $this->status_raw,
-            'is_active'   => $this->is_active,
-            'regions'     => $this->regions,
-            'categories'  => $this->categories,
-            'currency'    => $this->currency,
-            'goto_link'   => $this->goto_link,
-            'raw'         => $this->raw,
+            'id'                => $this->id,
+            'name'              => $this->name,
+            'site_url'          => $this->site_url,
+            'image_url'         => $this->image_url,
+            'description'       => $this->description,
+            'status_raw'        => $this->status_raw,
+            'is_active'         => $this->is_active,
+            'connection_status' => $this->connection_status,
+            'regions'           => $this->regions,
+            'categories'        => $this->categories,
+            'currency'          => $this->currency,
+            'goto_link'         => $this->goto_link,
+            'raw'               => $this->raw,
         );
     }
 }

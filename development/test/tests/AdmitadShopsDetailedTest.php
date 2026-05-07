@@ -107,7 +107,10 @@ final class AdmitadShopsDetailedTest extends TestCase
 
     private function default_network_config(): array
     {
-        return array('api_base_url' => 'https://api.admitad.com');
+        return array(
+            'api_base_url'    => 'https://api.admitad.com',
+            'api_website_id'  => '42',
+        );
     }
 
     private function http_response(int $code, string $body = ''): array
@@ -140,28 +143,30 @@ final class AdmitadShopsDetailedTest extends TestCase
             '_meta'   => array('count' => 2),
             'results' => array(
                 array(
-                    'id'           => 12345,
-                    'name'         => 'Joom',
-                    'site_url'     => 'https://www.joom.com/ru',
-                    'image'        => 'https://cdn.admitad.com/joom.png',
-                    'description'  => 'Marketplace',
-                    'status'       => 'active',
-                    'currency'     => 'rub',
-                    'goto_link'    => 'https://ad.admitad.com/g/abc?subid={uid}',
-                    'regions'      => array(array('region' => 'RU'), array('region' => 'BY')),
-                    'categories'   => array(
+                    'id'                => 12345,
+                    'name'              => 'Joom',
+                    'site_url'          => 'https://www.joom.com/ru',
+                    'image'             => 'https://cdn.admitad.com/joom.png',
+                    'description'       => 'Marketplace',
+                    'status'            => 'active',
+                    'connection_status' => 'active',
+                    'currency'          => 'rub',
+                    'goto_link'         => 'https://ad.admitad.com/g/abc?subid={uid}',
+                    'regions'           => array(array('region' => 'RU'), array('region' => 'BY')),
+                    'categories'        => array(
                         array('id' => 1, 'name' => 'Electronics'),
                         array('id' => 2, 'name' => 'Apparel'),
                     ),
                 ),
                 array(
-                    'id'         => 22222,
-                    'name'       => 'OldShop',
-                    'site_url'   => 'https://oldshop.example',
-                    'status'     => 'inactive',
-                    'currency'   => 'USD',
-                    'regions'    => array('RU', 'KZ'), // плоский формат
-                    'categories' => array('Misc'),
+                    'id'                => 22222,
+                    'name'              => 'OldShop',
+                    'site_url'          => 'https://oldshop.example',
+                    'status'            => 'inactive',
+                    'connection_status' => 'active',
+                    'currency'          => 'USD',
+                    'regions'           => array('RU', 'KZ'), // плоский формат
+                    'categories'        => array('Misc'),
                 ),
             ),
         ));
@@ -220,7 +225,12 @@ final class AdmitadShopsDetailedTest extends TestCase
     {
         $payload = wp_json_encode(array(
             '_meta'   => array('count' => 250),
-            'results' => array_fill(0, 100, array('id' => 1, 'name' => 'X', 'status' => 'active')),
+            'results' => array_fill(0, 100, array(
+                'id'                => 1,
+                'name'              => 'X',
+                'status'            => 'active',
+                'connection_status' => 'active',
+            )),
         ));
         $this->queue_responses(array($this->http_response(200, $payload)));
 
@@ -235,7 +245,12 @@ final class AdmitadShopsDetailedTest extends TestCase
     {
         $payload = wp_json_encode(array(
             '_meta'   => array('count' => 50),
-            'results' => array_fill(0, 50, array('id' => 1, 'name' => 'X', 'status' => 'active')),
+            'results' => array_fill(0, 50, array(
+                'id'                => 1,
+                'name'              => 'X',
+                'status'            => 'active',
+                'connection_status' => 'active',
+            )),
         ));
         $this->queue_responses(array($this->http_response(200, $payload)));
 
@@ -356,7 +371,13 @@ final class AdmitadShopsDetailedTest extends TestCase
     {
         $payload = wp_json_encode(array(
             '_meta'   => array('count' => 1),
-            'results' => array(array('id' => 1, 'name' => 'X', 'status' => 'active', 'currency' => 'rubles')),
+            'results' => array(array(
+                'id'                => 1,
+                'name'              => 'X',
+                'status'            => 'active',
+                'connection_status' => 'active',
+                'currency'          => 'rubles',
+            )),
         ));
         $this->queue_responses(array($this->http_response(200, $payload)));
 
@@ -364,5 +385,137 @@ final class AdmitadShopsDetailedTest extends TestCase
         $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
 
         $this->assertSame('RUB', $result['campaigns'][0]['currency']);
+    }
+
+    // ============================================================
+    // Website-scoped endpoint + connection_status filter
+    // ============================================================
+
+    public function test_returns_error_when_website_id_missing(): void
+    {
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed(
+            $this->default_credentials(),
+            array('api_base_url' => 'https://api.admitad.com'), // no api_website_id
+            0,
+            100
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('api_website_id', $result['error']);
+        $this->assertCount(0, $GLOBALS['_cb_test_http_calls'], 'без website_id HTTP-запрос вообще не делается');
+    }
+
+    public function test_returns_error_when_website_id_empty_string(): void
+    {
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed(
+            $this->default_credentials(),
+            array('api_base_url' => 'https://api.admitad.com', 'api_website_id' => '   '),
+            0,
+            100
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('api_website_id', $result['error']);
+    }
+
+    public function test_url_uses_website_scoped_endpoint(): void
+    {
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaigns_payload())));
+
+        $adapter = $this->make_adapter_with_token();
+        $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $this->assertCount(1, $GLOBALS['_cb_test_http_calls']);
+        $url = $GLOBALS['_cb_test_http_calls'][0]['url'];
+        $this->assertStringContainsString(
+            '/advcampaigns/website/42/',
+            $url,
+            'URL должен использовать website-scoped endpoint, а не общий /advcampaigns/'
+        );
+        $this->assertStringNotContainsString(
+            '/advcampaigns/?',
+            $url,
+            'НЕ должен бить в общий /advcampaigns/?... (он возвращает весь каталог)'
+        );
+    }
+
+    public function test_filters_out_pending_and_declined_connection_status(): void
+    {
+        $payload = wp_json_encode(array(
+            '_meta'   => array('count' => 4),
+            'results' => array(
+                array('id' => 1, 'name' => 'Active', 'status' => 'active', 'connection_status' => 'active'),
+                array('id' => 2, 'name' => 'Pending', 'status' => 'active', 'connection_status' => 'pending'),
+                array('id' => 3, 'name' => 'Declined', 'status' => 'active', 'connection_status' => 'declined'),
+                array('id' => 4, 'name' => 'Suspend', 'status' => 'active', 'connection_status' => 'suspend'),
+            ),
+        ));
+        $this->queue_responses(array($this->http_response(200, $payload)));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(1, $result['campaigns'], 'только connection_status=active');
+        $this->assertSame('1', $result['campaigns'][0]['id']);
+        $this->assertSame('Active', $result['campaigns'][0]['name']);
+    }
+
+    public function test_keeps_campaigns_with_empty_connection_status_for_backward_compat(): void
+    {
+        // Если ответ от старого endpoint без поля — допускаем (для тестов и
+        // потенциального override через filter в будущем).
+        $payload = wp_json_encode(array(
+            '_meta'   => array('count' => 1),
+            'results' => array(
+                array('id' => 1, 'name' => 'NoConnField', 'status' => 'active'),
+            ),
+        ));
+        $this->queue_responses(array($this->http_response(200, $payload)));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $this->assertCount(1, $result['campaigns']);
+        $this->assertSame('', $result['campaigns'][0]['connection_status']);
+    }
+
+    public function test_connection_status_normalized_to_lowercase(): void
+    {
+        $payload = wp_json_encode(array(
+            '_meta'   => array('count' => 2),
+            'results' => array(
+                array('id' => 1, 'name' => 'CapsActive', 'status' => 'active', 'connection_status' => 'ACTIVE'),
+                array('id' => 2, 'name' => 'MixedPending', 'status' => 'active', 'connection_status' => 'Pending'),
+            ),
+        ));
+        $this->queue_responses(array($this->http_response(200, $payload)));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        // 'ACTIVE' → 'active' пройдёт фильтр; 'Pending' → 'pending' отбросится.
+        $this->assertCount(1, $result['campaigns']);
+        $this->assertSame('active', $result['campaigns'][0]['connection_status']);
+    }
+
+    public function test_url_encodes_website_id_special_chars(): void
+    {
+        // Если кто-то задал api_website_id со знаком (теоретически не должно
+        // быть, но для безопасности проверим rawurlencode).
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaigns_payload())));
+
+        $adapter = $this->make_adapter_with_token();
+        $adapter->fetch_campaigns_detailed(
+            $this->default_credentials(),
+            array('api_base_url' => 'https://api.admitad.com', 'api_website_id' => '42&evil'),
+            0,
+            100
+        );
+
+        $url = $GLOBALS['_cb_test_http_calls'][0]['url'];
+        $this->assertStringContainsString('/advcampaigns/website/42%26evil/', $url);
     }
 }

@@ -396,11 +396,20 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
     /**
      * {@inheritdoc}
      *
-     * Admitad: GET /advcampaigns/?limit&offset.
-     * Endpoint уже возвращает расширенный набор полей (site_url, image,
-     * regions, categories, currency, goto_link, description, status), N+1
-     * запросов на детали не нужно. Поддерживается retry на 401 и 403
-     * insufficient_scope (паттерн из fetch_campaigns).
+     * Admitad: GET /advcampaigns/website/{website_id}/?limit&offset.
+     * Этот endpoint возвращает ТОЛЬКО программы, к которым паблишер
+     * подключился через свою площадку (а не весь каталог Admitad).
+     * Каждая запись содержит поле `connection_status` со значениями
+     * `active` / `pending` / `declined`; импортируем только `active`.
+     *
+     * Без `api_website_id` метод НЕ делает HTTP-запроса и возвращает
+     * понятную ошибку — общий endpoint /advcampaigns/ возвращает весь
+     * каталог Admitad (тысячи неподключённых мерчантов), что забивает
+     * витрину мусорными draft-products.
+     *
+     * Endpoint возвращает расширенный набор полей (site_url, image,
+     * regions, categories, currency, goto_link, description, status) —
+     * N+1 запросов на детали не нужно. Retry на 401 / 403 insufficient_scope.
      *
      * @since 12.0.0
      */
@@ -410,11 +419,20 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             return $this->detailed_error('Не удалось получить токен Admitad');
         }
 
+        $website_id = trim((string) ( $network_config['api_website_id'] ?? '' ));
+        if ($website_id === '') {
+            return $this->detailed_error(
+                'Admitad: api_website_id не задан в «Партнёры → Параметры API». '
+                . 'Без website_id endpoint вернёт весь каталог Admitad '
+                . '(тысячи неподключённых мерчантов).'
+            );
+        }
+
         $effective_limit = max(1, min(500, $limit));
         $effective_offset = max(0, $offset);
 
         $base_url = rtrim($network_config['api_base_url'] ?? 'https://api.admitad.com', '/');
-        $url      = $base_url . '/advcampaigns/?' . http_build_query(array(
+        $url      = $base_url . '/advcampaigns/website/' . rawurlencode($website_id) . '/?' . http_build_query(array(
             'limit'  => $effective_limit,
             'offset' => $effective_offset,
         ));
@@ -475,7 +493,21 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             if (!is_array($raw)) {
                 continue;
             }
-            $campaigns[] = $this->normalize_campaign_detail($raw);
+            $normalized = $this->normalize_campaign_detail($raw);
+
+            // Импортируем только программы со статусом подключения = active.
+            // pending  — заявка отправлена, ещё не одобрена;
+            // declined — отказ;
+            // suspend  — временно приостановлено.
+            // Пустой connection_status допустим — значит ответ от старого
+            // endpoint без поля (для обратной совместимости тестов и
+            // потенциальных кастомных вызовов через filter).
+            $conn = (string) ( $normalized['connection_status'] ?? '' );
+            if ($conn !== '' && $conn !== 'active') {
+                continue;
+            }
+
+            $campaigns[] = $normalized;
         }
 
         $returned    = count($results);
@@ -626,6 +658,14 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
     private function normalize_campaign_detail( array $raw ): array {
         $status_raw = isset($raw['status']) ? strtolower((string) $raw['status']) : '';
 
+        // connection_status — статус подключения паблишера к программе.
+        // Возвращается endpoint'ом /advcampaigns/website/{id}/ со значениями
+        // active / pending / declined / suspend. На общем /advcampaigns/
+        // отсутствует — нормализуем в '' для backward compat.
+        $connection_status = isset($raw['connection_status'])
+            ? strtolower((string) $raw['connection_status'])
+            : '';
+
         $categories = array();
         $raw_cats   = isset($raw['categories']) && is_array($raw['categories']) ? $raw['categories'] : array();
         foreach ($raw_cats as $cat) {
@@ -656,18 +696,19 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
         }
 
         return array(
-            'id'          => (string) ( $raw['id'] ?? '' ),
-            'name'        => (string) ( $raw['name'] ?? '' ),
-            'site_url'    => (string) ( $raw['site_url'] ?? '' ),
-            'image_url'   => (string) ( $raw['image'] ?? ( $raw['logo_filename'] ?? '' ) ),
-            'description' => (string) ( $raw['description'] ?? '' ),
-            'status_raw'  => $status_raw,
-            'is_active'   => ( $status_raw === 'active' ),
-            'regions'     => $regions,
-            'categories'  => $categories,
-            'currency'    => $currency,
-            'goto_link'   => (string) ( $raw['goto_link'] ?? '' ),
-            'raw'         => $raw,
+            'id'                => (string) ( $raw['id'] ?? '' ),
+            'name'              => (string) ( $raw['name'] ?? '' ),
+            'site_url'          => (string) ( $raw['site_url'] ?? '' ),
+            'image_url'         => (string) ( $raw['image'] ?? ( $raw['logo_filename'] ?? '' ) ),
+            'description'       => (string) ( $raw['description'] ?? '' ),
+            'status_raw'        => $status_raw,
+            'is_active'         => ( $status_raw === 'active' ),
+            'connection_status' => $connection_status,
+            'regions'           => $regions,
+            'categories'        => $categories,
+            'currency'          => $currency,
+            'goto_link'         => (string) ( $raw['goto_link'] ?? '' ),
+            'raw'               => $raw,
         );
     }
 

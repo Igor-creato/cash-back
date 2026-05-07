@@ -124,6 +124,32 @@ final class ShopAdapterDtoTest extends TestCase
         $this->assertSame(array('1', '2', 'RU'), $dto->regions);
     }
 
+    public function test_campaign_dto_connection_status_default_empty(): void
+    {
+        $dto = Cashback_Campaign_Detail_DTO::from_array(array('id' => '1'));
+        $this->assertSame('', $dto->connection_status);
+    }
+
+    public function test_campaign_dto_connection_status_normalized_to_lowercase(): void
+    {
+        $dto = Cashback_Campaign_Detail_DTO::from_array(array(
+            'id'                => '1',
+            'connection_status' => '  ACTIVE  ',
+        ));
+        $this->assertSame('active', $dto->connection_status);
+    }
+
+    public function test_campaign_dto_to_array_includes_connection_status(): void
+    {
+        $dto = Cashback_Campaign_Detail_DTO::from_array(array(
+            'id'                => '1',
+            'connection_status' => 'pending',
+        ));
+        $array = $dto->to_array();
+        $this->assertArrayHasKey('connection_status', $array);
+        $this->assertSame('pending', $array['connection_status']);
+    }
+
     // ============================================================
     // Cashback_Shop_Tariff_DTO
     // ============================================================
