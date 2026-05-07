@@ -18,14 +18,24 @@
 
 declare(strict_types=1);
 
+// CLI dev-tool: всё output идёт в stdout WP-CLI; HTML-escape не применим.
+// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped
+// phpcs:disable Squiz.Strings.DoubleQuoteUsage.NotRequired
+
 if (! defined('ABSPATH')) {
-    fwrite(STDERR, "Запускать только через wp eval-file (нужна загрузка WP).\n");
+    fwrite(STDERR, "[cashback-dump-admitad] ABSPATH undefined. Run via `wp eval-file`.\n");
     exit(1);
 }
 
-$network_id = isset($args[0]) ? (int) $args[0] : 0;
+if (! defined('WP_CLI') && ! ( function_exists('current_user_can') && current_user_can('manage_options') )) {
+    fwrite(STDERR, "[cashback-dump-admitad] Requires WP-CLI context or manage_options capability.\n");
+    exit(1);
+}
+
+$cli_args   = isset($args) && is_array($args) ? $args : array();
+$network_id = isset($cli_args[0]) ? (int) $cli_args[0] : 0;
 if ($network_id <= 0) {
-    echo "Usage: wp eval-file ... dump-admitad-website-campaigns.php <network_id>\n";
+    echo 'Usage: wp eval-file ... dump-admitad-website-campaigns.php <network_id>', "\n";
     return;
 }
 
@@ -40,13 +50,13 @@ if (! class_exists('Cashback_API_Client')) {
 $api_client = Cashback_API_Client::get_instance();
 $network    = $api_client->get_network_config('admitad');
 if (! is_array($network) || (int) ( $network['id'] ?? 0 ) !== $network_id) {
-    echo "Сеть admitad с id={$network_id} не найдена или неактивна.\n";
+    printf("Сеть admitad с id=%d не найдена или неактивна.\n", $network_id);
     return;
 }
 
 $creds = $api_client->get_credentials($network_id);
 if (! is_array($creds)) {
-    echo "Credentials не настроены для network_id={$network_id}.\n";
+    printf("Credentials не настроены для network_id=%d.\n", $network_id);
     return;
 }
 
@@ -56,54 +66,82 @@ if ($adapter === null || ! method_exists($adapter, 'fetch_campaigns_detailed')) 
     return;
 }
 
-echo "=== Admitad /advcampaigns/website/{$network['api_website_id']}/?limit={$limit}&offset=0 ===\n\n";
+printf(
+    "=== Admitad /advcampaigns/website/%s/?limit=%d&offset=0 ===\n\n",
+    (string) ( $network['api_website_id'] ?? '' ),
+    $limit
+);
 
 $result = $adapter->fetch_campaigns_detailed($creds, $network, 0, $limit);
 
 if (empty($result['success'])) {
-    echo "ERROR: " . ( $result['error'] ?? 'unknown' ) . "\n";
+    printf("ERROR: %s\n", (string) ( $result['error'] ?? 'unknown' ));
     return;
 }
 
 $campaigns = $result['campaigns'] ?? array();
-echo "Получено: " . count($campaigns) . " кампаний; has_next=" . ( ! empty($result['has_next']) ? 'true' : 'false' ) . "\n\n";
+printf(
+    "Получено: %d кампаний; has_next=%s\n\n",
+    count($campaigns),
+    ! empty($result['has_next']) ? 'true' : 'false'
+);
 
 foreach ($campaigns as $i => $campaign) {
-    echo "--- Campaign #{$i} ---\n";
-    echo "id={$campaign['id']}, name={$campaign['name']}\n";
-    echo "site_url={$campaign['site_url']}\n";
-    echo "image_url={$campaign['image_url']}\n";
-    echo "goto_link=" . ( $campaign['goto_link'] !== '' ? $campaign['goto_link'] : '(пусто!)' ) . "\n";
-    echo "connection_status={$campaign['connection_status']} status_raw={$campaign['status_raw']} is_active=" . ( $campaign['is_active'] ? 'true' : 'false' ) . "\n";
-    echo "currency={$campaign['currency']}\n";
+    printf("--- Campaign #%d ---\n", (int) $i);
+    printf("id=%s, name=%s\n", (string) $campaign['id'], (string) $campaign['name']);
+    printf("site_url=%s\n", (string) $campaign['site_url']);
+    printf("image_url=%s\n", (string) $campaign['image_url']);
+    printf(
+        "goto_link=%s\n",
+        $campaign['goto_link'] !== '' ? (string) $campaign['goto_link'] : '(пусто!)'
+    );
+    printf(
+        "connection_status=%s status_raw=%s is_active=%s\n",
+        (string) $campaign['connection_status'],
+        (string) $campaign['status_raw'],
+        $campaign['is_active'] ? 'true' : 'false'
+    );
+    printf("currency=%s\n", (string) $campaign['currency']);
 
     $raw = $campaign['raw'] ?? array();
 
     // Какие поля реально пришли с API (только ключи, без значений).
-    echo "raw keys: " . implode(', ', array_keys($raw)) . "\n";
+    printf("raw keys: %s\n", implode(', ', array_keys($raw)));
 
     // Inline actions / actions_detail — если Admitad их кладёт в campaign payload,
     // это решит проблему с тарифами без отдельного fetch_shop_tariffs.
     if (isset($raw['actions'])) {
-        echo "raw.actions (count=" . count((array) $raw['actions']) . "): "
-            . ( is_array($raw['actions']) ? wp_json_encode(array_slice((array) $raw['actions'], 0, 2)) : '?' ) . "\n";
+        $arr = (array) $raw['actions'];
+        printf(
+            "raw.actions (count=%d): %s\n",
+            count($arr),
+            (string) wp_json_encode(array_slice($arr, 0, 2))
+        );
     }
     if (isset($raw['actions_detail'])) {
-        echo "raw.actions_detail (count=" . count((array) $raw['actions_detail']) . "): "
-            . ( is_array($raw['actions_detail']) ? wp_json_encode(array_slice((array) $raw['actions_detail'], 0, 2)) : '?' ) . "\n";
+        $arr = (array) $raw['actions_detail'];
+        printf(
+            "raw.actions_detail (count=%d): %s\n",
+            count($arr),
+            (string) wp_json_encode(array_slice($arr, 0, 2))
+        );
     }
     // Иногда поле называется rates / tariffs.
     foreach (array( 'rates', 'tariffs', 'gotolink', 'goto_link', 'image' ) as $alt) {
         if (isset($raw[ $alt ])) {
-            $val = $raw[ $alt ];
-            $s   = is_scalar($val) ? (string) $val : wp_json_encode($val);
-            echo "raw.{$alt}=" . mb_substr((string) $s, 0, 200) . "\n";
+            $val     = $raw[ $alt ];
+            $val_str = is_scalar($val) ? (string) $val : (string) wp_json_encode($val);
+            printf("raw.%s=%s\n", (string) $alt, mb_substr($val_str, 0, 200));
         }
     }
 
     if ($full) {
         echo "FULL RAW:\n";
-        echo wp_json_encode($raw, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) . "\n";
+        echo (string) wp_json_encode(
+            $raw,
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT
+        );
+        echo "\n";
     }
 
     echo "\n";
@@ -113,15 +151,24 @@ foreach ($campaigns as $i => $campaign) {
 // чтобы видеть какой scope/error даёт actions endpoint.
 if (! empty($campaigns) && method_exists($adapter, 'fetch_shop_tariffs')) {
     $first_id = (string) $campaigns[0]['id'];
-    echo "=== /advcampaigns/{$first_id}/actions/ (для первой кампании) ===\n";
+    printf("=== /advcampaigns/%s/actions/ (для первой кампании) ===\n", $first_id);
     $tariffs_result = $adapter->fetch_shop_tariffs($creds, $network, $first_id);
     if (empty($tariffs_result['success'])) {
-        echo "ERROR: " . ( $tariffs_result['error'] ?? 'unknown' ) . "\n";
+        printf("ERROR: %s\n", (string) ( $tariffs_result['error'] ?? 'unknown' ));
     } else {
         $tariffs = $tariffs_result['tariffs'] ?? array();
-        echo "Получено тарифов: " . count($tariffs) . "\n";
+        printf("Получено тарифов: %d\n", count($tariffs));
         foreach ($tariffs as $t) {
-            echo "  - tariff_id={$t['tariff_id']} type={$t['tariff_type']} payment_size={$t['payment_size']} {$t['currency']}\n";
+            printf(
+                "  - tariff_id=%s type=%s payment_size=%s %s\n",
+                (string) $t['tariff_id'],
+                (string) $t['tariff_type'],
+                (string) $t['payment_size'],
+                (string) $t['currency']
+            );
         }
     }
 }
+
+// phpcs:enable WordPress.Security.EscapeOutput.OutputNotEscaped
+// phpcs:enable Squiz.Strings.DoubleQuoteUsage.NotRequired
