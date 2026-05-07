@@ -217,10 +217,15 @@ class SocialAuthExplicitConsentTest extends TestCase
 			$content,
 			'Cashback_Social_Auth_Account_Manager должен иметь константу KIND_REGISTER_VIA_SOCIAL для post-OAuth flow'
 		);
+		// После 2026-05-06 (Social-auth post-OAuth consent CLOSED) flow
+		// переехал с pre-OAuth checkbox + REGISTER_TOKEN_PARAM на отдельный
+		// REST endpoint cashback/v1/social/register-consent-form?token=<X>.
+		// Имя query-param `token` теперь не требует именованной константы;
+		// инвариант дизайна — наличие самого endpoint'а.
 		self::assertStringContainsString(
-			'REGISTER_TOKEN_PARAM',
+			'cashback/v1/social/register-consent-form',
 			$content,
-			'Cashback_Social_Auth_Account_Manager должен иметь константу REGISTER_TOKEN_PARAM (имя query-param для редиректа на register-форму)'
+			'Account_Manager должен ссылаться на REST endpoint /social/register-consent-form для post-OAuth consent flow'
 		);
 	}
 

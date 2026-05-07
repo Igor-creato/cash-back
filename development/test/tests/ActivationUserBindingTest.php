@@ -201,14 +201,30 @@ final class ActivationUserBindingTest extends TestCase
 
     public function test_cookie_payload_signed(): void
     {
+        // handle_click_redirect делегирует установку cookie в helper
+        // self::set_activation_cookie() — там и происходит подпись HMAC.
+        // Структурно проверяем: (a) делегация присутствует, (b) сам helper
+        // подписывает payload через Cashback_Encryption::sign_cookie_payload
+        // и кладёт результат в JSON под ключом 'sig'.
+        self::assertStringContainsString(
+            'set_activation_cookie',
+            $this->handle_click_redirect,
+            'П.7: handle_click_redirect должен вызывать self::set_activation_cookie() для установки cookie cb_activation.'
+        );
+
+        $set_activation_cookie = $this->extract_method($this->wc_source, 'set_activation_cookie');
+        self::assertNotEmpty(
+            $set_activation_cookie,
+            'set_activation_cookie() helper должен присутствовать в wc-affiliate-url-params.php'
+        );
         self::assertStringContainsString(
             'sign_cookie_payload',
-            $this->handle_click_redirect,
-            'П.7: cookie cb_activation должен содержать подпись sig через sign_cookie_payload.'
+            $set_activation_cookie,
+            'П.7: cookie cb_activation должен содержать подпись sig через Cashback_Encryption::sign_cookie_payload.'
         );
         self::assertMatchesRegularExpression(
             "/['\"]sig['\"]\s*=>/",
-            $this->handle_click_redirect,
+            $set_activation_cookie,
             'П.7: в JSON cookie должно быть поле sig (additive, non-breaking для расширения).'
         );
     }

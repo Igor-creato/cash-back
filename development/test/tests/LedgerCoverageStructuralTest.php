@@ -32,8 +32,11 @@ final class LedgerCoverageStructuralTest extends TestCase
     public function test_users_management_selects_banned_at_for_idempotency_key(): void
     {
         $src = $this->source('admin/users-management.php');
-        $this->assertStringContainsString(
-            "'SELECT status, ban_reason, banned_at FROM %i WHERE user_id = %d FOR UPDATE'",
+        // После schema v6 (E2E run D 2026-04-30) SELECT FOR UPDATE включает
+        // ban_reason_admin вместе с публичным ban_reason. Главное для ledger
+        // idempotency_key — наличие banned_at в FOR UPDATE-запросе на профиле.
+        $this->assertMatchesRegularExpression(
+            "/'SELECT\s+status,\s*ban_reason,(?:\s*ban_reason_admin,)?\s*banned_at\s+FROM\s+%i\s+WHERE\s+user_id\s*=\s*%d\s+FOR\s+UPDATE'/",
             $src,
             'SELECT profile FOR UPDATE должен включать banned_at для ledger idempotency_key'
         );
@@ -63,11 +66,18 @@ final class LedgerCoverageStructuralTest extends TestCase
     {
         $src = $this->source('admin/users-management.php');
 
-        $handle_pos = strpos($src, '$this->handle_user_ban($user_id, $ban_reason, true)');
+        // После schema v6 сигнатура handle_user_ban получила ban_reason_admin
+        // и опциональный ban_reason_public — старый exact-match сломался.
+        // Ищем гибко: вызов $this->handle_user_ban(...) с любым числом аргументов.
+        if (preg_match('/\$this->handle_user_ban\s*\(/', $src, $m, PREG_OFFSET_CAPTURE) === 1) {
+            $handle_pos = $m[0][1];
+        } else {
+            $handle_pos = false;
+        }
         $freeze_pos = strpos($src, 'Cashback_Ban_Ledger::write_freeze_entry');
 
-        $this->assertNotFalse($handle_pos);
-        $this->assertNotFalse($freeze_pos);
+        $this->assertNotFalse($handle_pos, 'Должен быть вызов $this->handle_user_ban(...)');
+        $this->assertNotFalse($freeze_pos, 'Должен быть вызов Cashback_Ban_Ledger::write_freeze_entry');
         $this->assertGreaterThan(
             $handle_pos,
             $freeze_pos,
