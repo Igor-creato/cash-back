@@ -512,9 +512,14 @@ class Cashback_Shop_Importer {
             return 0;
         }
 
+        // post_content оставляем пустым: Admitad description написан для
+        // рекламодателей (фирменные регалии, скидки реселлерам, контакты),
+        // а не для конечных покупателей. Админ заполняет описание сам перед
+        // публикацией товара. Сырой description сохранён в _cashback_campaign_*
+        // raw_payload — admin может скопировать вручную если нужно.
         $post_id = wp_insert_post(array(
             'post_title'   => $dto->name !== '' ? $dto->name : ('Кампания #' . $dto->id),
-            'post_content' => $dto->description,
+            'post_content' => '',
             'post_status'  => 'draft',
             'post_type'    => 'product',
         ), true);
@@ -546,10 +551,13 @@ class Cashback_Shop_Importer {
         string $now
     ): void {
         if (function_exists('wp_update_post')) {
+            // post_content НЕ обновляем при ре-импорте — иначе уничтожим
+            // отредактированное админом описание. Импорт создаёт draft с
+            // пустым content (см. insert_draft_product), дальше — admin
+            // территория.
             wp_update_post(array(
-                'ID'           => $product_id,
-                'post_title'   => $dto->name !== '' ? $dto->name : ('Кампания #' . $dto->id),
-                'post_content' => $dto->description,
+                'ID'         => $product_id,
+                'post_title' => $dto->name !== '' ? $dto->name : ('Кампания #' . $dto->id),
                 // post_status НЕ меняем — админ может уже его опубликовать.
             ));
         }

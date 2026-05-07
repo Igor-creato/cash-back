@@ -695,6 +695,12 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             $currency = 'RUB';
         }
 
+        // goto_link / gotolink — Admitad на разных endpoint'ах называет поле
+        // по-разному: общий /advcampaigns/ отдаёт `goto_link` (с подчёркиванием),
+        // website-scoped /advcampaigns/website/{id}/ отдаёт `gotolink` (одним
+        // словом). Берём что есть.
+        $goto = (string) ( $raw['goto_link'] ?? $raw['gotolink'] ?? '' );
+
         return array(
             'id'                => (string) ( $raw['id'] ?? '' ),
             'name'              => (string) ( $raw['name'] ?? '' ),
@@ -707,7 +713,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             'regions'           => $regions,
             'categories'        => $categories,
             'currency'          => $currency,
-            'goto_link'         => (string) ( $raw['goto_link'] ?? '' ),
+            'goto_link'         => $goto,
             'raw'               => $raw,
         );
     }
