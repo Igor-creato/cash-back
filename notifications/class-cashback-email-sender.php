@@ -218,7 +218,18 @@ class Cashback_Email_Sender {
 
         // Тело
         $html .= '<tr><td style="padding:32px;color:#333333;font-size:15px;line-height:1.6;">';
-        $html .= '<p style="white-space:pre-line;margin:0 0 16px;">' . wp_kses_post($message) . '</p>';
+
+        // Делаем plain-text URL'ы кликабельными и красим все ссылки в теле
+        // в брендовый цвет (без перезаписи уже стилизованных <a>).
+        $body_html = make_clickable(wp_kses_post($message));
+        $body_html = (string) preg_replace_callback(
+            '/<a\b(?![^>]*\bstyle=)([^>]*)>/i',
+            static function ( $m ) use ( $brand_color ) {
+                return '<a' . $m[1] . ' style="color:' . esc_attr($brand_color) . ';text-decoration:underline;">';
+            },
+            $body_html
+        );
+        $html .= '<p style="white-space:pre-line;margin:0 0 16px;">' . $body_html . '</p>';
 
         if ($signature !== '') {
             $html .= '<p style="white-space:pre-line;margin:24px 0 0;color:#555555;font-size:14px;">';

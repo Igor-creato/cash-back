@@ -18,15 +18,18 @@ class Cashback_Theme_Color {
      * Основной брендовый цвет активной темы.
      *
      * Цепочка источников:
-     * 1) woodmart_get_opt('primary-color') — глобальная функция темы Woodmart;
-     * 2) get_option('xts-woodmart-options')['primary-color'] — прямое чтение опции
+     * 1) опция cashback_email_brand_color — ручной override из админки;
+     * 2) woodmart_get_opt('primary-color') — глобальная функция темы Woodmart;
+     * 3) get_option('xts-woodmart-options')['primary-color'] — прямое чтение опции
      *    темы (на случай ранних хуков, когда функция темы ещё не подгружена);
-     * 3) get_theme_mod('primary-color') — для тем, использующих стандартный
+     * 4) get_theme_mod('primary-color') — для тем, использующих стандартный
      *    Customizer API;
-     * 4) fallback #2271b1.
+     * 5) fallback #4555e8 (header/link-color текущей Woodmart-сборки сайта).
      */
     public static function get_brand_color(): string {
         $candidates = array();
+
+        $candidates[] = get_option('cashback_email_brand_color', '');
 
         if (function_exists('woodmart_get_opt')) {
             $candidates[] = woodmart_get_opt('primary-color');
@@ -46,7 +49,7 @@ class Cashback_Theme_Color {
             }
         }
 
-        return '#2271b1';
+        return '#4555e8';
     }
 
     /**

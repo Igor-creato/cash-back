@@ -14,6 +14,13 @@
         $label.text(this.checked ? 'Включено' : 'Выключено');
     });
 
+    // WP color picker для поля «Брендовый цвет писем»
+    $(function () {
+        if ($.fn.wpColorPicker) {
+            $('.cashback-color-field').wpColorPicker();
+        }
+    });
+
     // Save settings
     $(document).on('submit', '#cashback-admin-notification-form', function (e) {
         e.preventDefault();

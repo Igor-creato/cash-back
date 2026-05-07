@@ -45,6 +45,8 @@ class Cashback_Notifications_Admin {
 
         $ver = defined('CASHBACK_PLUGIN_VERSION') ? CASHBACK_PLUGIN_VERSION : '1.0.0';
 
+        wp_enqueue_style('wp-color-picker');
+
         wp_enqueue_style(
             'cashback-admin-notifications',
             plugins_url('assets/css/admin-notifications.css', __DIR__),
@@ -55,7 +57,7 @@ class Cashback_Notifications_Admin {
         wp_enqueue_script(
             'cashback-admin-notifications',
             plugins_url('assets/js/admin-notifications.js', __DIR__),
-            array( 'jquery' ),
+            array( 'jquery', 'wp-color-picker' ),
             $ver,
             true
         );
@@ -297,6 +299,38 @@ class Cashback_Notifications_Admin {
                                 </p>
                             </td>
                         </tr>
+                        <tr>
+                            <th scope="row">
+                                <label for="cashback_email_brand_color">
+                                    <?php esc_html_e('Брендовый цвет писем', 'cashback-plugin'); ?>
+                                </label>
+                            </th>
+                            <td>
+                                <?php
+                                $brand_color_saved   = (string) get_option('cashback_email_brand_color', '');
+                                $brand_color_current = class_exists('Cashback_Theme_Color')
+                                    ? Cashback_Theme_Color::get_brand_color()
+                                    : '#4555e8';
+                                ?>
+                                <input
+                                    type="text"
+                                    id="cashback_email_brand_color"
+                                    name="email_brand_color"
+                                    value="<?php echo esc_attr($brand_color_saved); ?>"
+                                    class="cashback-color-field"
+                                    data-default-color="#4555e8"
+                                />
+                                <p class="description">
+                                    <?php
+                                    printf(
+                                        /* translators: %s: текущий применяемый цвет, например #4555e8. */
+                                        esc_html__('Цвет шапки и ссылок в email. Пусто — авто-определение из темы (сейчас: %s).', 'cashback-plugin'),
+                                        '<code>' . esc_html($brand_color_current) . '</code>'
+                                    );
+                                    ?>
+                                </p>
+                            </td>
+                        </tr>
                     </table>
                 </div>
 
@@ -355,6 +389,17 @@ class Cashback_Notifications_Admin {
         if (isset($_POST['email_signature'])) {
             $signature = sanitize_textarea_field(wp_unslash($_POST['email_signature']));
             update_option('cashback_email_signature', $signature);
+        }
+
+        // Брендовый цвет писем (override автодетекта темы)
+        if (isset($_POST['email_brand_color'])) {
+            $raw = sanitize_text_field(wp_unslash($_POST['email_brand_color']));
+            if ($raw === '') {
+                $hex = '';
+            } else {
+                $hex = (string) sanitize_hex_color($raw);
+            }
+            update_option('cashback_email_brand_color', $hex);
         }
 
         wp_send_json_success(array( 'message' => __('Настройки сохранены.', 'cashback-plugin') ));
