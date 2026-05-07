@@ -654,6 +654,376 @@ class Cashback_Epn_Adapter extends Cashback_Network_Adapter_Base {
 
     /**
      * {@inheritdoc}
+     *
+     * EPN: GET /offers/list с расширенным fields для импорта на витрину.
+     * В отличие от fetch_campaigns(), запрашивает site_url, image,
+     * description, offer_currency, goto_link, categories, countries —
+     * всё необходимое для CampaignDetailDTO одним запросом.
+     *
+     * @since 12.0.0
+     */
+    public function fetch_campaigns_detailed( array $credentials, array $network_config, int $offset = 0, int $limit = 100 ): array {
+        $auth_headers = $this->build_auth_headers($credentials, $network_config);
+        if (!$auth_headers) {
+            return $this->detailed_error('Не удалось получить токен EPN');
+        }
+
+        $effective_limit  = max(1, min(500, $limit));
+        $effective_offset = max(0, $offset);
+
+        $headers = array_merge(array(
+            'Accept'        => 'application/json',
+            'Content-Type'  => 'application/json',
+            'User-Agent'    => 'CashbackPlugin/1.0',
+            'X-API-VERSION' => '2',
+        ), $auth_headers);
+
+        $url = 'https://app.epn.bz/offers/list?' . http_build_query(array(
+            'lang'      => 'ru',
+            'viewRules' => 'role_user',
+            'statuses'  => 'active,disabled,waiting,stopped',
+            'fields'    => 'id,name,title,status,site_url,image,description,offer_currency,goto_link,categories,countries,offer_type',
+            'limit'     => $effective_limit,
+            'offset'    => $effective_offset,
+        ));
+
+        $response = $this->http_get($url, $headers);
+
+        if (is_wp_error($response)) {
+            return $this->detailed_error('HTTP error: ' . $response->get_error_message());
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+
+        // 401/403 → сбросить токен, повторить ОДИН раз (паттерн fetch_campaigns).
+        if ($code === 401 || $code === 403) {
+            $this->invalidate_epn_cached_token($credentials);
+            $auth_headers = $this->build_auth_headers($credentials, $network_config);
+            if (!$auth_headers) {
+                return $this->detailed_error('EPN token refresh failed after ' . $code);
+            }
+            $headers = array_merge(array(
+                'Accept'        => 'application/json',
+                'Content-Type'  => 'application/json',
+                'User-Agent'    => 'CashbackPlugin/1.0',
+                'X-API-VERSION' => '2',
+            ), $auth_headers);
+
+            $response = $this->http_get($url, $headers);
+            if (is_wp_error($response)) {
+                return $this->detailed_error('HTTP error after retry: ' . $response->get_error_message());
+            }
+            $code = wp_remote_retrieve_response_code($response);
+        }
+
+        if ($code !== 200) {
+            $raw_body = wp_remote_retrieve_body($response);
+            return $this->detailed_error("HTTP {$code}: " . mb_substr($raw_body, 0, 300));
+        }
+
+        $body     = json_decode(wp_remote_retrieve_body($response), true);
+        $raw_data = isset($body['data']) && is_array($body['data']) ? $body['data'] : array();
+        $total    = (int) ( $body['meta']['count'] ?? 0 );
+
+        $campaigns = array();
+        foreach ($raw_data as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $id    = isset($item['id']) ? (string) $item['id'] : '';
+            if ($id === '') {
+                continue;
+            }
+            $attrs = isset($item['attributes']) && is_array($item['attributes']) ? $item['attributes'] : array();
+
+            $campaigns[] = $this->normalize_epn_campaign_detail($id, $attrs);
+        }
+
+        $returned    = count($raw_data);
+        $next_offset = $effective_offset + $effective_limit;
+        $has_next    = ($returned === $effective_limit) && ($total === 0 || $next_offset < $total);
+
+        return array(
+            'success'     => true,
+            'campaigns'   => $campaigns,
+            'has_next'    => $has_next,
+            'next_offset' => $next_offset,
+            'error'       => null,
+        );
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * EPN: GET /offers/{id} возвращает оффер с полем `rates` в attributes —
+     * это и есть массив тарифов кампании. Каждый тариф имеет `id`, `name`,
+     * `rate` (число) и `rate_type` ('percent' / 'fixed').
+     *
+     * Замечание: EPN постбэк НЕ передаёт tariff_id (в отличие от Admitad).
+     * Для корректного начисления мульти-тарифного магазина worker должен
+     * предкэшировать (offer_id → tariff) маппинг через sub-параметры или
+     * использовать default tariff. Это решается в Этапе 5 (Cashback_Shop_Tariff_Sync).
+     *
+     * @since 12.0.0
+     */
+    public function fetch_shop_tariffs( array $credentials, array $network_config, string $campaign_id ): array {
+        if ($campaign_id === '') {
+            return array(
+                'success' => false,
+                'tariffs' => array(),
+                'error'   => 'campaign_id обязателен',
+            );
+        }
+
+        $auth_headers = $this->build_auth_headers($credentials, $network_config);
+        if (!$auth_headers) {
+            return array(
+                'success' => false,
+                'tariffs' => array(),
+                'error'   => 'Не удалось получить токен EPN',
+            );
+        }
+
+        $headers = array_merge(array(
+            'Accept'        => 'application/json',
+            'Content-Type'  => 'application/json',
+            'User-Agent'    => 'CashbackPlugin/1.0',
+            'X-API-VERSION' => '2',
+        ), $auth_headers);
+
+        $url = 'https://app.epn.bz/offers/' . rawurlencode($campaign_id);
+
+        $response = $this->http_get($url, $headers);
+
+        if (is_wp_error($response)) {
+            return array(
+                'success' => false,
+                'tariffs' => array(),
+                'error'   => 'HTTP error: ' . $response->get_error_message(),
+            );
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+
+        if ($code === 401 || $code === 403) {
+            $this->invalidate_epn_cached_token($credentials);
+            $auth_headers = $this->build_auth_headers($credentials, $network_config);
+            if (!$auth_headers) {
+                return array(
+                    'success' => false,
+                    'tariffs' => array(),
+                    'error'   => 'EPN token refresh failed after ' . $code,
+                );
+            }
+            $headers = array_merge(array(
+                'Accept'        => 'application/json',
+                'Content-Type'  => 'application/json',
+                'User-Agent'    => 'CashbackPlugin/1.0',
+                'X-API-VERSION' => '2',
+            ), $auth_headers);
+
+            $response = $this->http_get($url, $headers);
+            if (is_wp_error($response)) {
+                return array(
+                    'success' => false,
+                    'tariffs' => array(),
+                    'error'   => 'HTTP error after retry: ' . $response->get_error_message(),
+                );
+            }
+            $code = wp_remote_retrieve_response_code($response);
+        }
+
+        if ($code !== 200) {
+            $raw_body = wp_remote_retrieve_body($response);
+            return array(
+                'success' => false,
+                'tariffs' => array(),
+                'error'   => "HTTP {$code}: " . mb_substr($raw_body, 0, 300),
+            );
+        }
+
+        $body  = json_decode(wp_remote_retrieve_body($response), true);
+        $data  = isset($body['data']) && is_array($body['data']) ? $body['data'] : array();
+        $attrs = isset($data['attributes']) && is_array($data['attributes']) ? $data['attributes'] : array();
+        $rates = isset($attrs['rates']) && is_array($attrs['rates']) ? $attrs['rates'] : array();
+
+        // Currency может прийти на уровне offer'а или per-rate.
+        $offer_currency = strtoupper((string) ( $attrs['offer_currency'] ?? $attrs['currency'] ?? 'RUB' ));
+
+        $tariffs = array();
+        foreach ($rates as $raw) {
+            if (!is_array($raw)) {
+                continue;
+            }
+            $tariff_id = isset($raw['id']) ? (string) $raw['id'] : '';
+            if ($tariff_id === '') {
+                continue;
+            }
+
+            $tariffs[] = array(
+                'tariff_id'    => $tariff_id,
+                'name'         => isset($raw['name']) ? (string) $raw['name'] : '',
+                'tariff_type'  => $this->map_epn_rate_type(
+                    isset($raw['rate_type']) ? (string) $raw['rate_type'] : '',
+                    isset($raw['name']) ? (string) $raw['name'] : ''
+                ),
+                'payment_size' => isset($raw['rate']) && is_numeric($raw['rate'])
+                    ? (float) $raw['rate']
+                    : (
+                        isset($raw['payment_size']) && is_numeric($raw['payment_size'])
+                            ? (float) $raw['payment_size']
+                            : 0.0
+                    ),
+                'payment_min'  => isset($raw['rate_min']) && is_numeric($raw['rate_min'])
+                    ? (float) $raw['rate_min']
+                    : null,
+                'payment_max'  => isset($raw['rate_max']) && is_numeric($raw['rate_max'])
+                    ? (float) $raw['rate_max']
+                    : null,
+                'currency'     => isset($raw['currency'])
+                    ? strtoupper((string) $raw['currency'])
+                    : $offer_currency,
+                'is_default'   => !empty($raw['is_default']),
+                'raw'          => $raw,
+            );
+        }
+
+        return array(
+            'success' => true,
+            'tariffs' => $tariffs,
+            'error'   => null,
+        );
+    }
+
+    /**
+     * Нормализовать одну запись /offers/list в формат CampaignDetailDTO.
+     *
+     * @param string               $id    EPN offer ID (из data[].id)
+     * @param array<string, mixed> $attrs data[].attributes
+     * @return array<string, mixed>
+     */
+    private function normalize_epn_campaign_detail( string $id, array $attrs ): array {
+        $status_raw = strtolower((string) ( $attrs['status'] ?? '' ));
+
+        // Categories: array of objects или array of strings.
+        $categories = array();
+        $raw_cats   = isset($attrs['categories']) && is_array($attrs['categories']) ? $attrs['categories'] : array();
+        foreach ($raw_cats as $cat) {
+            if (is_array($cat)) {
+                if (isset($cat['name'])) {
+                    $categories[] = (string) $cat['name'];
+                } elseif (isset($cat['title'])) {
+                    $categories[] = (string) $cat['title'];
+                }
+            } elseif (is_scalar($cat)) {
+                $categories[] = (string) $cat;
+            }
+        }
+
+        // EPN использует `countries` вместо `regions` — нормализуем как regions.
+        $regions  = array();
+        $raw_regs = array();
+        if (isset($attrs['countries']) && is_array($attrs['countries'])) {
+            $raw_regs = $attrs['countries'];
+        } elseif (isset($attrs['regions']) && is_array($attrs['regions'])) {
+            $raw_regs = $attrs['regions'];
+        }
+        foreach ($raw_regs as $r) {
+            if (is_array($r)) {
+                if (isset($r['code'])) {
+                    $regions[] = strtoupper((string) $r['code']);
+                } elseif (isset($r['country'])) {
+                    $regions[] = strtoupper((string) $r['country']);
+                } elseif (isset($r['name'])) {
+                    $regions[] = strtoupper((string) $r['name']);
+                }
+            } elseif (is_scalar($r)) {
+                $regions[] = strtoupper((string) $r);
+            }
+        }
+
+        $currency = strtoupper((string) ( $attrs['offer_currency'] ?? $attrs['currency'] ?? 'RUB' ));
+        if (!preg_match('/^[A-Z]{3}$/', $currency)) {
+            $currency = 'RUB';
+        }
+
+        $name = (string) ( $attrs['name'] ?? $attrs['title'] ?? '' );
+
+        return array(
+            'id'          => $id,
+            'name'        => $name,
+            'site_url'    => (string) ( $attrs['site_url'] ?? '' ),
+            'image_url'   => (string) ( $attrs['image'] ?? $attrs['logo_url'] ?? '' ),
+            'description' => (string) ( $attrs['description'] ?? '' ),
+            'status_raw'  => $status_raw,
+            'is_active'   => ( $status_raw === 'active' ),
+            'regions'     => $regions,
+            'categories'  => $categories,
+            'currency'    => $currency,
+            'goto_link'   => (string) ( $attrs['goto_link'] ?? '' ),
+            'raw'         => $attrs,
+        );
+    }
+
+    /**
+     * Нормализовать EPN rate_type → 'percent' | 'fix'.
+     *
+     * EPN использует 'percent' и 'fixed'; fallback по эвристике из name.
+     */
+    private function map_epn_rate_type( string $raw_type, string $name ): string {
+        $normalized = strtolower(trim($raw_type));
+
+        if ($normalized === 'percent' || $normalized === 'percentage' || $normalized === '%') {
+            return 'percent';
+        }
+        if ($normalized === 'fix' || $normalized === 'fixed' || $normalized === 'flat') {
+            return 'fix';
+        }
+
+        if (preg_match('/процент|percent|%/iu', $name)) {
+            return 'percent';
+        }
+        if (preg_match('/фикс|fix|fixed|руб|₽|usd|eur/iu', $name)) {
+            return 'fix';
+        }
+
+        return 'percent';
+    }
+
+    /**
+     * Сбрасывает закешированный EPN-токен (transient + runtime cache).
+     *
+     * EPN не переопределяет invalidate_token() из abstract (default сбрасывает
+     * только runtime), а refresh-цепочка хранит токен в transient. Этот helper
+     * объединяет оба сброса перед refresh-попыткой.
+     */
+    private function invalidate_epn_cached_token( array $credentials ): void {
+        $client_id = (string) ( $credentials['client_id'] ?? '' );
+        if ($client_id === '') {
+            return;
+        }
+        $cache_key = 'cashback_epn_token_' . md5($client_id);
+        delete_transient($cache_key);
+        unset($this->token_cache[ $cache_key ]);
+    }
+
+    /**
+     * Стандартный формат ошибки fetch_campaigns_detailed.
+     *
+     * @return array<string, mixed>
+     */
+    private function detailed_error( string $error ): array {
+        return array(
+            'success'     => false,
+            'campaigns'   => array(),
+            'has_next'    => false,
+            'next_offset' => 0,
+            'error'       => $error,
+        );
+    }
+
+    /**
+     * {@inheritdoc}
      */
     public function get_default_status_map(): array {
         return array(
