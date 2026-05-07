@@ -160,6 +160,14 @@
         // Idempotency-guard: если таб уже активен — не кликаем (toggle = close).
         if (isAlreadyActive(anchor)) { return true; }
 
+        // Запоминаем позицию до click: тема (Woodmart wd_tabs / WC tabs) или
+        // браузер (нативный anchor href="#tab-...") может синхронно дёрнуть
+        // scrollTo/scrollTop при активации. Это даёт «резкий рывок вверх»,
+        // который сбивает наш плавный scrollIntoView. Восстанавливаем
+        // позицию мгновенно — браузер не успевает отрисовать промежуточный
+        // jump в одном tick'е, и плавный scroll стартует с исходной точки.
+        var savedY = window.pageYOffset || window.scrollY || 0;
+
         // jQuery .trigger('click') — Woodmart использует jQuery, и WC tabs
         // привязывает обработчик через jQuery .on(). Triggers полный
         // click-flow (все WC/Woodmart hooks отработают, content
@@ -170,16 +178,42 @@
         } else {
             try { anchor.click(); } catch (e) {}
         }
+
+        // Sync-restore: если синхронный обработчик темы изменил scrollY —
+        // откатываем мгновенно. Async-scroll (через setTimeout) уже не
+        // покрываем здесь — для него работает rAF-плавный scroll ниже,
+        // браузер отменит запущенную чужую анимацию scroll-behavior:smooth.
+        var currentY = window.pageYOffset || window.scrollY || 0;
+        if (currentY !== savedY) {
+            window.scrollTo(0, savedY);
+        }
         return true;
     }
 
-    function activateWithRetry() {
-        var firstActivated = activate();
-        // Skрол сразу к контейнеру табов (один раз, чтобы не дёргать страницу).
+    function smoothScrollToTabs() {
         var container = document.querySelector('.woocommerce-tabs, .wd-tabs, .wc-tabs-wrapper');
         if (container && typeof container.scrollIntoView === 'function') {
             container.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
+    }
+
+    function activateWithRetry() {
+        // Шаг 1: открыть нужную вкладку. Возможный jump-scroll темы
+        // подавлен sync-restore внутри activate().
+        var firstActivated = activate();
+
+        // Шаг 2: дождаться, пока theme/WC применят layout-mutation
+        // (раскрытие accordion-pane на mobile, активация tab-pane на
+        // desktop) — их стилевые/визуальные эффекты должны быть в DOM,
+        // иначе наш scrollIntoView может вычислить устаревшую целевую
+        // позицию. Двойной rAF = «после ближайшего layout + после ещё
+        // одного frame на async-handlers темы». setTimeout(0) НЕ
+        // подходит: rAF гарантирует, что мы стартуем плавный scroll
+        // ровно перед следующим paint, без визуального dropped-frame.
+        window.requestAnimationFrame(function () {
+            window.requestAnimationFrame(smoothScrollToTabs);
+        });
+
         // Retry: Woodmart на ready() дёргает первый таб через trigger('click'),
         // что отменяет наш выбор. Через 700ms делаем повторную активацию.
         // Если первая попытка не нашла таб (lazy-load JS) — это и будет первая.
