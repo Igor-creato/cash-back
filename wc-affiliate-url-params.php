@@ -1734,6 +1734,18 @@ HTML;
      * @return string HTML-строка или пустая строка если кэшбэк не задан.
      */
     private function get_cashback_html( int $product_id, string $context = 'loop', bool $standalone = false ): string {
+        // v12: динамический расчёт через Cashback_Cashback_Display_Calculator,
+        // если у продукта есть импортированные тарифы. Возвращает пустую
+        // строку при пустых тарифах + отсутствующем legacy-fallback —
+        // тогда падаем в legacy-ветку ниже. Feature-flag
+        // cashback_use_dynamic_display управляет включением (default true).
+        if (class_exists('Cashback_Cashback_Display_Calculator')) {
+            $dynamic = Cashback_Cashback_Display_Calculator::render($product_id, $context, $standalone);
+            if ($dynamic !== '') {
+                return $dynamic;
+            }
+        }
+
         $value = get_post_meta($product_id, '_cashback_display_value', true);
         if (empty($value)) {
             return '';
@@ -1779,6 +1791,15 @@ HTML;
         $allowed_contexts = array( 'loop', 'single', 'shortcode' );
         if (!in_array($context, $allowed_contexts, true)) {
             $context = 'loop';
+        }
+
+        // v12: динамический расчёт через Cashback_Cashback_Display_Calculator
+        // (см. get_cashback_html()). Feature-flag и legacy fallback внутри.
+        if (class_exists('Cashback_Cashback_Display_Calculator')) {
+            $dynamic = Cashback_Cashback_Display_Calculator::render($product_id, $context, $standalone);
+            if ($dynamic !== '') {
+                return $dynamic;
+            }
         }
 
         $value = get_post_meta($product_id, '_cashback_display_value', true);
