@@ -421,25 +421,49 @@ final class ShopImporterStructuralTest extends TestCase
     {
         // Контрактный тест на форсящий callback: ext/type/proper_filename
         // должны быть svg/image-svg-xml для .svg, иначе данные не трогаем.
-        // Helper не публичный — реконструируем его через ту же логику, что
-        // помещена в sideload_svg_attachment(). Если SVG-фильтр не работает,
-        // wp_handle_sideload бракует файл — тест предупредит об этом.
+        // Реконструируем callback такой же как в sideload_svg_attachment().
         $cb = static function (array $check, string $file_path, string $filename, $mimes, string $real_mime = ''): array {
-            if (preg_match('/\.svgz?$/i', $filename)) {
-                $check['ext']             = 'svg';
-                $check['type']            = 'image/svg+xml';
-                $check['proper_filename'] = $filename;
+            unset($file_path);
+            if (! preg_match('/\.svgz?$/i', $filename)) {
+                return $check;
             }
+            if (! is_array($mimes) || ! isset($mimes['svg'])) {
+                return $check;
+            }
+            $rm = strtolower($real_mime);
+            $is_safe_real_mime = $rm === ''
+                || str_starts_with($rm, 'image/svg')
+                || str_starts_with($rm, 'text/')
+                || $rm === 'application/xml'
+                || $rm === 'application/octet-stream';
+            if (! $is_safe_real_mime) {
+                return $check;
+            }
+            $check['ext']             = 'svg';
+            $check['type']            = 'image/svg+xml';
+            $check['proper_filename'] = $filename;
             return $check;
         };
 
-        $reset = array('ext' => false, 'type' => false, 'proper_filename' => false);
-        $svg   = $cb($reset, '/tmp/x', 'logo.svg', null, 'text/xml');
+        $reset    = array('ext' => false, 'type' => false, 'proper_filename' => false);
+        $allowed  = array('svg' => 'image/svg+xml');
+
+        // SVG + caller разрешил svg + real_mime безопасный → форсим.
+        $svg = $cb($reset, '/tmp/x', 'logo.svg', $allowed, 'text/xml');
         $this->assertSame('svg', $svg['ext']);
         $this->assertSame('image/svg+xml', $svg['type']);
 
-        $png = $cb($reset, '/tmp/x', 'logo.png', null, 'image/png');
+        // Non-SVG не трогаем.
+        $png = $cb($reset, '/tmp/x', 'logo.png', $allowed, 'image/png');
         $this->assertFalse($png['ext'], 'callback не должен вмешиваться в non-SVG.');
+
+        // SVG, но caller НЕ разрешил svg в overrides — не подменяем.
+        $svg_no_caller = $cb($reset, '/tmp/x', 'logo.svg', null, 'text/xml');
+        $this->assertFalse($svg_no_caller['ext'], 'callback не активируется без svg в overrides[mimes].');
+
+        // SVG с подозрительным real_mime (PHP/исполняемый) — не подменяем.
+        $svg_php = $cb($reset, '/tmp/x', 'logo.svg', $allowed, 'application/x-php');
+        $this->assertFalse($svg_php['ext'], 'callback не активируется при подозрительном real_mime.');
     }
 
     public function test_sanitize_svg_strips_script_tag(): void

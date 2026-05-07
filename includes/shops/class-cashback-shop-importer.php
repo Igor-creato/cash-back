@@ -922,12 +922,30 @@ class Cashback_Shop_Importer {
             // → wp_handle_sideload отдаёт «Извините, вам не разрешено загружать
             // SVG файлы». Локальные фильтры (только на время этого вызова)
             // форсят корректный mime+ext. Фильтры removed в finally.
+            //
+            // Защита: фильтр срабатывает ТОЛЬКО если caller-overrides включают
+            // svg в разрешённых mime ($mimes-аргумент) И real_mime похож на
+            // XML/text/octet-stream (НЕ PHP/исполняемый — defense-in-depth).
             $force_svg_check = static function ( array $check, string $file_path, string $filename, $mimes, string $real_mime = '' ): array {
-                if (preg_match('/\.svgz?$/i', $filename)) {
-                    $check['ext']             = 'svg';
-                    $check['type']            = 'image/svg+xml';
-                    $check['proper_filename'] = $filename;
+                unset($file_path);
+                if (! preg_match('/\.svgz?$/i', $filename)) {
+                    return $check;
                 }
+                if (! is_array($mimes) || ! isset($mimes['svg'])) {
+                    return $check;
+                }
+                $rm = strtolower($real_mime);
+                $is_safe_real_mime = $rm === ''
+                    || str_starts_with($rm, 'image/svg')
+                    || str_starts_with($rm, 'text/')
+                    || $rm === 'application/xml'
+                    || $rm === 'application/octet-stream';
+                if (! $is_safe_real_mime) {
+                    return $check;
+                }
+                $check['ext']             = 'svg';
+                $check['type']            = 'image/svg+xml';
+                $check['proper_filename'] = $filename;
                 return $check;
             };
             $allow_svg_mime = static function ( array $mimes ): array {
@@ -936,6 +954,7 @@ class Cashback_Shop_Importer {
             };
 
             add_filter('wp_check_filetype_and_ext', $force_svg_check, 99, 5);
+            // phpcs:ignore WordPressVIPMinimum.Hooks.RestrictedHooks.upload_mimes -- SVG разрешается ТОЛЬКО на время этого sideload (remove_filter в finally); content санитизируется выше через sanitize_svg().
             add_filter('upload_mimes', $allow_svg_mime, 99);
             try {
                 $sideloaded = wp_handle_sideload($file_array, $overrides);
