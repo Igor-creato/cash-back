@@ -671,9 +671,13 @@ class Cashback_Shop_Importer {
         }
 
         // Taxonomy product_type — без него WC прячет External Product поля.
+        // wp_get_object_terms возвращает array|WP_Error; WP_Error — объект,
+        // потому `! is_array($current)` уже отлавливает WP_Error и любой
+        // не-array fallback. Доп. is_wp_error() была бы dead code
+        // (PHPStan: function.impossibleType).
         if (function_exists('wp_get_object_terms')) {
-            $current = wp_get_object_terms($product_id, 'product_type', array( 'fields' => 'slugs' ));
-            $is_empty = ! is_array($current) || $current === array() || is_wp_error($current);
+            $current  = wp_get_object_terms($product_id, 'product_type', array( 'fields' => 'slugs' ));
+            $is_empty = ! is_array($current) || $current === array();
             if ($is_empty) {
                 self::set_product_type_external($product_id);
             }
