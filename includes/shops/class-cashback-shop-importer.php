@@ -28,8 +28,11 @@ if (! defined('ABSPATH')) {
 
 class Cashback_Shop_Importer {
 
-    public const HOOK_RUN = 'cashback_shops_import_run';
-    public const AS_GROUP = 'cashback';
+    public const HOOK_RUN              = 'cashback_shops_import_run';
+    public const HOOK_RECURRING        = 'cashback_shops_import_recurring';
+    public const HOOK_GROUPS_RECOMPUTE = 'cashback_shop_groups_recompute';
+    public const HOOK_LOG_GC           = 'cashback_shop_import_log_gc';
+    public const AS_GROUP              = 'cashback';
 
     public const META_NETWORK_ID    = '_affiliate_network_id';
     public const META_OFFER_ID      = '_offer_id';
@@ -43,12 +46,149 @@ class Cashback_Shop_Importer {
     public const META_RATE_LOCKED   = '_rate_locked';
 
     /**
-     * Зарегистрировать AS-handler.
+     * Зарегистрировать AS-handlers + recurring schedules.
+     *
+     * Hooks (все в группе 'cashback'):
+     *   - cashback_shops_import_run         — обработка одной страницы
+     *     (вызывается импортёром per-network).
+     *   - cashback_shops_import_recurring   — daily 03:00, enqueue'ит
+     *     async actions для всех активных сетей.
+     *   - cashback_shop_groups_recompute    — hourly, recompute preferred
+     *     для всех групп со status='auto' (на случай tariff drift вне импорта).
+     *   - cashback_shop_import_log_gc       — weekly, удаляет log-row
+     *     старше 30 дней.
      */
     public static function init(): void {
-        if (function_exists('add_action')) {
-            add_action(self::HOOK_RUN, array( self::class, 'run' ), 10, 3);
+        if (! function_exists('add_action')) {
+            return;
         }
+
+        add_action(self::HOOK_RUN, array( self::class, 'run' ), 10, 3);
+        add_action(self::HOOK_RECURRING, array( self::class, 'enqueue_all_active' ));
+        add_action(self::HOOK_GROUPS_RECOMPUTE, array( self::class, 'recompute_auto_groups' ));
+        add_action(self::HOOK_LOG_GC, array( self::class, 'gc_old_logs' ));
+
+        self::maybe_schedule_recurring();
+    }
+
+    /**
+     * Зарегистрировать recurring AS-actions если ещё не зарегистрированы.
+     * Идемпотентно через as_has_scheduled_action.
+     */
+    public static function maybe_schedule_recurring(): void {
+        if (! function_exists('as_has_scheduled_action') || ! function_exists('as_schedule_recurring_action')) {
+            return;
+        }
+
+        // Daily import: 03:00 UTC, period 24h.
+        if (! as_has_scheduled_action(self::HOOK_RECURRING, array(), self::AS_GROUP)) {
+            $start = self::next_03_utc();
+            as_schedule_recurring_action($start, DAY_IN_SECONDS, self::HOOK_RECURRING, array(), self::AS_GROUP);
+        }
+
+        // Hourly groups recompute (защита от drift).
+        if (! as_has_scheduled_action(self::HOOK_GROUPS_RECOMPUTE, array(), self::AS_GROUP)) {
+            as_schedule_recurring_action(time() + 600, HOUR_IN_SECONDS, self::HOOK_GROUPS_RECOMPUTE, array(), self::AS_GROUP);
+        }
+
+        // Weekly log GC.
+        if (! as_has_scheduled_action(self::HOOK_LOG_GC, array(), self::AS_GROUP)) {
+            as_schedule_recurring_action(time() + 3600, 7 * DAY_IN_SECONDS, self::HOOK_LOG_GC, array(), self::AS_GROUP);
+        }
+    }
+
+    /**
+     * AS handler: enqueue async action для каждой активной сети.
+     * Каждая сеть импортируется параллельно (lock per-network).
+     */
+    public static function enqueue_all_active(): void {
+        global $wpdb;
+        if (! isset($wpdb) || ! is_object($wpdb) || ! function_exists('as_enqueue_async_action')) {
+            return;
+        }
+
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                'SELECT id FROM %i WHERE is_active = 1',
+                $wpdb->prefix . 'cashback_affiliate_networks'
+            ),
+            ARRAY_A
+        );
+        if (! is_array($rows)) {
+            return;
+        }
+
+        foreach ($rows as $row) {
+            $network_id = isset($row['id']) ? (int) $row['id'] : 0;
+            if ($network_id <= 0) {
+                continue;
+            }
+            $run_id = class_exists('Cashback_Shop_Import_Log')
+                ? Cashback_Shop_Import_Log::generate_run_id()
+                : (string) time();
+
+            as_enqueue_async_action(
+                self::HOOK_RUN,
+                array( $network_id, $run_id, 0 ),
+                self::AS_GROUP
+            );
+        }
+    }
+
+    /**
+     * AS handler: пересчитать preferred для всех auto-групп.
+     * Защищает от drift когда тарифы поменялись вне импорт-цикла.
+     */
+    public static function recompute_auto_groups(): void {
+        if (! class_exists('Cashback_Shop_Group_Resolver')) {
+            return;
+        }
+        global $wpdb;
+        if (! isset($wpdb) || ! is_object($wpdb)) {
+            return;
+        }
+
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                'SELECT id FROM %i WHERE status = %s LIMIT 500',
+                $wpdb->prefix . Cashback_Shop_Group_Resolver::TABLE_GROUPS,
+                Cashback_Shop_Group_Resolver::STATUS_AUTO
+            ),
+            ARRAY_A
+        );
+        if (! is_array($rows)) {
+            return;
+        }
+
+        foreach ($rows as $row) {
+            $group_id = isset($row['id']) ? (int) $row['id'] : 0;
+            if ($group_id > 0) {
+                Cashback_Shop_Group_Resolver::recompute_preferred($group_id);
+            }
+        }
+    }
+
+    /**
+     * AS handler: weekly log GC — удаляет import_log старше 30 дней.
+     */
+    public static function gc_old_logs(): void {
+        if (! class_exists('Cashback_Shop_Import_Log')) {
+            return;
+        }
+        Cashback_Shop_Import_Log::gc_old(30);
+    }
+
+    /**
+     * Возвращает timestamp следующего 03:00 UTC. Если сейчас < 03:00 — сегодня;
+     * иначе — завтра.
+     */
+    private static function next_03_utc(): int {
+        $now    = time();
+        $today  = strtotime(gmdate('Y-m-d 03:00:00', $now) . ' UTC');
+        if ($today === false) {
+            return $now + HOUR_IN_SECONDS;
+        }
+        return $today > $now ? $today : ($today + DAY_IN_SECONDS);
     }
 
     /**
