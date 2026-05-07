@@ -100,7 +100,7 @@ final class Cashback_Promocodes_Admin {
 
         // phpcs:disable WordPress.Security.NonceVerification.Recommended -- read-only фильтры списка через GET, capability=manage_options проверена выше.
         $page_num    = isset( $_GET['paged'] ) ? max( 1, (int) $_GET['paged'] ) : 1;
-        $per_page    = 50;
+        $per_page    = 20;
         $offset      = ( $page_num - 1 ) * $per_page;
         $only_active = ! ( isset( $_GET['active'] ) && $_GET['active'] === '0' );
         $search      = isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s'] ) ) : '';
