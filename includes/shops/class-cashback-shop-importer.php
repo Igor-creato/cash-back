@@ -403,6 +403,17 @@ class Cashback_Shop_Importer {
             // тарифы и preferred мог сместиться).
             update_post_meta($existing_id, self::META_LAST_SEEN_AT, $now);
             self::backfill_missing_admin_fields($existing_id);
+            // Backfill featured image: товары, импортированные до фикса
+            // SVG-сpath, остались без thumbnail. signature не меняется —
+            // через ветку 'updated' они туда не попадут. Догружаем здесь
+            // (idempotent: только если has_post_thumbnail() == false).
+            if (
+                $dto->image_url !== ''
+                && function_exists('has_post_thumbnail')
+                && ! has_post_thumbnail($existing_id)
+            ) {
+                self::attach_featured_image_from_url($existing_id, $dto->image_url, $adapter_slug, $dto->id);
+            }
             self::reconcile_group($existing_id);
             return array( 'kind' => 'unchanged', 'product_id' => $existing_id );
         }
