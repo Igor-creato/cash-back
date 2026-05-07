@@ -46,6 +46,7 @@ class Cashback_Notifications_Admin {
         $ver = defined('CASHBACK_PLUGIN_VERSION') ? CASHBACK_PLUGIN_VERSION : '1.0.0';
 
         wp_enqueue_style('wp-color-picker');
+        wp_enqueue_media();
 
         wp_enqueue_style(
             'cashback-admin-notifications',
@@ -331,6 +332,47 @@ class Cashback_Notifications_Admin {
                                 </p>
                             </td>
                         </tr>
+                        <tr>
+                            <th scope="row">
+                                <?php esc_html_e('Логотип в письмах', 'cashback-plugin'); ?>
+                            </th>
+                            <td>
+                                <?php
+                                $logo_id  = (int) get_option('cashback_email_logo_id', 0);
+                                $logo_url = $logo_id > 0
+                                    ? (string) wp_get_attachment_image_url($logo_id, 'medium')
+                                    : '';
+                                ?>
+                                <div class="cashback-logo-field">
+                                    <div class="cashback-logo-preview" style="margin-bottom:8px;min-height:40px;">
+                                        <?php if ($logo_url !== '') : ?>
+                                            <img src="<?php echo esc_url($logo_url); ?>" alt="" style="max-height:60px;max-width:240px;display:block;" />
+                                        <?php else : ?>
+                                            <em><?php esc_html_e('Не задан — используется логотип темы.', 'cashback-plugin'); ?></em>
+                                        <?php endif; ?>
+                                    </div>
+                                    <input
+                                        type="hidden"
+                                        name="email_logo_id"
+                                        class="cashback-logo-id"
+                                        value="<?php echo esc_attr((string) $logo_id); ?>"
+                                    />
+                                    <button type="button" class="button cashback-logo-select">
+                                        <?php esc_html_e('Выбрать из медиатеки', 'cashback-plugin'); ?>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="button cashback-logo-remove"
+                                        <?php echo $logo_id > 0 ? '' : 'style="display:none;"'; ?>
+                                    >
+                                        <?php esc_html_e('Удалить', 'cashback-plugin'); ?>
+                                    </button>
+                                </div>
+                                <p class="description">
+                                    <?php esc_html_e('Логотип в шапке email. Пусто — авто-определение из темы (Woodmart Header Builder → Логотип сайта → Site Icon).', 'cashback-plugin'); ?>
+                                </p>
+                            </td>
+                        </tr>
                     </table>
                 </div>
 
@@ -400,6 +442,18 @@ class Cashback_Notifications_Admin {
                 $hex = (string) sanitize_hex_color($raw);
             }
             update_option('cashback_email_brand_color', $hex);
+        }
+
+        // Логотип в письмах (attachment ID, override автодетекта темы)
+        if (isset($_POST['email_logo_id'])) {
+            $logo_id = absint(wp_unslash($_POST['email_logo_id']));
+            if ($logo_id > 0) {
+                $mime = (string) get_post_mime_type($logo_id);
+                if (strpos($mime, 'image/') !== 0) {
+                    $logo_id = 0;
+                }
+            }
+            update_option('cashback_email_logo_id', $logo_id);
         }
 
         wp_send_json_success(array( 'message' => __('Настройки сохранены.', 'cashback-plugin') ));

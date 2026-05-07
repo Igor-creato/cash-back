@@ -263,12 +263,21 @@ class Cashback_Email_Sender {
      * URL логотипа сайта.
      *
      * Цепочка источников:
-     * 1) Woodmart Header Builder (опции whb_main_header → whb_<id>);
-     * 2) WP Customize → custom_logo;
-     * 3) Site Icon (favicon HD) как мягкий fallback;
-     * 4) null — шапка письма рендерится без <img>.
+     * 1) опция cashback_email_logo_id — ручной override из админки (attachment ID);
+     * 2) Woodmart Header Builder (опции whb_main_header → whb_<id>);
+     * 3) WP Customize → custom_logo;
+     * 4) Site Icon (favicon HD) как мягкий fallback;
+     * 5) null — шапка письма рендерится без <img>.
      */
     private function get_logo_url(): ?string {
+        $override_id = (int) get_option('cashback_email_logo_id', 0);
+        if ($override_id > 0) {
+            $url = wp_get_attachment_image_url($override_id, 'medium');
+            if ($url !== false && $url !== '') {
+                return $url;
+            }
+        }
+
         $woodmart_logo = $this->get_woodmart_logo_url();
         if ($woodmart_logo !== null) {
             return $woodmart_logo;

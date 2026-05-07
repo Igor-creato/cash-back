@@ -21,6 +21,46 @@
         }
     });
 
+    // WP Media library picker для поля «Логотип в письмах»
+    $(document).on('click', '.cashback-logo-select', function (e) {
+        e.preventDefault();
+        if (typeof wp === 'undefined' || !wp.media) {
+            return;
+        }
+        var $field = $(this).closest('.cashback-logo-field');
+        var frame = wp.media({
+            title: 'Выбрать логотип',
+            button: { text: 'Использовать этот логотип' },
+            library: { type: 'image' },
+            multiple: false
+        });
+        frame.on('select', function () {
+            var attachment = frame.state().get('selection').first().toJSON();
+            var imgUrl = (attachment.sizes && attachment.sizes.medium && attachment.sizes.medium.url)
+                || attachment.url;
+            $field.find('.cashback-logo-id').val(attachment.id);
+            $field.find('.cashback-logo-preview').html(
+                $('<img>', {
+                    src: imgUrl,
+                    alt: '',
+                    css: { maxHeight: '60px', maxWidth: '240px', display: 'block' }
+                })
+            );
+            $field.find('.cashback-logo-remove').show();
+        });
+        frame.open();
+    });
+
+    $(document).on('click', '.cashback-logo-remove', function (e) {
+        e.preventDefault();
+        var $field = $(this).closest('.cashback-logo-field');
+        $field.find('.cashback-logo-id').val('');
+        $field.find('.cashback-logo-preview').html(
+            $('<em>').text('Не задан — используется логотип темы.')
+        );
+        $(this).hide();
+    });
+
     // Save settings
     $(document).on('submit', '#cashback-admin-notification-form', function (e) {
         e.preventDefault();
