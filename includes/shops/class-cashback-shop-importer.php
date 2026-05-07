@@ -290,7 +290,7 @@ class Cashback_Shop_Importer {
                     continue;
                 }
 
-                $upsert = self::upsert_product($dto, $network_id);
+                $upsert = self::upsert_product($dto, $network_id, (string) ( $network['slug'] ?? '' ));
                 if ($upsert['kind'] === 'new') {
                     ++$stats['upserted_new'];
                 } elseif ($upsert['kind'] === 'updated' || $upsert['kind'] === 'seen') {
@@ -305,7 +305,7 @@ class Cashback_Shop_Importer {
                         $creds,
                         $network,
                         $network_id,
-                        $dto->id
+                        $dto
                     );
                 }
             }
@@ -353,9 +353,12 @@ class Cashback_Shop_Importer {
      * При наличии _rate_locked=1 — НЕ перезаписываем product (только last_seen_at),
      * чтобы admin-override не съело cron-sync'ом.
      *
+     * @param string $adapter_slug Slug сети для META_IMPORT_SOURCE (например, 'adm').
+     *                             Передаётся из run(), где network row уже загружен;
+     *                             пустая строка допустима для backward-compat.
      * @return array{kind: 'new'|'updated'|'unchanged'|'seen'|'skipped', product_id: int}
      */
-    public static function upsert_product( Cashback_Campaign_Detail_DTO $dto, int $network_id ): array {
+    public static function upsert_product( Cashback_Campaign_Detail_DTO $dto, int $network_id, string $adapter_slug = '' ): array {
         if ($dto->id === '' || $network_id <= 0) {
             return array( 'kind' => 'skipped', 'product_id' => 0 );
         }
@@ -372,7 +375,7 @@ class Cashback_Shop_Importer {
         }
 
         if ($existing_id === 0) {
-            $product_id = self::insert_draft_product($dto, $network_id, $signature, $domain, $now);
+            $product_id = self::insert_draft_product($dto, $network_id, $signature, $domain, $now, $adapter_slug);
             self::reconcile_group($product_id);
             return array(
                 'kind'       => $product_id > 0 ? 'new' : 'skipped',
@@ -390,7 +393,7 @@ class Cashback_Shop_Importer {
             return array( 'kind' => 'unchanged', 'product_id' => $existing_id );
         }
 
-        self::update_existing_product($existing_id, $dto, $network_id, $signature, $domain, $now);
+        self::update_existing_product($existing_id, $dto, $network_id, $signature, $domain, $now, $adapter_slug);
         self::reconcile_group($existing_id);
         return array( 'kind' => 'updated', 'product_id' => $existing_id );
     }
@@ -497,7 +500,7 @@ class Cashback_Shop_Importer {
     }
 
     /**
-     * INSERT нового draft external product + metas.
+     * INSERT нового draft external product + metas + featured image.
      *
      * @return int product_id или 0 при ошибке.
      */
@@ -506,7 +509,8 @@ class Cashback_Shop_Importer {
         int $network_id,
         string $signature,
         string $domain,
-        string $now
+        string $now,
+        string $adapter_slug
     ): int {
         if (! function_exists('wp_insert_post')) {
             return 0;
@@ -528,13 +532,18 @@ class Cashback_Shop_Importer {
             return 0;
         }
 
-        self::write_product_meta((int) $post_id, $dto, $network_id, $signature, $domain, $now);
+        self::write_product_meta((int) $post_id, $dto, $network_id, $signature, $domain, $now, $adapter_slug);
         // External product type → meta _product_url для goto_link.
         if ($dto->goto_link !== '') {
             update_post_meta((int) $post_id, '_product_url', $dto->goto_link);
         }
         // Маркер external (WC product type taxonomy) — используем metabox-фолбэк.
         update_post_meta((int) $post_id, '_product_type', 'external');
+
+        // Featured image: грузим логотип из CDN сети как WP attachment и
+        // привязываем к товару. Best-effort: ошибка media_sideload_image
+        // не должна валить весь импорт.
+        self::attach_featured_image_from_url((int) $post_id, $dto->image_url, $adapter_slug, $dto->id);
 
         return (int) $post_id;
     }
@@ -548,7 +557,8 @@ class Cashback_Shop_Importer {
         int $network_id,
         string $signature,
         string $domain,
-        string $now
+        string $now,
+        string $adapter_slug
     ): void {
         if (function_exists('wp_update_post')) {
             // post_content НЕ обновляем при ре-импорте — иначе уничтожим
@@ -561,9 +571,15 @@ class Cashback_Shop_Importer {
                 // post_status НЕ меняем — админ может уже его опубликовать.
             ));
         }
-        self::write_product_meta($product_id, $dto, $network_id, $signature, $domain, $now);
+        self::write_product_meta($product_id, $dto, $network_id, $signature, $domain, $now, $adapter_slug);
         if ($dto->goto_link !== '') {
             update_post_meta($product_id, '_product_url', $dto->goto_link);
+        }
+
+        // Featured image заливаем только если у товара ещё нет thumbnail —
+        // не перекачиваем повторно, экономим HTTP и место в uploads.
+        if (function_exists('has_post_thumbnail') && ! has_post_thumbnail($product_id)) {
+            self::attach_featured_image_from_url($product_id, $dto->image_url, $adapter_slug, $dto->id);
         }
     }
 
@@ -576,12 +592,13 @@ class Cashback_Shop_Importer {
         int $network_id,
         string $signature,
         string $domain,
-        string $now
+        string $now,
+        string $adapter_slug
     ): void {
         update_post_meta($product_id, self::META_NETWORK_ID, (string) $network_id);
         update_post_meta($product_id, self::META_OFFER_ID, $dto->id);
         update_post_meta($product_id, self::META_STORE_DOMAIN, $domain);
-        update_post_meta($product_id, self::META_IMPORT_SOURCE, $dto->raw['_adapter_slug'] ?? '');
+        update_post_meta($product_id, self::META_IMPORT_SOURCE, $adapter_slug);
         update_post_meta($product_id, self::META_SIGNATURE, $signature);
         update_post_meta($product_id, self::META_IMPORT_AT, $now);
         update_post_meta($product_id, self::META_LAST_SEEN_AT, $now);
@@ -590,22 +607,90 @@ class Cashback_Shop_Importer {
     }
 
     /**
+     * Скачать картинку из URL в media library и поставить как featured image.
+     * Best-effort: ошибки логируются, но не пробрасываются (импорт
+     * не должен валиться из-за недоступного CDN).
+     *
+     * @param string $image_url   URL логотипа (часто на CDN сети).
+     * @param string $adapter_slug Slug сети — для контекста в логе.
+     * @param string $offer_id    ID кампании в сети — для контекста в логе.
+     */
+    private static function attach_featured_image_from_url(
+        int $product_id,
+        string $image_url,
+        string $adapter_slug,
+        string $offer_id
+    ): void {
+        if ($product_id <= 0 || $image_url === '') {
+            return;
+        }
+        if (! function_exists('media_sideload_image') || ! function_exists('set_post_thumbnail')) {
+            // ABSPATH/wp-admin не загружен (CLI без админ-include). Подключаем —
+            // media_sideload_image живёт в wp-admin/includes/media.php.
+            if (defined('ABSPATH')) {
+                $media_file = ABSPATH . 'wp-admin/includes/media.php';
+                $file_file  = ABSPATH . 'wp-admin/includes/file.php';
+                $image_file = ABSPATH . 'wp-admin/includes/image.php';
+                if (file_exists($media_file)) {
+                    require_once $media_file;
+                }
+                if (file_exists($file_file)) {
+                    require_once $file_file;
+                }
+                if (file_exists($image_file)) {
+                    require_once $image_file;
+                }
+            }
+        }
+        if (! function_exists('media_sideload_image') || ! function_exists('set_post_thumbnail')) {
+            return;
+        }
+
+        $attachment_id = media_sideload_image($image_url, $product_id, null, 'id');
+        if (function_exists('is_wp_error') && is_wp_error($attachment_id)) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+            error_log(sprintf(
+                '[Cashback Shop Importer] media_sideload_image failed for product=%d offer=%s slug=%s: %s',
+                $product_id,
+                $offer_id,
+                $adapter_slug,
+                $attachment_id->get_error_message()
+            ));
+            return;
+        }
+        if (! is_int($attachment_id) || $attachment_id <= 0) {
+            return;
+        }
+        set_post_thumbnail($product_id, $attachment_id);
+    }
+
+    /**
      * Sync тарифов одной кампании. Возвращает количество upserted-row.
+     *
+     * Источник тарифов: `$dto->inline_tariffs` (Admitad website-scoped endpoint
+     * отдаёт тарифы прямо в детальной кампании). Если inline нет — fallback
+     * на adapter::fetch_shop_tariffs (legacy /actions/ endpoint, для каталога
+     * вне website-scope или если CPA-сеть починит его в будущем).
      */
     private static function sync_tariffs_for_campaign(
         Cashback_Network_Adapter_Interface $adapter,
         array $creds,
         array $network,
         int $network_id,
-        string $offer_id
+        Cashback_Campaign_Detail_DTO $dto
     ): int {
-        $tariff_result = $adapter->fetch_shop_tariffs($creds, $network, $offer_id);
-        if (empty($tariff_result['success'])) {
-            return 0;
+        $offer_id = $dto->id;
+
+        $raw_tariffs = $dto->inline_tariffs;
+        if ($raw_tariffs === array()) {
+            $tariff_result = $adapter->fetch_shop_tariffs($creds, $network, $offer_id);
+            if (empty($tariff_result['success'])) {
+                return 0;
+            }
+            $raw_tariffs = isset($tariff_result['tariffs']) && is_array($tariff_result['tariffs'])
+                ? $tariff_result['tariffs']
+                : array();
         }
-        $raw_tariffs = isset($tariff_result['tariffs']) && is_array($tariff_result['tariffs'])
-            ? $tariff_result['tariffs']
-            : array();
 
         $dtos = array();
         foreach ($raw_tariffs as $raw) {

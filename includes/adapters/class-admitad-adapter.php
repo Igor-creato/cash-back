@@ -701,6 +701,11 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
         // словом). Берём что есть.
         $goto = (string) ( $raw['goto_link'] ?? $raw['gotolink'] ?? '' );
 
+        $actions_detail = isset($raw['actions_detail']) && is_array($raw['actions_detail'])
+            ? $raw['actions_detail']
+            : array();
+        $inline_tariffs = $this->parse_inline_tariffs($actions_detail, $currency);
+
         return array(
             'id'                => (string) ( $raw['id'] ?? '' ),
             'name'              => (string) ( $raw['name'] ?? '' ),
@@ -715,7 +720,98 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             'currency'          => $currency,
             'goto_link'         => $goto,
             'raw'               => $raw,
+            'inline_tariffs'    => $inline_tariffs,
         );
+    }
+
+    /**
+     * Распарсить `actions_detail[].tariffs[].rates[]` в массив, совместимый с
+     * Cashback_Shop_Tariff_DTO::from_array(). Используется для website-scoped
+     * endpoint Admitad: тарифы прилетают inline в первом запросе, отдельный
+     * /advcampaigns/{id}/actions/ для подключённых программ возвращает 404.
+     *
+     * Правила:
+     *  - rates без country (country === null) — глобальный тариф, берём первый;
+     *  - если все rates имеют country — пропускаем тариф (нет ставки RU/глобальной);
+     *  - если rates пустой — пропускаем тариф;
+     *  - is_percentage=true → tariff_type='percent', size — процент;
+     *  - is_percentage=false → tariff_type='fix', size — абсолютная сумма;
+     *  - currency у Admitad per-rate отсутствует — берём из родительской кампании;
+     *  - is_default — эвристика по name=='Default rate' (Admitad не отдаёт явный флаг inline).
+     *
+     * @param array<int, mixed> $actions_detail Сырые элементы из payload `actions_detail`.
+     * @param string            $parent_currency Валюта родительской кампании (трёхбуквенная).
+     * @return array<int, array<string, mixed>>
+     */
+    private function parse_inline_tariffs( array $actions_detail, string $parent_currency ): array {
+        if ($actions_detail === array()) {
+            return array();
+        }
+
+        $result = array();
+        foreach ($actions_detail as $action) {
+            if (! is_array($action)) {
+                continue;
+            }
+            $tariffs = isset($action['tariffs']) && is_array($action['tariffs'])
+                ? $action['tariffs']
+                : array();
+
+            foreach ($tariffs as $tariff) {
+                if (! is_array($tariff)) {
+                    continue;
+                }
+                $tariff_id = isset($tariff['id']) && (is_string($tariff['id']) || is_numeric($tariff['id']))
+                    ? (string) $tariff['id']
+                    : '';
+                if ($tariff_id === '') {
+                    continue;
+                }
+
+                $rates = isset($tariff['rates']) && is_array($tariff['rates'])
+                    ? $tariff['rates']
+                    : array();
+                if ($rates === array()) {
+                    continue;
+                }
+
+                $picked = null;
+                foreach ($rates as $rate) {
+                    if (! is_array($rate)) {
+                        continue;
+                    }
+                    if (! array_key_exists('country', $rate) || $rate['country'] === null) {
+                        $picked = $rate;
+                        break;
+                    }
+                }
+                if ($picked === null) {
+                    continue;
+                }
+
+                $is_percentage = ! empty($picked['is_percentage']);
+                $size_raw      = $picked['size'] ?? '0';
+                $payment_size  = is_numeric($size_raw) ? (float) $size_raw : 0.0;
+
+                $name = isset($tariff['name']) && is_scalar($tariff['name'])
+                    ? (string) $tariff['name']
+                    : '';
+
+                $result[] = array(
+                    'tariff_id'    => $tariff_id,
+                    'name'         => $name,
+                    'tariff_type'  => $is_percentage ? 'percent' : 'fix',
+                    'payment_size' => $payment_size,
+                    'payment_min'  => null,
+                    'payment_max'  => null,
+                    'currency'     => $parent_currency,
+                    'is_default'   => ( $name === 'Default rate' ),
+                    'raw'          => $tariff,
+                );
+            }
+        }
+
+        return $result;
     }
 
     /**

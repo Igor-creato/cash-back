@@ -150,6 +150,56 @@ final class ShopAdapterDtoTest extends TestCase
         $this->assertSame('pending', $array['connection_status']);
     }
 
+    public function test_campaign_dto_inline_tariffs_default_empty_array(): void
+    {
+        $dto = Cashback_Campaign_Detail_DTO::from_array(array('id' => '1'));
+        $this->assertSame(array(), $dto->inline_tariffs);
+    }
+
+    public function test_campaign_dto_inline_tariffs_roundtrip(): void
+    {
+        $tariff = array(
+            'tariff_id'    => '10595',
+            'name'         => 'Default rate',
+            'tariff_type'  => 'percent',
+            'payment_size' => 20.62,
+            'payment_min'  => null,
+            'payment_max'  => null,
+            'currency'     => 'RUB',
+            'is_default'   => true,
+            'raw'          => array('id' => 10595),
+        );
+        $dto = Cashback_Campaign_Detail_DTO::from_array(array(
+            'id'             => '2381',
+            'inline_tariffs' => array($tariff),
+        ));
+
+        $this->assertCount(1, $dto->inline_tariffs);
+        $this->assertSame($tariff, $dto->inline_tariffs[0]);
+
+        $array = $dto->to_array();
+        $this->assertArrayHasKey('inline_tariffs', $array);
+        $this->assertSame(array($tariff), $array['inline_tariffs']);
+    }
+
+    public function test_campaign_dto_inline_tariffs_skips_non_array_entries(): void
+    {
+        $dto = Cashback_Campaign_Detail_DTO::from_array(array(
+            'id'             => '1',
+            'inline_tariffs' => array(
+                array('tariff_id' => 'a', 'tariff_type' => 'percent'),
+                'malformed-string',
+                42,
+                null,
+                array('tariff_id' => 'b', 'tariff_type' => 'fix'),
+            ),
+        ));
+
+        $this->assertCount(2, $dto->inline_tariffs, 'не-массивы отбрасываются');
+        $this->assertSame('a', $dto->inline_tariffs[0]['tariff_id']);
+        $this->assertSame('b', $dto->inline_tariffs[1]['tariff_id']);
+    }
+
     // ============================================================
     // Cashback_Shop_Tariff_DTO
     // ============================================================

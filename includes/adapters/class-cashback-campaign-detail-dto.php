@@ -49,6 +49,16 @@ final class Cashback_Campaign_Detail_DTO {
     public string $goto_link;
     /** @var array<string, mixed> */
     public array $raw;
+    /**
+     * Тарифы, пришедшие inline в payload детальной кампании
+     * (Admitad website-scoped endpoint: actions_detail[].tariffs[]).
+     * Каждый элемент — массив, совместимый с Cashback_Shop_Tariff_DTO::from_array().
+     * Если адаптер не отдаёт inline (или payload пуст) — массив пустой; импортёр
+     * fallback'ом дёргает adapter::fetch_shop_tariffs().
+     *
+     * @var array<int, array<string, mixed>>
+     */
+    public array $inline_tariffs;
 
     private function __construct(
         string $id,
@@ -63,7 +73,8 @@ final class Cashback_Campaign_Detail_DTO {
         array $categories,
         string $currency,
         string $goto_link,
-        array $raw
+        array $raw,
+        array $inline_tariffs
     ) {
         $this->id                = $id;
         $this->name              = $name;
@@ -78,6 +89,7 @@ final class Cashback_Campaign_Detail_DTO {
         $this->currency          = $currency;
         $this->goto_link         = $goto_link;
         $this->raw               = $raw;
+        $this->inline_tariffs    = $inline_tariffs;
     }
 
     /**
@@ -102,6 +114,15 @@ final class Cashback_Campaign_Detail_DTO {
             : array();
         $raw        = isset($data['raw']) && is_array($data['raw']) ? $data['raw'] : array();
 
+        $inline_tariffs = array();
+        if (isset($data['inline_tariffs']) && is_array($data['inline_tariffs'])) {
+            foreach ($data['inline_tariffs'] as $entry) {
+                if (is_array($entry)) {
+                    $inline_tariffs[] = $entry;
+                }
+            }
+        }
+
         $currency = isset($data['currency']) ? strtoupper((string) $data['currency']) : 'RUB';
         if (! preg_match('/^[A-Z]{3}$/', $currency)) {
             $currency = 'RUB';
@@ -124,7 +145,8 @@ final class Cashback_Campaign_Detail_DTO {
             $categories,
             $currency,
             isset($data['goto_link']) ? (string) $data['goto_link'] : '',
-            $raw
+            $raw,
+            $inline_tariffs
         );
     }
 
@@ -148,6 +170,7 @@ final class Cashback_Campaign_Detail_DTO {
             'currency'          => $this->currency,
             'goto_link'         => $this->goto_link,
             'raw'               => $this->raw,
+            'inline_tariffs'    => $this->inline_tariffs,
         );
     }
 }

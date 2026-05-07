@@ -1075,3 +1075,52 @@ if (!class_exists('Cashback_Fraud_Collector')) {
         public static function record_withdrawal_event(int $user_id): void {}
     }
 }
+
+// ============================================================
+// WordPress media-стабы для shop-importer тестов.
+// State: $GLOBALS['_cb_test_media_sideload_calls'] (история вызовов),
+//        $GLOBALS['_cb_test_post_thumbnails']      (post_id => attachment_id),
+//        $GLOBALS['_cb_test_media_sideload_return'] (опционально: int|WP_Error
+//        для следующего вызова; иначе возвращается next attachment_id).
+// Тесты сами сбрасывают глобалы в setUp().
+// ============================================================
+if (!isset($GLOBALS['_cb_test_media_sideload_calls'])) {
+    $GLOBALS['_cb_test_media_sideload_calls'] = array();
+}
+if (!isset($GLOBALS['_cb_test_post_thumbnails'])) {
+    $GLOBALS['_cb_test_post_thumbnails'] = array();
+}
+
+if (!function_exists('media_sideload_image')) {
+    function media_sideload_image(string $file, int $post_id = 0, ?string $desc = null, string $return_format = 'html'): mixed
+    {
+        $GLOBALS['_cb_test_media_sideload_calls'][] = array(
+            'url'           => $file,
+            'post_id'       => $post_id,
+            'desc'          => $desc,
+            'return_format' => $return_format,
+        );
+        if (array_key_exists('_cb_test_media_sideload_return', $GLOBALS)) {
+            $forced = $GLOBALS['_cb_test_media_sideload_return'];
+            unset($GLOBALS['_cb_test_media_sideload_return']);
+            return $forced;
+        }
+        // Default: фиксированный attachment id, кратный post_id для трассировки.
+        return 100000 + $post_id;
+    }
+}
+
+if (!function_exists('set_post_thumbnail')) {
+    function set_post_thumbnail(int $post_id, int $thumbnail_id): bool
+    {
+        $GLOBALS['_cb_test_post_thumbnails'][ $post_id ] = $thumbnail_id;
+        return true;
+    }
+}
+
+if (!function_exists('has_post_thumbnail')) {
+    function has_post_thumbnail(int $post_id = 0): bool
+    {
+        return !empty($GLOBALS['_cb_test_post_thumbnails'][ $post_id ]);
+    }
+}

@@ -162,4 +162,115 @@ final class ShopImporterStructuralTest extends TestCase
         )));
         $this->assertNotSame($a, $b);
     }
+
+    // ============================================================
+    // Сигнатуры приватных методов (после фиксов inline_tariffs / media / slug).
+    // ============================================================
+
+    public function test_sync_tariffs_for_campaign_takes_dto(): void
+    {
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $this->assertTrue($reflection->hasMethod('sync_tariffs_for_campaign'));
+
+        $method = $reflection->getMethod('sync_tariffs_for_campaign');
+        $params = $method->getParameters();
+        $this->assertCount(5, $params, 'sync_tariffs_for_campaign принимает 5 параметров');
+
+        $dto_param = $params[4];
+        $this->assertSame('dto', $dto_param->getName());
+        $type = $dto_param->getType();
+        $this->assertNotNull($type);
+        $this->assertSame('Cashback_Campaign_Detail_DTO', $type->getName());
+    }
+
+    public function test_write_product_meta_takes_adapter_slug(): void
+    {
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method = $reflection->getMethod('write_product_meta');
+        $params = $method->getParameters();
+        $this->assertCount(7, $params, 'write_product_meta принимает 7 параметров');
+
+        $slug_param = $params[6];
+        $this->assertSame('adapter_slug', $slug_param->getName());
+        $this->assertSame('string', $slug_param->getType()->getName());
+    }
+
+    public function test_attach_featured_image_helper_exists(): void
+    {
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $this->assertTrue(
+            $reflection->hasMethod('attach_featured_image_from_url'),
+            'attach_featured_image_from_url должен существовать как private helper'
+        );
+        $method = $reflection->getMethod('attach_featured_image_from_url');
+        $this->assertTrue($method->isPrivate());
+        $this->assertTrue($method->isStatic());
+    }
+
+    public function test_upsert_product_takes_optional_adapter_slug(): void
+    {
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method = $reflection->getMethod('upsert_product');
+        $params = $method->getParameters();
+        $this->assertCount(3, $params, 'upsert_product теперь принимает 3 параметра (slug опциональный)');
+        $this->assertSame('adapter_slug', $params[2]->getName());
+        $this->assertTrue($params[2]->isDefaultValueAvailable(), 'adapter_slug имеет default ""');
+    }
+
+    // ============================================================
+    // Functional smoke: attach_featured_image_from_url через Reflection
+    // (приватный, нужно invoke напрямую).
+    // ============================================================
+
+    public function test_attach_featured_image_calls_media_sideload_and_set_thumbnail(): void
+    {
+        $GLOBALS['_cb_test_media_sideload_calls'] = array();
+        $GLOBALS['_cb_test_post_thumbnails']      = array();
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method = $reflection->getMethod('attach_featured_image_from_url');
+        $method->setAccessible(true);
+
+        $method->invoke(null, 42, 'https://cdn.example.com/logo.png', 'adm', '2381');
+
+        $this->assertCount(1, $GLOBALS['_cb_test_media_sideload_calls']);
+        $this->assertSame('https://cdn.example.com/logo.png', $GLOBALS['_cb_test_media_sideload_calls'][0]['url']);
+        $this->assertSame(42, $GLOBALS['_cb_test_media_sideload_calls'][0]['post_id']);
+        $this->assertSame('id', $GLOBALS['_cb_test_media_sideload_calls'][0]['return_format']);
+
+        $this->assertArrayHasKey(42, $GLOBALS['_cb_test_post_thumbnails']);
+        $this->assertSame(100042, $GLOBALS['_cb_test_post_thumbnails'][42]);
+    }
+
+    public function test_attach_featured_image_skips_empty_url(): void
+    {
+        $GLOBALS['_cb_test_media_sideload_calls'] = array();
+        $GLOBALS['_cb_test_post_thumbnails']      = array();
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method = $reflection->getMethod('attach_featured_image_from_url');
+        $method->setAccessible(true);
+
+        $method->invoke(null, 99, '', 'adm', 'X');
+
+        $this->assertSame(array(), $GLOBALS['_cb_test_media_sideload_calls']);
+        $this->assertArrayNotHasKey(99, $GLOBALS['_cb_test_post_thumbnails']);
+    }
+
+    public function test_attach_featured_image_handles_wp_error_silently(): void
+    {
+        $GLOBALS['_cb_test_media_sideload_calls'] = array();
+        $GLOBALS['_cb_test_post_thumbnails']      = array();
+        $GLOBALS['_cb_test_media_sideload_return'] = new \WP_Error('http_request_failed', 'CDN unreachable');
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method = $reflection->getMethod('attach_featured_image_from_url');
+        $method->setAccessible(true);
+
+        // Не должен бросать исключение.
+        $method->invoke(null, 7, 'https://broken.example.com/x.png', 'adm', '500');
+
+        $this->assertCount(1, $GLOBALS['_cb_test_media_sideload_calls']);
+        $this->assertArrayNotHasKey(7, $GLOBALS['_cb_test_post_thumbnails'], 'thumbnail НЕ ставится при WP_Error');
+    }
 }

@@ -518,4 +518,211 @@ final class AdmitadShopsDetailedTest extends TestCase
         $url = $GLOBALS['_cb_test_http_calls'][0]['url'];
         $this->assertStringContainsString('/advcampaigns/website/42%26evil/', $url);
     }
+
+    // ============================================================
+    // Inline tariffs parsing (actions_detail) — фикс HTTP 404 на /actions/.
+    // ============================================================
+
+    private function fixture_campaign_with_actions_detail(array $actions_detail, string $currency = 'rub'): string
+    {
+        return wp_json_encode(array(
+            '_meta'   => array('count' => 1),
+            'results' => array(array(
+                'id'                => 2381,
+                'name'              => 'Kaspersky',
+                'site_url'          => 'https://www.kaspersky.ru',
+                'image'             => 'https://cdn.example.com/logo.png',
+                'status'            => 'active',
+                'connection_status' => 'active',
+                'currency'          => $currency,
+                'actions_detail'    => $actions_detail,
+            )),
+        ));
+    }
+
+    public function test_inline_tariffs_extracted_from_actions_detail_percent(): void
+    {
+        $actions = array(array(
+            'tariffs' => array(array(
+                'action_id' => 8724,
+                'id'        => 10595,
+                'name'      => 'Default rate',
+                'rates'     => array(array(
+                    'size'          => '20.62',
+                    'is_percentage' => true,
+                    'country'       => null,
+                    'date_s'        => '2026-03-10',
+                    'price_s'       => '0.00',
+                    'tariff_id'     => 10595,
+                    'id'            => 1794877,
+                )),
+            )),
+        ));
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaign_with_actions_detail($actions))));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $first = $result['campaigns'][0];
+        $this->assertArrayHasKey('inline_tariffs', $first);
+        $this->assertCount(1, $first['inline_tariffs']);
+
+        $tariff = $first['inline_tariffs'][0];
+        $this->assertSame('10595', $tariff['tariff_id']);
+        $this->assertSame('Default rate', $tariff['name']);
+        $this->assertSame('percent', $tariff['tariff_type']);
+        $this->assertSame(20.62, $tariff['payment_size']);
+        $this->assertNull($tariff['payment_min']);
+        $this->assertNull($tariff['payment_max']);
+        $this->assertSame('RUB', $tariff['currency'], 'currency наследуется от родителя');
+        $this->assertTrue($tariff['is_default'], '"Default rate" → is_default=true');
+    }
+
+    public function test_inline_tariffs_handles_fix_type_with_size_field(): void
+    {
+        $actions = array(array(
+            'tariffs' => array(array(
+                'id'    => 555,
+                'name'  => 'Fixed reward',
+                'rates' => array(array(
+                    'size'          => '150.00',
+                    'is_percentage' => false,
+                    'country'       => null,
+                )),
+            )),
+        ));
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaign_with_actions_detail($actions, 'eur'))));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $tariff = $result['campaigns'][0]['inline_tariffs'][0];
+        $this->assertSame('fix', $tariff['tariff_type']);
+        $this->assertSame(150.00, $tariff['payment_size']);
+        $this->assertSame('EUR', $tariff['currency']);
+        $this->assertFalse($tariff['is_default']);
+    }
+
+    public function test_inline_tariffs_filters_country_specific_rates(): void
+    {
+        $actions = array(array(
+            'tariffs' => array(array(
+                'id'    => 1001,
+                'name'  => 'Multi-country tariff',
+                'rates' => array(
+                    array('size' => '5.00', 'is_percentage' => true, 'country' => 'RU'),
+                    array('size' => '7.50', 'is_percentage' => true, 'country' => null),
+                    array('size' => '10.00', 'is_percentage' => true, 'country' => 'BY'),
+                ),
+            )),
+        ));
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaign_with_actions_detail($actions))));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $tariff = $result['campaigns'][0]['inline_tariffs'][0];
+        $this->assertSame(7.50, $tariff['payment_size'], 'берётся первый rate с country=null');
+    }
+
+    public function test_inline_tariffs_skips_tariff_with_no_null_country_rate(): void
+    {
+        $actions = array(array(
+            'tariffs' => array(array(
+                'id'    => 2002,
+                'name'  => 'RU-only',
+                'rates' => array(
+                    array('size' => '5.00', 'is_percentage' => true, 'country' => 'RU'),
+                ),
+            )),
+        ));
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaign_with_actions_detail($actions))));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $this->assertSame(array(), $result['campaigns'][0]['inline_tariffs']);
+    }
+
+    public function test_inline_tariffs_skips_tariff_with_empty_rates(): void
+    {
+        $actions = array(array(
+            'tariffs' => array(array(
+                'id'    => 3003,
+                'name'  => 'No rates',
+                'rates' => array(),
+            )),
+        ));
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaign_with_actions_detail($actions))));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $this->assertSame(array(), $result['campaigns'][0]['inline_tariffs']);
+    }
+
+    public function test_inline_tariffs_collects_multiple_tariffs_per_action(): void
+    {
+        $actions = array(array(
+            'tariffs' => array(
+                array(
+                    'id'    => 1,
+                    'name'  => 'Default rate',
+                    'rates' => array(array('size' => '15.00', 'is_percentage' => true, 'country' => null)),
+                ),
+                array(
+                    'id'    => 2,
+                    'name'  => 'Free order',
+                    'rates' => array(array('size' => '0.00', 'is_percentage' => true, 'country' => null)),
+                ),
+            ),
+        ));
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaign_with_actions_detail($actions))));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $tariffs = $result['campaigns'][0]['inline_tariffs'];
+        $this->assertCount(2, $tariffs);
+        $this->assertSame('1', $tariffs[0]['tariff_id']);
+        $this->assertSame('2', $tariffs[1]['tariff_id']);
+        $this->assertTrue($tariffs[0]['is_default']);
+        $this->assertFalse($tariffs[1]['is_default']);
+    }
+
+    public function test_inline_tariffs_empty_when_actions_detail_absent(): void
+    {
+        $payload = wp_json_encode(array(
+            '_meta'   => array('count' => 1),
+            'results' => array(array(
+                'id'                => 9999,
+                'name'              => 'NoActions',
+                'status'            => 'active',
+                'connection_status' => 'active',
+            )),
+        ));
+        $this->queue_responses(array($this->http_response(200, $payload)));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $this->assertArrayHasKey('inline_tariffs', $result['campaigns'][0]);
+        $this->assertSame(array(), $result['campaigns'][0]['inline_tariffs']);
+    }
+
+    public function test_inline_tariffs_skips_tariff_with_missing_id(): void
+    {
+        $actions = array(array(
+            'tariffs' => array(array(
+                'name'  => 'No ID',
+                'rates' => array(array('size' => '5', 'is_percentage' => true, 'country' => null)),
+            )),
+        ));
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaign_with_actions_detail($actions))));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $this->assertSame(array(), $result['campaigns'][0]['inline_tariffs']);
+    }
 }
