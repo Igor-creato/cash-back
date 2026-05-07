@@ -92,6 +92,7 @@ class Mariadb_Plugin {
             $instance->migrate_promocodes_v9_click_id();
             $instance->migrate_click_log_promocode_id_v10();
             $instance->migrate_promocodes_v11_session_promocode_id();
+            $instance->migrate_shop_import_v12();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -3991,6 +3992,196 @@ class Mariadb_Plugin {
         }
 
         update_option('cashback_db_version', 11, false);
+    }
+
+    /**
+     * Миграция v12: Shop Importer + Tariffs + Groups + Import-log.
+     *
+     * Создаёт 4 новые таблицы для функционала автоимпорта магазинов из CPA-сетей
+     * (Admitad/EPN), хранения партнёрских тарифов и дедупа магазинов между сетями:
+     *
+     *   1. cashback_shop_tariffs        — массив тарифов на campaign
+     *      (PERCENT/FIX, payment_size, currency, soft-delete через is_deleted).
+     *   2. cashback_shop_groups         — группы магазинов по домену (joom.com →
+     *      одна группа независимо от сети); preferred_product_id / pin_product_id
+     *      определяют, какую ставку показывать на витрине.
+     *   3. cashback_shop_group_members  — many-to-many продукт ↔ группа
+     *      (UNIQUE по product_id: один продукт максимум в одной группе).
+     *   4. cashback_shop_import_log     — лог запусков для admin UI прогресса
+     *      (run_id, page, fetched, upserted, errors).
+     *
+     * Идемпотентность: cashback_db_version >= 12 fast-path + CREATE TABLE
+     * IF NOT EXISTS + post-verify через INFORMATION_SCHEMA per table.
+     * Безопасно вызывать на каждом init.
+     *
+     * Версионизация: cashback_db_version = 12.
+     */
+    public function migrate_shop_import_v12(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        if ($current_version >= 12) {
+            return;
+        }
+
+        $safe_prefix = $this->validate_table_prefix($wpdb->prefix);
+
+        // ------------------------------------------------------------------
+        // 1. cashback_shop_tariffs — тарифы магазина (PERCENT/FIX).
+        // ------------------------------------------------------------------
+        $shop_tariffs_table = $wpdb->prefix . 'cashback_shop_tariffs';
+        $shop_tariffs_ddl   = array(
+            "CREATE TABLE IF NOT EXISTS `{$safe_prefix}cashback_shop_tariffs` (
+                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `network_id` INT UNSIGNED NOT NULL COMMENT 'FK cashback_affiliate_networks.id',
+                `offer_id` VARCHAR(64) NOT NULL COMMENT 'advcampaign_id / offer_id из API',
+                `tariff_id` VARCHAR(64) NOT NULL COMMENT 'native tariff_id из API сети',
+                `name` VARCHAR(255) NOT NULL DEFAULT '',
+                `tariff_type` ENUM('percent','fix') NOT NULL,
+                `payment_size` DECIMAL(12,4) NOT NULL DEFAULT 0 COMMENT 'percent — % (5.50), fix — сумма (65.00)',
+                `payment_min` DECIMAL(12,4) DEFAULT NULL,
+                `payment_max` DECIMAL(12,4) DEFAULT NULL,
+                `currency` CHAR(3) NOT NULL DEFAULT 'RUB',
+                `is_default` TINYINT(1) NOT NULL DEFAULT 0,
+                `is_deleted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'soft-delete: тариф пропал из API',
+                `raw_payload` LONGTEXT DEFAULT NULL COMMENT 'JSON сырого payload для отладки',
+                `imported_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uniq_network_offer_tariff` (`network_id`,`offer_id`,`tariff_id`),
+                KEY `idx_lookup` (`network_id`,`offer_id`,`is_deleted`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci COMMENT='Тарифы магазинов CPA-сетей (v12)'",
+        );
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL, $safe_prefix validated.
+        $r1 = $wpdb->query($shop_tariffs_ddl[0]);
+        if ($r1 === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v12] CREATE TABLE cashback_shop_tariffs failed: ' . $wpdb->last_error);
+            return;
+        }
+        $verify1 = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $shop_tariffs_table
+        ));
+        if ($verify1 === 0) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v12] post-verify failed: cashback_shop_tariffs missing after CREATE');
+            return;
+        }
+
+        // ------------------------------------------------------------------
+        // 2. cashback_shop_groups — группы магазинов по домену.
+        // ------------------------------------------------------------------
+        $shop_groups_table = $wpdb->prefix . 'cashback_shop_groups';
+        $shop_groups_ddl   = array(
+            "CREATE TABLE IF NOT EXISTS `{$safe_prefix}cashback_shop_groups` (
+                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `domain` VARCHAR(255) NOT NULL COMMENT 'нормализованный домен из site_url',
+                `display_name` VARCHAR(255) NOT NULL DEFAULT '',
+                `preferred_product_id` BIGINT UNSIGNED DEFAULT NULL COMMENT 'WC product_id с лучшей ставкой',
+                `pin_product_id` BIGINT UNSIGNED DEFAULT NULL COMMENT 'если задано — preferred игнорирует расчёт',
+                `status` ENUM('auto','confirmed','manual','split') NOT NULL DEFAULT 'auto',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uniq_domain` (`domain`),
+                KEY `idx_preferred` (`preferred_product_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci COMMENT='Группы магазинов для дедупа (v12)'",
+        );
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL, $safe_prefix validated.
+        $r2 = $wpdb->query($shop_groups_ddl[0]);
+        if ($r2 === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v12] CREATE TABLE cashback_shop_groups failed: ' . $wpdb->last_error);
+            return;
+        }
+        $verify2 = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $shop_groups_table
+        ));
+        if ($verify2 === 0) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v12] post-verify failed: cashback_shop_groups missing after CREATE');
+            return;
+        }
+
+        // ------------------------------------------------------------------
+        // 3. cashback_shop_group_members — many-to-many продукт ↔ группа.
+        // ------------------------------------------------------------------
+        $group_members_table = $wpdb->prefix . 'cashback_shop_group_members';
+        $group_members_ddl   = array(
+            "CREATE TABLE IF NOT EXISTS `{$safe_prefix}cashback_shop_group_members` (
+                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `group_id` BIGINT UNSIGNED NOT NULL,
+                `product_id` BIGINT UNSIGNED NOT NULL,
+                `is_excluded` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'админ принудительно исключил продукт',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uniq_product` (`product_id`),
+                KEY `idx_group` (`group_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='Привязка WC products к shop_groups (v12)'",
+        );
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL, $safe_prefix validated.
+        $r3 = $wpdb->query($group_members_ddl[0]);
+        if ($r3 === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v12] CREATE TABLE cashback_shop_group_members failed: ' . $wpdb->last_error);
+            return;
+        }
+        $verify3 = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $group_members_table
+        ));
+        if ($verify3 === 0) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v12] post-verify failed: cashback_shop_group_members missing after CREATE');
+            return;
+        }
+
+        // ------------------------------------------------------------------
+        // 4. cashback_shop_import_log — лог запусков импорта.
+        // ------------------------------------------------------------------
+        $import_log_table = $wpdb->prefix . 'cashback_shop_import_log';
+        $import_log_ddl   = array(
+            "CREATE TABLE IF NOT EXISTS `{$safe_prefix}cashback_shop_import_log` (
+                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `run_id` CHAR(32) NOT NULL COMMENT 'UUIDv7 без дефисов, группирует страницы одного запуска',
+                `network_id` INT UNSIGNED NOT NULL,
+                `page` INT UNSIGNED NOT NULL DEFAULT 0,
+                `fetched` INT UNSIGNED NOT NULL DEFAULT 0,
+                `upserted_new` INT UNSIGNED NOT NULL DEFAULT 0,
+                `upserted_upd` INT UNSIGNED NOT NULL DEFAULT 0,
+                `tariffs_synced` INT UNSIGNED NOT NULL DEFAULT 0,
+                `errors` TEXT,
+                `started_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `finished_at` DATETIME DEFAULT NULL,
+                PRIMARY KEY (`id`),
+                KEY `idx_run` (`run_id`),
+                KEY `idx_network_started` (`network_id`,`started_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci COMMENT='Лог запусков shop importer (v12)'",
+        );
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL, $safe_prefix validated.
+        $r4 = $wpdb->query($import_log_ddl[0]);
+        if ($r4 === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v12] CREATE TABLE cashback_shop_import_log failed: ' . $wpdb->last_error);
+            return;
+        }
+        $verify4 = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+            $import_log_table
+        ));
+        if ($verify4 === 0) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback Migration v12] post-verify failed: cashback_shop_import_log missing after CREATE');
+            return;
+        }
+
+        update_option('cashback_db_version', 12, false);
     }
 
     /**

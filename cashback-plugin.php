@@ -687,6 +687,9 @@ class CashbackPlugin {
         // Checkpoint-хранилище cron-прогонов (Group 8 Step 3, F-8-005)
         $this->require_file('includes/class-cashback-cron-state.php');
 
+        // Shop Importer + Dynamic Display: фасад WP-опций (v12)
+        $this->require_file('includes/class-cashback-shop-options.php');
+
         // API клиент и cron (синхронизация работает через WP Cron)
         $this->require_file('includes/class-cashback-api-client.php');
         $this->require_file('includes/class-cashback-api-cron.php');
@@ -977,6 +980,18 @@ class CashbackPlugin {
             } catch (\Throwable $e) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback] Promocodes v11 session promocode_id auto-migration failed: ' . $e->getMessage());
+            }
+
+            // v12: Shop Importer — 4 новые таблицы (cashback_shop_tariffs,
+            // cashback_shop_groups, cashback_shop_group_members,
+            // cashback_shop_import_log) для автоимпорта магазинов из CPA-сетей,
+            // хранения партнёрских тарифов и дедупа магазинов между сетями.
+            // Идемпотентно через cashback_db_version >= 12 fast-path.
+            try {
+                Mariadb_Plugin::get_instance()->migrate_shop_import_v12();
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] Shop Importer v12 auto-migration failed: ' . $e->getMessage());
             }
         }
 
