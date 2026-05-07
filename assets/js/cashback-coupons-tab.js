@@ -1,12 +1,25 @@
 /**
  * Активатор таба товара по query-параметру cb_tab.
  *
- * Стратегия поиска (по убыванию надёжности):
+ * Базовый сценарий: при ?cb_tab=coupons сервер уже отрисовывает страницу
+ * с активным табом «Промокоды» — Cashback_Promocodes_Bootstrap через
+ * filter woocommerce_product_tabs ставит priority=-100, WoodMart-template
+ * (single-product/tabs/tabs.php) выставляет wd-active на первый таб.
+ * В этом случае JS — no-op (idempotency-guard isAlreadyActive).
+ *
+ * Fallback-сценарии (когда server-side preactivate не сработал):
+ *   - accordion_state='all' / 'closed' (тема настроена иначе) — server
+ *     не выставит wd-active, JS активирует на DOMContentLoaded.
+ *   - сторонний плагин ломает priority-сортировку — JS активирует.
+ *   - WoodMart-JS singleProductTabsAccordion отменяет наш таб — ловит
+ *     MutationObserver на .wd-nav, переактивирует один раз и disconnect.
+ *   - lazy-init темы (Elementor wd_single_product_tabs) — MutationObserver
+ *     срабатывает как только DOM табов появляется.
+ *
+ * Стратегия поиска anchor (по убыванию надёжности):
  *   1. Поиск таб-pane с реальным [cashback_promocodes] → реальный key из
- *      data-accordion-index (или id="tab-{key}") → resolveByKey(): сначала
- *      видимый Woodmart accordion-title (.wd-accordion-title[data-...="{key}"])
- *      на mobile, иначе desktop <a href="#tab-{key}">.
- *   2. По slug из URL (resolveByKey(slug)) — fallback если pane не найден.
+ *      data-accordion-index (или id="tab-{key}") → resolveByKey().
+ *   2. По slug из URL (resolveByKey(slug)) — fallback.
  *   3. WC-стандарт по slug-классу (li.{slug}_tab > a) — для старых тем.
  *   4. Серверный маркер [data-cb-coupons-tab] (mobile accordion-title или <li>).
  *
@@ -17,19 +30,9 @@
  *
  * Активация: только jQuery .trigger('click'). Ручную смену классов мы НЕ
  * делаем — Woodmart лениво инициализирует/настраивает содержимое таба через
- * полный click-flow; ручная подмена `active`/`wd-active` создаёт
- * inconsistent state (контент пустой + класс «залипает» при последующих
- * кликах пользователя).
+ * полный click-flow.
  *
- * Retry с задержкой 700ms — потому что Woodmart's
- * singleProductTabsAccordion на $(document).ready() дёргает первый таб
- * обратно через `.find('.wd-nav a').first().trigger('click')`. Наш retry
- * перезаписывает их выбор.
- *
- * Используется шорткодом [cashback_coupons_icons] для перехода со страницы
- * каталога на single-product с автоматически открытой вкладкой «Купоны».
- *
- * @since 7.5.0
+ * @since 7.6.0
  */
 (function () {
     'use strict';
@@ -85,10 +88,6 @@
 
     function findTabAnchor(slug) {
         // 1. По содержимому: ищем реальный [cashback_promocodes] и его pane.
-        //    pane имеет id="tab-{key}" и data-accordion-index="{key}";
-        //    реальный {key} ≠ slug из URL когда тема использует
-        //    транслитерированный/кастомный ключ (напр. «Промокоды» → "promokody"
-        //    вместо "coupons").
         var promocodesEl = document.querySelector('.cashback-promocodes');
         if (promocodesEl) {
             var pane = promocodesEl.closest('[data-accordion-index]')
@@ -132,11 +131,11 @@
         return null;
     }
 
-    // Проверка «таб уже активен» — защита от toggle при повторных retry.
+    // Проверка «таб уже активен» — защита от toggle при повторных вызовах.
     // Woodmart accordion и WC tabs трактуют click по активной вкладке как
     // «закрыть/переключить»: повторный click на уже открытый промокод-таб
-    // схлопнет его обратно (визуально это «открылось → через секунду
-    // закрылось»). Поэтому retry должен NO-OP, если активация уже сработала.
+    // схлопнет его обратно. Поэтому MutationObserver-callback должен
+    // активировать ТОЛЬКО если таб реально неактивен.
     function isAlreadyActive(el) {
         if (!el || !el.classList) { return false; }
         // Mobile accordion-title: класс wd-active.
@@ -153,31 +152,21 @@
         return false;
     }
 
-    function activate() {
-        var anchor = findTabAnchor(safeSlug);
+    function activate(anchor) {
         if (!anchor) { return false; }
-
-        // Idempotency-guard: если таб уже активен — не кликаем (toggle = close).
         if (isAlreadyActive(anchor)) { return true; }
 
-        // ШАГ 1: подавляем нативный default action клика по anchor.
+        // Подавляем нативный default action клика по anchor:
         // <a href="#tab-promokody"> при срабатывании default action делает
         // navigation к fragment'у — браузер мгновенно прыгает к элементу
-        // с id="tab-promokody" (instant jump, не плавно). jQuery
-        // .trigger('click') после своих обработчиков синхронно вызывает
-        // native el.click(), что и триггерит этот default. preventDefault
-        // на capture phase отменяет default, не блокируя bubble-handlers
-        // WC/Woodmart, которые активируют tab-pane (они синхронны и
-        // защищены от preventDefault — preventDefault отменяет только
-        // default action браузера, не propagation).
+        // с id="tab-promokody". preventDefault на capture phase отменяет
+        // default, не блокируя bubble-handlers WC/Woodmart, которые
+        // активируют tab-pane.
         var suppressDefault = function (e) {
             e.preventDefault();
         };
         anchor.addEventListener('click', suppressDefault, true);
 
-        // ШАГ 2: открываем вкладку — jQuery .trigger('click') запускает
-        // полный click-flow (jQuery-handlers WC/Woodmart активируют
-        // tab-pane), но native fragment-jump подавлен capture-handler'ом.
         try {
             if (window.jQuery) {
                 window.jQuery(anchor).trigger('click');
@@ -190,50 +179,67 @@
         return true;
     }
 
-    function smoothScrollToTabs() {
+    function instantScrollToTabs() {
         var container = document.querySelector('.woocommerce-tabs, .wd-tabs, .wc-tabs-wrapper');
         if (container && typeof container.scrollIntoView === 'function') {
-            container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            // behavior:'auto' — мгновенный скролл. Пользователь только
+            // что загрузил страницу, плавность не воспринимается, а
+            // лишняя анимация добавляет визуальную задержку.
+            container.scrollIntoView({ behavior: 'auto', block: 'start' });
         }
     }
 
-    function activateWithRetry() {
-        // Шаг 1: открыть нужную вкладку — пользователь в этот момент
-        // ещё на верху страницы (default позиция после full reload).
-        // Нативный jump-к-фрагменту подавлен в activate() через
-        // preventDefault на capture phase.
-        var firstActivated = activate();
+    function run() {
+        // Шаг 1: проверяем серверную пре-активацию. Если сервер уже
+        // отрендерил наш таб первым и WoodMart-template поставил
+        // wd-active — activate() сделает no-op (isAlreadyActive guard).
+        // Если нет (accordion_state≠'first', сторонний плагин и т.п.) —
+        // активируем сейчас.
+        var anchor = findTabAnchor(safeSlug);
+        activate(anchor);
 
-        // Шаг 2: retry на 700ms — Woodmart's singleProductTabsAccordion
-        // на $(document).ready() дёргает первый таб через trigger('click')
-        // и отменяет наш выбор. Idempotency-guard isAlreadyActive() заметит
-        // это и переактивирует. Также если первая попытка не нашла anchor
-        // (lazy-init темы) — этот retry становится первой успешной.
-        window.setTimeout(activate, 700);
+        // Шаг 2: мгновенный скролл к табам — высота контейнера табов
+        // на DOMContentLoaded уже стабильна (заголовок таба + sticky-nav).
+        instantScrollToTabs();
 
-        // Шаг 3: ПЛАВНЫЙ скролл — ТОЛЬКО ПОСЛЕ:
-        //   - retry на 700ms (переактивация после WoodMart's reset),
-        //   - завершения jQuery slideDown аккордеона (~400ms по умолчанию),
-        //   - стабилизации layout (высота страницы перестала меняться).
-        // Итого 700 + 400 = 1100ms. Если запустить раньше, scroll
-        // накладывается на slideDown → видимый «рывок»: страница
-        // удлиняется в процессе скролла, и пользователю кажется, что
-        // его то дёргают вверх, то возвращают вниз. С этой задержкой
-        // пользователь видит чёткую последовательность: вкладка
-        // открывается на верху → короткая пауза → плавный скролл к
-        // уже раскрытой вкладке.
-        window.setTimeout(smoothScrollToTabs, 1100);
+        // Шаг 3: safety-net через MutationObserver. WoodMart's
+        // singleProductTabsAccordion на $(document).ready может выстрелить
+        // ПОСЛЕ нашего DOMContentLoaded и кликнуть .wd-nav a:first.
+        // Если сервер не пре-активировал наш таб — WoodMart активирует
+        // первый (не наш). Observer ловит class-mutation на .wd-nav,
+        // переактивирует наш таб один раз, disconnect.
+        var observerTarget = document.querySelector('.wc-tabs-wrapper, .woocommerce-tabs, .wd-tabs');
+        if (!observerTarget || typeof window.MutationObserver !== 'function') {
+            return;
+        }
 
-        // Финальный retry на 1800ms — для медленных устройств /
-        // отложенного JS темы. Срабатывает уже после старта scroll'а;
-        // idempotent guard isAlreadyActive() обычно делает no-op.
-        window.setTimeout(activate, 1800);
-        return firstActivated;
+        var observer = new window.MutationObserver(function () {
+            var current = findTabAnchor(safeSlug);
+            if (!current) { return; }
+            if (isAlreadyActive(current)) {
+                observer.disconnect();
+                return;
+            }
+            activate(current);
+            observer.disconnect();
+        });
+
+        observer.observe(observerTarget, {
+            attributes: true,
+            subtree: true,
+            attributeFilter: ['class'],
+        });
+
+        // Hard-disconnect через 3000ms — leak-prevent для случаев когда
+        // WoodMart-JS никогда не выстреливает (отключенный JS темы).
+        window.setTimeout(function () {
+            observer.disconnect();
+        }, 3000);
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', activateWithRetry);
+        document.addEventListener('DOMContentLoaded', run);
     } else {
-        activateWithRetry();
+        run();
     }
 })();

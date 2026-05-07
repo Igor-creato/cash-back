@@ -101,6 +101,8 @@ final class Cashback_Promocodes_Bootstrap {
      * @return array<string,array<string,mixed>>
      */
     public static function apply_shortcodes_to_extra_tabs( array $tabs ): array {
+        $coupons_requested = self::is_coupons_tab_requested();
+
         foreach ( $tabs as &$tab ) {
             if ( ! isset( $tab['content'] ) || ! is_string( $tab['content'] ) || $tab['content'] === '' ) {
                 // Кастомные WoodMart-табы передают callback, который читает content
@@ -113,18 +115,52 @@ final class Cashback_Promocodes_Bootstrap {
 
             $tab['content'] = do_shortcode( $tab['content'] );
 
-            // Невидимый маркер в title таба для JS-активатора шорткода
-            // [cashback_coupons_icons] (?cb_tab=coupons → click + scrollIntoView).
-            // Идемпотентно: повторный вызов не дублирует маркер.
-            if ( $had_promocodes
-                && isset( $tab['title'] )
-                && is_string( $tab['title'] )
-                && strpos( $tab['title'], 'data-cb-coupons-tab' ) === false
-            ) {
-                $tab['title'] = '<span data-cb-coupons-tab="1" hidden></span>' . $tab['title'];
+            if ( $had_promocodes ) {
+                // Невидимый маркер в title таба для JS-активатора шорткода
+                // [cashback_coupons_icons] (fallback strategy 4 в JS).
+                // Идемпотентно: повторный вызов не дублирует маркер.
+                if ( isset( $tab['title'] )
+                    && is_string( $tab['title'] )
+                    && strpos( $tab['title'], 'data-cb-coupons-tab' ) === false
+                ) {
+                    $tab['title'] = '<span data-cb-coupons-tab="1" hidden></span>' . $tab['title'];
+                }
+
+                // Серверная пре-активация: при ?cb_tab=coupons делаем таб
+                // первым через WC priority-сортировку. WoodMart-template
+                // (themes/woodmart/woocommerce/single-product/tabs/tabs.php)
+                // ставит wd-active на первый таб при accordion_state='first',
+                // и WoodMart-JS singleProductTabsAccordion на ready дёргает
+                // .wd-nav a:first — попадает в наш же таб (no-op). Поэтому
+                // никаких setTimeout-ретраев в JS не требуется.
+                if ( $coupons_requested ) {
+                    $tab['priority'] = -100;
+                }
             }
         }
         return $tabs;
+    }
+
+    /**
+     * Проверяет, что в текущем запросе передан ?cb_tab=coupons.
+     * Используется для серверной пре-активации таба «Промокоды»
+     * через priority-override (см. apply_shortcodes_to_extra_tabs).
+     */
+    private static function is_coupons_tab_requested(): bool {
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- read-only flag, no state mutation.
+        // phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized via sanitize_html_class below.
+        if ( ! isset( $_GET['cb_tab'] ) ) {
+            return false;
+        }
+        $raw = function_exists( 'wp_unslash' )
+            ? wp_unslash( $_GET['cb_tab'] )
+            : $_GET['cb_tab'];
+        // phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
+        $slug = function_exists( 'sanitize_html_class' )
+            ? sanitize_html_class( (string) $raw )
+            : preg_replace( '/[^a-zA-Z0-9_\-]/', '', (string) $raw );
+        return $slug === 'coupons';
     }
 
     public static function get_shortcode(): Cashback_Promocodes_Shortcode {
@@ -156,7 +192,7 @@ final class Cashback_Promocodes_Bootstrap {
             'cashback-coupons-tab',
             plugins_url( 'assets/js/cashback-coupons-tab.js', $plugin_root_file ),
             array(),
-            '7.5.11',
+            '7.6.0',
             true
         );
     }
