@@ -1,0 +1,523 @@
+<?php
+/**
+ * Cashback_Shop_Importer — оркестратор импорта магазинов из CPA-сетей (v12).
+ *
+ * Один запуск:
+ *   1. Lock per-network (cashback_shops_import_n{network_id}).
+ *   2. Берёт сеть из cashback_affiliate_networks по network_id.
+ *   3. Получает adapter по slug сети + creds через Cashback_API_Client.
+ *   4. adapter::fetch_campaigns_detailed(creds, cfg, offset, batch_size).
+ *   5. Для каждой кампании:
+ *        - upsert WC external product (status=draft) с метаполями привязки;
+ *        - adapter::fetch_shop_tariffs() → Cashback_Shop_Tariff_Sync::sync().
+ *   6. Логирует прогресс в Cashback_Shop_Import_Log per-page.
+ *   7. has_next → re-enqueue follow-up страницы (Action Scheduler).
+ *
+ * Регистрация AS-recurring hook'а — отдельный Этап 9 (cron-регистрация).
+ * Здесь только base run() — вызывается WP-CLI / admin-кнопкой / AS-async.
+ *
+ * @package CashbackPlugin
+ * @since   12.0.0
+ */
+
+declare(strict_types=1);
+
+if (! defined('ABSPATH')) {
+    exit;
+}
+
+class Cashback_Shop_Importer {
+
+    public const HOOK_RUN = 'cashback_shops_import_run';
+    public const AS_GROUP = 'cashback';
+
+    public const META_NETWORK_ID    = '_affiliate_network_id';
+    public const META_OFFER_ID      = '_offer_id';
+    public const META_STORE_DOMAIN  = '_store_domain';
+    public const META_IMPORT_SOURCE = '_cashback_import_source';
+    public const META_SIGNATURE     = '_cashback_import_signature';
+    public const META_IMPORT_AT     = '_cashback_import_at';
+    public const META_LAST_SEEN_AT  = '_cashback_last_seen_at';
+    public const META_CURRENCY      = '_cashback_campaign_currency';
+    public const META_STATUS_RAW    = '_cashback_campaign_status_raw';
+    public const META_RATE_LOCKED   = '_rate_locked';
+
+    /**
+     * Зарегистрировать AS-handler.
+     */
+    public static function init(): void {
+        if (function_exists('add_action')) {
+            add_action(self::HOOK_RUN, array( self::class, 'run' ), 10, 3);
+        }
+    }
+
+    /**
+     * Прогнать ОДНУ страницу импорта (batch=cashback_shop_import_batch_size).
+     *
+     * @param int    $network_id ID сети (cashback_affiliate_networks.id).
+     * @param string $run_id     UUIDv7 запуска (общий для всех страниц одного импорта).
+     * @param int    $offset     Смещение пагинации (0 на первой странице).
+     * @return array{success: bool, fetched: int, upserted_new: int, upserted_upd: int, tariffs_synced: int, has_next: bool, next_offset: int, error: ?string}
+     */
+    public static function run( int $network_id, string $run_id, int $offset = 0 ): array {
+        $page    = (int) max(0, $offset);
+        $page_no = $page > 0 && class_exists('Cashback_Shop_Options')
+            ? (int) ( $offset / max(1, Cashback_Shop_Options::get_import_batch_size()) )
+            : 0;
+
+        $log_id = Cashback_Shop_Import_Log::start_page($run_id, $network_id, $page_no);
+
+        $lock_key = 'cashback_shops_import_n' . $network_id;
+        $locked   = self::try_lock($lock_key);
+        if (!$locked) {
+            $err = 'Импорт сети уже идёт (busy lock)';
+            Cashback_Shop_Import_Log::finish_page($log_id, $err);
+            return self::error_result($err);
+        }
+
+        try {
+            $network = self::get_network_row($network_id);
+            if ($network === null) {
+                $err = "Сеть #{$network_id} не найдена или неактивна";
+                Cashback_Shop_Import_Log::finish_page($log_id, $err);
+                return self::error_result($err);
+            }
+
+            $api_client = self::get_api_client();
+            if ($api_client === null) {
+                $err = 'Cashback_API_Client недоступен';
+                Cashback_Shop_Import_Log::finish_page($log_id, $err);
+                return self::error_result($err);
+            }
+
+            $adapter = $api_client->get_adapter((string) $network['slug']);
+            if ($adapter === null) {
+                $err = "Адаптер для slug='{$network['slug']}' не зарегистрирован";
+                Cashback_Shop_Import_Log::finish_page($log_id, $err);
+                return self::error_result($err);
+            }
+
+            $creds = $api_client->get_credentials($network_id);
+            if (! is_array($creds)) {
+                $err = "Credentials для сети #{$network_id} не настроены";
+                Cashback_Shop_Import_Log::finish_page($log_id, $err);
+                return self::error_result($err);
+            }
+
+            $batch_size = class_exists('Cashback_Shop_Options')
+                ? Cashback_Shop_Options::get_import_batch_size()
+                : 100;
+
+            $fetched_result = $adapter->fetch_campaigns_detailed($creds, $network, $offset, $batch_size);
+            if (empty($fetched_result['success'])) {
+                $err = (string) ( $fetched_result['error'] ?? 'fetch_campaigns_detailed failed' );
+                Cashback_Shop_Import_Log::finish_page($log_id, $err);
+                return self::error_result($err);
+            }
+
+            $campaigns = isset($fetched_result['campaigns']) && is_array($fetched_result['campaigns'])
+                ? $fetched_result['campaigns']
+                : array();
+
+            $stats = array(
+                'fetched'        => count($campaigns),
+                'upserted_new'   => 0,
+                'upserted_upd'   => 0,
+                'tariffs_synced' => 0,
+            );
+
+            foreach ($campaigns as $campaign) {
+                if (! is_array($campaign)) {
+                    continue;
+                }
+                try {
+                    $dto = Cashback_Campaign_Detail_DTO::from_array($campaign);
+                } catch (\Throwable $e) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+                    error_log('[Cashback Shop Importer] DTO error: ' . $e->getMessage());
+                    continue;
+                }
+
+                $upsert = self::upsert_product($dto, $network_id);
+                if ($upsert['kind'] === 'new') {
+                    ++$stats['upserted_new'];
+                } elseif ($upsert['kind'] === 'updated' || $upsert['kind'] === 'seen') {
+                    ++$stats['upserted_upd'];
+                }
+
+                // Tariff sync — только если product создан/обновлён
+                // (на rate_locked product мы всё равно обновляем тарифы, чтобы видеть актуальные суммы).
+                if ($upsert['product_id'] > 0) {
+                    $stats['tariffs_synced'] += self::sync_tariffs_for_campaign(
+                        $adapter,
+                        $creds,
+                        $network,
+                        $network_id,
+                        $dto->id
+                    );
+                }
+            }
+
+            Cashback_Shop_Import_Log::update_progress(
+                $log_id,
+                $stats['fetched'],
+                $stats['upserted_new'],
+                $stats['upserted_upd'],
+                $stats['tariffs_synced']
+            );
+            Cashback_Shop_Import_Log::finish_page($log_id, null);
+
+            $has_next    = ! empty($fetched_result['has_next']);
+            $next_offset = isset($fetched_result['next_offset']) ? (int) $fetched_result['next_offset'] : ($offset + $batch_size);
+
+            // Re-enqueue follow-up если есть ещё страницы (action scheduler).
+            if ($has_next && function_exists('as_enqueue_async_action')) {
+                as_enqueue_async_action(
+                    self::HOOK_RUN,
+                    array( $network_id, $run_id, $next_offset ),
+                    self::AS_GROUP
+                );
+            }
+
+            return array(
+                'success'        => true,
+                'fetched'        => $stats['fetched'],
+                'upserted_new'   => $stats['upserted_new'],
+                'upserted_upd'   => $stats['upserted_upd'],
+                'tariffs_synced' => $stats['tariffs_synced'],
+                'has_next'       => $has_next,
+                'next_offset'    => $next_offset,
+                'error'          => null,
+            );
+        } finally {
+            self::release_lock($lock_key);
+        }
+    }
+
+    /**
+     * Создать/обновить WC external product для одной кампании.
+     *
+     * Поиск существующего товара — по паре meta (_affiliate_network_id, _offer_id).
+     * При наличии _rate_locked=1 — НЕ перезаписываем product (только last_seen_at),
+     * чтобы admin-override не съело cron-sync'ом.
+     *
+     * @return array{kind: 'new'|'updated'|'unchanged'|'seen'|'skipped', product_id: int}
+     */
+    public static function upsert_product( Cashback_Campaign_Detail_DTO $dto, int $network_id ): array {
+        if ($dto->id === '' || $network_id <= 0) {
+            return array( 'kind' => 'skipped', 'product_id' => 0 );
+        }
+
+        $existing_id = self::find_product_by_offer($network_id, $dto->id);
+        $now         = self::now_mysql();
+        $signature   = self::compute_signature($dto);
+        $domain      = self::parse_domain($dto->site_url);
+
+        // rate_locked — только касаемся last_seen_at, ничего больше не правим.
+        if ($existing_id > 0 && self::is_rate_locked($existing_id)) {
+            update_post_meta($existing_id, self::META_LAST_SEEN_AT, $now);
+            return array( 'kind' => 'seen', 'product_id' => $existing_id );
+        }
+
+        if ($existing_id === 0) {
+            $product_id = self::insert_draft_product($dto, $network_id, $signature, $domain, $now);
+            return array(
+                'kind'       => $product_id > 0 ? 'new' : 'skipped',
+                'product_id' => $product_id,
+            );
+        }
+
+        // Existing product — diff signature.
+        $prev_signature = (string) get_post_meta($existing_id, self::META_SIGNATURE, true);
+        if ($prev_signature === $signature) {
+            // Без изменений — только last_seen_at.
+            update_post_meta($existing_id, self::META_LAST_SEEN_AT, $now);
+            return array( 'kind' => 'unchanged', 'product_id' => $existing_id );
+        }
+
+        self::update_existing_product($existing_id, $dto, $network_id, $signature, $domain, $now);
+        return array( 'kind' => 'updated', 'product_id' => $existing_id );
+    }
+
+    /**
+     * Sha256 ключевых полей DTO. Если signature не изменилась — product не правим.
+     */
+    public static function compute_signature( Cashback_Campaign_Detail_DTO $dto ): string {
+        $canonical = wp_json_encode(array(
+            'name'        => $dto->name,
+            'site_url'    => $dto->site_url,
+            'image_url'   => $dto->image_url,
+            'description' => $dto->description,
+            'status_raw'  => $dto->status_raw,
+            'currency'    => $dto->currency,
+            'goto_link'   => $dto->goto_link,
+            'regions'     => $dto->regions,
+            'categories'  => $dto->categories,
+        ));
+        return hash('sha256', is_string($canonical) ? $canonical : '');
+    }
+
+    /**
+     * Извлечь нормализованный домен из site_url для дедупа.
+     *
+     * Шаги: wp_parse_url → host → lowercase → drop www. → IDN → trim.
+     * Возвращает '' если URL не валиден.
+     */
+    public static function parse_domain( string $site_url ): string {
+        if ($site_url === '') {
+            return '';
+        }
+        $url = $site_url;
+        // Если URL без схемы — добавляем для wp_parse_url.
+        if (! preg_match('#^https?://#i', $url)) {
+            $url = 'https://' . ltrim($url, '/');
+        }
+        $host = wp_parse_url($url, PHP_URL_HOST);
+        if (! is_string($host) || $host === '') {
+            return '';
+        }
+        $host = strtolower(trim($host));
+        // IDN → utf8 (если функция доступна). Заглушаем warning у некорректных
+        // ASCII-хостов через @ — fallback оставляет $host как есть.
+        if (function_exists('idn_to_utf8')) {
+            // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- idn_to_utf8 шлёт warning при невалидном punycode; fallback на оригинальный host безопасен.
+            $idn = @idn_to_utf8($host, IDNA_NONTRANSITIONAL_TO_UNICODE, INTL_IDNA_VARIANT_UTS46);
+            if (is_string($idn) && $idn !== '') {
+                $host = $idn;
+            }
+        }
+        if (str_starts_with($host, 'www.')) {
+            $host = substr($host, 4);
+        }
+        return rtrim($host, '/');
+    }
+
+    /**
+     * Проверить, заблокирован ли product от auto-sync через _rate_locked=1.
+     */
+    public static function is_rate_locked( int $product_id ): bool {
+        return (string) get_post_meta($product_id, self::META_RATE_LOCKED, true) === '1';
+    }
+
+    /**
+     * Найти product_id по паре (network_id, offer_id) метаполей. 0 если нет.
+     */
+    public static function find_product_by_offer( int $network_id, string $offer_id ): int {
+        if ($network_id <= 0 || $offer_id === '') {
+            return 0;
+        }
+        global $wpdb;
+
+        $row = $wpdb->get_var($wpdb->prepare(
+            'SELECT pm1.post_id
+               FROM ' . $wpdb->postmeta . ' AS pm1
+               JOIN ' . $wpdb->postmeta . ' AS pm2 ON pm1.post_id = pm2.post_id
+              WHERE pm1.meta_key = %s AND pm1.meta_value = %s
+                AND pm2.meta_key = %s AND pm2.meta_value = %s
+              LIMIT 1',
+            self::META_NETWORK_ID,
+            (string) $network_id,
+            self::META_OFFER_ID,
+            $offer_id
+        ));
+
+        return is_numeric($row) ? (int) $row : 0;
+    }
+
+    /**
+     * INSERT нового draft external product + metas.
+     *
+     * @return int product_id или 0 при ошибке.
+     */
+    private static function insert_draft_product(
+        Cashback_Campaign_Detail_DTO $dto,
+        int $network_id,
+        string $signature,
+        string $domain,
+        string $now
+    ): int {
+        if (! function_exists('wp_insert_post')) {
+            return 0;
+        }
+
+        $post_id = wp_insert_post(array(
+            'post_title'   => $dto->name !== '' ? $dto->name : ('Кампания #' . $dto->id),
+            'post_content' => $dto->description,
+            'post_status'  => 'draft',
+            'post_type'    => 'product',
+        ), true);
+
+        if (is_wp_error($post_id) || $post_id === 0) {
+            return 0;
+        }
+
+        self::write_product_meta((int) $post_id, $dto, $network_id, $signature, $domain, $now);
+        // External product type → meta _product_url для goto_link.
+        if ($dto->goto_link !== '') {
+            update_post_meta((int) $post_id, '_product_url', $dto->goto_link);
+        }
+        // Маркер external (WC product type taxonomy) — используем metabox-фолбэк.
+        update_post_meta((int) $post_id, '_product_type', 'external');
+
+        return (int) $post_id;
+    }
+
+    /**
+     * UPDATE существующего product (post_title/post_content) + refresh metas.
+     */
+    private static function update_existing_product(
+        int $product_id,
+        Cashback_Campaign_Detail_DTO $dto,
+        int $network_id,
+        string $signature,
+        string $domain,
+        string $now
+    ): void {
+        if (function_exists('wp_update_post')) {
+            wp_update_post(array(
+                'ID'           => $product_id,
+                'post_title'   => $dto->name !== '' ? $dto->name : ('Кампания #' . $dto->id),
+                'post_content' => $dto->description,
+                // post_status НЕ меняем — админ может уже его опубликовать.
+            ));
+        }
+        self::write_product_meta($product_id, $dto, $network_id, $signature, $domain, $now);
+        if ($dto->goto_link !== '') {
+            update_post_meta($product_id, '_product_url', $dto->goto_link);
+        }
+    }
+
+    /**
+     * Запись общих метаполей (привязка + signature + status).
+     */
+    private static function write_product_meta(
+        int $product_id,
+        Cashback_Campaign_Detail_DTO $dto,
+        int $network_id,
+        string $signature,
+        string $domain,
+        string $now
+    ): void {
+        update_post_meta($product_id, self::META_NETWORK_ID, (string) $network_id);
+        update_post_meta($product_id, self::META_OFFER_ID, $dto->id);
+        update_post_meta($product_id, self::META_STORE_DOMAIN, $domain);
+        update_post_meta($product_id, self::META_IMPORT_SOURCE, $dto->raw['_adapter_slug'] ?? '');
+        update_post_meta($product_id, self::META_SIGNATURE, $signature);
+        update_post_meta($product_id, self::META_IMPORT_AT, $now);
+        update_post_meta($product_id, self::META_LAST_SEEN_AT, $now);
+        update_post_meta($product_id, self::META_CURRENCY, $dto->currency);
+        update_post_meta($product_id, self::META_STATUS_RAW, $dto->status_raw);
+    }
+
+    /**
+     * Sync тарифов одной кампании. Возвращает количество upserted-row.
+     */
+    private static function sync_tariffs_for_campaign(
+        Cashback_Network_Adapter_Interface $adapter,
+        array $creds,
+        array $network,
+        int $network_id,
+        string $offer_id
+    ): int {
+        $tariff_result = $adapter->fetch_shop_tariffs($creds, $network, $offer_id);
+        if (empty($tariff_result['success'])) {
+            return 0;
+        }
+        $raw_tariffs = isset($tariff_result['tariffs']) && is_array($tariff_result['tariffs'])
+            ? $tariff_result['tariffs']
+            : array();
+
+        $dtos = array();
+        foreach ($raw_tariffs as $raw) {
+            if (! is_array($raw)) {
+                continue;
+            }
+            try {
+                $dtos[] = Cashback_Shop_Tariff_DTO::from_array($raw);
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+                error_log('[Cashback Shop Importer] tariff DTO error for offer ' . $offer_id . ': ' . $e->getMessage());
+                continue;
+            }
+        }
+
+        $sync = Cashback_Shop_Tariff_Sync::sync($network_id, $offer_id, $dtos);
+        return (int) ( $sync['upserted'] ?? 0 );
+    }
+
+    /**
+     * Прочитать row из cashback_affiliate_networks (с api_credentials расшифровкой
+     * мы не делаем тут — это сделает get_credentials() ниже).
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function get_network_row( int $network_id ): ?array {
+        global $wpdb;
+        $row = $wpdb->get_row($wpdb->prepare(
+            'SELECT * FROM %i WHERE id = %d AND is_active = 1',
+            $wpdb->prefix . 'cashback_affiliate_networks',
+            $network_id
+        ), ARRAY_A);
+        return is_array($row) ? $row : null;
+    }
+
+    /**
+     * Получить singleton Cashback_API_Client (если зарегистрирован).
+     */
+    private static function get_api_client(): ?Cashback_API_Client {
+        if (! class_exists('Cashback_API_Client')) {
+            return null;
+        }
+        if (method_exists('Cashback_API_Client', 'get_instance')) {
+            $instance = Cashback_API_Client::get_instance();
+            return $instance instanceof Cashback_API_Client ? $instance : null;
+        }
+        return new Cashback_API_Client();
+    }
+
+    /**
+     * Best-effort lock через transient (5 мин TTL = больше чем типичный AS-tick).
+     * Возвращает true если получили lock, false если уже занят.
+     */
+    private static function try_lock( string $lock_key ): bool {
+        if (! function_exists('get_transient') || ! function_exists('set_transient')) {
+            return true; // в среде без transient API считаем что блокировки нет.
+        }
+        if (get_transient($lock_key)) {
+            return false;
+        }
+        set_transient($lock_key, '1', 300);
+        return true;
+    }
+
+    private static function release_lock( string $lock_key ): void {
+        if (function_exists('delete_transient')) {
+            delete_transient($lock_key);
+        }
+    }
+
+    /**
+     * Стандартный формат ошибочного результата.
+     *
+     * @return array{success: bool, fetched: int, upserted_new: int, upserted_upd: int, tariffs_synced: int, has_next: bool, next_offset: int, error: ?string}
+     */
+    private static function error_result( string $error ): array {
+        return array(
+            'success'        => false,
+            'fetched'        => 0,
+            'upserted_new'   => 0,
+            'upserted_upd'   => 0,
+            'tariffs_synced' => 0,
+            'has_next'       => false,
+            'next_offset'    => 0,
+            'error'          => $error,
+        );
+    }
+
+    private static function now_mysql(): string {
+        if (class_exists('Cashback_Time') && method_exists('Cashback_Time', 'now_mysql')) {
+            return Cashback_Time::now_mysql();
+        }
+        return gmdate('Y-m-d H:i:s');
+    }
+}

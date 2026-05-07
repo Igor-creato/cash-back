@@ -692,6 +692,10 @@ class CashbackPlugin {
 
         // Shop Importer + Dynamic Display: фасад WP-опций (v12)
         $this->require_file('includes/class-cashback-shop-options.php');
+        // Shop Importer (v12) — оркестратор + tariff sync + import log
+        $this->require_file('includes/shops/class-cashback-shop-import-log.php');
+        $this->require_file('includes/shops/class-cashback-shop-tariff-sync.php');
+        $this->require_file('includes/shops/class-cashback-shop-importer.php');
 
         // API клиент и cron (синхронизация работает через WP Cron)
         $this->require_file('includes/class-cashback-api-client.php');
@@ -1048,6 +1052,12 @@ class CashbackPlugin {
         // Бот-защита: инициализация guard (до других компонентов)
         if (class_exists('Cashback_Bot_Protection')) {
             Cashback_Bot_Protection::init();
+        }
+
+        // Shop Importer (v12): регистрирует AS-handler cashback_shops_import_run.
+        // Recurring schedule + admin-кнопка добавятся в Этапе 9.
+        if (class_exists('Cashback_Shop_Importer')) {
+            Cashback_Shop_Importer::init();
         }
 
         // Механизм аварийного восстановления шифрования: admin-страница + AS-action.
