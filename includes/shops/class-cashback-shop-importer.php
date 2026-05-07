@@ -221,6 +221,7 @@ class Cashback_Shop_Importer {
 
         if ($existing_id === 0) {
             $product_id = self::insert_draft_product($dto, $network_id, $signature, $domain, $now);
+            self::reconcile_group($product_id);
             return array(
                 'kind'       => $product_id > 0 ? 'new' : 'skipped',
                 'product_id' => $product_id,
@@ -230,13 +231,32 @@ class Cashback_Shop_Importer {
         // Existing product — diff signature.
         $prev_signature = (string) get_post_meta($existing_id, self::META_SIGNATURE, true);
         if ($prev_signature === $signature) {
-            // Без изменений — только last_seen_at.
+            // Без изменений — только last_seen_at + recompute группы (на случай
+            // если соседний продукт изменил тарифы и preferred мог сместиться).
             update_post_meta($existing_id, self::META_LAST_SEEN_AT, $now);
+            self::reconcile_group($existing_id);
             return array( 'kind' => 'unchanged', 'product_id' => $existing_id );
         }
 
         self::update_existing_product($existing_id, $dto, $network_id, $signature, $domain, $now);
+        self::reconcile_group($existing_id);
         return array( 'kind' => 'updated', 'product_id' => $existing_id );
+    }
+
+    /**
+     * Привязать product к группе по домену + пересчитать preferred.
+     * Best-effort: ошибки резолвера не должны рушить импорт.
+     */
+    private static function reconcile_group( int $product_id ): void {
+        if ($product_id <= 0 || ! class_exists('Cashback_Shop_Group_Resolver')) {
+            return;
+        }
+        try {
+            Cashback_Shop_Group_Resolver::reconcile_for_product($product_id);
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+            error_log('[Cashback Shop Importer] reconcile_group failed for product=' . $product_id . ': ' . $e->getMessage());
+        }
     }
 
     /**

@@ -692,9 +692,10 @@ class CashbackPlugin {
 
         // Shop Importer + Dynamic Display: фасад WP-опций (v12)
         $this->require_file('includes/class-cashback-shop-options.php');
-        // Shop Importer (v12) — оркестратор + tariff sync + import log
+        // Shop Importer (v12) — оркестратор + tariff sync + import log + group resolver
         $this->require_file('includes/shops/class-cashback-shop-import-log.php');
         $this->require_file('includes/shops/class-cashback-shop-tariff-sync.php');
+        $this->require_file('includes/shops/class-cashback-shop-group-resolver.php');
         $this->require_file('includes/shops/class-cashback-shop-importer.php');
 
         // API клиент и cron (синхронизация работает через WP Cron)
