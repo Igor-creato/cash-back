@@ -60,6 +60,36 @@ abstract class Cashback_Network_Adapter_Base implements Cashback_Network_Adapter
     }
 
     /**
+     * {@inheritdoc}
+     *
+     * Дефолтная реализация (v12) — возвращает ошибку. Конкретные адаптеры
+     * (Admitad, EPN) переопределяют через extended endpoint с деталями.
+     */
+    public function fetch_campaigns_detailed( array $credentials, array $network_config, int $offset = 0, int $limit = 100 ): array {
+        return array(
+            'success'     => false,
+            'campaigns'   => array(),
+            'has_next'    => false,
+            'next_offset' => 0,
+            'error'       => 'fetch_campaigns_detailed not implemented for adapter: ' . $this->get_slug(),
+        );
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * Дефолтная реализация (v12) — возвращает ошибку. Конкретные адаптеры
+     * (Admitad, EPN) переопределяют через actions/rates endpoint.
+     */
+    public function fetch_shop_tariffs( array $credentials, array $network_config, string $campaign_id ): array {
+        return array(
+            'success' => false,
+            'tariffs' => array(),
+            'error'   => 'fetch_shop_tariffs not implemented for adapter: ' . $this->get_slug(),
+        );
+    }
+
+    /**
      * Собрать URL из конфига сети (api_base_url + endpoint) или вернуть fallback
      *
      * @param array  $network_config Конфигурация сети

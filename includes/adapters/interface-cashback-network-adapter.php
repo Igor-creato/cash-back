@@ -82,6 +82,57 @@ interface Cashback_Network_Adapter_Interface {
     public function fetch_campaigns( array $credentials, array $network_config ): array;
 
     /**
+     * Получить детальную информацию о кампаниях для импорта-витрины (v12).
+     *
+     * Возвращает расширенный набор полей по сравнению с fetch_campaigns():
+     * site_url, image, description, regions, categories, currency, goto_link.
+     * Используется Cashback_Shop_Importer для создания/обновления WC external
+     * products и привязки к группам по домену.
+     *
+     * Каждый элемент 'campaigns' содержит:
+     *   - 'id' (string)             — campaign_id / advcampaign_id / offer_id
+     *   - 'name' (string)           — название
+     *   - 'site_url' (string)       — URL сайта рекламодателя (для дедупа по домену)
+     *   - 'image_url' (string)      — URL логотипа
+     *   - 'description' (string)
+     *   - 'status_raw' (string)     — статус из API ('active'/'disabled'/...)
+     *   - 'is_active' (bool)
+     *   - 'regions' (array<string>) — ['RU','BY']
+     *   - 'categories' (array<string>)
+     *   - 'currency' (string)       — RUB/USD/EUR
+     *   - 'goto_link' (string)      — прямая партнёрская ссылка
+     *   - 'raw' (array)             — сырой payload для отладки/raw_payload
+     *
+     * @param array $credentials   Расшифрованные credentials
+     * @param array $network_config Строка из cashback_affiliate_networks
+     * @param int   $offset        offset (Admitad) или page*limit (EPN)
+     * @param int   $limit         сколько вернуть за один вызов (default 100)
+     * @return array ['success' => bool, 'campaigns' => array, 'has_next' => bool, 'next_offset' => int, 'error' => ?string]
+     */
+    public function fetch_campaigns_detailed( array $credentials, array $network_config, int $offset = 0, int $limit = 100 ): array;
+
+    /**
+     * Получить тарифы (actions/rates) одной кампании (v12).
+     *
+     * Каждый элемент 'tariffs' содержит:
+     *   - 'tariff_id' (string)         — native ID тарифа в API сети
+     *   - 'name' (string)              — название (например, 'Оплаченный заказ из категории 5')
+     *   - 'tariff_type' (string)       — 'percent' | 'fix'
+     *   - 'payment_size' (float)       — % или фиксированная сумма
+     *   - 'payment_min' (?float)       — нижняя граница (опционально)
+     *   - 'payment_max' (?float)       — верхняя граница (опционально)
+     *   - 'currency' (string)          — RUB/USD/EUR
+     *   - 'is_default' (bool)
+     *   - 'raw' (array)                — сырой payload
+     *
+     * @param array  $credentials    Расшифрованные credentials
+     * @param array  $network_config Строка из cashback_affiliate_networks
+     * @param string $campaign_id    ID кампании (advcampaign_id / offer_id)
+     * @return array ['success' => bool, 'tariffs' => array, 'error' => ?string]
+     */
+    public function fetch_shop_tariffs( array $credentials, array $network_config, string $campaign_id ): array;
+
+    /**
      * Маппинг статусов API → локальные по умолчанию
      *
      * @return array<string, string> API status => local status (waiting/completed/declined)

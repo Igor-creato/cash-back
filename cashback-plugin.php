@@ -652,6 +652,9 @@ class CashbackPlugin {
         // API адаптеры CPA-сетей (загружаются перед API-клиентом)
         $this->require_file('includes/adapters/interface-cashback-network-adapter.php');
         $this->require_file('includes/adapters/abstract-cashback-network-adapter.php');
+        // DTO для shop importer (v12)
+        $this->require_file('includes/adapters/class-cashback-campaign-detail-dto.php');
+        $this->require_file('includes/adapters/class-cashback-shop-tariff-dto.php');
         $this->require_file('includes/adapters/class-admitad-adapter.php');
         $this->require_file('includes/adapters/class-epn-adapter.php');
 
