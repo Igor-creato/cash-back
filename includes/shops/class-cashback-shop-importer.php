@@ -63,12 +63,24 @@ class Cashback_Shop_Importer {
             return;
         }
 
-        add_action(self::HOOK_RUN, array( self::class, 'run' ), 10, 3);
+        // run() возвращает массив с результатом — для прямых вызовов из тестов
+        // и admin-кнопки. Action callback не должен ничего возвращать, поэтому
+        // оборачиваем в run_action() который игнорирует результат.
+        add_action(self::HOOK_RUN, array( self::class, 'run_action' ), 10, 3);
         add_action(self::HOOK_RECURRING, array( self::class, 'enqueue_all_active' ));
         add_action(self::HOOK_GROUPS_RECOMPUTE, array( self::class, 'recompute_auto_groups' ));
         add_action(self::HOOK_LOG_GC, array( self::class, 'gc_old_logs' ));
 
         self::maybe_schedule_recurring();
+    }
+
+    /**
+     * Action handler-обёртка для HOOK_RUN. Action Scheduler ожидает callback
+     * без возвращаемого значения; результат run() (для тестов / admin) сюда
+     * не пробрасывается.
+     */
+    public static function run_action( int $network_id, string $run_id, int $offset = 0 ): void {
+        self::run($network_id, $run_id, $offset);
     }
 
     /**
@@ -623,16 +635,18 @@ class Cashback_Shop_Importer {
 
     /**
      * Получить singleton Cashback_API_Client (если зарегистрирован).
+     *
+     * Cashback_API_Client использует приватный конструктор и доступен только
+     * через статический get_instance() — никаких new для него.
      */
     private static function get_api_client(): ?Cashback_API_Client {
         if (! class_exists('Cashback_API_Client')) {
             return null;
         }
-        if (method_exists('Cashback_API_Client', 'get_instance')) {
-            $instance = Cashback_API_Client::get_instance();
-            return $instance instanceof Cashback_API_Client ? $instance : null;
+        if (! method_exists('Cashback_API_Client', 'get_instance')) {
+            return null;
         }
-        return new Cashback_API_Client();
+        return Cashback_API_Client::get_instance();
     }
 
     /**
