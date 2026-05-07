@@ -198,23 +198,35 @@
     }
 
     function activateWithRetry() {
-        // Шаг 1: открыть нужную вкладку (нативный jump-к-фрагменту подавлен
-        // внутри activate() через preventDefault на capture phase).
+        // Шаг 1: открыть нужную вкладку — пользователь в этот момент
+        // ещё на верху страницы (default позиция после full reload).
+        // Нативный jump-к-фрагменту подавлен в activate() через
+        // preventDefault на capture phase.
         var firstActivated = activate();
 
-        // Шаг 2: плавный scroll к контейнеру табов. Двойной rAF — даём
-        // theme/WC применить layout-mutation после активации (раскрытие
-        // accordion-pane на mobile, показ tab-pane на desktop), чтобы
-        // целевая позиция scrollIntoView была корректной.
-        window.requestAnimationFrame(function () {
-            window.requestAnimationFrame(smoothScrollToTabs);
-        });
-
-        // Retry: Woodmart на ready() дёргает первый таб через trigger('click'),
-        // что отменяет наш выбор. Через 700ms делаем повторную активацию.
-        // Если первая попытка не нашла таб (lazy-load JS) — это и будет первая.
+        // Шаг 2: retry на 700ms — Woodmart's singleProductTabsAccordion
+        // на $(document).ready() дёргает первый таб через trigger('click')
+        // и отменяет наш выбор. Idempotency-guard isAlreadyActive() заметит
+        // это и переактивирует. Также если первая попытка не нашла anchor
+        // (lazy-init темы) — этот retry становится первой успешной.
         window.setTimeout(activate, 700);
-        // Финальный retry для медленных устройств / отложенного JS темы.
+
+        // Шаг 3: ПЛАВНЫЙ скролл — ТОЛЬКО ПОСЛЕ:
+        //   - retry на 700ms (переактивация после WoodMart's reset),
+        //   - завершения jQuery slideDown аккордеона (~400ms по умолчанию),
+        //   - стабилизации layout (высота страницы перестала меняться).
+        // Итого 700 + 400 = 1100ms. Если запустить раньше, scroll
+        // накладывается на slideDown → видимый «рывок»: страница
+        // удлиняется в процессе скролла, и пользователю кажется, что
+        // его то дёргают вверх, то возвращают вниз. С этой задержкой
+        // пользователь видит чёткую последовательность: вкладка
+        // открывается на верху → короткая пауза → плавный скролл к
+        // уже раскрытой вкладке.
+        window.setTimeout(smoothScrollToTabs, 1100);
+
+        // Финальный retry на 1800ms — для медленных устройств /
+        // отложенного JS темы. Срабатывает уже после старта scroll'а;
+        // idempotent guard isAlreadyActive() обычно делает no-op.
         window.setTimeout(activate, 1800);
         return firstActivated;
     }
