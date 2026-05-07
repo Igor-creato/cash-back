@@ -95,6 +95,10 @@
     margin-top: 0;
 }
 
-.CodeMirror {
+.cashback-legal-template-editor .wp-editor-container {
     border: 1px solid #ccd0d4;
+}
+
+.cashback-legal-template-editor .mce-tinymce {
+    box-shadow: none;
 }

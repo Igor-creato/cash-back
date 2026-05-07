@@ -1,14 +1,14 @@
-/* global window, document, fetch, FormData, crypto, wp */
+/* global window, document, fetch, FormData, crypto, tinymce */
 (function () {
     'use strict';
 
     var cfg = window.CashbackLegalTemplateEditor || {};
     var boot = window.CashbackLegalTemplateEditorBoot || {};
-    if (!cfg.ajaxUrl || !boot.type) {
+    if (!cfg.ajaxUrl || !boot.type || !cfg.editorId) {
         return;
     }
 
-    var textarea = document.getElementById('cashback-legal-template-body');
+    var textarea = document.getElementById(cfg.editorId);
     var feedback = document.querySelector('[data-role="feedback"]');
     var dirtyEl = document.querySelector('[data-role="dirty-indicator"]');
     var publishDialog = document.getElementById('cashback-legal-template-publish-dialog');
@@ -18,29 +18,29 @@
     var savedHash = null;
     var lastSavedAt = null;
     var publishedHash = boot.publishedHash || '';
-    var editor = null;
 
     if (!textarea) {
         return;
     }
 
-    if (window.wp && window.wp.codeEditor && cfg.cmSettings) {
-        editor = window.wp.codeEditor.initialize(textarea, cfg.cmSettings);
+    function getEditor() {
+        return (window.tinymce && typeof window.tinymce.get === 'function') ? window.tinymce.get(cfg.editorId) : null;
     }
 
     function getValue() {
-        if (editor && editor.codemirror) {
-            return editor.codemirror.getValue();
+        var ed = getEditor();
+        if (ed && !ed.isHidden()) {
+            return ed.getContent();
         }
         return textarea.value;
     }
 
     function setValue(v) {
-        if (editor && editor.codemirror) {
-            editor.codemirror.setValue(v);
-        } else {
-            textarea.value = v;
+        var ed = getEditor();
+        if (ed && !ed.isHidden()) {
+            ed.setContent(v);
         }
+        textarea.value = v;
     }
 
     function uuid() {
@@ -97,12 +97,12 @@
         var resp = await ajax('save', { body: body });
         if (!resp || !resp.success) {
             var msg = resp && resp.data && resp.data.message ? resp.data.message : 'Unknown error';
-            notify((cfg.i18n.savingError || 'Save error: %s').replace('%s', msg), 'error');
+            notify('Ошибка сохранения: ' + msg, 'error');
             return;
         }
         savedHash = resp.data.hash;
         lastSavedAt = resp.data.saved_at;
-        notify((cfg.i18n.savedAt || 'Saved: %s').replace('%s', lastSavedAt), 'ok');
+        notify('Сохранено: ' + lastSavedAt + ' UTC', 'ok');
         await updateDirty();
     }
 
@@ -126,7 +126,7 @@
             return;
         }
         var iframe = previewDialog.querySelector('[data-role="preview-frame"]');
-        var fullHtml = '<!doctype html><html><head><meta charset="utf-8"><style>body{font:14px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;padding:24px;}h2,h3{color:#1d2327;}</style></head><body>' + (resp.data.rendered_html || '') + '</body></html>';
+        var fullHtml = '<!doctype html><html><head><meta charset="utf-8"><style>body{font:14px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;padding:24px;color:#1d2327;}h2,h3{color:#1d2327;}</style></head><body>' + (resp.data.rendered_html || '') + '</body></html>';
         iframe.setAttribute('srcdoc', fullHtml);
         if (typeof previewDialog.showModal === 'function') {
             previewDialog.showModal();
@@ -135,7 +135,7 @@
         }
     }
 
-    async function openPublishDialog() {
+    function openPublishDialog() {
         if (publishConfirmInput) {
             publishConfirmInput.value = '';
         }
@@ -153,6 +153,9 @@
     }
 
     async function doPublish() {
+        // Перед publish сохраняем draft (на случай если админ не нажал Save).
+        await saveDraft();
+
         var key = uuid();
         var resp = await ajax('publish', {
             idempotency_key: key,
@@ -167,82 +170,108 @@
         setTimeout(function () { window.location.reload(); }, 1200);
     }
 
-    document.querySelectorAll('.cashback-legal-placeholder-chip').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            var ph = btn.getAttribute('data-placeholder') || '';
-            if (window.navigator && window.navigator.clipboard) {
-                window.navigator.clipboard.writeText(ph).catch(function () {});
-            }
-            notify('Скопировано: ' + ph, 'ok');
-        });
-    });
-
-    document.querySelectorAll('[data-action="save"]').forEach(function (b) { b.addEventListener('click', saveDraft); });
-    document.querySelectorAll('[data-action="discard"]').forEach(function (b) { b.addEventListener('click', discardDraft); });
-    document.querySelectorAll('[data-action="preview"]').forEach(function (b) { b.addEventListener('click', preview); });
-    document.querySelectorAll('[data-action="publish"]').forEach(function (b) { b.addEventListener('click', openPublishDialog); });
-
-    if (publishConfirmInput) {
-        publishConfirmInput.addEventListener('input', function () {
-            var expected = publishConfirmInput.getAttribute('data-expected') || '';
-            if (publishConfirmBtn) {
-                publishConfirmBtn.disabled = publishConfirmInput.value.trim() !== expected;
-            }
+    function bindPlaceholderChips() {
+        document.querySelectorAll('.cashback-legal-placeholder-chip').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var ph = btn.getAttribute('data-placeholder') || '';
+                if (window.navigator && window.navigator.clipboard) {
+                    window.navigator.clipboard.writeText(ph).catch(function () {});
+                }
+                // Дополнительно — вставка в курсор TinyMCE если editor активен.
+                var ed = getEditor();
+                if (ed && !ed.isHidden()) {
+                    ed.execCommand('mceInsertContent', false, ph);
+                }
+                notify('Скопировано / вставлено: ' + ph, 'ok');
+            });
         });
     }
 
-    if (publishConfirmBtn) {
-        publishConfirmBtn.addEventListener('click', function () {
-            if (typeof publishDialog.close === 'function') {
-                publishDialog.close();
-            } else {
-                publishDialog.removeAttribute('open');
-            }
-            doPublish();
+    function bindActions() {
+        document.querySelectorAll('[data-action="save"]').forEach(function (b) { b.addEventListener('click', saveDraft); });
+        document.querySelectorAll('[data-action="discard"]').forEach(function (b) { b.addEventListener('click', discardDraft); });
+        document.querySelectorAll('[data-action="preview"]').forEach(function (b) { b.addEventListener('click', preview); });
+        document.querySelectorAll('[data-action="publish"]').forEach(function (b) { b.addEventListener('click', openPublishDialog); });
+
+        if (publishConfirmInput) {
+            publishConfirmInput.addEventListener('input', function () {
+                var expected = publishConfirmInput.getAttribute('data-expected') || '';
+                if (publishConfirmBtn) {
+                    publishConfirmBtn.disabled = publishConfirmInput.value.trim() !== expected;
+                }
+            });
+        }
+
+        if (publishConfirmBtn) {
+            publishConfirmBtn.addEventListener('click', function () {
+                if (typeof publishDialog.close === 'function') {
+                    publishDialog.close();
+                } else {
+                    publishDialog.removeAttribute('open');
+                }
+                doPublish();
+            });
+        }
+
+        document.querySelectorAll('[data-action="cancel-publish"]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                if (typeof publishDialog.close === 'function') {
+                    publishDialog.close();
+                } else {
+                    publishDialog.removeAttribute('open');
+                }
+            });
+        });
+
+        document.querySelectorAll('.cashback-legal-template-dialog-close').forEach(function (b) {
+            b.addEventListener('click', function () {
+                var dlg = b.closest('dialog');
+                if (!dlg) { return; }
+                if (typeof dlg.close === 'function') {
+                    dlg.close();
+                } else {
+                    dlg.removeAttribute('open');
+                }
+            });
         });
     }
 
-    document.querySelectorAll('[data-action="cancel-publish"]').forEach(function (b) {
-        b.addEventListener('click', function () {
-            if (typeof publishDialog.close === 'function') {
-                publishDialog.close();
-            } else {
-                publishDialog.removeAttribute('open');
-            }
-        });
-    });
-
-    document.querySelectorAll('.cashback-legal-template-dialog-close').forEach(function (b) {
-        b.addEventListener('click', function () {
-            var dlg = b.closest('dialog');
-            if (!dlg) { return; }
-            if (typeof dlg.close === 'function') {
-                dlg.close();
-            } else {
-                dlg.removeAttribute('open');
-            }
-        });
-    });
-
-    if (editor && editor.codemirror) {
-        editor.codemirror.on('change', function () {
-            updateDirty();
-        });
-    } else {
+    function bindDirtyTracking() {
+        // TinyMCE — событие change/keyup; в text-mode — input на textarea.
+        if (window.tinymce && window.tinymce.on) {
+            window.tinymce.on('AddEditor', function (e) {
+                if (!e.editor || e.editor.id !== cfg.editorId) { return; }
+                e.editor.on('keyup change SetContent', function () {
+                    updateDirty();
+                });
+            });
+        }
         textarea.addEventListener('input', updateDirty);
     }
 
-    sha256Hex(getValue()).then(function (h) {
-        savedHash = h;
-        updateDirty();
-    });
+    function init() {
+        bindPlaceholderChips();
+        bindActions();
+        bindDirtyTracking();
 
-    window.addEventListener('beforeunload', function (e) {
-        if (dirtyEl && !dirtyEl.hidden) {
-            var msg = cfg.i18n.beforeUnload || 'Есть несохранённые изменения.';
-            e.preventDefault();
-            e.returnValue = msg;
-            return msg;
-        }
-    });
+        sha256Hex(getValue()).then(function (h) {
+            savedHash = h;
+            updateDirty();
+        });
+
+        window.addEventListener('beforeunload', function (e) {
+            if (dirtyEl && !dirtyEl.hidden) {
+                var msg = 'Есть несохранённые изменения. Покинуть страницу?';
+                e.preventDefault();
+                e.returnValue = msg;
+                return msg;
+            }
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
 })();

@@ -99,9 +99,6 @@ class Cashback_Legal_Template_Editor {
         if ($hook !== 'cashback_page_' . self::PAGE_SLUG) {
             return;
         }
-        if (!function_exists('wp_enqueue_code_editor')) {
-            return;
-        }
 
         $plugin_root = dirname(__DIR__, 2);
         $plugin_file = $plugin_root . '/cashback-plugin.php';
@@ -113,32 +110,22 @@ class Cashback_Legal_Template_Editor {
         $css_ver = file_exists($css_path) ? (string) filemtime($css_path) : '1.7.0';
         $js_ver  = file_exists($js_path) ? (string) filemtime($js_path) : '1.7.0';
 
-        $cm_settings = wp_enqueue_code_editor(array( 'type' => 'text/html' ));
-
         wp_register_style(self::ASSET_HANDLE, $css_url, array(), $css_ver);
-        wp_register_script(self::ASSET_HANDLE, $js_url, array( 'wp-codemirror' ), $js_ver, true);
+        // Зависимость на 'editor' — wp.editor.* объект (TinyMCE init/post API);
+        // wp_editor() сам подключает 'tinymce' и 'quicktags', но editor.js даёт
+        // wp.editor.getContent / wp.editor.initialize которые удобно использовать в JS.
+        wp_register_script(self::ASSET_HANDLE, $js_url, array( 'jquery', 'editor' ), $js_ver, true);
 
         wp_localize_script(self::ASSET_HANDLE, 'CashbackLegalTemplateEditor', array(
-            'ajaxUrl'    => admin_url('admin-ajax.php'),
-            'nonce'      => wp_create_nonce(self::NONCE_ACTION),
-            'cmSettings' => $cm_settings ? $cm_settings : null,
-            'actions'    => array(
-                'load'     => self::AJAX_LOAD,
-                'save'     => self::AJAX_SAVE_DRAFT,
-                'discard'  => self::AJAX_DISCARD_DRAFT,
-                'preview'  => self::AJAX_PREVIEW,
-                'publish'  => self::AJAX_PUBLISH,
-            ),
-            'i18n'       => array(
-                /* translators: %s — UTC timestamp последнего сохранения. */
-                'savedAt'         => __('Сохранено: %s', 'cashback-plugin'),
-                'unsaved'         => __('Несохранённые изменения', 'cashback-plugin'),
-                /* translators: %s — текст ошибки от сервера. */
-                'savingError'     => __('Ошибка сохранения: %s', 'cashback-plugin'),
-                /* translators: %s — целевая semver-версия (например, 2.0.0). */
-                'publishConfirm'  => __('Введите PUBLISH %s для подтверждения публикации:', 'cashback-plugin'),
-                'publishMismatch' => __('Текст не совпадает с подтверждением.', 'cashback-plugin'),
-                'beforeUnload'    => __('Есть несохранённые изменения. Покинуть страницу?', 'cashback-plugin'),
+            'ajaxUrl'   => admin_url('admin-ajax.php'),
+            'nonce'     => wp_create_nonce(self::NONCE_ACTION),
+            'editorId'  => 'cashback-legal-template-body',
+            'actions'   => array(
+                'load'    => self::AJAX_LOAD,
+                'save'    => self::AJAX_SAVE_DRAFT,
+                'discard' => self::AJAX_DISCARD_DRAFT,
+                'preview' => self::AJAX_PREVIEW,
+                'publish' => self::AJAX_PUBLISH,
             ),
         ));
 

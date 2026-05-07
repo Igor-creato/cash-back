@@ -72,13 +72,35 @@ $next_major = ( function ( string $current ): string {
         </div>
     </div>
 
-    <textarea
-        id="cashback-legal-template-body"
-        name="body"
-        rows="24"
-        spellcheck="false"
-        style="width:100%;font-family:Consolas,Monaco,monospace;"
-    ><?php echo esc_textarea(is_array($draft) ? (string) ($draft['body_html'] ?? $published_body) : $published_body); ?></textarea>
+    <?php
+    $editor_initial = is_array($draft) ? (string) ($draft['body_html'] ?? $published_body) : $published_body;
+    wp_editor(
+        $editor_initial,
+        'cashback-legal-template-body',
+        array(
+            'media_buttons' => false,
+            'wpautop'       => false,
+            'textarea_rows' => 24,
+            'textarea_name' => 'body',
+            'editor_class'  => 'cashback-legal-template-editor-tinymce',
+            'tinymce'       => array(
+                'toolbar1'                => 'formatselect,bold,italic,underline,bullist,numlist,blockquote,link,unlink,removeformat,undo,redo,code',
+                'toolbar2'                => '',
+                'block_formats'           => 'Параграф=p;Заголовок 2=h2;Заголовок 3=h3;Заголовок 4=h4',
+                'extended_valid_elements' => '+a[href|target|rel|title|class|id]',
+                'valid_elements'          => '*[*]',
+                'verify_html'             => false,
+                'forced_root_block'       => 'p',
+                'entity_encoding'         => 'raw',
+                'cleanup'                 => false,
+                'browser_spellcheck'      => true,
+            ),
+            'quicktags'     => array(
+                'buttons' => 'strong,em,link,ul,ol,li,h2,h3,close',
+            ),
+        )
+    );
+    ?>
 
     <?php if (!empty($required_phs)) : ?>
         <div class="cashback-legal-placeholders">
