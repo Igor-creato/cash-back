@@ -31,6 +31,8 @@ class Cashback_Legal_Bootstrap {
             'class-cashback-legal-documents.php',
             'class-cashback-legal-operator.php',
             'class-cashback-legal-consent-manager.php',
+            'class-cashback-legal-template-validator.php',
+            'class-cashback-legal-template-storage.php',
         );
     }
 
@@ -60,6 +62,7 @@ class Cashback_Legal_Bootstrap {
     private static function admin_files(): array {
         return array(
             'admin/class-cashback-legal-admin.php',
+            'admin/class-cashback-legal-template-editor.php',
         );
     }
 
@@ -122,6 +125,9 @@ class Cashback_Legal_Bootstrap {
         }
         if (class_exists('Cashback_Legal_Admin')) {
             Cashback_Legal_Admin::init();
+        }
+        if (class_exists('Cashback_Legal_Template_Editor')) {
+            Cashback_Legal_Template_Editor::init();
         }
 
         // WP Privacy Policy интеграция: контент о плагине публикуется

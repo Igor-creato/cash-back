@@ -389,10 +389,10 @@ class Cashback_Legal_Admin {
 
             <div class="cashback-legal-warning notice notice-warning" style="border-left-width:4px;">
                 <p>
-                    <strong><?php esc_html_e('Bump major-версии — необратимое действие.', 'cashback-plugin'); ?></strong>
+                    <strong><?php esc_html_e('Публикация новой major-версии — необратимое действие.', 'cashback-plugin'); ?></strong>
                     <?php esc_html_e('Все ранее данные согласия по этому документу будут помечены как superseded. При следующем входе пользователю покажется модал с обновлёнными чекбоксами; до акцепта доступ ограничен личным кабинетом и логаутом.', 'cashback-plugin'); ?>
                 </p>
-                <p><?php esc_html_e('Делайте bump только после фактической правки текста шаблона и согласования с юристом.', 'cashback-plugin'); ?></p>
+                <p><?php esc_html_e('Сохранение черновика никак не влияет на публичные страницы — публикация запускается отдельной кнопкой в редакторе и только после согласования текста с юристом.', 'cashback-plugin'); ?></p>
             </div>
 
             <?php if ($flash === 'bumped') : ?>
@@ -407,6 +407,7 @@ class Cashback_Legal_Admin {
                         <th><?php esc_html_e('Документ', 'cashback-plugin'); ?></th>
                         <th><?php esc_html_e('Текущая версия', 'cashback-plugin'); ?></th>
                         <th><?php esc_html_e('Hash', 'cashback-plugin'); ?></th>
+                        <th><?php esc_html_e('Состояние', 'cashback-plugin'); ?></th>
                         <th><?php esc_html_e('Действия', 'cashback-plugin'); ?></th>
                     </tr>
                 </thead>
@@ -424,7 +425,10 @@ class Cashback_Legal_Admin {
      * Сборка строк таблицы versions (вынесено для соблюдения Squiz.PHP.EmbeddedPhp).
      */
     private static function render_versions_rows(): string {
-        $out = '';
+        $out          = '';
+        $has_storage  = class_exists('Cashback_Legal_Template_Storage');
+        $has_editor   = class_exists('Cashback_Legal_Template_Editor');
+
         foreach (Cashback_Legal_Documents::all_types() as $type) {
             $meta       = Cashback_Legal_Documents::get_meta($type);
             $title      = isset($meta['title']) ? (string) $meta['title'] : $type;
@@ -432,23 +436,31 @@ class Cashback_Legal_Admin {
             $hash       = Cashback_Legal_Documents::compute_hash($type);
             $hash_short = $hash !== '' ? substr($hash, 0, 12) . '…' : '—';
 
-            $confirm_msg = esc_js(__('Bump major действительно нужен? Все ранее согласовавшие пройдут re-consent.', 'cashback-plugin'));
+            $has_draft = false;
+            if ($has_storage) {
+                $has_draft = Cashback_Legal_Template_Storage::get_draft($type) !== null;
+            }
+
+            $state_badge = $has_draft
+                ? '<span style="color:#996800;font-weight:600;">' . esc_html__('● Черновик', 'cashback-plugin') . '</span>'
+                : '<span style="color:#646970;">' . esc_html__('— Только опубликовано', 'cashback-plugin') . '</span>';
+
+            $edit_url = $has_editor
+                ? admin_url('admin.php?page=' . Cashback_Legal_Template_Editor::PAGE_SLUG . '&type=' . rawurlencode($type))
+                : '';
+
+            $action_html = $has_editor
+                ? '<a href="' . esc_url($edit_url) . '" class="button button-primary">'
+                    . esc_html__('Редактировать →', 'cashback-plugin')
+                    . '</a>'
+                : '<em>' . esc_html__('Редактор недоступен', 'cashback-plugin') . '</em>';
 
             $out .= '<tr>'
                 . '<td><strong>' . esc_html($title) . '</strong><br /><code>' . esc_html($type) . '</code></td>'
                 . '<td><code>' . esc_html($version) . '</code></td>'
                 . '<td><code title="' . esc_attr($hash) . '">' . esc_html($hash_short) . '</code></td>'
-                . '<td>'
-                . '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" '
-                . 'onsubmit="return confirm(\'' . $confirm_msg . '\');">'
-                . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION_BUMP_VERSION) . '" />'
-                . '<input type="hidden" name="consent_type" value="' . esc_attr($type) . '" />'
-                . wp_nonce_field(self::NONCE_BUMP_VERSION, '_wpnonce', true, false)
-                . '<button type="submit" class="button button-secondary">'
-                . esc_html__('Bump major →', 'cashback-plugin')
-                . '</button>'
-                . '</form>'
-                . '</td>'
+                . '<td>' . $state_badge . '</td>' // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $state_badge собран из esc_html__ выше.
+                . '<td>' . $action_html . '</td>' // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- собран через esc_url/esc_html__ выше.
                 . '</tr>';
         }
         return $out;

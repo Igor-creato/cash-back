@@ -225,6 +225,17 @@ class Cashback_Legal_Documents {
      * Возвращает HTML с placeholder'ами {{operator_*}}.
      */
     public static function load_template( string $type ): string {
+        // DB-first override: если в wp_cashback_legal_template_versions есть
+        // строка status='published', она имеет приоритет над PHP-шаблоном
+        // (админ редактировал текст через UI). PHP-файл остаётся seed/fallback
+        // для свежих инсталляций до первого редактирования.
+        if (class_exists('Cashback_Legal_Template_Storage')) {
+            $db_body = Cashback_Legal_Template_Storage::get_active_body($type);
+            if (is_string($db_body) && $db_body !== '') {
+                return $db_body;
+            }
+        }
+
         $meta = self::get_meta($type);
         if (empty($meta['template_path'])) {
             return '';

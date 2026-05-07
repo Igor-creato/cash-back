@@ -994,6 +994,18 @@ class CashbackPlugin {
                 error_log('[Cashback Legal] auto-migration failed: ' . $e->getMessage());
             }
         }
+
+        // Legal template storage (UI-редактирование текстов): создание таблицы
+        // wp_cashback_legal_template_versions. Идемпотентно — fast-path через
+        // cashback_legal_template_db_version.
+        if (class_exists('Cashback_Legal_Template_Storage')) {
+            try {
+                Cashback_Legal_Template_Storage::migrate();
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Legal Template] auto-migration failed: ' . $e->getMessage());
+            }
+        }
     }
 
     /**
