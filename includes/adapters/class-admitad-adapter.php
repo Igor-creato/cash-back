@@ -395,6 +395,327 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
 
     /**
      * {@inheritdoc}
+     *
+     * Admitad: GET /advcampaigns/?limit&offset.
+     * Endpoint уже возвращает расширенный набор полей (site_url, image,
+     * regions, categories, currency, goto_link, description, status), N+1
+     * запросов на детали не нужно. Поддерживается retry на 401 и 403
+     * insufficient_scope (паттерн из fetch_campaigns).
+     *
+     * @since 12.0.0
+     */
+    public function fetch_campaigns_detailed( array $credentials, array $network_config, int $offset = 0, int $limit = 100 ): array {
+        $auth_headers = $this->build_auth_headers($credentials, $network_config);
+        if (!$auth_headers) {
+            return $this->detailed_error('Не удалось получить токен Admitad');
+        }
+
+        $effective_limit = max(1, min(500, $limit));
+        $effective_offset = max(0, $offset);
+
+        $base_url = rtrim($network_config['api_base_url'] ?? 'https://api.admitad.com', '/');
+        $url      = $base_url . '/advcampaigns/?' . http_build_query(array(
+            'limit'  => $effective_limit,
+            'offset' => $effective_offset,
+        ));
+
+        $response = $this->http_get($url, $auth_headers);
+
+        if (is_wp_error($response)) {
+            return $this->detailed_error('HTTP error: ' . $response->get_error_message());
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+
+        // 401 → сбросить токен, повторить ОДИН раз.
+        if ($code === 401) {
+            $this->invalidate_token($credentials);
+            $auth_headers = $this->build_auth_headers($credentials, $network_config);
+            if (!$auth_headers) {
+                return $this->detailed_error('Token refresh failed after 401');
+            }
+            $response = $this->http_get($url, $auth_headers);
+            if (is_wp_error($response)) {
+                return $this->detailed_error('HTTP error after retry: ' . $response->get_error_message());
+            }
+            $code = wp_remote_retrieve_response_code($response);
+        }
+
+        // 403 insufficient_scope → сбросить токен, повторить.
+        if ($code === 403) {
+            $body_text = wp_remote_retrieve_body($response);
+            if (str_contains($body_text, 'insufficient_scope')) {
+                $this->invalidate_token($credentials);
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('Cashback Admitad: 403 insufficient_scope on advcampaigns_detailed, invalidating token and retrying');
+
+                $auth_headers = $this->build_auth_headers($credentials, $network_config);
+                if (!$auth_headers) {
+                    return $this->detailed_error('Token refresh failed after 403 insufficient_scope');
+                }
+                $response = $this->http_get($url, $auth_headers);
+                if (is_wp_error($response)) {
+                    return $this->detailed_error('HTTP error after 403 retry: ' . $response->get_error_message());
+                }
+                $code = wp_remote_retrieve_response_code($response);
+            }
+        }
+
+        if ($code !== 200) {
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+            return $this->detailed_error("HTTP {$code}: " . $this->safe_error_summary($body));
+        }
+
+        $body    = json_decode(wp_remote_retrieve_body($response), true);
+        $results = isset($body['results']) && is_array($body['results']) ? $body['results'] : array();
+        $total   = (int) ( $body['_meta']['count'] ?? 0 );
+
+        $campaigns = array();
+        foreach ($results as $raw) {
+            if (!is_array($raw)) {
+                continue;
+            }
+            $campaigns[] = $this->normalize_campaign_detail($raw);
+        }
+
+        $returned    = count($results);
+        $next_offset = $effective_offset + $effective_limit;
+        $has_next    = ($returned === $effective_limit) && ($total === 0 || $next_offset < $total);
+
+        return array(
+            'success'     => true,
+            'campaigns'   => $campaigns,
+            'has_next'    => $has_next,
+            'next_offset' => $next_offset,
+            'error'       => null,
+        );
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * Admitad: GET /advcampaigns/{id}/actions/?limit=500.
+     * Возвращает массив тарифов action'а с полями id, name, type
+     * ('percent' / 'fixed'), payment_size, payment_size_min/max.
+     *
+     * Для мульти-тарифных магазинов (как Joom) вернётся несколько строк —
+     * Cashback_Shop_Tariff_Sync upsert'ит каждую и определит max-ставку для
+     * рендера «до X%» в карточке товара.
+     *
+     * @since 12.0.0
+     */
+    public function fetch_shop_tariffs( array $credentials, array $network_config, string $campaign_id ): array {
+        if ($campaign_id === '') {
+            return array(
+                'success' => false,
+                'tariffs' => array(),
+                'error'   => 'campaign_id обязателен',
+            );
+        }
+
+        $auth_headers = $this->build_auth_headers($credentials, $network_config);
+        if (!$auth_headers) {
+            return array(
+                'success' => false,
+                'tariffs' => array(),
+                'error'   => 'Не удалось получить токен Admitad',
+            );
+        }
+
+        $base_url = rtrim($network_config['api_base_url'] ?? 'https://api.admitad.com', '/');
+        $url      = $base_url . '/advcampaigns/' . rawurlencode($campaign_id) . '/actions/?' . http_build_query(array(
+            'limit'  => 500,
+            'offset' => 0,
+        ));
+
+        $response = $this->http_get($url, $auth_headers);
+
+        if (is_wp_error($response)) {
+            return array(
+                'success' => false,
+                'tariffs' => array(),
+                'error'   => 'HTTP error: ' . $response->get_error_message(),
+            );
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+
+        // 401 retry — общий паттерн.
+        if ($code === 401) {
+            $this->invalidate_token($credentials);
+            $auth_headers = $this->build_auth_headers($credentials, $network_config);
+            if (!$auth_headers) {
+                return array(
+                    'success' => false,
+                    'tariffs' => array(),
+                    'error'   => 'Token refresh failed after 401',
+                );
+            }
+            $response = $this->http_get($url, $auth_headers);
+            if (is_wp_error($response)) {
+                return array(
+                    'success' => false,
+                    'tariffs' => array(),
+                    'error'   => 'HTTP error after retry: ' . $response->get_error_message(),
+                );
+            }
+            $code = wp_remote_retrieve_response_code($response);
+        }
+
+        if ($code !== 200) {
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+            return array(
+                'success' => false,
+                'tariffs' => array(),
+                'error'   => "HTTP {$code}: " . $this->safe_error_summary($body),
+            );
+        }
+
+        $body    = json_decode(wp_remote_retrieve_body($response), true);
+        $results = isset($body['results']) && is_array($body['results']) ? $body['results'] : array();
+
+        $tariffs = array();
+        foreach ($results as $raw) {
+            if (!is_array($raw)) {
+                continue;
+            }
+            $tariff_id = isset($raw['id']) ? (string) $raw['id'] : '';
+            if ($tariff_id === '') {
+                continue;
+            }
+
+            $tariffs[] = array(
+                'tariff_id'    => $tariff_id,
+                'name'         => isset($raw['name']) ? (string) $raw['name'] : '',
+                'tariff_type'  => $this->map_admitad_tariff_type(
+                    isset($raw['type']) ? (string) $raw['type'] : '',
+                    isset($raw['name']) ? (string) $raw['name'] : ''
+                ),
+                'payment_size' => isset($raw['payment_size']) && is_numeric($raw['payment_size'])
+                    ? (float) $raw['payment_size']
+                    : 0.0,
+                'payment_min'  => isset($raw['payment_size_min']) && is_numeric($raw['payment_size_min'])
+                    ? (float) $raw['payment_size_min']
+                    : null,
+                'payment_max'  => isset($raw['payment_size_max']) && is_numeric($raw['payment_size_max'])
+                    ? (float) $raw['payment_size_max']
+                    : null,
+                'currency'     => strtoupper((string) ( $raw['currency'] ?? 'RUB' )),
+                'is_default'   => !empty($raw['is_default']),
+                'raw'          => $raw,
+            );
+        }
+
+        return array(
+            'success' => true,
+            'tariffs' => $tariffs,
+            'error'   => null,
+        );
+    }
+
+    /**
+     * Нормализовать одну запись /advcampaigns/?... в формат CampaignDetailDTO.
+     *
+     * Admitad может вернуть `categories` как [{id,name}, …] или просто список
+     * строк; `regions` — как [{region:"RU"}, …] или ["RU","BY"]. Берём
+     * везде нормализованные строки, raw кладём в payload для отладки.
+     *
+     * @param array<string, mixed> $raw
+     * @return array<string, mixed>
+     */
+    private function normalize_campaign_detail( array $raw ): array {
+        $status_raw = isset($raw['status']) ? strtolower((string) $raw['status']) : '';
+
+        $categories = array();
+        $raw_cats   = isset($raw['categories']) && is_array($raw['categories']) ? $raw['categories'] : array();
+        foreach ($raw_cats as $cat) {
+            if (is_array($cat) && isset($cat['name'])) {
+                $categories[] = (string) $cat['name'];
+            } elseif (is_scalar($cat)) {
+                $categories[] = (string) $cat;
+            }
+        }
+
+        $regions   = array();
+        $raw_regs  = isset($raw['regions']) && is_array($raw['regions']) ? $raw['regions'] : array();
+        foreach ($raw_regs as $r) {
+            if (is_array($r)) {
+                if (isset($r['region'])) {
+                    $regions[] = strtoupper((string) $r['region']);
+                } elseif (isset($r['code'])) {
+                    $regions[] = strtoupper((string) $r['code']);
+                }
+            } elseif (is_scalar($r)) {
+                $regions[] = strtoupper((string) $r);
+            }
+        }
+
+        $currency = strtoupper((string) ( $raw['currency'] ?? 'RUB' ));
+        if (!preg_match('/^[A-Z]{3}$/', $currency)) {
+            $currency = 'RUB';
+        }
+
+        return array(
+            'id'          => (string) ( $raw['id'] ?? '' ),
+            'name'        => (string) ( $raw['name'] ?? '' ),
+            'site_url'    => (string) ( $raw['site_url'] ?? '' ),
+            'image_url'   => (string) ( $raw['image'] ?? ( $raw['logo_filename'] ?? '' ) ),
+            'description' => (string) ( $raw['description'] ?? '' ),
+            'status_raw'  => $status_raw,
+            'is_active'   => ( $status_raw === 'active' ),
+            'regions'     => $regions,
+            'categories'  => $categories,
+            'currency'    => $currency,
+            'goto_link'   => (string) ( $raw['goto_link'] ?? '' ),
+            'raw'         => $raw,
+        );
+    }
+
+    /**
+     * Нормализовать tariff_type из Admitad → 'percent' | 'fix'.
+     *
+     * Admitad использует поле `type` со значениями 'percent' / 'fixed';
+     * fallback по эвристике из name на случай новых типов.
+     */
+    private function map_admitad_tariff_type( string $raw_type, string $name ): string {
+        $normalized = strtolower(trim($raw_type));
+
+        if ($normalized === 'percent' || $normalized === 'percentage' || $normalized === '%') {
+            return 'percent';
+        }
+        if ($normalized === 'fix' || $normalized === 'fixed' || $normalized === 'flat') {
+            return 'fix';
+        }
+
+        // Fallback по имени тарифа для нестандартных type-значений.
+        if (preg_match('/процент|percent|%/iu', $name)) {
+            return 'percent';
+        }
+        if (preg_match('/фикс|fix|fixed|руб|₽|usd|eur/iu', $name)) {
+            return 'fix';
+        }
+
+        // Default: процент — самый частый случай у Admitad-партнёров.
+        return 'percent';
+    }
+
+    /**
+     * Стандартный формат ошибки fetch_campaigns_detailed.
+     *
+     * @return array<string, mixed>
+     */
+    private function detailed_error( string $error ): array {
+        return array(
+            'success'     => false,
+            'campaigns'   => array(),
+            'has_next'    => false,
+            'next_offset' => 0,
+            'error'       => $error,
+        );
+    }
+
+    /**
+     * {@inheritdoc}
      */
     public function get_default_status_map(): array {
         return array(
