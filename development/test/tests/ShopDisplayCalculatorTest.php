@@ -298,4 +298,37 @@ final class ShopDisplayCalculatorTest extends TestCase
         // продуктов (Calculator вернёт '' → падаем в legacy).
         $this->assertStringContainsString("'_cashback_display_value'", $php);
     }
+
+    // ============================================================
+    // Структурная проверка: dynamic-render обязан включать label-span.
+    // Регрессия 2026-05-08: после включения dynamic-display метка
+    // "Кэшбэк" перестала отображаться на карточках — render_uncached
+    // выводил только value без обёртки с label, в отличие от legacy
+    // get_cashback_html / render_cashback_html / legacy_fallback.
+    // ============================================================
+
+    public function test_render_uncached_emits_label_span(): void
+    {
+        $php = file_get_contents(self::$plugin_root . '/includes/shops/class-cashback-cashback-display-calculator.php');
+        $this->assertStringContainsString(
+            'cashback-display__label',
+            $php,
+            'render_uncached должен оборачивать метку в <span class="cashback-display__label">'
+        );
+        $this->assertStringContainsString(
+            'cashback-display__value',
+            $php,
+            'render_uncached должен оборачивать значение в <span class="cashback-display__value">'
+        );
+        $this->assertStringContainsString(
+            "'_cashback_display_label'",
+            $php,
+            'render_uncached должен читать post_meta _cashback_display_label'
+        );
+        $this->assertMatchesRegularExpression(
+            "/\\\$label\s*=\s*'Кэшбэк';/u",
+            $php,
+            'fallback-метка должна быть "Кэшбэк" (как в legacy_fallback / render_cashback_html)'
+        );
+    }
 }

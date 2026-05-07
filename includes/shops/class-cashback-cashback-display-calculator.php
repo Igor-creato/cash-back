@@ -375,9 +375,23 @@ class Cashback_Cashback_Display_Calculator {
             $classes .= ' cashback-display--standalone';
         }
 
-        $inner = function_exists('esc_html') ? esc_html($formatted) : htmlspecialchars($formatted, ENT_QUOTES, 'UTF-8');
-        $cls   = function_exists('esc_attr') ? esc_attr($classes) : htmlspecialchars($classes, ENT_QUOTES, 'UTF-8');
-        return '<span class="' . $cls . '">' . $inner . '</span>';
+        // Метка из post_meta preferred_id (значение, которое реально показано
+        // на карточке). Fallback "Кэшбэк" — единая семантика с legacy
+        // get_cashback_html / render_cashback_html / legacy_fallback.
+        $label = (string) get_post_meta($preferred_id, '_cashback_display_label', true);
+        if ($label === '') {
+            $label = 'Кэшбэк';
+        }
+
+        $esc_html = function_exists('esc_html')
+            ? 'esc_html'
+            : static fn( string $s ): string => htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
+        $cls = function_exists('esc_attr') ? esc_attr($classes) : htmlspecialchars($classes, ENT_QUOTES, 'UTF-8');
+
+        return '<span class="' . $cls . '">'
+            . '<span class="cashback-display__label">' . $esc_html($label) . '</span> '
+            . '<span class="cashback-display__value">' . $esc_html($formatted) . '</span>'
+            . '</span>';
     }
 
     /**
