@@ -24,6 +24,7 @@ class Cashback_Shop_Groups_Admin {
     public const PAGE_SLUG          = 'cashback-shop-groups';
     public const ADMIN_POST_ACTION  = 'cashback_shop_group_action';
     public const NONCE_ACTION       = 'cashback_shop_group_action';
+    public const PER_PAGE           = 20;
 
     public static function init(): void {
         add_action('admin_menu', array( self::class, 'register_menu' ), 32);
@@ -95,7 +96,15 @@ class Cashback_Shop_Groups_Admin {
             wp_die(esc_html__('Недостаточно прав.', 'cashback'));
         }
 
-        $groups = self::fetch_groups();
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination, intval-cast.
+        $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+        $total        = self::count_groups();
+        $total_pages  = $total > 0 ? (int) ceil($total / self::PER_PAGE) : 0;
+        if ($total_pages > 0 && $current_page > $total_pages) {
+            $current_page = $total_pages;
+        }
+        $offset = ( $current_page - 1 ) * self::PER_PAGE;
+        $groups = self::fetch_groups(self::PER_PAGE, $offset);
 
         ?>
         <div class="wrap">
@@ -127,6 +136,15 @@ class Cashback_Shop_Groups_Admin {
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+                <?php
+                Cashback_Pagination::render(array(
+                    'total_items'  => $total,
+                    'per_page'     => self::PER_PAGE,
+                    'current_page' => $current_page,
+                    'total_pages'  => $total_pages,
+                    'page_slug'    => self::PAGE_SLUG,
+                ));
+                ?>
             <?php endif; ?>
         </div>
         <?php
@@ -218,17 +236,33 @@ class Cashback_Shop_Groups_Admin {
     /**
      * @return array<int, array<string, mixed>>
      */
-    private static function fetch_groups(): array {
+    private static function fetch_groups( int $per_page, int $offset ): array {
         global $wpdb;
         if (! isset($wpdb) || ! is_object($wpdb)) {
             return array();
         }
-        $table = $wpdb->prefix . Cashback_Shop_Group_Resolver::TABLE_GROUPS;
-        $rows  = $wpdb->get_results($wpdb->prepare(
-            'SELECT * FROM %i ORDER BY id DESC LIMIT 200',
-            $table
+        $per_page = max(1, min(500, $per_page));
+        $offset   = max(0, $offset);
+        $table    = $wpdb->prefix . Cashback_Shop_Group_Resolver::TABLE_GROUPS;
+        $rows     = $wpdb->get_results($wpdb->prepare(
+            'SELECT * FROM %i ORDER BY id DESC LIMIT %d OFFSET %d',
+            $table,
+            $per_page,
+            $offset
         ), ARRAY_A);
         return is_array($rows) ? $rows : array();
+    }
+
+    private static function count_groups(): int {
+        global $wpdb;
+        if (! isset($wpdb) || ! is_object($wpdb)) {
+            return 0;
+        }
+        $table = $wpdb->prefix . Cashback_Shop_Group_Resolver::TABLE_GROUPS;
+        return (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM %i',
+            $table
+        ));
     }
 
     /**

@@ -25,6 +25,7 @@ class Cashback_Shop_Import_Admin {
     public const PAGE_SLUG = 'cashback-shop-import';
     public const NONCE_ACTION = 'cashback_shop_import_run';
     public const ADMIN_POST_ACTION = 'cashback_shop_import_trigger';
+    public const PER_PAGE = 20;
 
     public static function init(): void {
         add_action('admin_menu', array( self::class, 'register_menu' ), 31);
@@ -89,9 +90,22 @@ class Cashback_Shop_Import_Admin {
         }
 
         $networks = self::get_active_networks();
-        $logs     = class_exists('Cashback_Shop_Import_Log')
-            ? Cashback_Shop_Import_Log::get_recent(null, 30)
-            : array();
+
+        $logs        = array();
+        $logs_total  = 0;
+        $logs_pages  = 0;
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination, intval-cast.
+        $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+
+        if (class_exists('Cashback_Shop_Import_Log')) {
+            $logs_total = Cashback_Shop_Import_Log::count_total();
+            $logs_pages = $logs_total > 0 ? (int) ceil($logs_total / self::PER_PAGE) : 0;
+            if ($logs_pages > 0 && $current_page > $logs_pages) {
+                $current_page = $logs_pages;
+            }
+            $offset = ( $current_page - 1 ) * self::PER_PAGE;
+            $logs   = Cashback_Shop_Import_Log::paginate(null, self::PER_PAGE, $offset);
+        }
 
         ?>
         <div class="wrap">
@@ -182,6 +196,15 @@ class Cashback_Shop_Import_Admin {
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+                <?php
+                Cashback_Pagination::render(array(
+                    'total_items'  => $logs_total,
+                    'per_page'     => self::PER_PAGE,
+                    'current_page' => $current_page,
+                    'total_pages'  => $logs_pages,
+                    'page_slug'    => self::PAGE_SLUG,
+                ));
+                ?>
             <?php endif; ?>
         </div>
         <?php

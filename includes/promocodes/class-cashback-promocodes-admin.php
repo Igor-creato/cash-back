@@ -209,19 +209,21 @@ final class Cashback_Promocodes_Admin {
             </table>
 
             <?php
-            $total_pages = max( 1, (int) ceil( $total / $per_page ) );
-            if ( $total_pages > 1 ) {
-                echo '<div class="tablenav"><div class="tablenav-pages">';
-                $base_url = add_query_arg( array( 'page' => self::PAGE_SLUG, 's' => $search ), admin_url( 'admin.php' ) );
-                if ( $page_num > 1 ) {
-                    printf( '<a class="button" href="%s">&laquo; %s</a> ', esc_url( add_query_arg( 'paged', $page_num - 1, $base_url ) ), esc_html__( 'Предыдущая', 'cashback-plugin' ) );
-                }
-                echo '<span class="paging-input">' . esc_html( sprintf( '%d / %d', $page_num, $total_pages ) ) . '</span>';
-                if ( $page_num < $total_pages ) {
-                    printf( ' <a class="button" href="%s">%s &raquo;</a>', esc_url( add_query_arg( 'paged', $page_num + 1, $base_url ) ), esc_html__( 'Следующая', 'cashback-plugin' ) );
-                }
-                echo '</div></div>';
+            $promo_add_args = array();
+            if ( $search !== '' ) {
+                $promo_add_args['s'] = $search;
             }
+            if ( ! $only_active ) {
+                $promo_add_args['active'] = '0';
+            }
+            Cashback_Pagination::render( array(
+                'total_items'  => $total,
+                'per_page'     => $per_page,
+                'current_page' => $page_num,
+                'total_pages'  => $total > 0 ? (int) ceil( $total / $per_page ) : 0,
+                'page_slug'    => self::PAGE_SLUG,
+                'add_args'     => $promo_add_args,
+            ) );
             ?>
         </div>
         <?php

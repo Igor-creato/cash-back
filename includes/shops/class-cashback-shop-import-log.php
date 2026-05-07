@@ -176,6 +176,63 @@ class Cashback_Shop_Import_Log {
     }
 
     /**
+     * Общее количество row (опционально по network_id) — для пагинации admin UI.
+     */
+    public static function count_total( ?int $network_id = null ): int {
+        global $wpdb;
+
+        $table = $wpdb->prefix . self::TABLE;
+
+        if ($network_id !== null && $network_id > 0) {
+            return (int) $wpdb->get_var(
+                $wpdb->prepare('SELECT COUNT(*) FROM %i WHERE network_id = %d', $table, $network_id)
+            );
+        }
+
+        return (int) $wpdb->get_var(
+            $wpdb->prepare('SELECT COUNT(*) FROM %i', $table)
+        );
+    }
+
+    /**
+     * Постраничная выборка row (для admin UI пагинации).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function paginate( ?int $network_id, int $per_page, int $offset ): array {
+        global $wpdb;
+
+        $table    = $wpdb->prefix . self::TABLE;
+        $per_page = max(1, min(200, $per_page));
+        $offset   = max(0, $offset);
+
+        if ($network_id !== null && $network_id > 0) {
+            $rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    'SELECT * FROM %i WHERE network_id = %d ORDER BY started_at DESC LIMIT %d OFFSET %d',
+                    $table,
+                    $network_id,
+                    $per_page,
+                    $offset
+                ),
+                ARRAY_A
+            );
+        } else {
+            $rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    'SELECT * FROM %i ORDER BY started_at DESC LIMIT %d OFFSET %d',
+                    $table,
+                    $per_page,
+                    $offset
+                ),
+                ARRAY_A
+            );
+        }
+
+        return is_array($rows) ? $rows : array();
+    }
+
+    /**
      * Получить все row одного run_id (для admin UI прогресса конкретного запуска).
      *
      * @return array<int, array<string, mixed>>
