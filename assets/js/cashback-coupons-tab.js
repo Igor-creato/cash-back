@@ -160,33 +160,33 @@
         // Idempotency-guard: если таб уже активен — не кликаем (toggle = close).
         if (isAlreadyActive(anchor)) { return true; }
 
-        // Запоминаем позицию до click: тема (Woodmart wd_tabs / WC tabs) или
-        // браузер (нативный anchor href="#tab-...") может синхронно дёрнуть
-        // scrollTo/scrollTop при активации. Это даёт «резкий рывок вверх»,
-        // который сбивает наш плавный scrollIntoView. Восстанавливаем
-        // позицию мгновенно — браузер не успевает отрисовать промежуточный
-        // jump в одном tick'е, и плавный scroll стартует с исходной точки.
-        var savedY = window.pageYOffset || window.scrollY || 0;
+        // ШАГ 1: подавляем нативный default action клика по anchor.
+        // <a href="#tab-promokody"> при срабатывании default action делает
+        // navigation к fragment'у — браузер мгновенно прыгает к элементу
+        // с id="tab-promokody" (instant jump, не плавно). jQuery
+        // .trigger('click') после своих обработчиков синхронно вызывает
+        // native el.click(), что и триггерит этот default. preventDefault
+        // на capture phase отменяет default, не блокируя bubble-handlers
+        // WC/Woodmart, которые активируют tab-pane (они синхронны и
+        // защищены от preventDefault — preventDefault отменяет только
+        // default action браузера, не propagation).
+        var suppressDefault = function (e) {
+            e.preventDefault();
+        };
+        anchor.addEventListener('click', suppressDefault, true);
 
-        // jQuery .trigger('click') — Woodmart использует jQuery, и WC tabs
-        // привязывает обработчик через jQuery .on(). Triggers полный
-        // click-flow (все WC/Woodmart hooks отработают, content
-        // отрендерится корректно). Native anchor.click() для большинства
-        // тем тоже работает, но jQuery — гарантия.
-        if (window.jQuery) {
-            try { window.jQuery(anchor).trigger('click'); } catch (e) {}
-        } else {
-            try { anchor.click(); } catch (e) {}
-        }
+        // ШАГ 2: открываем вкладку — jQuery .trigger('click') запускает
+        // полный click-flow (jQuery-handlers WC/Woodmart активируют
+        // tab-pane), но native fragment-jump подавлен capture-handler'ом.
+        try {
+            if (window.jQuery) {
+                window.jQuery(anchor).trigger('click');
+            } else {
+                anchor.click();
+            }
+        } catch (e) {}
 
-        // Sync-restore: если синхронный обработчик темы изменил scrollY —
-        // откатываем мгновенно. Async-scroll (через setTimeout) уже не
-        // покрываем здесь — для него работает rAF-плавный scroll ниже,
-        // браузер отменит запущенную чужую анимацию scroll-behavior:smooth.
-        var currentY = window.pageYOffset || window.scrollY || 0;
-        if (currentY !== savedY) {
-            window.scrollTo(0, savedY);
-        }
+        anchor.removeEventListener('click', suppressDefault, true);
         return true;
     }
 
@@ -198,18 +198,14 @@
     }
 
     function activateWithRetry() {
-        // Шаг 1: открыть нужную вкладку. Возможный jump-scroll темы
-        // подавлен sync-restore внутри activate().
+        // Шаг 1: открыть нужную вкладку (нативный jump-к-фрагменту подавлен
+        // внутри activate() через preventDefault на capture phase).
         var firstActivated = activate();
 
-        // Шаг 2: дождаться, пока theme/WC применят layout-mutation
-        // (раскрытие accordion-pane на mobile, активация tab-pane на
-        // desktop) — их стилевые/визуальные эффекты должны быть в DOM,
-        // иначе наш scrollIntoView может вычислить устаревшую целевую
-        // позицию. Двойной rAF = «после ближайшего layout + после ещё
-        // одного frame на async-handlers темы». setTimeout(0) НЕ
-        // подходит: rAF гарантирует, что мы стартуем плавный scroll
-        // ровно перед следующим paint, без визуального dropped-frame.
+        // Шаг 2: плавный scroll к контейнеру табов. Двойной rAF — даём
+        // theme/WC применить layout-mutation после активации (раскрытие
+        // accordion-pane на mobile, показ tab-pane на desktop), чтобы
+        // целевая позиция scrollIntoView была корректной.
         window.requestAnimationFrame(function () {
             window.requestAnimationFrame(smoothScrollToTabs);
         });
