@@ -45,6 +45,17 @@ class Cashback_Shop_Importer {
     public const META_STATUS_RAW    = '_cashback_campaign_status_raw';
     public const META_RATE_LOCKED   = '_rate_locked';
 
+    // Дефолты, проставляемые ТОЛЬКО при первичном импорте (insert_draft_product).
+    // На update_existing_product не трогаем — админ мог изменить.
+    public const DEFAULT_BUTTON_TEXT    = 'Перейти';
+    public const DEFAULT_POPUP_MODE     = 'hide';
+    public const DEFAULT_DISPLAY_LABEL  = 'Кэшбэк';
+    public const DEFAULT_TAB1_TITLE     = 'Условия';
+    public const DEFAULT_TAB1_PRIORITY  = '80';
+    public const DEFAULT_TAB2_TITLE     = 'Промокоды';
+    public const DEFAULT_TAB2_PRIORITY  = '90';
+    public const DEFAULT_TAB2_CONTENT   = '[cashback_coupons_icons]';
+
     /**
      * Зарегистрировать AS-handlers + recurring schedules.
      *
@@ -540,12 +551,49 @@ class Cashback_Shop_Importer {
         // Маркер external (WC product type taxonomy) — используем metabox-фолбэк.
         update_post_meta((int) $post_id, '_product_type', 'external');
 
+        // Дефолты UX/админки, проставляются только при первичном импорте.
+        // На обновлении не трогаем — админ мог изменить или вычистить.
+        self::apply_first_import_defaults((int) $post_id);
+
         // Featured image: грузим логотип из CDN сети как WP attachment и
         // привязываем к товару. Best-effort: ошибка media_sideload_image
         // не должна валить весь импорт.
         self::attach_featured_image_from_url((int) $post_id, $dto->image_url, $adapter_slug, $dto->id);
 
         return (int) $post_id;
+    }
+
+    /**
+     * Проставить дефолтные значения админских полей при первичном импорте:
+     *   — _button_text          = 'Перейти' (текст кнопки external product);
+     *   — _store_popup_mode     = 'hide'    (всплывающее окно расширения);
+     *   — _cashback_display_label = 'Кэшбэк' (метка в карточке);
+     *   — Woodmart Tab[1] = 'Условия'  (priority=80, пустой content);
+     *   — Woodmart Tab[2] = 'Промокоды' (priority=90, content='[cashback_coupons_icons]').
+     *
+     * Вызывается ТОЛЬКО из insert_draft_product. На update_existing_product
+     * не трогаем — админ мог осознанно поменять/очистить эти поля.
+     */
+    private static function apply_first_import_defaults( int $product_id ): void {
+        if ($product_id <= 0) {
+            return;
+        }
+
+        update_post_meta($product_id, '_button_text', self::DEFAULT_BUTTON_TEXT);
+        update_post_meta($product_id, '_store_popup_mode', self::DEFAULT_POPUP_MODE);
+        update_post_meta($product_id, '_cashback_display_label', self::DEFAULT_DISPLAY_LABEL);
+
+        // Tab 1 — «Условия» (пустой контент, заполняет админ).
+        update_post_meta($product_id, '_woodmart_product_custom_tab_title', self::DEFAULT_TAB1_TITLE);
+        update_post_meta($product_id, '_woodmart_product_custom_tab_priority', self::DEFAULT_TAB1_PRIORITY);
+        update_post_meta($product_id, '_woodmart_product_custom_tab_content_type', 'text');
+        update_post_meta($product_id, '_woodmart_product_custom_tab_content', '');
+
+        // Tab 2 — «Промокоды» с шорткодом.
+        update_post_meta($product_id, '_woodmart_product_custom_tab_title_2', self::DEFAULT_TAB2_TITLE);
+        update_post_meta($product_id, '_woodmart_product_custom_tab_priority_2', self::DEFAULT_TAB2_PRIORITY);
+        update_post_meta($product_id, '_woodmart_product_custom_tab_content_type_2', 'text');
+        update_post_meta($product_id, '_woodmart_product_custom_tab_content_2', self::DEFAULT_TAB2_CONTENT);
     }
 
     /**

@@ -273,4 +273,63 @@ final class ShopImporterStructuralTest extends TestCase
         $this->assertCount(1, $GLOBALS['_cb_test_media_sideload_calls']);
         $this->assertArrayNotHasKey(7, $GLOBALS['_cb_test_post_thumbnails'], 'thumbnail НЕ ставится при WP_Error');
     }
+
+    // ============================================================
+    // apply_first_import_defaults — дефолты при первичном импорте.
+    // Используем in-memory mock update_post_meta через $GLOBALS.
+    // ============================================================
+
+    public function test_default_constants_match_user_spec(): void
+    {
+        $this->assertSame('Перейти', Cashback_Shop_Importer::DEFAULT_BUTTON_TEXT);
+        $this->assertSame('hide', Cashback_Shop_Importer::DEFAULT_POPUP_MODE);
+        $this->assertSame('Кэшбэк', Cashback_Shop_Importer::DEFAULT_DISPLAY_LABEL);
+        $this->assertSame('Условия', Cashback_Shop_Importer::DEFAULT_TAB1_TITLE);
+        $this->assertSame('Промокоды', Cashback_Shop_Importer::DEFAULT_TAB2_TITLE);
+        $this->assertSame('[cashback_coupons_icons]', Cashback_Shop_Importer::DEFAULT_TAB2_CONTENT);
+    }
+
+    public function test_apply_first_import_defaults_writes_all_metas(): void
+    {
+        $GLOBALS['_cb_test_post_meta'] = array();
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method = $reflection->getMethod('apply_first_import_defaults');
+        $method->setAccessible(true);
+
+        $method->invoke(null, 555);
+
+        $bucket = $GLOBALS['_cb_test_post_meta'][555] ?? array();
+
+        // Сторонние / WC поля.
+        $this->assertSame('Перейти', $bucket['_button_text'] ?? null);
+        $this->assertSame('hide', $bucket['_store_popup_mode'] ?? null);
+        $this->assertSame('Кэшбэк', $bucket['_cashback_display_label'] ?? null);
+
+        // Tab 1 — Условия (пустой content).
+        $this->assertSame('Условия', $bucket['_woodmart_product_custom_tab_title'] ?? null);
+        $this->assertSame('80', $bucket['_woodmart_product_custom_tab_priority'] ?? null);
+        $this->assertSame('text', $bucket['_woodmart_product_custom_tab_content_type'] ?? null);
+        $this->assertSame('', $bucket['_woodmart_product_custom_tab_content'] ?? null);
+
+        // Tab 2 — Промокоды + шорткод.
+        $this->assertSame('Промокоды', $bucket['_woodmart_product_custom_tab_title_2'] ?? null);
+        $this->assertSame('90', $bucket['_woodmart_product_custom_tab_priority_2'] ?? null);
+        $this->assertSame('text', $bucket['_woodmart_product_custom_tab_content_type_2'] ?? null);
+        $this->assertSame('[cashback_coupons_icons]', $bucket['_woodmart_product_custom_tab_content_2'] ?? null);
+    }
+
+    public function test_apply_first_import_defaults_skips_invalid_product_id(): void
+    {
+        $GLOBALS['_cb_test_post_meta'] = array();
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method = $reflection->getMethod('apply_first_import_defaults');
+        $method->setAccessible(true);
+
+        $method->invoke(null, 0);
+        $method->invoke(null, -1);
+
+        $this->assertSame(array(), $GLOBALS['_cb_test_post_meta'], 'на product_id <= 0 ничего не пишется');
+    }
 }

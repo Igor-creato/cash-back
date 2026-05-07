@@ -1077,6 +1077,74 @@ if (!class_exists('Cashback_Fraud_Collector')) {
 }
 
 // ============================================================
+// Stateful in-memory мок post_meta API.
+//
+// Канонический bucket — $GLOBALS['_cb_test_post_meta'][post_id][meta_key] = value.
+// Для backward-compat с существующими тестами (CashbackDisplayShortcodeTest,
+// CouponsIconsShortcodeTest, PromocodesShortcodeTest) get_post_meta также
+// читает $GLOBALS['_cb_test_meta'] — старая конвенция, тесты сами туда пишут
+// напрямую через $GLOBALS = [...], не через update_post_meta().
+//
+// Тесты сами сбрасывают $GLOBALS['_cb_test_post_meta'] = [] / $GLOBALS['_cb_test_meta'] = []
+// в setUp.
+// ============================================================
+if (!isset($GLOBALS['_cb_test_post_meta'])) {
+    $GLOBALS['_cb_test_post_meta'] = array();
+}
+if (!isset($GLOBALS['_cb_test_meta'])) {
+    $GLOBALS['_cb_test_meta'] = array();
+}
+
+if (!function_exists('update_post_meta')) {
+    function update_post_meta(int $post_id, string $meta_key, mixed $meta_value, mixed $prev_value = ''): bool
+    {
+        if (!isset($GLOBALS['_cb_test_post_meta'][ $post_id ]) || !is_array($GLOBALS['_cb_test_post_meta'][ $post_id ])) {
+            $GLOBALS['_cb_test_post_meta'][ $post_id ] = array();
+        }
+        $GLOBALS['_cb_test_post_meta'][ $post_id ][ $meta_key ] = $meta_value;
+        return true;
+    }
+}
+
+if (!function_exists('get_post_meta')) {
+    function get_post_meta(int $post_id, string $meta_key = '', bool $single = false): mixed
+    {
+        // Сначала канонический bucket, потом legacy (legacy тесты пишут только туда).
+        $bucket = $GLOBALS['_cb_test_post_meta'][ $post_id ] ?? array();
+        $legacy = $GLOBALS['_cb_test_meta'][ $post_id ] ?? array();
+        if (is_array($legacy) && $legacy !== array()) {
+            // legacy перекрывает canonical для тех же ключей — это backward-compat
+            // поведение, тесты передающие данные через _cb_test_meta ожидают что
+            // именно эти значения будут возвращены.
+            $bucket = array_merge($bucket, $legacy);
+        }
+        if ($meta_key === '') {
+            return $bucket;
+        }
+        if (!array_key_exists($meta_key, $bucket)) {
+            return $single ? '' : array();
+        }
+        return $single ? $bucket[ $meta_key ] : array($bucket[ $meta_key ]);
+    }
+}
+
+if (!function_exists('delete_post_meta')) {
+    function delete_post_meta(int $post_id, string $meta_key, mixed $meta_value = ''): bool
+    {
+        $deleted = false;
+        if (isset($GLOBALS['_cb_test_post_meta'][ $post_id ][ $meta_key ])) {
+            unset($GLOBALS['_cb_test_post_meta'][ $post_id ][ $meta_key ]);
+            $deleted = true;
+        }
+        if (isset($GLOBALS['_cb_test_meta'][ $post_id ][ $meta_key ])) {
+            unset($GLOBALS['_cb_test_meta'][ $post_id ][ $meta_key ]);
+            $deleted = true;
+        }
+        return $deleted;
+    }
+}
+
+// ============================================================
 // WordPress media-стабы для shop-importer тестов.
 // State: $GLOBALS['_cb_test_media_sideload_calls'] (история вызовов),
 //        $GLOBALS['_cb_test_post_thumbnails']      (post_id => attachment_id),
