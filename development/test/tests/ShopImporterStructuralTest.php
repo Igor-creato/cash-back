@@ -286,7 +286,7 @@ final class ShopImporterStructuralTest extends TestCase
         $this->assertSame('Кэшбэк', Cashback_Shop_Importer::DEFAULT_DISPLAY_LABEL);
         $this->assertSame('Условия', Cashback_Shop_Importer::DEFAULT_TAB1_TITLE);
         $this->assertSame('Промокоды', Cashback_Shop_Importer::DEFAULT_TAB2_TITLE);
-        $this->assertSame('[cashback_coupons_icons]', Cashback_Shop_Importer::DEFAULT_TAB2_CONTENT);
+        $this->assertSame('[cashback_promocodes]', Cashback_Shop_Importer::DEFAULT_TAB2_CONTENT);
     }
 
     public function test_apply_first_import_defaults_writes_all_metas(): void
@@ -316,7 +316,7 @@ final class ShopImporterStructuralTest extends TestCase
         $this->assertSame('Промокоды', $bucket['_woodmart_product_custom_tab_title_2'] ?? null);
         $this->assertSame('90', $bucket['_woodmart_product_custom_tab_priority_2'] ?? null);
         $this->assertSame('text', $bucket['_woodmart_product_custom_tab_content_type_2'] ?? null);
-        $this->assertSame('[cashback_coupons_icons]', $bucket['_woodmart_product_custom_tab_content_2'] ?? null);
+        $this->assertSame('[cashback_promocodes]', $bucket['_woodmart_product_custom_tab_content_2'] ?? null);
     }
 
     public function test_apply_first_import_defaults_skips_invalid_product_id(): void

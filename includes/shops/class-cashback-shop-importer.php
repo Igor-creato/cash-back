@@ -54,7 +54,7 @@ class Cashback_Shop_Importer {
     public const DEFAULT_TAB1_PRIORITY  = '80';
     public const DEFAULT_TAB2_TITLE     = 'Промокоды';
     public const DEFAULT_TAB2_PRIORITY  = '90';
-    public const DEFAULT_TAB2_CONTENT   = '[cashback_coupons_icons]';
+    public const DEFAULT_TAB2_CONTENT   = '[cashback_promocodes]';
 
     /**
      * Зарегистрировать AS-handlers + recurring schedules.
