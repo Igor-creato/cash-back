@@ -848,18 +848,18 @@ class Cashback_Shop_Importer {
         }
 
         $tmp = download_url($image_url);
-        if ((function_exists('is_wp_error') && is_wp_error($tmp)) || ! is_string($tmp) || $tmp === '') {
-            $msg = (function_exists('is_wp_error') && is_wp_error($tmp))
-                ? $tmp->get_error_message()
-                : 'download_url returned empty';
+        if (function_exists('is_wp_error') && is_wp_error($tmp)) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
             error_log(sprintf(
                 '[Cashback Shop Importer] SVG download_url failed for product=%d offer=%s slug=%s: %s',
                 $product_id,
                 $offer_id,
                 $adapter_slug,
-                $msg
+                $tmp->get_error_message()
             ));
+            return null;
+        }
+        if ($tmp === '') {
             return null;
         }
 
@@ -949,7 +949,7 @@ class Cashback_Shop_Importer {
                 ));
                 return null;
             }
-            if (! is_int($attachment_id) || $attachment_id <= 0) {
+            if ($attachment_id <= 0) {
                 return null;
             }
 
@@ -964,7 +964,7 @@ class Cashback_Shop_Importer {
         } finally {
             // tmp-файл оставлять нельзя — wp_handle_sideload его перемещает
             // в uploads, но если был ранний return — мы должны убрать.
-            if (is_string($tmp) && file_exists($tmp)) {
+            if (file_exists($tmp)) {
                 // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- best-effort cleanup, race с move внутри wp_handle_sideload.
                 @unlink($tmp);
             }
