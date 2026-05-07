@@ -731,6 +731,12 @@ class Cashback_Shop_Importer {
      * Best-effort: ошибки логируются, но не пробрасываются (импорт
      * не должен валиться из-за недоступного CDN).
      *
+     * Для SVG идём через download_url + sanitize + wp_handle_sideload, потому
+     * что WP-core `media_sideload_image()` принимает только jpe?g/gif/png/webp
+     * и для .svg возвращает WP_Error «Неверный URL изображения». Admitad
+     * отдаёт ~50% магазинов в виде .svg-логотипов на CDN — без этой ветки
+     * половина товаров остаётся без featured image.
+     *
      * @param string $image_url   URL логотипа (часто на CDN сети).
      * @param string $adapter_slug Slug сети — для контекста в логе.
      * @param string $offer_id    ID кампании в сети — для контекста в логе.
@@ -744,28 +750,68 @@ class Cashback_Shop_Importer {
         if ($product_id <= 0 || $image_url === '') {
             return;
         }
-        if (! function_exists('media_sideload_image') || ! function_exists('set_post_thumbnail')) {
-            // ABSPATH/wp-admin не загружен (CLI без админ-include). Подключаем —
-            // media_sideload_image живёт в wp-admin/includes/media.php.
-            if (defined('ABSPATH')) {
-                $media_file = ABSPATH . 'wp-admin/includes/media.php';
-                $file_file  = ABSPATH . 'wp-admin/includes/file.php';
-                $image_file = ABSPATH . 'wp-admin/includes/image.php';
-                if (file_exists($media_file)) {
-                    require_once $media_file;
-                }
-                if (file_exists($file_file)) {
-                    require_once $file_file;
-                }
-                if (file_exists($image_file)) {
-                    require_once $image_file;
-                }
-            }
-        }
-        if (! function_exists('media_sideload_image') || ! function_exists('set_post_thumbnail')) {
+
+        self::ensure_admin_media_includes();
+
+        if (! function_exists('set_post_thumbnail')) {
             return;
         }
 
+        $attachment_id = self::is_svg_url($image_url)
+            ? self::sideload_svg_attachment($image_url, $product_id, $adapter_slug, $offer_id)
+            : self::sideload_raster_attachment($image_url, $product_id, $adapter_slug, $offer_id);
+
+        if ($attachment_id === null) {
+            return;
+        }
+        set_post_thumbnail($product_id, $attachment_id);
+    }
+
+    /**
+     * Подгрузить wp-admin/includes/{media,file,image}.php — они нужны и
+     * для `media_sideload_image`, и для `download_url` / `wp_handle_sideload` /
+     * `wp_generate_attachment_metadata`. На AS-cron ABSPATH есть, но admin
+     * include'ы не загружены.
+     */
+    private static function ensure_admin_media_includes(): void {
+        if (! defined('ABSPATH')) {
+            return;
+        }
+        $files = array(
+            ABSPATH . 'wp-admin/includes/media.php',
+            ABSPATH . 'wp-admin/includes/file.php',
+            ABSPATH . 'wp-admin/includes/image.php',
+        );
+        foreach ($files as $f) {
+            if (file_exists($f)) {
+                require_once $f;
+            }
+        }
+    }
+
+    private static function is_svg_url( string $url ): bool {
+        if ($url === '') {
+            return false;
+        }
+        $path = (string) (wp_parse_url($url, PHP_URL_PATH) ?? '');
+        if ($path === '') {
+            return false;
+        }
+        return strtolower((string) pathinfo($path, PATHINFO_EXTENSION)) === 'svg';
+    }
+
+    /**
+     * Legacy WP-путь: media_sideload_image для jpg/png/gif/webp.
+     */
+    private static function sideload_raster_attachment(
+        string $image_url,
+        int $product_id,
+        string $adapter_slug,
+        string $offer_id
+    ): ?int {
+        if (! function_exists('media_sideload_image')) {
+            return null;
+        }
         $attachment_id = media_sideload_image($image_url, $product_id, null, 'id');
         if (function_exists('is_wp_error') && is_wp_error($attachment_id)) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
@@ -776,12 +822,207 @@ class Cashback_Shop_Importer {
                 $adapter_slug,
                 $attachment_id->get_error_message()
             ));
-            return;
+            return null;
         }
-        if (! is_int($attachment_id) || $attachment_id <= 0) {
-            return;
+        return is_int($attachment_id) && $attachment_id > 0 ? $attachment_id : null;
+    }
+
+    /**
+     * SVG-путь: download_url + санитизация + wp_handle_sideload + wp_insert_attachment.
+     * Без санитизации XSS-вектор: SVG может содержать `<script>` / `on*=` /
+     * `href="javascript:..."`. CDN партнёра (cdn.admitad-connect.com) — не
+     * сторонний UGC, но компромис партнёра возможен — defense-in-depth.
+     */
+    private static function sideload_svg_attachment(
+        string $image_url,
+        int $product_id,
+        string $adapter_slug,
+        string $offer_id
+    ): ?int {
+        if (
+            ! function_exists('download_url')
+            || ! function_exists('wp_handle_sideload')
+            || ! function_exists('wp_insert_attachment')
+        ) {
+            return null;
         }
-        set_post_thumbnail($product_id, $attachment_id);
+
+        $tmp = download_url($image_url);
+        if ((function_exists('is_wp_error') && is_wp_error($tmp)) || ! is_string($tmp) || $tmp === '') {
+            $msg = (function_exists('is_wp_error') && is_wp_error($tmp))
+                ? $tmp->get_error_message()
+                : 'download_url returned empty';
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+            error_log(sprintf(
+                '[Cashback Shop Importer] SVG download_url failed for product=%d offer=%s slug=%s: %s',
+                $product_id,
+                $offer_id,
+                $adapter_slug,
+                $msg
+            ));
+            return null;
+        }
+
+        try {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents, WordPress.PHP.NoSilencedErrors.Discouraged, WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- Local tmp-file from download_url(); @-silence — на race-condition если файл удалили parallel'но.
+            $raw = @file_get_contents($tmp);
+            if ($raw === false) {
+                return null;
+            }
+            $clean = self::sanitize_svg($raw);
+            if ($clean === null) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+                error_log(sprintf(
+                    '[Cashback Shop Importer] SVG payload rejected by sanitizer for product=%d offer=%s slug=%s url=%s',
+                    $product_id,
+                    $offer_id,
+                    $adapter_slug,
+                    $image_url
+                ));
+                return null;
+            }
+            // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- @-silence на race-condition, false-обработка ниже.
+            if (@file_put_contents($tmp, $clean) === false) {
+                return null;
+            }
+
+            $url_path = (string) (wp_parse_url($image_url, PHP_URL_PATH) ?? '');
+            $basename = $url_path !== '' ? basename($url_path) : '';
+            if ($basename === '' || stripos($basename, '.svg') === false) {
+                $basename = 'cashback-shop-' . $product_id . '.svg';
+            }
+
+            // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- @-silence на race-condition, fallback 0.
+            $size = @filesize($tmp);
+            $file_array = array(
+                'name'     => $basename,
+                'type'     => 'image/svg+xml',
+                'tmp_name' => $tmp,
+                'error'    => 0,
+                'size'     => is_int($size) ? $size : 0,
+            );
+            $overrides = array(
+                'test_form' => false,
+                'mimes'     => array( 'svg' => 'image/svg+xml' ),
+            );
+
+            $sideloaded = wp_handle_sideload($file_array, $overrides);
+            if (! is_array($sideloaded) || isset($sideloaded['error'])) {
+                $err = is_array($sideloaded) ? (string) ($sideloaded['error'] ?? '?') : 'non-array';
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+                error_log(sprintf(
+                    '[Cashback Shop Importer] SVG wp_handle_sideload failed for product=%d offer=%s slug=%s: %s',
+                    $product_id,
+                    $offer_id,
+                    $adapter_slug,
+                    $err
+                ));
+                return null;
+            }
+
+            $final_file = (string) ($sideloaded['file'] ?? '');
+            if ($final_file === '') {
+                return null;
+            }
+
+            $title = (string) pathinfo($basename, PATHINFO_FILENAME);
+            if (function_exists('sanitize_file_name')) {
+                $title = sanitize_file_name($title);
+            }
+
+            $attachment = array(
+                'post_mime_type' => 'image/svg+xml',
+                'post_title'     => $title !== '' ? $title : ('shop-' . $product_id),
+                'post_content'   => '',
+                'post_status'    => 'inherit',
+                'post_parent'    => $product_id,
+            );
+            $attachment_id = wp_insert_attachment($attachment, $final_file, $product_id, true);
+            if (function_exists('is_wp_error') && is_wp_error($attachment_id)) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+                error_log(sprintf(
+                    '[Cashback Shop Importer] SVG wp_insert_attachment failed for product=%d offer=%s slug=%s: %s',
+                    $product_id,
+                    $offer_id,
+                    $adapter_slug,
+                    $attachment_id->get_error_message()
+                ));
+                return null;
+            }
+            if (! is_int($attachment_id) || $attachment_id <= 0) {
+                return null;
+            }
+
+            if (function_exists('wp_generate_attachment_metadata') && function_exists('wp_update_attachment_metadata')) {
+                $meta = wp_generate_attachment_metadata($attachment_id, $final_file);
+                if (is_array($meta)) {
+                    wp_update_attachment_metadata($attachment_id, $meta);
+                }
+            }
+
+            return $attachment_id;
+        } finally {
+            // tmp-файл оставлять нельзя — wp_handle_sideload его перемещает
+            // в uploads, но если был ранний return — мы должны убрать.
+            if (is_string($tmp) && file_exists($tmp)) {
+                // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- best-effort cleanup, race с move внутри wp_handle_sideload.
+                @unlink($tmp);
+            }
+        }
+    }
+
+    /**
+     * Минимальный SVG-санитайзер (defense-in-depth для image-payload от партнёра):
+     *  • удаляет опасные элементы (<script>, <foreignObject>, <iframe>,
+     *    <embed>, <object>, <animate*>, <set>, <handler>, <use href>);
+     *  • удаляет on*-атрибуты обработчиков событий;
+     *  • удаляет href/src/xlink:href со схемой javascript:|vbscript:|data:;
+     *  • отвергает payload без `<svg`-корня (вернёт null).
+     *
+     * Возвращает санитизированную строку или null если payload не похож
+     * на SVG (всё неразобранное должно отбрасываться).
+     */
+    private static function sanitize_svg( string $content ): ?string {
+        $content = (string) preg_replace('/^\xEF\xBB\xBF/', '', $content);
+        if (trim($content) === '') {
+            return null;
+        }
+        if (stripos($content, '<svg') === false) {
+            return null;
+        }
+
+        $dangerous = array(
+            'script',
+            'foreignObject',
+            'iframe',
+            'embed',
+            'object',
+            'animate',
+            'animateTransform',
+            'animateMotion',
+            'set',
+            'handler',
+        );
+        foreach ($dangerous as $tag) {
+            $pattern_paired = '#<\s*' . preg_quote($tag, '#') . '\b[^>]*>.*?<\s*/\s*' . preg_quote($tag, '#') . '\s*>#is';
+            $content = (string) preg_replace($pattern_paired, '', $content);
+            $pattern_self = '#<\s*' . preg_quote($tag, '#') . '\b[^>]*/\s*>#is';
+            $content = (string) preg_replace($pattern_self, '', $content);
+            $pattern_open = '#<\s*' . preg_quote($tag, '#') . '\b[^>]*>#is';
+            $content = (string) preg_replace($pattern_open, '', $content);
+        }
+
+        // on*-обработчики событий: onclick / onload / onerror / onmouseover ...
+        $content = (string) preg_replace('#\s+on[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)#i', '', $content);
+
+        // javascript:/vbscript:/data: URL в href / src / xlink:href.
+        $content = (string) preg_replace(
+            '#\s+(?:xlink:href|href|src)\s*=\s*("|\')\s*(?:javascript|vbscript|data)\s*:[^"\']*\1#i',
+            '',
+            $content
+        );
+
+        return $content;
     }
 
     /**

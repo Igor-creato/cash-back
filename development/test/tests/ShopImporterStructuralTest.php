@@ -275,6 +275,209 @@ final class ShopImporterStructuralTest extends TestCase
     }
 
     // ============================================================
+    // SVG-путь: WP-core media_sideload_image отказывает SVG («Неверный URL
+    // изображения») — adapter Admitad отдаёт ~50% магазинов как .svg
+    // (cdn.admitad-connect.com/.../*.svg). Импортёр должен выбрать
+    // download_url + sanitize + wp_handle_sideload + wp_insert_attachment
+    // путь и НЕ вызывать media_sideload_image для SVG.
+    // ============================================================
+
+    private function reset_sideload_globals(): void
+    {
+        $GLOBALS['_cb_test_media_sideload_calls']    = array();
+        $GLOBALS['_cb_test_post_thumbnails']         = array();
+        $GLOBALS['_cb_test_download_url_calls']      = array();
+        $GLOBALS['_cb_test_handle_sideload_calls']   = array();
+        $GLOBALS['_cb_test_insert_attachment_calls'] = array();
+        unset(
+            $GLOBALS['_cb_test_media_sideload_return'],
+            $GLOBALS['_cb_test_download_url_return'],
+            $GLOBALS['_cb_test_handle_sideload_return'],
+            $GLOBALS['_cb_test_insert_attachment_return'],
+            $GLOBALS['_cb_test_svg_payload']
+        );
+    }
+
+    public function test_attach_featured_image_uses_sideload_pipeline_for_svg(): void
+    {
+        $this->reset_sideload_globals();
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method     = $reflection->getMethod('attach_featured_image_from_url');
+        $method->setAccessible(true);
+
+        $svg_url = 'https://cdn.admitad-connect.com/campaign/images/2025/7/24/45856-ab.svg';
+        $method->invoke(null, 91, $svg_url, 'adm', '45856');
+
+        $this->assertSame(
+            array(),
+            $GLOBALS['_cb_test_media_sideload_calls'],
+            'media_sideload_image НЕ должен вызываться для SVG (WP-core regex его отклоняет).'
+        );
+        $this->assertSame(
+            array($svg_url),
+            $GLOBALS['_cb_test_download_url_calls'],
+            'SVG-путь должен скачивать через download_url.'
+        );
+        $this->assertCount(1, $GLOBALS['_cb_test_handle_sideload_calls'], 'wp_handle_sideload должен быть вызван 1 раз.');
+        $sideload_args = $GLOBALS['_cb_test_handle_sideload_calls'][0];
+        $this->assertSame('image/svg+xml', $sideload_args['file_array']['type']);
+        $this->assertArrayHasKey('mimes', $sideload_args['overrides']);
+        $this->assertSame('image/svg+xml', $sideload_args['overrides']['mimes']['svg'] ?? null);
+        $this->assertFalse($sideload_args['overrides']['test_form'] ?? true);
+
+        $this->assertCount(1, $GLOBALS['_cb_test_insert_attachment_calls']);
+        $insert_args = $GLOBALS['_cb_test_insert_attachment_calls'][0];
+        $this->assertSame('image/svg+xml', $insert_args['args']['post_mime_type']);
+        $this->assertSame(91, $insert_args['parent_post_id']);
+
+        $this->assertArrayHasKey(91, $GLOBALS['_cb_test_post_thumbnails']);
+        $this->assertSame(91 + 200000, $GLOBALS['_cb_test_post_thumbnails'][91]);
+    }
+
+    public function test_attach_featured_image_keeps_legacy_path_for_png(): void
+    {
+        $this->reset_sideload_globals();
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method     = $reflection->getMethod('attach_featured_image_from_url');
+        $method->setAccessible(true);
+
+        $method->invoke(null, 33, 'https://cdn.admitad-connect.com/campaign/images/2024/1/1/26006.png', 'adm', '26006');
+
+        $this->assertSame(array(), $GLOBALS['_cb_test_download_url_calls'], 'PNG идёт legacy-путём, не через download_url.');
+        $this->assertSame(array(), $GLOBALS['_cb_test_handle_sideload_calls']);
+        $this->assertCount(1, $GLOBALS['_cb_test_media_sideload_calls']);
+        $this->assertSame(33, $GLOBALS['_cb_test_media_sideload_calls'][0]['post_id']);
+    }
+
+    public function test_attach_featured_image_svg_returns_silently_on_download_error(): void
+    {
+        $this->reset_sideload_globals();
+        $GLOBALS['_cb_test_download_url_return'] = new \WP_Error('http_request_failed', 'CDN unreachable');
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method     = $reflection->getMethod('attach_featured_image_from_url');
+        $method->setAccessible(true);
+
+        $method->invoke(null, 7, 'https://cdn.admitad-connect.com/x.svg', 'adm', '500');
+
+        $this->assertSame(array(), $GLOBALS['_cb_test_handle_sideload_calls']);
+        $this->assertSame(array(), $GLOBALS['_cb_test_insert_attachment_calls']);
+        $this->assertArrayNotHasKey(7, $GLOBALS['_cb_test_post_thumbnails']);
+    }
+
+    public function test_attach_featured_image_svg_handles_sideload_error(): void
+    {
+        $this->reset_sideload_globals();
+        $GLOBALS['_cb_test_handle_sideload_return'] = array('error' => 'Sorry, this file type is not permitted.');
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method     = $reflection->getMethod('attach_featured_image_from_url');
+        $method->setAccessible(true);
+
+        $method->invoke(null, 8, 'https://cdn.admitad-connect.com/x.svg', 'adm', '501');
+
+        $this->assertSame(array(), $GLOBALS['_cb_test_insert_attachment_calls']);
+        $this->assertArrayNotHasKey(8, $GLOBALS['_cb_test_post_thumbnails']);
+    }
+
+    public function test_sanitize_svg_strips_script_tag(): void
+    {
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method     = $reflection->getMethod('sanitize_svg');
+        $method->setAccessible(true);
+
+        $payload = '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><circle cx="5" cy="5" r="4"/></svg>';
+        $clean   = $method->invoke(null, $payload);
+
+        $this->assertIsString($clean);
+        $this->assertStringNotContainsString('<script', (string) $clean);
+        $this->assertStringNotContainsString('alert(1)', (string) $clean);
+        $this->assertStringContainsString('<circle', (string) $clean);
+    }
+
+    public function test_sanitize_svg_strips_event_handler_attributes(): void
+    {
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method     = $reflection->getMethod('sanitize_svg');
+        $method->setAccessible(true);
+
+        $payload = '<svg xmlns="http://www.w3.org/2000/svg"><rect onclick="evil()" onload="x()" width="10" height="10"/></svg>';
+        $clean   = (string) $method->invoke(null, $payload);
+
+        $this->assertStringNotContainsString('onclick', $clean);
+        $this->assertStringNotContainsString('onload', $clean);
+        $this->assertStringNotContainsString('evil()', $clean);
+        $this->assertStringContainsString('<rect', $clean);
+        $this->assertStringContainsString('width="10"', $clean);
+    }
+
+    public function test_sanitize_svg_strips_javascript_href(): void
+    {
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method     = $reflection->getMethod('sanitize_svg');
+        $method->setAccessible(true);
+
+        $payload = '<svg xmlns="http://www.w3.org/2000/svg"><a href="javascript:alert(1)" xlink:href="javascript:bad()"><circle r="1"/></a></svg>';
+        $clean   = (string) $method->invoke(null, $payload);
+
+        $this->assertStringNotContainsString('javascript:', $clean);
+        $this->assertStringContainsString('<circle', $clean);
+    }
+
+    public function test_sanitize_svg_strips_foreign_object(): void
+    {
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method     = $reflection->getMethod('sanitize_svg');
+        $method->setAccessible(true);
+
+        $payload = '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><iframe src="evil"/></foreignObject><circle r="1"/></svg>';
+        $clean   = (string) $method->invoke(null, $payload);
+
+        $this->assertStringNotContainsString('<foreignObject', $clean);
+        $this->assertStringNotContainsString('<iframe', $clean);
+        $this->assertStringContainsString('<circle', $clean);
+    }
+
+    public function test_sanitize_svg_rejects_non_svg_payload(): void
+    {
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method     = $reflection->getMethod('sanitize_svg');
+        $method->setAccessible(true);
+
+        $this->assertNull($method->invoke(null, '<html>not svg</html>'));
+        $this->assertNull($method->invoke(null, ''));
+    }
+
+    public function test_sanitize_svg_keeps_clean_payload_intact(): void
+    {
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method     = $reflection->getMethod('sanitize_svg');
+        $method->setAccessible(true);
+
+        $payload = '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M1 2 L3 4"/></svg>';
+        $clean   = (string) $method->invoke(null, $payload);
+
+        $this->assertStringContainsString('<svg', $clean);
+        $this->assertStringContainsString('viewBox="0 0 24 24"', $clean);
+        $this->assertStringContainsString('M1 2 L3 4', $clean);
+    }
+
+    public function test_is_svg_url_recognizes_admitad_paths(): void
+    {
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method     = $reflection->getMethod('is_svg_url');
+        $method->setAccessible(true);
+
+        $this->assertTrue((bool) $method->invoke(null, 'https://cdn.admitad-connect.com/campaign/images/2024/1/1/45856-ab.svg'));
+        $this->assertTrue((bool) $method->invoke(null, 'https://cdn.x/x.SVG?v=1'));
+        $this->assertFalse((bool) $method->invoke(null, 'https://cdn.admitad-connect.com/campaign/images/2024/1/1/26006.png'));
+        $this->assertFalse((bool) $method->invoke(null, 'https://cdn/logo.jpg'));
+        $this->assertFalse((bool) $method->invoke(null, ''));
+    }
+
+    // ============================================================
     // apply_first_import_defaults — дефолты при первичном импорте.
     // Используем in-memory mock update_post_meta через $GLOBALS.
     // ============================================================

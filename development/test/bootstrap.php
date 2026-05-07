@@ -1194,6 +1194,115 @@ if (!function_exists('has_post_thumbnail')) {
 }
 
 // ============================================================
+// WordPress sideload-стабы для SVG-пути shop-importer.
+// State:
+//  $GLOBALS['_cb_test_download_url_return']     — int|string-path|WP_Error для следующего вызова.
+//  $GLOBALS['_cb_test_download_url_calls']      — история URL.
+//  $GLOBALS['_cb_test_handle_sideload_return']  — array|null override.
+//  $GLOBALS['_cb_test_handle_sideload_calls']   — массив [ ['file_array'=>..., 'overrides'=>...], ... ]
+//  $GLOBALS['_cb_test_insert_attachment_return']— int|WP_Error override.
+//  $GLOBALS['_cb_test_insert_attachment_calls'] — массив вызовов.
+//  $GLOBALS['_cb_test_svg_payload']             — содержимое временного svg файла, читаемое download_url-стабом.
+// ============================================================
+if (!isset($GLOBALS['_cb_test_download_url_calls'])) {
+    $GLOBALS['_cb_test_download_url_calls'] = array();
+}
+if (!isset($GLOBALS['_cb_test_handle_sideload_calls'])) {
+    $GLOBALS['_cb_test_handle_sideload_calls'] = array();
+}
+if (!isset($GLOBALS['_cb_test_insert_attachment_calls'])) {
+    $GLOBALS['_cb_test_insert_attachment_calls'] = array();
+}
+
+if (!function_exists('download_url')) {
+    function download_url(string $url, int $timeout = 300, bool $signature_verification = false): string|WP_Error
+    {
+        $GLOBALS['_cb_test_download_url_calls'][] = $url;
+        if (array_key_exists('_cb_test_download_url_return', $GLOBALS)) {
+            $forced = $GLOBALS['_cb_test_download_url_return'];
+            unset($GLOBALS['_cb_test_download_url_return']);
+            if ($forced instanceof WP_Error || is_string($forced)) {
+                return $forced;
+            }
+        }
+        // Default: создаём временный файл с _cb_test_svg_payload (если задан)
+        // или дефолтным валидным SVG.
+        $tmp = tempnam(sys_get_temp_dir(), 'cb_svg_');
+        if ($tmp === false) {
+            return new WP_Error('tempnam_failed', 'tempnam failed');
+        }
+        $payload = $GLOBALS['_cb_test_svg_payload'] ?? '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>';
+        file_put_contents($tmp, $payload);
+        return $tmp;
+    }
+}
+
+if (!function_exists('wp_handle_sideload')) {
+    function wp_handle_sideload(array &$file, array $overrides = array(), ?string $time = null): array
+    {
+        $GLOBALS['_cb_test_handle_sideload_calls'][] = array(
+            'file_array' => $file,
+            'overrides'  => $overrides,
+        );
+        if (array_key_exists('_cb_test_handle_sideload_return', $GLOBALS)) {
+            $forced = $GLOBALS['_cb_test_handle_sideload_return'];
+            unset($GLOBALS['_cb_test_handle_sideload_return']);
+            if (is_array($forced)) {
+                return $forced;
+            }
+        }
+        // Default: «успешный» sideload — возвращаем фейковый final-path.
+        return array(
+            'file' => '/var/uploads/' . ($file['name'] ?? 'noname.svg'),
+            'url'  => 'https://example.test/uploads/' . ($file['name'] ?? 'noname.svg'),
+            'type' => $file['type'] ?? 'image/svg+xml',
+        );
+    }
+}
+
+if (!function_exists('wp_insert_attachment')) {
+    function wp_insert_attachment(array $args, string|false $file = false, int $parent_post_id = 0, bool $wp_error = false): int|WP_Error
+    {
+        $GLOBALS['_cb_test_insert_attachment_calls'][] = array(
+            'args'           => $args,
+            'file'           => $file,
+            'parent_post_id' => $parent_post_id,
+        );
+        if (array_key_exists('_cb_test_insert_attachment_return', $GLOBALS)) {
+            $forced = $GLOBALS['_cb_test_insert_attachment_return'];
+            unset($GLOBALS['_cb_test_insert_attachment_return']);
+            if ($forced instanceof WP_Error || is_int($forced)) {
+                return $forced;
+            }
+        }
+        // Default: предсказуемый attachment id (parent + 200000).
+        return $parent_post_id + 200000;
+    }
+}
+
+if (!function_exists('wp_generate_attachment_metadata')) {
+    function wp_generate_attachment_metadata(int $attachment_id, string $file): array
+    {
+        return array('file' => $file, 'sizes' => array());
+    }
+}
+
+if (!function_exists('wp_update_attachment_metadata')) {
+    function wp_update_attachment_metadata(int $attachment_id, array $data): bool
+    {
+        return true;
+    }
+}
+
+if (!function_exists('sanitize_file_name')) {
+    function sanitize_file_name(string $filename): string
+    {
+        $filename = preg_replace('/[^A-Za-z0-9._-]/', '-', $filename) ?? '';
+        return trim($filename, '-') ?: 'file';
+    }
+}
+
+// ============================================================
 // WordPress taxonomy term-стабы для shop-importer тестов.
 // State: $GLOBALS['_cb_test_object_terms'][post_id][taxonomy] = array<term-slug>.
 // Тесты сами сбрасывают глобал в setUp().
