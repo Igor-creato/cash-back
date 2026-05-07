@@ -332,4 +332,124 @@ final class ShopImporterStructuralTest extends TestCase
 
         $this->assertSame(array(), $GLOBALS['_cb_test_post_meta'], 'на product_id <= 0 ничего не пишется');
     }
+
+    // ============================================================
+    // set_product_type_external — корневой фикс отображения External Product
+    // полей в WC-метабоксе (без taxonomy term WC считает товар simple).
+    // ============================================================
+
+    public function test_set_product_type_external_writes_taxonomy_term(): void
+    {
+        $GLOBALS['_cb_test_object_terms'] = array();
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method = $reflection->getMethod('set_product_type_external');
+        $method->setAccessible(true);
+
+        $method->invoke(null, 777);
+
+        $this->assertSame(
+            array('external'),
+            $GLOBALS['_cb_test_object_terms'][777]['product_type'] ?? null,
+            'product_type taxonomy должен содержать term "external"'
+        );
+    }
+
+    public function test_set_product_type_external_skips_invalid_id(): void
+    {
+        $GLOBALS['_cb_test_object_terms'] = array();
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method = $reflection->getMethod('set_product_type_external');
+        $method->setAccessible(true);
+
+        $method->invoke(null, 0);
+        $method->invoke(null, -5);
+
+        $this->assertSame(array(), $GLOBALS['_cb_test_object_terms']);
+    }
+
+    // ============================================================
+    // backfill_missing_admin_fields — idempotent: пишет только если пусто.
+    // ============================================================
+
+    public function test_backfill_writes_taxonomy_when_missing(): void
+    {
+        $GLOBALS['_cb_test_object_terms'] = array();
+        $GLOBALS['_cb_test_post_meta']    = array();
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method = $reflection->getMethod('backfill_missing_admin_fields');
+        $method->setAccessible(true);
+
+        $method->invoke(null, 333);
+
+        $this->assertSame(
+            array('external'),
+            $GLOBALS['_cb_test_object_terms'][333]['product_type'] ?? null
+        );
+    }
+
+    public function test_backfill_does_not_overwrite_existing_taxonomy(): void
+    {
+        $GLOBALS['_cb_test_object_terms'] = array(
+            333 => array('product_type' => array('simple')),
+        );
+        $GLOBALS['_cb_test_post_meta']    = array();
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method = $reflection->getMethod('backfill_missing_admin_fields');
+        $method->setAccessible(true);
+
+        $method->invoke(null, 333);
+
+        $this->assertSame(
+            array('simple'),
+            $GLOBALS['_cb_test_object_terms'][333]['product_type'],
+            'admin/manual term не должен затираться'
+        );
+    }
+
+    public function test_backfill_writes_defaults_only_for_empty_metas(): void
+    {
+        $GLOBALS['_cb_test_object_terms'] = array();
+        $GLOBALS['_cb_test_post_meta']    = array(
+            42 => array(
+                '_button_text'             => 'Купить',                  // admin override — не трогать
+                '_cashback_display_label'  => '',                        // empty — заполнить
+                '_woodmart_product_custom_tab_title' => 'Своё название', // admin override — не трогать
+            ),
+        );
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method = $reflection->getMethod('backfill_missing_admin_fields');
+        $method->setAccessible(true);
+
+        $method->invoke(null, 42);
+
+        $bucket = $GLOBALS['_cb_test_post_meta'][42];
+        // Не перезаписаны
+        $this->assertSame('Купить', $bucket['_button_text']);
+        $this->assertSame('Своё название', $bucket['_woodmart_product_custom_tab_title']);
+        // Заполнены дефолтами
+        $this->assertSame('Кэшбэк', $bucket['_cashback_display_label']);
+        $this->assertSame('hide', $bucket['_store_popup_mode']);
+        $this->assertSame('Промокоды', $bucket['_woodmart_product_custom_tab_title_2']);
+        $this->assertSame('[cashback_promocodes]', $bucket['_woodmart_product_custom_tab_content_2']);
+    }
+
+    public function test_backfill_skips_invalid_product_id(): void
+    {
+        $GLOBALS['_cb_test_object_terms'] = array();
+        $GLOBALS['_cb_test_post_meta']    = array();
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method = $reflection->getMethod('backfill_missing_admin_fields');
+        $method->setAccessible(true);
+
+        $method->invoke(null, 0);
+
+        $this->assertSame(array(), $GLOBALS['_cb_test_object_terms']);
+        $this->assertSame(array(), $GLOBALS['_cb_test_post_meta']);
+    }
 }

@@ -397,9 +397,12 @@ class Cashback_Shop_Importer {
         // Existing product — diff signature.
         $prev_signature = (string) get_post_meta($existing_id, self::META_SIGNATURE, true);
         if ($prev_signature === $signature) {
-            // Без изменений — только last_seen_at + recompute группы (на случай
-            // если соседний продукт изменил тарифы и preferred мог сместиться).
+            // Без изменений — только last_seen_at + idempotent backfill для
+            // товаров, импортированных до релиза с taxonomy/defaults +
+            // recompute группы (на случай если соседний продукт изменил
+            // тарифы и preferred мог сместиться).
             update_post_meta($existing_id, self::META_LAST_SEEN_AT, $now);
+            self::backfill_missing_admin_fields($existing_id);
             self::reconcile_group($existing_id);
             return array( 'kind' => 'unchanged', 'product_id' => $existing_id );
         }
@@ -548,7 +551,12 @@ class Cashback_Shop_Importer {
         if ($dto->goto_link !== '') {
             update_post_meta((int) $post_id, '_product_url', $dto->goto_link);
         }
-        // Маркер external (WC product type taxonomy) — используем metabox-фолбэк.
+        // Тип товара — taxonomy term `product_type=external`. WC использует
+        // именно taxonomy для определения типа: без него товар считается
+        // simple, и External Product поля (URL/Текст кнопки) НЕ рендерятся
+        // в админ-метабоксе. post_meta `_product_type` оставляем как
+        // metabox-фолбэк для совместимости.
+        self::set_product_type_external((int) $post_id);
         update_post_meta((int) $post_id, '_product_type', 'external');
 
         // Дефолты UX/админки, проставляются только при первичном импорте.
@@ -561,6 +569,19 @@ class Cashback_Shop_Importer {
         self::attach_featured_image_from_url((int) $post_id, $dto->image_url, $adapter_slug, $dto->id);
 
         return (int) $post_id;
+    }
+
+    /**
+     * Назначить товару taxonomy term product_type=external.
+     * Идемпотентно: повторный вызов не дублирует. Без явного term'а WC
+     * считает товар simple и скрывает поля External Product
+     * (URL Товара / Текст кнопки).
+     */
+    private static function set_product_type_external( int $product_id ): void {
+        if ($product_id <= 0 || ! function_exists('wp_set_object_terms')) {
+            return;
+        }
+        wp_set_object_terms($product_id, 'external', 'product_type', false);
     }
 
     /**
@@ -624,10 +645,57 @@ class Cashback_Shop_Importer {
             update_post_meta($product_id, '_product_url', $dto->goto_link);
         }
 
+        // Idempotent backfill для товаров, импортированных до релиза с
+        // taxonomy/defaults: если term или мета пустые — проставляем,
+        // если уже заполнено админом — не трогаем.
+        self::backfill_missing_admin_fields($product_id);
+
         // Featured image заливаем только если у товара ещё нет thumbnail —
         // не перекачиваем повторно, экономим HTTP и место в uploads.
         if (function_exists('has_post_thumbnail') && ! has_post_thumbnail($product_id)) {
             self::attach_featured_image_from_url($product_id, $dto->image_url, $adapter_slug, $dto->id);
+        }
+    }
+
+    /**
+     * Backfill для существующих товаров: проставляет дефолт ТОЛЬКО если
+     * текущее значение пустое. Покрывает товары, импортированные до фикса
+     * с taxonomy / дефолтами админ-полей.
+     *
+     * НИКОГДА не перезаписывает не-пустое значение — админ мог его
+     * целенаправленно изменить или удалить.
+     */
+    private static function backfill_missing_admin_fields( int $product_id ): void {
+        if ($product_id <= 0) {
+            return;
+        }
+
+        // Taxonomy product_type — без него WC прячет External Product поля.
+        if (function_exists('wp_get_object_terms')) {
+            $current = wp_get_object_terms($product_id, 'product_type', array( 'fields' => 'slugs' ));
+            $is_empty = ! is_array($current) || $current === array() || is_wp_error($current);
+            if ($is_empty) {
+                self::set_product_type_external($product_id);
+            }
+        }
+
+        $defaults = array(
+            '_button_text'                                  => self::DEFAULT_BUTTON_TEXT,
+            '_store_popup_mode'                             => self::DEFAULT_POPUP_MODE,
+            '_cashback_display_label'                       => self::DEFAULT_DISPLAY_LABEL,
+            '_woodmart_product_custom_tab_title'            => self::DEFAULT_TAB1_TITLE,
+            '_woodmart_product_custom_tab_priority'         => self::DEFAULT_TAB1_PRIORITY,
+            '_woodmart_product_custom_tab_content_type'     => 'text',
+            '_woodmart_product_custom_tab_title_2'          => self::DEFAULT_TAB2_TITLE,
+            '_woodmart_product_custom_tab_priority_2'       => self::DEFAULT_TAB2_PRIORITY,
+            '_woodmart_product_custom_tab_content_type_2'   => 'text',
+            '_woodmart_product_custom_tab_content_2'        => self::DEFAULT_TAB2_CONTENT,
+        );
+        foreach ($defaults as $meta_key => $default_value) {
+            $existing = get_post_meta($product_id, $meta_key, true);
+            if ($existing === '' || $existing === null || $existing === false) {
+                update_post_meta($product_id, $meta_key, $default_value);
+            }
         }
     }
 

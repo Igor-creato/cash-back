@@ -1192,3 +1192,43 @@ if (!function_exists('has_post_thumbnail')) {
         return !empty($GLOBALS['_cb_test_post_thumbnails'][ $post_id ]);
     }
 }
+
+// ============================================================
+// WordPress taxonomy term-стабы для shop-importer тестов.
+// State: $GLOBALS['_cb_test_object_terms'][post_id][taxonomy] = array<term-slug>.
+// Тесты сами сбрасывают глобал в setUp().
+// ============================================================
+if (!isset($GLOBALS['_cb_test_object_terms'])) {
+    $GLOBALS['_cb_test_object_terms'] = array();
+}
+
+if (!function_exists('wp_set_object_terms')) {
+    function wp_set_object_terms(int $object_id, mixed $terms, string $taxonomy, bool $append = false): array
+    {
+        $list = is_array($terms) ? $terms : array($terms);
+        $list = array_values(array_map(static fn($t): string => (string) $t, $list));
+        if (!isset($GLOBALS['_cb_test_object_terms'][ $object_id ]) || !is_array($GLOBALS['_cb_test_object_terms'][ $object_id ])) {
+            $GLOBALS['_cb_test_object_terms'][ $object_id ] = array();
+        }
+        if ($append && isset($GLOBALS['_cb_test_object_terms'][ $object_id ][ $taxonomy ])) {
+            $existing = (array) $GLOBALS['_cb_test_object_terms'][ $object_id ][ $taxonomy ];
+            $list     = array_values(array_unique(array_merge($existing, $list)));
+        }
+        $GLOBALS['_cb_test_object_terms'][ $object_id ][ $taxonomy ] = $list;
+        return $list;
+    }
+}
+
+if (!function_exists('wp_get_object_terms')) {
+    function wp_get_object_terms(mixed $object_ids, mixed $taxonomies, array $args = array()): array
+    {
+        $object_id = is_array($object_ids) ? (int) ($object_ids[0] ?? 0) : (int) $object_ids;
+        $taxonomy  = is_array($taxonomies) ? (string) ($taxonomies[0] ?? '') : (string) $taxonomies;
+        $bucket    = $GLOBALS['_cb_test_object_terms'][ $object_id ][ $taxonomy ] ?? array();
+        $fields    = (string) ($args['fields'] ?? 'all');
+        if ($fields === 'slugs' || $fields === 'names') {
+            return is_array($bucket) ? $bucket : array();
+        }
+        return is_array($bucket) ? $bucket : array();
+    }
+}

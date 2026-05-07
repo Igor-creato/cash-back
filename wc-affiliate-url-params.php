@@ -465,7 +465,97 @@ class WC_Affiliate_URL_Params {
             }
         }
 
+        // Read-only таблица импортированных тарифов CPA-сети.
+        // Показывает реальные ставки advertiser'а из wp_cashback_shop_tariffs —
+        // админ видит что приехало с API при последнем sync'е.
+        $current_post = $current_post ?? get_post();
+        $product_id   = $current_post instanceof WP_Post ? (int) $current_post->ID : 0;
+        if ($product_id > 0) {
+            $this->render_imported_tariffs_table($product_id);
+        }
+
         echo '</div>';
+    }
+
+    /**
+     * Рендер таблицы тарифов из wp_cashback_shop_tariffs для текущего товара.
+     * Чисто read-only — для проверки админом, что импорт довёз ставки.
+     */
+    private function render_imported_tariffs_table( int $product_id ): void {
+        global $wpdb;
+        if (! isset($wpdb) || ! is_object($wpdb)) {
+            return;
+        }
+
+        $network_id = (int) get_post_meta($product_id, '_affiliate_network_id', true);
+        $offer_id   = (string) get_post_meta($product_id, '_offer_id', true);
+        if ($network_id <= 0 || $offer_id === '') {
+            return;
+        }
+
+        $rows = $wpdb->get_results($wpdb->prepare(
+            'SELECT tariff_id, name, tariff_type, payment_size, payment_min, payment_max, currency, is_default, is_deleted, updated_at
+               FROM ' . $wpdb->prefix . 'cashback_shop_tariffs
+              WHERE network_id = %d AND offer_id = %s
+              ORDER BY is_deleted ASC, is_default DESC, payment_size DESC',
+            $network_id,
+            $offer_id
+        ), ARRAY_A);
+
+        echo '<h4 style="padding: 10px 12px; margin: 12px 0 0; border-top: 1px solid #ddd; border-bottom: 1px solid #ddd;">'
+            . esc_html__('Импортированные тарифы CPA-сети', 'wc-affiliate-url-params') . '</h4>';
+        echo '<p class="description" style="padding: 5px 12px; color: #666; margin: 0;">'
+            . esc_html__('Read-only: ставки advertiser\'а из последнего sync импортёра. Расчётный кэшбэк пользователя считается на их основе.', 'wc-affiliate-url-params')
+            . '</p>';
+
+        if (! is_array($rows) || $rows === array()) {
+            echo '<p class="form-field" style="padding-left:12px; color:#a00;"><em>'
+                . esc_html__('Тарифы не импортированы — проверьте статус подключения программы и payload Admitad.', 'wc-affiliate-url-params')
+                . '</em></p>';
+            return;
+        }
+
+        echo '<table class="widefat striped" style="margin: 8px 12px; width: calc(100% - 24px);">';
+        echo '<thead><tr>';
+        echo '<th>' . esc_html__('ID', 'wc-affiliate-url-params') . '</th>';
+        echo '<th>' . esc_html__('Название', 'wc-affiliate-url-params') . '</th>';
+        echo '<th>' . esc_html__('Тип', 'wc-affiliate-url-params') . '</th>';
+        echo '<th>' . esc_html__('Ставка', 'wc-affiliate-url-params') . '</th>';
+        echo '<th>' . esc_html__('Min/Max', 'wc-affiliate-url-params') . '</th>';
+        echo '<th>' . esc_html__('Default', 'wc-affiliate-url-params') . '</th>';
+        echo '<th>' . esc_html__('Статус', 'wc-affiliate-url-params') . '</th>';
+        echo '<th>' . esc_html__('Обновлён', 'wc-affiliate-url-params') . '</th>';
+        echo '</tr></thead><tbody>';
+
+        foreach ($rows as $row) {
+            $is_deleted = ! empty($row['is_deleted']);
+            $type       = (string) ($row['tariff_type'] ?? '');
+            $size       = (float) ($row['payment_size'] ?? 0);
+            $currency   = (string) ($row['currency'] ?? '');
+            $size_fmt   = $type === 'percent'
+                ? rtrim(rtrim(number_format($size, 2, '.', ''), '0'), '.') . '%'
+                : rtrim(rtrim(number_format($size, 2, '.', ''), '0'), '.') . ' ' . $currency;
+
+            $min = $row['payment_min'] !== null ? (string) $row['payment_min'] : '—';
+            $max = $row['payment_max'] !== null ? (string) $row['payment_max'] : '—';
+
+            $row_style = $is_deleted ? 'opacity:0.5;text-decoration:line-through;' : '';
+
+            echo '<tr style="' . esc_attr($row_style) . '">';
+            echo '<td><code>' . esc_html((string) $row['tariff_id']) . '</code></td>';
+            echo '<td>' . esc_html((string) ($row['name'] ?? '')) . '</td>';
+            echo '<td>' . esc_html($type) . '</td>';
+            echo '<td><strong>' . esc_html($size_fmt) . '</strong></td>';
+            echo '<td>' . esc_html($min . ' / ' . $max) . '</td>';
+            echo '<td>' . ( ! empty($row['is_default']) ? '✓' : '' ) . '</td>';
+            echo '<td>' . ( $is_deleted
+                ? '<span style="color:#a00;">' . esc_html__('soft-deleted', 'wc-affiliate-url-params') . '</span>'
+                : '<span style="color:#080;">' . esc_html__('активен', 'wc-affiliate-url-params') . '</span>'
+            ) . '</td>';
+            echo '<td>' . esc_html((string) ($row['updated_at'] ?? '')) . '</td>';
+            echo '</tr>';
+        }
+        echo '</tbody></table>';
     }
 
     /**
