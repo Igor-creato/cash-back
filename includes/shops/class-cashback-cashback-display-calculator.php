@@ -137,6 +137,45 @@ class Cashback_Cashback_Display_Calculator {
     }
 
     /**
+     * Числовое значение кэшбэка для сортировки каталога.
+     *
+     * Возвращает ту же цифру, которая выводится в карточке (для guest-rate),
+     * без HTML-обёртки. Используется Cashback_Product_Sort::recompute_for_product
+     * для записи в meta `_cashback_sort_value`.
+     *
+     * Свойство монотонности: умножение всех значений на rate сохраняет
+     * порядок, поэтому достаточно guest-варианта (user_id = 0).
+     *
+     * Возвращает 0.0 если расчёт невозможен — caller (Cashback_Product_Sort)
+     * сам падает в legacy-fallback по `_cashback_display_value`.
+     */
+    public static function compute_sort_value( int $product_id ): float {
+        if ($product_id <= 0) {
+            return 0.0;
+        }
+
+        $compute = self::compute($product_id, 0);
+        if (empty($compute)) {
+            return 0.0;
+        }
+
+        $type      = isset($compute['type']) ? (string) $compute['type'] : '';
+        $value     = isset($compute['value']) ? (float) $compute['value'] : 0.0;
+        $formatted = isset($compute['formatted']) ? (string) $compute['formatted'] : '';
+
+        if ($type === 'manual') {
+            // Manual override приходит как строка ("12.5%" или "65 ₽") —
+            // парсим число тем же helper, что и legacy fallback.
+            if ($formatted !== '' && class_exists('Cashback_Product_Sort')) {
+                return Cashback_Product_Sort::parse_legacy_value($formatted);
+            }
+            return 0.0;
+        }
+
+        return $value > 0.0 ? $value : 0.0;
+    }
+
+    /**
      * Сбросить кеш для одного product_id (вызывается после tariff sync,
      * после смены _rate_locked / _manual_advertiser_rate).
      *

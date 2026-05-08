@@ -764,6 +764,13 @@ class WC_Affiliate_URL_Params {
             Cashback_Cashback_Display_Calculator::bust_cache_for_product($post_id);
         }
 
+        // Пересчёт meta `_cashback_sort_value` для каталог-сортировки
+        // «По возрастанию/убыванию кэшбэка» — учитывает _rate_locked,
+        // _manual_advertiser_rate и legacy _cashback_display_value.
+        if (class_exists('Cashback_Product_Sort')) {
+            Cashback_Product_Sort::recompute_for_product($post_id);
+        }
+
         // Проверяем активность выбранной сети
         global $wpdb;
         $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';

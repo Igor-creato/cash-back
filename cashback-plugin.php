@@ -726,6 +726,11 @@ class CashbackPlugin {
         $this->require_file('includes/shops/class-cashback-tab-conditions-renderer.php');
         $this->require_file('includes/shops/class-cashback-shop-importer.php');
         $this->require_file('includes/shops/class-cashback-cashback-display-calculator.php');
+        // Сортировка каталога «По возрастанию/убыванию кэшбэка»: фильтры
+        // woocommerce_catalog_orderby + woocommerce_get_catalog_ordering_args,
+        // meta `_cashback_sort_value` (пересчёт на cashback_tariffs_changed
+        // и при сохранении метабокса).
+        $this->require_file('includes/shops/class-cashback-product-sort.php');
 
         // API клиент и cron (синхронизация работает через WP Cron)
         $this->require_file('includes/class-cashback-api-client.php');
@@ -1098,6 +1103,14 @@ class CashbackPlugin {
         // Recurring schedule + admin-кнопка добавятся в Этапе 9.
         if (class_exists('Cashback_Shop_Importer')) {
             Cashback_Shop_Importer::init();
+        }
+
+        // Сортировка каталога по кэшбэку: фильтры orderby + recompute хуки
+        // (cashback_tariffs_changed). Идемпотентный one-shot backfill при
+        // первом init после релиза — гейтится опцией cashback_product_sort_backfill_v1.
+        if (class_exists('Cashback_Product_Sort')) {
+            Cashback_Product_Sort::register();
+            Cashback_Product_Sort::ensure_backfilled();
         }
 
         // Admin UI Этапа 8: Settings + Import + Groups submenu pages.
