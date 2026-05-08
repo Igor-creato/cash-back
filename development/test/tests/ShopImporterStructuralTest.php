@@ -44,6 +44,38 @@ final class ShopImporterStructuralTest extends TestCase
         $this->assertSame('cashback', Cashback_Shop_Importer::AS_GROUP);
     }
 
+    /**
+     * F-P1-002: try_lock/release_lock используют MySQL `GET_LOCK`/`RELEASE_LOCK`,
+     * а НЕ `get_transient`/`set_transient`. Transient SELECT-then-SET даёт TOCTOU
+     * race между двумя AS-tick'ами на параллельный импорт одной CPA-сети →
+     * дубль WC-product (F-P1-003), дубль reconcile_group, лишний SVG-download.
+     */
+    public function test_try_lock_uses_mysql_get_lock_not_transient(): void
+    {
+        $rm    = new ReflectionMethod('Cashback_Shop_Importer', 'try_lock');
+        $body  = self::method_source($rm);
+        $rm2   = new ReflectionMethod('Cashback_Shop_Importer', 'release_lock');
+        $body2 = self::method_source($rm2);
+
+        $this->assertStringContainsString('GET_LOCK', $body,
+            'F-P1-002: try_lock() должен использовать GET_LOCK (атомарный mysql-level lock)');
+        $this->assertStringContainsString('RELEASE_LOCK', $body2,
+            'F-P1-002: release_lock() должен использовать RELEASE_LOCK');
+        $this->assertStringNotContainsString('get_transient', $body,
+            'F-P1-002: try_lock() не должен использовать get_transient (TOCTOU)');
+        $this->assertStringNotContainsString('set_transient', $body,
+            'F-P1-002: try_lock() не должен использовать set_transient (TOCTOU)');
+    }
+
+    private static function method_source(ReflectionMethod $rm): string
+    {
+        $file  = (string) $rm->getFileName();
+        $start = (int) $rm->getStartLine();
+        $end   = (int) $rm->getEndLine();
+        $lines = file($file);
+        return implode('', array_slice($lines, $start - 1, $end - $start + 1));
+    }
+
     public function test_meta_key_constants_are_canonical(): void
     {
         $this->assertSame('_affiliate_network_id', Cashback_Shop_Importer::META_NETWORK_ID);

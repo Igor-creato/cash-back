@@ -1237,24 +1237,38 @@ class Cashback_Shop_Importer {
     }
 
     /**
-     * Best-effort lock через transient (5 мин TTL = больше чем типичный AS-tick).
-     * Возвращает true если получили lock, false если уже занят.
+     * Атомарный per-network lock через MySQL GET_LOCK (F-P1-002).
+     *
+     * Старая реализация (`get_transient → set_transient` через два WP API-вызова)
+     * имела TOCTOU race: два параллельных AS-tick'а на одну CPA-сеть могли оба
+     * пройти проверку и оба войти в `run()`, что в свою очередь приводило к
+     * дублям в `wp_cashback_shop_tariffs` (UNIQUE constraint спасает) и
+     * дублям WC-product'ов в postmeta (UNIQUE невозможен на postmeta — F-P1-003,
+     * закрывается ровно этим lock'ом, который сериализует upsert per-network).
+     *
+     * `GET_LOCK(name, 0)` атомарен на уровне MySQL: возвращает 1 при захвате,
+     * 0 если уже занят другим соединением, NULL при ошибке. Lock автоматически
+     * освобождается при закрытии connection (защита от зависшего AS-job).
+     *
+     * @return bool true если lock захвачен.
      */
     private static function try_lock( string $lock_key ): bool {
-        if (! function_exists('get_transient') || ! function_exists('set_transient')) {
-            return true; // в среде без transient API считаем что блокировки нет.
+        global $wpdb;
+        if (! is_object($wpdb) || ! method_exists($wpdb, 'get_var') || ! method_exists($wpdb, 'prepare')) {
+            return true; // в среде без БД (unit-тесты) — не блокируем.
         }
-        if (get_transient($lock_key)) {
-            return false;
-        }
-        set_transient($lock_key, '1', 300);
-        return true;
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- GET_LOCK через prepare; advisory-lock не подразумевает caching.
+        $result = $wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, %d)', $lock_key, 0));
+        return (int) $result === 1;
     }
 
     private static function release_lock( string $lock_key ): void {
-        if (function_exists('delete_transient')) {
-            delete_transient($lock_key);
+        global $wpdb;
+        if (! is_object($wpdb) || ! method_exists($wpdb, 'get_var') || ! method_exists($wpdb, 'prepare')) {
+            return;
         }
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- RELEASE_LOCK через prepare.
+        $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $lock_key));
     }
 
     /**
