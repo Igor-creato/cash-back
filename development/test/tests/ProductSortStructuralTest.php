@@ -198,14 +198,108 @@ final class ProductSortStructuralTest extends TestCase
         );
     }
 
-    public function test_ordering_args_handles_desc(): void
+    // ----------------------------------------------------------------
+    // 5b. filter_ordering_args — поведенческие тесты на реальном вызове.
+    //
+    // WC `WC_Query::get_catalog_ordering_args()` режет URL-параметр
+    // `?orderby=cashback-desc` по '-' и передаёт фильтру:
+    //   - $orderby_value = 'cashback'   (без суффикса)
+    //   - $order_value   = 'desc'       (направление)
+    // Ранее наш фильтр сравнивал $orderby_value === 'cashback-desc' и
+    // всегда получал false → order=ASC для обеих опций (RED-проверка).
+    // ----------------------------------------------------------------
+
+    private function load_product_sort_class(): void
     {
-        // Должен присутствовать выбор DESC при cashback-desc.
-        $this->assertMatchesRegularExpression(
-            "/ORDERBY_DESC.*?DESC.*?ASC|DESC.*?:\s*'ASC'/s",
-            self::$sort_php,
-            'filter_ordering_args должен возвращать DESC для ORDERBY_DESC'
+        if (! class_exists('Cashback_Product_Sort')) {
+            require_once self::$plugin_root . '/includes/shops/class-cashback-product-sort.php';
+        }
+        $this->assertTrue(class_exists('Cashback_Product_Sort'));
+    }
+
+    /** @return array<string,mixed> */
+    private function call_filter_ordering_args( array $args, ?string $orderby, ?string $order, ?string $get_orderby ): array
+    {
+        $had_get          = array_key_exists('orderby', $_GET);
+        $previous_orderby = $had_get ? $_GET['orderby'] : null;
+        if ($get_orderby === null) {
+            unset($_GET['orderby']);
+        } else {
+            $_GET['orderby'] = $get_orderby;
+        }
+        try {
+            $result = Cashback_Product_Sort::filter_ordering_args($args, $orderby, $order);
+        } finally {
+            if ($had_get) {
+                $_GET['orderby'] = $previous_orderby;
+            } else {
+                unset($_GET['orderby']);
+            }
+        }
+        return $result;
+    }
+
+    public function test_filter_ordering_args_desc_branch_returns_desc(): void
+    {
+        $this->load_product_sort_class();
+
+        // WC explode('-', 'cashback-desc') → передаёт ('cashback', 'desc') фильтру.
+        // raw $_GET['orderby'] = 'cashback-desc' (полный ключ выпадающего списка).
+        $args = $this->call_filter_ordering_args(
+            array('orderby' => 'menu_order title', 'order' => 'ASC', 'meta_key' => ''),
+            'cashback',
+            'desc',
+            'cashback-desc'
         );
+
+        $this->assertSame('meta_value_num', $args['orderby'], 'DESC ветка: orderby должен быть meta_value_num');
+        $this->assertSame('DESC', $args['order'], 'DESC ветка: order должен быть DESC, а не ASC (root cause)');
+        $this->assertSame('_cashback_sort_value', $args['meta_key']);
+    }
+
+    public function test_filter_ordering_args_asc_branch_returns_asc(): void
+    {
+        $this->load_product_sort_class();
+
+        // 'cashback' (без дефиса) — explode возвращает ['cashback'], $order=''.
+        $args = $this->call_filter_ordering_args(
+            array('orderby' => 'menu_order title', 'order' => 'ASC', 'meta_key' => ''),
+            'cashback',
+            '',
+            'cashback'
+        );
+
+        $this->assertSame('meta_value_num', $args['orderby']);
+        $this->assertSame('ASC', $args['order']);
+        $this->assertSame('_cashback_sort_value', $args['meta_key']);
+    }
+
+    public function test_filter_ordering_args_passthrough_for_unrelated_orderby(): void
+    {
+        $this->load_product_sort_class();
+
+        $original = array('orderby' => 'menu_order title', 'order' => 'ASC', 'meta_key' => '');
+        $result   = $this->call_filter_ordering_args($original, 'menu_order', '', 'menu_order');
+
+        $this->assertSame($original, $result, 'Не-cashback orderby должен пройти без изменений');
+    }
+
+    public function test_filter_ordering_args_legacy_full_key_in_orderby_value(): void
+    {
+        $this->load_product_sort_class();
+
+        // Edge-case: фильтр вызвал кто-то кроме core WC и передал полный
+        // ключ 'cashback-desc' первым аргументом (без explode).
+        $args = $this->call_filter_ordering_args(
+            array('orderby' => 'menu_order title', 'order' => 'ASC', 'meta_key' => ''),
+            'cashback-desc',
+            '',
+            null
+        );
+
+        $this->assertSame('meta_value_num', $args['orderby']);
+        $this->assertSame('DESC', $args['order'], 'Legacy/full-key путь тоже должен распознать DESC');
+        $this->assertSame('_cashback_sort_value', $args['meta_key']);
     }
 
     // ============================================================

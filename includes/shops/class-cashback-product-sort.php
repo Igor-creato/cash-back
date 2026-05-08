@@ -80,12 +80,16 @@ class Cashback_Product_Sort {
      * Фильтр query-args для каталога. Если выбран cashback / cashback-desc —
      * подменяем orderby на meta_value_num по нашему meta.
      *
+     * WC `WC_Query::get_catalog_ordering_args()` режет `?orderby=cashback-desc`
+     * по '-' и передаёт фильтру `('cashback', 'desc')` отдельными аргументами.
+     * Поэтому направление берём из `$order_value` (3-й аргумент WC), с fallback
+     * на raw `$_GET['orderby']` где полный ключ сохраняется.
+     *
      * @param array<string, mixed> $args
      * @param string|null          $orderby_value Передаётся WC начиная с 3.0.
-     * @param string|null          $order_value   Дополнительный аргумент WC; не используется (берём из orderby).
+     * @param string|null          $order_value   Направление ('asc'|'desc'), пост-explode по '-'.
      * @return array<string, mixed>
      */
-    // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter -- $order_value диктуется сигнатурой WC-фильтра woocommerce_get_catalog_ordering_args (3 args начиная с WC 3.0).
     public static function filter_ordering_args( $args, $orderby_value = null, $order_value = null ): array {
         if (! is_array($args)) {
             $args = array();
@@ -96,9 +100,34 @@ class Cashback_Product_Sort {
         }
 
         $args['orderby']  = 'meta_value_num';
-        $args['order']    = ( $orderby === self::ORDERBY_DESC ) ? 'DESC' : 'ASC';
+        $args['order']    = self::resolve_direction($orderby_value, $order_value) === 'DESC' ? 'DESC' : 'ASC';
         $args['meta_key'] = self::SORT_META_KEY; // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- catalog sort by guest cashback value (см. plan).
         return $args;
+    }
+
+    /**
+     * Резолвинг направления (ASC/DESC) из аргументов WC + raw $_GET.
+     *
+     * Источники по приоритету:
+     *   1. $order_value (3-й аргумент WC) — после explode('-', orderby).
+     *   2. raw $_GET['orderby'] — там 'cashback-desc' сохраняется целиком.
+     *   3. $orderby_value, если кто-то вызвал фильтр напрямую с полным ключом.
+     */
+    private static function resolve_direction( $orderby_value, $order_value ): string {
+        if (is_string($order_value) && strcasecmp($order_value, 'desc') === 0) {
+            return 'DESC';
+        }
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only orderby selector каталога; не write-path.
+        if (isset($_GET['orderby']) && is_string($_GET['orderby'])) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitize_key + matching против ORDERBY_DESC ниже.
+            if (sanitize_key((string) $_GET['orderby']) === self::ORDERBY_DESC) {
+                return 'DESC';
+            }
+        }
+        if (is_string($orderby_value) && $orderby_value === self::ORDERBY_DESC) {
+            return 'DESC';
+        }
+        return 'ASC';
     }
 
     /**
