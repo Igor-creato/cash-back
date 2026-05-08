@@ -59,10 +59,16 @@ class Cashback_Nginx_Cache_Purger {
      * URL нормализуется: удаляются query/fragment, дефолтный путь = '/'.
      * Hostname приводится к нижнему регистру, без порта (за reverse-proxy
      * совпадает с тем именем, что видит nginx).
+     *
+     * @param string|null $scheme_override Если задан (http|https) — переопределяет
+     *                                     scheme из URL. Используется purge_url(),
+     *                                     который пробует оба варианта.
      */
-    public static function build_cache_path( string $url, string $method = 'GET' ): string {
+    public static function build_cache_path( string $url, string $method = 'GET', ?string $scheme_override = null ): string {
         $parsed   = wp_parse_url($url);
-        $scheme   = isset($parsed['scheme']) ? strtolower((string) $parsed['scheme']) : 'https';
+        $scheme   = $scheme_override !== null
+            ? strtolower($scheme_override)
+            : (isset($parsed['scheme']) ? strtolower((string) $parsed['scheme']) : 'https');
         $hostname = isset($parsed['host']) ? strtolower((string) $parsed['host']) : '';
         $path     = isset($parsed['path']) && $parsed['path'] !== '' ? (string) $parsed['path'] : '/';
 
@@ -84,25 +90,35 @@ class Cashback_Nginx_Cache_Purger {
     /**
      * Удалить cache-файл для URL. Idempotent.
      *
-     * @return bool true — файла не было ИЛИ успешно удалили; false — ошибка.
+     * Пытается оба scheme — http и https. Reverse-proxy перед nginx
+     * (Traefik/Cloudflare) терминирует TLS, и внутри nginx-контейнера
+     * `$scheme` переменная = http (исходный URL может быть https).
+     * Cache-key bucket поэтому будет с http; но если в каком-то setup
+     * nginx стоит прямо за SSL — пробуем и https-вариант.
+     *
+     * @return bool true — хотя бы один файл удалён или оба отсутствовали.
      */
     public static function purge_url( string $url ): bool {
         if (!self::is_enabled() || !self::preflight()) {
             return false;
         }
 
-        $path = self::build_cache_path($url);
+        $any_existed_or_unlinked = true;
+        foreach (array( 'http', 'https' ) as $scheme_override) {
+            $path = self::build_cache_path($url, 'GET', $scheme_override);
 
-        if (!file_exists($path)) {
-            return true;
+            if (!file_exists($path)) {
+                continue;
+            }
+
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink, WordPress.PHP.NoSilencedErrors.Discouraged -- direct unlink (WP_Filesystem не маунтит /var/cache/nginx); @ подавляет E_WARNING при race-condition с nginx, который мог уже удалить файл по inactive=60m.
+            if (!@unlink($path)) {
+                self::log('warning', 'unlink failed', array( 'path' => $path, 'url' => $url ));
+                $any_existed_or_unlinked = false;
+            }
         }
 
-        // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink, WordPress.PHP.NoSilencedErrors.Discouraged -- direct unlink (WP_Filesystem не маунтит /var/cache/nginx); @ подавляет E_WARNING при race-condition с nginx, который мог уже удалить файл по inactive=60m.
-        $ok = @unlink($path);
-        if (!$ok) {
-            self::log('warning', 'unlink failed', array( 'path' => $path, 'url' => $url ));
-        }
-        return (bool) $ok;
+        return $any_existed_or_unlinked;
     }
 
     /**
