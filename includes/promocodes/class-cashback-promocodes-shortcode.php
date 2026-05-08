@@ -181,10 +181,6 @@ final class Cashback_Promocodes_Shortcode {
         }
         $parts[] = '<h4 class="cashback-promo-card__name">' . esc_html( $name ) . '</h4>';
 
-        if ( $description !== '' ) {
-            $parts[] = '<div class="cashback-promo-card__description" data-cashback-safe-html="' . esc_attr( $description ) . '"></div>';
-        }
-
         if ( $has_promocode ) {
             $parts[] = sprintf(
                 '<div class="cashback-promo-card__code-row"><code class="cashback-promo-card__code">%1$s</code><button type="button" class="cashback-promo-card__btn cashback-promo-card__btn--copy" data-action="copy" data-promo-id="%2$s" data-clipboard="%1$s">%3$s</button></div>',
@@ -243,11 +239,15 @@ final class Cashback_Promocodes_Shortcode {
             $parts[] = '<div class="cashback-promo-card__date-end">' . esc_html( sprintf( __( 'до %s', 'cashback-plugin' ), $date_end ) ) . '</div>';
         }
 
+        $btn_label = $has_promocode
+            ? esc_html__( 'Использовать купон', 'cashback-plugin' )
+            : esc_html__( 'Перейти в магазин', 'cashback-plugin' );
+
         $parts[]  = sprintf(
             '<a class="cashback-promo-card__btn cashback-promo-card__btn--goto" data-action="goto" data-promo-id="%1$s" href="%2$s" target="_blank" rel="nofollow noopener">%3$s</a>',
             esc_attr( (string) $promo_id ),
             esc_url( $goto_url ),
-            esc_html__( 'Перейти в магазин', 'cashback-plugin' )
+            $btn_label
         );
 
         $parts[] = '</article>';
