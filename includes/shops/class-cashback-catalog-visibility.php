@@ -127,8 +127,13 @@ class Cashback_Catalog_Visibility {
     /**
      * Перерасчёт видимости для всех members группы.
      *
-     * Effective preferred = pin_product_id если задан, иначе preferred_product_id.
-     * Для members равных effective preferred — meta удаляется (visible).
+     * Effective preferred = pin_product_id если задан И жив, иначе preferred_product_id.
+     * Если effective указывает на не-active member (stale pin/preferred) —
+     * graceful fallback: помечаем ВСЕХ active members видимыми. Это предотвращает
+     * исчезновение всех карточек группы из каталога при stale pin (Codex finding).
+     * recompute_preferred должен починить состояние при следующем триггере.
+     *
+     * Для member равного effective preferred — meta удаляется (visible).
      * Для остальных — meta = '1' (hidden).
      */
     public static function sync_group( int $group_id ): void {
@@ -141,12 +146,22 @@ class Cashback_Catalog_Visibility {
             return;
         }
 
+        $members = Cashback_Shop_Group_Resolver::get_active_members($group_id);
+        if (empty($members)) {
+            return;
+        }
+
         $pin       = isset($group['pin_product_id']) ? (int) $group['pin_product_id'] : 0;
         $preferred = isset($group['preferred_product_id']) ? (int) $group['preferred_product_id'] : 0;
         $effective = $pin > 0 ? $pin : $preferred;
 
-        $members = Cashback_Shop_Group_Resolver::get_active_members($group_id);
-        if (empty($members)) {
+        // Defense-in-depth: если effective не среди active members
+        // (stale pin/preferred от удалённого товара), не скрываем никого —
+        // лучше показать дубли чем спрятать живой магазин целиком.
+        if ($effective <= 0 || ! in_array($effective, $members, true)) {
+            foreach ($members as $member_id) {
+                self::mark_visible((int) $member_id);
+            }
             return;
         }
 

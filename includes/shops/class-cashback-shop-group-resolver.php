@@ -118,17 +118,22 @@ class Cashback_Shop_Group_Resolver {
             return null;
         }
 
-        // Pin перебивает score-логику.
-        $pin_id = isset($group['pin_product_id']) ? (int) $group['pin_product_id'] : 0;
-        if ($pin_id > 0) {
-            self::write_preferred($group_id, $pin_id);
-            return $pin_id;
-        }
-
         $members = self::get_active_members($group_id);
         if (empty($members)) {
             self::write_preferred($group_id, 0);
             return 0;
+        }
+
+        // Pin перебивает score-логику — но только если pin указывает на
+        // active member. Stale pin (на удалённый/trashed product) автоматически
+        // очищается, чтобы preferred не остался указывать на мёртвый ID.
+        $pin_id = isset($group['pin_product_id']) ? (int) $group['pin_product_id'] : 0;
+        if ($pin_id > 0) {
+            if (in_array($pin_id, $members, true)) {
+                self::write_preferred($group_id, $pin_id);
+                return $pin_id;
+            }
+            self::clear_pin($group_id);
         }
 
         $best_id    = 0;
@@ -423,6 +428,12 @@ class Cashback_Shop_Group_Resolver {
     /**
      * Активные members группы (is_excluded=0).
      *
+     * Defense-in-depth: INNER JOIN с wp_posts фильтрует ghost product_id —
+     * записи о products, которые были удалены из wp_posts (например, через
+     * Cashback_API_Client::check_campaign_statuses) или ушли в trash.
+     * Без JOIN'а downstream-логика (preferred resolver, catalog visibility,
+     * admin UI) оперировала бы мёртвыми ID.
+     *
      * @return array<int, int> product_ids
      */
     public static function get_active_members( int $group_id ): array {
@@ -431,10 +442,17 @@ class Cashback_Shop_Group_Resolver {
         }
         global $wpdb;
 
-        $table = $wpdb->prefix . self::TABLE_MEMBERS;
-        $rows  = $wpdb->get_results($wpdb->prepare(
-            'SELECT product_id FROM %i WHERE group_id = %d AND is_excluded = 0',
-            $table,
+        $members_table = $wpdb->prefix . self::TABLE_MEMBERS;
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Read-only group lookup; кеш сбивается на attach/detach/recompute.
+        $rows = $wpdb->get_results($wpdb->prepare(
+            'SELECT m.product_id FROM %i AS m
+               INNER JOIN %i AS p ON p.ID = m.product_id
+                                  AND p.post_type = %s
+                                  AND p.post_status NOT IN ("trash", "auto-draft")
+              WHERE m.group_id = %d AND m.is_excluded = 0',
+            $members_table,
+            $wpdb->posts,
+            'product',
             $group_id
         ), ARRAY_A);
 
@@ -446,6 +464,122 @@ class Cashback_Shop_Group_Resolver {
             $ids[] = (int) ( $r['product_id'] ?? 0 );
         }
         return array_filter($ids, static fn( int $i ): bool => $i > 0);
+    }
+
+    /**
+     * Хук на permanent-delete WC product (before_delete_post).
+     *
+     * Чистит member-record, recompute_preferred оставшейся группы или
+     * удаляет пустую группу. Без этого hook'а 1729 ghost-записей накапливались
+     * в `cashback_shop_group_members` за жизнь плагина.
+     *
+     * НЕ навешен на wp_trash_post намеренно — trash в WP обратим через
+     * «Восстановить», и destructive cleanup на trash приводил бы к потере
+     * группы при routine admin-операции. Trashed members отфильтровываются
+     * через INNER JOIN wp_posts в get_active_members (защищает все downstream
+     * места: visibility, recompute, admin UI).
+     *
+     * @param int   $post_id ID удаляемого поста.
+     * @param mixed $post    WP_Post; для совместимости с before_delete_post сигнатурой.
+     */
+    public static function on_before_delete_post( int $post_id, $post = null ): void {
+        if ($post_id <= 0) {
+            return;
+        }
+        if (! is_object($post)) {
+            $post = function_exists('get_post') ? get_post($post_id) : null;
+            if (! is_object($post)) {
+                return;
+            }
+        }
+        $post_type = (string) ($post->post_type ?? '');
+        if ($post_type !== 'product') {
+            return;
+        }
+        self::detach_member($post_id);
+    }
+
+    /**
+     * Удалить member-row и recompute preferred / удалить пустую группу.
+     * Идемпотентно — безопасно вызывать на product без группы.
+     */
+    public static function detach_member( int $product_id ): void {
+        if ($product_id <= 0) {
+            return;
+        }
+
+        global $wpdb;
+        if (! is_object($wpdb) || ! method_exists($wpdb, 'get_var') || ! method_exists($wpdb, 'delete')) {
+            return;
+        }
+
+        $members_table = $wpdb->prefix . self::TABLE_MEMBERS;
+        $groups_table  = $wpdb->prefix . self::TABLE_GROUPS;
+
+        // Найти group_id перед удалением + текущий pin.
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Single-row lookup перед delete.
+        $row = $wpdb->get_row($wpdb->prepare(
+            'SELECT m.group_id, g.pin_product_id
+               FROM %i AS m
+               LEFT JOIN %i AS g ON g.id = m.group_id
+              WHERE m.product_id = %d
+              LIMIT 1',
+            $members_table,
+            $groups_table,
+            $product_id
+        ), ARRAY_A);
+        $group_id = is_array($row) ? (int) ($row['group_id'] ?? 0) : 0;
+        if ($group_id <= 0) {
+            return;
+        }
+
+        // Если удаляемый product был pinned — очистить pin перед recompute,
+        // иначе preferred остался бы указывать на мёртвый ID (Codex finding #1).
+        $pin_id = is_array($row) ? (int) ($row['pin_product_id'] ?? 0) : 0;
+        if ($pin_id === $product_id) {
+            self::clear_pin($group_id);
+        }
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Cleanup на before_delete_post.
+        $wpdb->delete($members_table, array( 'product_id' => $product_id ), array( '%d' ));
+
+        // Если группа опустела — удалить.
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Post-delete count для решения "пуста ли группа".
+        $remaining = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM %i WHERE group_id = %d AND is_excluded = 0',
+            $members_table,
+            $group_id
+        ));
+        if ($remaining === 0) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Удаление пустой группы.
+            $wpdb->delete($groups_table, array( 'id' => $group_id ), array( '%d' ));
+            return;
+        }
+
+        // Иначе — пересчитать preferred (фирит cashback_group_preferred_changed).
+        self::recompute_preferred($group_id);
+    }
+
+    /**
+     * Очистить pin_product_id группы (NULL). Используется при detach
+     * pinned-member и при stale-pin авто-cleanup в recompute_preferred.
+     * Не фирит cashback_group_preferred_changed — caller сам делает
+     * write_preferred с новым значением.
+     */
+    private static function clear_pin( int $group_id ): void {
+        if ($group_id <= 0) {
+            return;
+        }
+        global $wpdb;
+        $table = $wpdb->prefix . self::TABLE_GROUPS;
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Stale-pin cleanup, single-row UPDATE.
+        $wpdb->update(
+            $table,
+            array( 'pin_product_id' => null ),
+            array( 'id' => $group_id ),
+            array( '%s' ),
+            array( '%d' )
+        );
     }
 
     /**

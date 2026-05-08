@@ -4185,6 +4185,126 @@ class Mariadb_Plugin {
     }
 
     /**
+     * Cleanup ghost member-records и пустых групп магазинов (v13).
+     *
+     * Корень проблемы: WC products удалялись (через wp_delete_post или
+     * Cashback_API_Client::check_campaign_statuses) без хука на cleanup
+     * cashback_shop_group_members → накапливались orphan-записи. Для
+     * staging-среды на 2026-05-08 наблюдалось 1729 members при 52 живых
+     * products (1677 ghost-rows).
+     *
+     * Дополнительно — удаление test e2e-сетей из cashback_affiliate_networks
+     * (slug LIKE 'e2e%') вместе с их tariffs/products. На staging они пустые
+     * (0 attached products), но defense-in-depth удаление product через
+     * wp_delete_post запускает before_delete_post hook.
+     *
+     * Идемпотентно через cashback_db_version >= 13.
+     */
+    public function migrate_cleanup_ghost_members_v13(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        if ($current_version >= 13) {
+            return;
+        }
+
+        $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
+        $tariffs_table  = $wpdb->prefix . 'cashback_shop_tariffs';
+        $members_table  = $wpdb->prefix . 'cashback_shop_group_members';
+        $groups_table   = $wpdb->prefix . 'cashback_shop_groups';
+
+        // ------------------------------------------------------------------
+        // 1. Удалить test e2e* networks (user подтвердил cleanup тестовых
+        //    данных). На staging эти сети без products/tariffs, но миграция
+        //    защищается через wp_delete_post + cascade tariff cleanup.
+        //
+        // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- $ids_csv построен только из intval'еных значений; динамический placeholder-list для IN(...) clause.
+        // ------------------------------------------------------------------
+        $e2e_ids = $wpdb->get_col(
+            $wpdb->prepare('SELECT id FROM %i WHERE slug LIKE %s', $networks_table, 'e2e%')
+        );
+
+        if (! empty($e2e_ids)) {
+            $e2e_ids = array_filter(
+                array_map('intval', (array) $e2e_ids),
+                static fn( int $i ): bool => $i > 0
+            );
+
+            if (! empty($e2e_ids)) {
+                // Все значения intval'ены выше — безопасно вставлять в SQL.
+                $ids_csv = implode(',', $e2e_ids);
+
+                // 1a. Удалить tariffs (FK).
+                $wpdb->query(
+                    $wpdb->prepare(
+                        'DELETE FROM %i WHERE network_id IN (' . $ids_csv . ')',
+                        $tariffs_table
+                    )
+                );
+
+                // 1b. Найти products привязанные к этим networks → wp_delete_post
+                //     запустит before_delete_post hook → cleanup member-row.
+                $product_ids = $wpdb->get_col(
+                    $wpdb->prepare(
+                        'SELECT post_id FROM %i WHERE meta_key = %s AND meta_value IN (' . $ids_csv . ')',
+                        $wpdb->postmeta,
+                        '_affiliate_network_id'
+                    )
+                );
+                if (is_array($product_ids)) {
+                    foreach ($product_ids as $pid) {
+                        $pid = (int) $pid;
+                        if ($pid > 0 && function_exists('wp_delete_post')) {
+                            wp_delete_post($pid, true);
+                        }
+                    }
+                }
+
+                // 1c. Удалить сами networks.
+                $wpdb->query(
+                    $wpdb->prepare(
+                        'DELETE FROM %i WHERE id IN (' . $ids_csv . ')',
+                        $networks_table
+                    )
+                );
+            }
+        }
+        // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+
+        // ------------------------------------------------------------------
+        // 2. Удалить ghost-members ссылающиеся на не-существующий или
+        //    trashed product. Trash трактуем как ghost (user подтвердил).
+        // ------------------------------------------------------------------
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Cleanup migration, single-pass DELETE с LEFT JOIN.
+        $wpdb->query($wpdb->prepare(
+            'DELETE m FROM %i AS m
+              LEFT JOIN %i AS p
+                     ON p.ID = m.product_id
+                        AND p.post_type = %s
+                        AND p.post_status NOT IN ("trash", "auto-draft")
+              WHERE p.ID IS NULL',
+            $members_table,
+            $wpdb->posts,
+            'product'
+        ));
+
+        // ------------------------------------------------------------------
+        // 3. Удалить группы без active members.
+        // ------------------------------------------------------------------
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Cleanup migration, single-pass DELETE с LEFT JOIN.
+        $wpdb->query($wpdb->prepare(
+            'DELETE g FROM %i AS g
+              LEFT JOIN %i AS m
+                     ON m.group_id = g.id AND m.is_excluded = 0
+              WHERE m.product_id IS NULL',
+            $groups_table,
+            $members_table
+        ));
+
+        update_option('cashback_db_version', 13, false);
+    }
+
+    /**
      * Seed public-конфига coupons API для существующей сети admitad (v8).
      *
      * Заполняет 4 новые колонки cashback_affiliate_networks дефолтами для

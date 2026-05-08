@@ -25,6 +25,7 @@ class Shop_Test_Wpdb_Stub
 {
     public string $prefix = 'wp_';
     public string $postmeta = 'wp_postmeta';
+    public string $posts = 'wp_posts';
     public int $insert_id = 0;
     public string $last_error = '';
 

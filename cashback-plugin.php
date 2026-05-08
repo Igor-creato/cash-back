@@ -1045,6 +1045,18 @@ class CashbackPlugin {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback] Shop Importer v12 auto-migration failed: ' . $e->getMessage());
             }
+
+            // v13: cleanup ghost member-records (1677 orphan rows из
+            // wp_cashback_shop_group_members ссылающихся на удалённые
+            // products) + удаление test e2e* networks. См. диагноз в
+            // plans/luminous-snacking-gizmo.md. Идемпотентно через
+            // cashback_db_version >= 13 fast-path.
+            try {
+                Mariadb_Plugin::get_instance()->migrate_cleanup_ghost_members_v13();
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] Cleanup ghost members v13 auto-migration failed: ' . $e->getMessage());
+            }
         }
 
         // Legal module (Phase 1): создание таблицы wp_cashback_consent_log и
@@ -1123,6 +1135,16 @@ class CashbackPlugin {
         if (class_exists('Cashback_Catalog_Visibility')) {
             Cashback_Catalog_Visibility::register();
             Cashback_Catalog_Visibility::ensure_backfilled();
+        }
+
+        // Shop Group Resolver: cleanup member-record ТОЛЬКО при permanent
+        // delete (before_delete_post). На wp_trash_post НЕ навешено намеренно
+        // — trash должен быть обратимым через WP UI «Восстановить». Trashed
+        // members автоматически отфильтровываются через INNER JOIN wp_posts
+        // в get_active_members (post_status NOT IN ('trash','auto-draft')),
+        // поэтому visibility/sort работают корректно без destructive cleanup.
+        if (class_exists('Cashback_Shop_Group_Resolver')) {
+            add_action('before_delete_post', array( 'Cashback_Shop_Group_Resolver', 'on_before_delete_post' ), 10, 2);
         }
 
         // Admin UI Этапа 8: Settings + Import + Groups submenu pages.
