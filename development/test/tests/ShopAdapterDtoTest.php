@@ -200,6 +200,60 @@ final class ShopAdapterDtoTest extends TestCase
         $this->assertSame('b', $dto->inline_tariffs[1]['tariff_id']);
     }
 
+    public function test_campaign_dto_payment_time_days_default_null(): void
+    {
+        $dto = Cashback_Campaign_Detail_DTO::from_array(array('id' => '1'));
+        $this->assertNull($dto->payment_time_days);
+        $this->assertArrayHasKey('payment_time_days', $dto->to_array());
+        $this->assertNull($dto->to_array()['payment_time_days']);
+    }
+
+    public function test_campaign_dto_payment_time_days_roundtrip(): void
+    {
+        $dto = Cashback_Campaign_Detail_DTO::from_array(array(
+            'id'                => '1',
+            'payment_time_days' => 38,
+        ));
+        $this->assertSame(38, $dto->payment_time_days);
+        $this->assertSame(38, $dto->to_array()['payment_time_days']);
+    }
+
+    public function test_campaign_dto_payment_time_days_clamps_negative_to_null(): void
+    {
+        $dto = Cashback_Campaign_Detail_DTO::from_array(array(
+            'id'                => '1',
+            'payment_time_days' => -5,
+        ));
+        $this->assertNull($dto->payment_time_days, 'отрицательные значения игнорируются');
+    }
+
+    public function test_campaign_dto_payment_time_days_clamps_excessive_to_null(): void
+    {
+        $dto = Cashback_Campaign_Detail_DTO::from_array(array(
+            'id'                => '1',
+            'payment_time_days' => 9999,
+        ));
+        $this->assertNull($dto->payment_time_days, '> 365 игнорируется как заведомо некорректное');
+    }
+
+    public function test_campaign_dto_payment_time_days_non_numeric_falls_back(): void
+    {
+        $dto = Cashback_Campaign_Detail_DTO::from_array(array(
+            'id'                => '1',
+            'payment_time_days' => 'абракадабра',
+        ));
+        $this->assertNull($dto->payment_time_days);
+    }
+
+    public function test_campaign_dto_payment_time_days_numeric_string_accepted(): void
+    {
+        $dto = Cashback_Campaign_Detail_DTO::from_array(array(
+            'id'                => '1',
+            'payment_time_days' => '29',
+        ));
+        $this->assertSame(29, $dto->payment_time_days);
+    }
+
     // ============================================================
     // Cashback_Shop_Tariff_DTO
     // ============================================================

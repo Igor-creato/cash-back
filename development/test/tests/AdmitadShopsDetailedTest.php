@@ -725,4 +725,196 @@ final class AdmitadShopsDetailedTest extends TestCase
 
         $this->assertSame(array(), $result['campaigns'][0]['inline_tariffs']);
     }
+
+    // ============================================================
+    // Action-name propagation: имя тарифа в БД должно отражать
+    // action.name (для отображения в Tab[1] «Условия» и admin-таблице).
+    // ============================================================
+
+    public function test_inline_tariffs_use_action_name_when_single_default_tariff(): void
+    {
+        $actions = array(array(
+            'name'    => 'Оплаченный заказ нового клиента',
+            'tariffs' => array(array(
+                'id'    => 6661,
+                'name'  => 'Тариф по умолчанию',
+                'rates' => array(array('size' => '5.18', 'is_percentage' => true, 'country' => null)),
+            )),
+        ));
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaign_with_actions_detail($actions))));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $tariff = $result['campaigns'][0]['inline_tariffs'][0];
+        $this->assertSame('Оплаченный заказ нового клиента', $tariff['name']);
+        $this->assertTrue($tariff['is_default'], '"Тариф по умолчанию" → is_default=true');
+    }
+
+    public function test_inline_tariffs_default_rate_english_name_recognized(): void
+    {
+        $actions = array(array(
+            'name'    => 'Sale',
+            'tariffs' => array(array(
+                'id'    => 1,
+                'name'  => 'Default rate',
+                'rates' => array(array('size' => '5', 'is_percentage' => true, 'country' => null)),
+            )),
+        ));
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaign_with_actions_detail($actions))));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $tariff = $result['campaigns'][0]['inline_tariffs'][0];
+        $this->assertSame('Sale', $tariff['name']);
+        $this->assertTrue($tariff['is_default']);
+    }
+
+    public function test_inline_tariffs_compose_name_when_multiple_non_default_tariffs(): void
+    {
+        $actions = array(array(
+            'name'    => 'Оплаченный заказ',
+            'tariffs' => array(
+                array(
+                    'id'    => 1,
+                    'name'  => 'Стандарт',
+                    'rates' => array(array('size' => '3', 'is_percentage' => true, 'country' => null)),
+                ),
+                array(
+                    'id'    => 2,
+                    'name'  => 'Премиум',
+                    'rates' => array(array('size' => '5', 'is_percentage' => true, 'country' => null)),
+                ),
+            ),
+        ));
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaign_with_actions_detail($actions))));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $tariffs = $result['campaigns'][0]['inline_tariffs'];
+        $this->assertCount(2, $tariffs);
+        $this->assertSame('Оплаченный заказ — Стандарт', $tariffs[0]['name']);
+        $this->assertSame('Оплаченный заказ — Премиум', $tariffs[1]['name']);
+        $this->assertFalse($tariffs[0]['is_default']);
+        $this->assertFalse($tariffs[1]['is_default']);
+    }
+
+    public function test_inline_tariffs_omit_suffix_for_default_tariff_when_multiple(): void
+    {
+        $actions = array(array(
+            'name'    => 'Оплаченный заказ',
+            'tariffs' => array(
+                array(
+                    'id'    => 1,
+                    'name'  => 'Default rate',
+                    'rates' => array(array('size' => '3', 'is_percentage' => true, 'country' => null)),
+                ),
+                array(
+                    'id'    => 2,
+                    'name'  => 'Скидка',
+                    'rates' => array(array('size' => '1', 'is_percentage' => true, 'country' => null)),
+                ),
+            ),
+        ));
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaign_with_actions_detail($actions))));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $tariffs = $result['campaigns'][0]['inline_tariffs'];
+        $this->assertSame('Оплаченный заказ', $tariffs[0]['name'], 'default → без суффикса');
+        $this->assertSame('Оплаченный заказ — Скидка', $tariffs[1]['name'], 'non-default → с суффиксом');
+    }
+
+    public function test_inline_tariffs_falls_back_to_tariff_name_when_no_action_name(): void
+    {
+        // Backward compat: фикстуры существующих тестов без action.name.
+        $actions = array(array(
+            'tariffs' => array(array(
+                'id'    => 1,
+                'name'  => 'Custom name',
+                'rates' => array(array('size' => '5', 'is_percentage' => true, 'country' => null)),
+            )),
+        ));
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaign_with_actions_detail($actions))));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $tariff = $result['campaigns'][0]['inline_tariffs'][0];
+        $this->assertSame('Custom name', $tariff['name']);
+    }
+
+    // ============================================================
+    // payment_time_days: avg_money_transfer_time / avg_hold_time fallback.
+    // ============================================================
+
+    private function fixture_campaign_with_payment_time(array $extra_fields): string
+    {
+        $base = array(
+            'id'                => 2381,
+            'name'              => 'Kaspersky',
+            'site_url'          => 'https://www.kaspersky.ru',
+            'image'             => 'https://cdn.example.com/logo.png',
+            'status'            => 'active',
+            'connection_status' => 'active',
+            'currency'          => 'RUB',
+            'actions_detail'    => array(),
+        );
+        return wp_json_encode(array(
+            '_meta'   => array('count' => 1),
+            'results' => array(array_merge($base, $extra_fields)),
+        ));
+    }
+
+    public function test_payment_time_days_uses_avg_money_transfer_time(): void
+    {
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaign_with_payment_time(array(
+            'avg_money_transfer_time' => 38,
+            'avg_hold_time'           => 30,
+        )))));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $this->assertSame(38, $result['campaigns'][0]['payment_time_days']);
+    }
+
+    public function test_payment_time_days_falls_back_to_avg_hold_time(): void
+    {
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaign_with_payment_time(array(
+            'avg_money_transfer_time' => null,
+            'avg_hold_time'           => 28,
+        )))));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $this->assertSame(28, $result['campaigns'][0]['payment_time_days']);
+    }
+
+    public function test_payment_time_days_null_when_both_fields_missing(): void
+    {
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaign_with_payment_time(array()))));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $this->assertNull($result['campaigns'][0]['payment_time_days']);
+    }
+
+    public function test_payment_time_days_skips_out_of_range_values(): void
+    {
+        $this->queue_responses(array($this->http_response(200, $this->fixture_campaign_with_payment_time(array(
+            'avg_money_transfer_time' => -10,
+            'avg_hold_time'           => 35,
+        )))));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $this->assertSame(35, $result['campaigns'][0]['payment_time_days'], '-10 пропущен → fallback на avg_hold_time');
+    }
 }

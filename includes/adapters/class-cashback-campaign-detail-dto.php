@@ -60,6 +60,13 @@ final class Cashback_Campaign_Detail_DTO {
      */
     public array $inline_tariffs;
 
+    /**
+     * Среднее время до зачисления кэшбэка пользователю в днях.
+     * Source: Admitad campaign-detail field `avg_money_transfer_time` (fallback `avg_hold_time`).
+     * null если поле не пришло — потребитель использует константный fallback.
+     */
+    public ?int $payment_time_days;
+
     private function __construct(
         string $id,
         string $name,
@@ -74,7 +81,8 @@ final class Cashback_Campaign_Detail_DTO {
         string $currency,
         string $goto_link,
         array $raw,
-        array $inline_tariffs
+        array $inline_tariffs,
+        ?int $payment_time_days
     ) {
         $this->id                = $id;
         $this->name              = $name;
@@ -90,6 +98,7 @@ final class Cashback_Campaign_Detail_DTO {
         $this->goto_link         = $goto_link;
         $this->raw               = $raw;
         $this->inline_tariffs    = $inline_tariffs;
+        $this->payment_time_days = $payment_time_days;
     }
 
     /**
@@ -132,6 +141,16 @@ final class Cashback_Campaign_Detail_DTO {
             ? strtolower(trim((string) $data['connection_status']))
             : '';
 
+        $payment_time_days = null;
+        if (array_key_exists('payment_time_days', $data) && $data['payment_time_days'] !== null) {
+            if (is_numeric($data['payment_time_days'])) {
+                $clamped = (int) $data['payment_time_days'];
+                if ($clamped >= 0 && $clamped <= 365) {
+                    $payment_time_days = $clamped;
+                }
+            }
+        }
+
         return new self(
             $id,
             isset($data['name']) ? (string) $data['name'] : '',
@@ -146,7 +165,8 @@ final class Cashback_Campaign_Detail_DTO {
             $currency,
             isset($data['goto_link']) ? (string) $data['goto_link'] : '',
             $raw,
-            $inline_tariffs
+            $inline_tariffs,
+            $payment_time_days
         );
     }
 
@@ -171,6 +191,7 @@ final class Cashback_Campaign_Detail_DTO {
             'goto_link'         => $this->goto_link,
             'raw'               => $this->raw,
             'inline_tariffs'    => $this->inline_tariffs,
+            'payment_time_days' => $this->payment_time_days,
         );
     }
 }

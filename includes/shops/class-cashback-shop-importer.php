@@ -34,15 +34,16 @@ class Cashback_Shop_Importer {
     public const HOOK_LOG_GC           = 'cashback_shop_import_log_gc';
     public const AS_GROUP              = 'cashback';
 
-    public const META_NETWORK_ID    = '_affiliate_network_id';
-    public const META_OFFER_ID      = '_offer_id';
-    public const META_STORE_DOMAIN  = '_store_domain';
-    public const META_IMPORT_SOURCE = '_cashback_import_source';
-    public const META_SIGNATURE     = '_cashback_import_signature';
-    public const META_IMPORT_AT     = '_cashback_import_at';
-    public const META_LAST_SEEN_AT  = '_cashback_last_seen_at';
-    public const META_CURRENCY      = '_cashback_campaign_currency';
-    public const META_STATUS_RAW    = '_cashback_campaign_status_raw';
+    public const META_NETWORK_ID       = '_affiliate_network_id';
+    public const META_OFFER_ID         = '_offer_id';
+    public const META_STORE_DOMAIN     = '_store_domain';
+    public const META_IMPORT_SOURCE    = '_cashback_import_source';
+    public const META_SIGNATURE        = '_cashback_import_signature';
+    public const META_IMPORT_AT        = '_cashback_import_at';
+    public const META_LAST_SEEN_AT     = '_cashback_last_seen_at';
+    public const META_CURRENCY         = '_cashback_campaign_currency';
+    public const META_STATUS_RAW       = '_cashback_campaign_status_raw';
+    public const META_AVG_PAYMENT_DAYS = '_cashback_avg_payment_days';
     public const META_RATE_LOCKED   = '_rate_locked';
 
     // Дефолты, проставляемые ТОЛЬКО при первичном импорте (insert_draft_product).
@@ -318,6 +319,17 @@ class Cashback_Shop_Importer {
                         $network_id,
                         $dto
                     );
+
+                    // Tab[1] «Условия» — рендерим ПОСЛЕ tariff sync, иначе
+                    // renderer прочитает старые данные. Покрывает все ветки
+                    // upsert (new/updated/unchanged/seen) — кроме skipped.
+                    if ($upsert['kind'] !== 'skipped') {
+                        self::apply_tab1_conditions_content(
+                            $upsert['product_id'],
+                            $network_id,
+                            $dto->id
+                        );
+                    }
                 }
             }
 
@@ -403,6 +415,9 @@ class Cashback_Shop_Importer {
             // тарифы и preferred мог сместиться).
             update_post_meta($existing_id, self::META_LAST_SEEN_AT, $now);
             self::backfill_missing_admin_fields($existing_id);
+            if ($dto->payment_time_days !== null) {
+                update_post_meta($existing_id, self::META_AVG_PAYMENT_DAYS, (string) $dto->payment_time_days);
+            }
             // Backfill featured image: товары, импортированные до фикса
             // SVG-сpath, остались без thumbnail. signature не меняется —
             // через ветку 'updated' они туда не попадут. Догружаем здесь
@@ -715,6 +730,43 @@ class Cashback_Shop_Importer {
     }
 
     /**
+     * Сгенерировать и записать HTML-контент Tab[1] «Условия».
+     *
+     * Вызывается во всех трёх ветках upsert (new/updated/unchanged): новые
+     * товары получают свежий HTML, существующие — backfill с учётом текущих
+     * тарифов и payment_time. Существующий контент перезаписывается ТОЛЬКО
+     * если он отсутствует или начинается с sentinel-маркера autogen v1 —
+     * любая admin-edit (без маркера) сохраняется.
+     *
+     * `update_post_meta` сам no-op'ит при old==new — лишних cache invalidations
+     * не будет, поэтому idempotency на cron-проходах не страдает.
+     */
+    private static function apply_tab1_conditions_content( int $product_id, int $network_id, string $offer_id ): void {
+        if ($product_id <= 0 || $network_id <= 0 || $offer_id === '') {
+            return;
+        }
+        if (! class_exists('Cashback_Tab_Conditions_Renderer')) {
+            return;
+        }
+
+        $current = (string) get_post_meta($product_id, '_woodmart_product_custom_tab_content', true);
+        if ($current !== '' && ! Cashback_Tab_Conditions_Renderer::is_autogen($current)) {
+            // Admin отредактировал контент или удалил sentinel — не трогаем.
+            return;
+        }
+
+        $html = Cashback_Tab_Conditions_Renderer::render($product_id, $network_id, $offer_id);
+        if ($html === '') {
+            return;
+        }
+
+        update_post_meta($product_id, '_woodmart_product_custom_tab_content', $html);
+        update_post_meta($product_id, '_woodmart_product_custom_tab_title', self::DEFAULT_TAB1_TITLE);
+        update_post_meta($product_id, '_woodmart_product_custom_tab_priority', self::DEFAULT_TAB1_PRIORITY);
+        update_post_meta($product_id, '_woodmart_product_custom_tab_content_type', 'text');
+    }
+
+    /**
      * Запись общих метаполей (привязка + signature + status).
      */
     private static function write_product_meta(
@@ -735,6 +787,10 @@ class Cashback_Shop_Importer {
         update_post_meta($product_id, self::META_LAST_SEEN_AT, $now);
         update_post_meta($product_id, self::META_CURRENCY, $dto->currency);
         update_post_meta($product_id, self::META_STATUS_RAW, $dto->status_raw);
+
+        if ($dto->payment_time_days !== null) {
+            update_post_meta($product_id, self::META_AVG_PAYMENT_DAYS, (string) $dto->payment_time_days);
+        }
     }
 
     /**

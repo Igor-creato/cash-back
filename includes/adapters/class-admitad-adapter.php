@@ -706,6 +706,8 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             : array();
         $inline_tariffs = $this->parse_inline_tariffs($actions_detail, $currency);
 
+        $payment_time_days = $this->extract_payment_time_days($raw);
+
         return array(
             'id'                => (string) ( $raw['id'] ?? '' ),
             'name'              => (string) ( $raw['name'] ?? '' ),
@@ -721,7 +723,46 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             'goto_link'         => $goto,
             'raw'               => $raw,
             'inline_tariffs'    => $inline_tariffs,
+            'payment_time_days' => $payment_time_days,
         );
+    }
+
+    /**
+     * Извлечь среднее время до оплаты кэшбэка в днях.
+     *
+     * Источник (по приоритету):
+     *  - `avg_money_transfer_time` — среднее время перевода денег вебмастеру (дни),
+     *  - `avg_hold_time` — среднее время холда заказа (дни) — fallback.
+     *
+     * Имена кандидатов фильтруемы через `cashback_admitad_payment_time_fields`,
+     * чтобы можно было переключить порядок без правки кода. Значения вне
+     * диапазона [0, 365] игнорируются как заведомо некорректные.
+     *
+     * @param array<string, mixed> $raw
+     */
+    private function extract_payment_time_days( array $raw ): ?int {
+        $candidates = array( 'avg_money_transfer_time', 'avg_hold_time' );
+        /** @var array<int, string> $candidates */
+        $candidates = (array) apply_filters( 'cashback_admitad_payment_time_fields', $candidates, $raw );
+
+        foreach ( $candidates as $key ) {
+            if ( ! is_string( $key ) || $key === '' ) {
+                continue;
+            }
+            if ( ! array_key_exists( $key, $raw ) || $raw[ $key ] === null ) {
+                continue;
+            }
+            if ( ! is_numeric( $raw[ $key ] ) ) {
+                continue;
+            }
+            $days = (int) $raw[ $key ];
+            if ( $days < 0 || $days > 365 ) {
+                continue;
+            }
+            return $days;
+        }
+
+        return null;
     }
 
     /**
@@ -737,7 +778,11 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
      *  - is_percentage=true → tariff_type='percent', size — процент;
      *  - is_percentage=false → tariff_type='fix', size — абсолютная сумма;
      *  - currency у Admitad per-rate отсутствует — берём из родительской кампании;
-     *  - is_default — эвристика по name=='Default rate' (Admitad не отдаёт явный флаг inline).
+     *  - name — берётся из action.name («Оплаченный заказ нового клиента»);
+     *    если у одного action несколько тарифов с разными именами — добавляем
+     *    суффикс « — {tariff.name}», чтобы в админ-таблице тарифы различались;
+     *  - is_default — эвристика по tariff.name='Default rate' / 'Тариф по умолчанию'
+     *    (Admitad не отдаёт явный флаг inline).
      *
      * @param array<int, mixed> $actions_detail Сырые элементы из payload `actions_detail`.
      * @param string            $parent_currency Валюта родительской кампании (трёхбуквенная).
@@ -753,9 +798,20 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             if (! is_array($action)) {
                 continue;
             }
+            $action_name = isset($action['name']) && is_scalar($action['name'])
+                ? trim((string) $action['name'])
+                : '';
+
             $tariffs = isset($action['tariffs']) && is_array($action['tariffs'])
                 ? $action['tariffs']
                 : array();
+
+            $tariff_count = 0;
+            foreach ($tariffs as $tariff) {
+                if (is_array($tariff)) {
+                    ++$tariff_count;
+                }
+            }
 
             foreach ($tariffs as $tariff) {
                 if (! is_array($tariff)) {
@@ -793,9 +849,19 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
                 $size_raw      = $picked['size'] ?? '0';
                 $payment_size  = is_numeric($size_raw) ? (float) $size_raw : 0.0;
 
-                $name = isset($tariff['name']) && is_scalar($tariff['name'])
-                    ? (string) $tariff['name']
+                $tariff_name = isset($tariff['name']) && is_scalar($tariff['name'])
+                    ? trim((string) $tariff['name'])
                     : '';
+                $is_default = $this->is_default_admitad_tariff_name($tariff_name);
+
+                if ($action_name !== '') {
+                    $name = $action_name;
+                    if ($tariff_count > 1 && $tariff_name !== '' && ! $is_default) {
+                        $name .= ' — ' . $tariff_name;
+                    }
+                } else {
+                    $name = $tariff_name;
+                }
 
                 $result[] = array(
                     'tariff_id'    => $tariff_id,
@@ -805,13 +871,23 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
                     'payment_min'  => null,
                     'payment_max'  => null,
                     'currency'     => $parent_currency,
-                    'is_default'   => ( $name === 'Default rate' ),
+                    'is_default'   => $is_default,
                     'raw'          => $tariff,
                 );
             }
         }
 
         return $result;
+    }
+
+    /**
+     * Эвристика «дефолтный тариф» для inline-payload Admitad: API не отдаёт
+     * явного флага, поэтому опираемся на канонические имена. Регистр и пробелы
+     * нормализуются.
+     */
+    private function is_default_admitad_tariff_name( string $name ): bool {
+        $normalized = mb_strtolower( trim( $name ), 'UTF-8' );
+        return in_array( $normalized, array( 'default rate', 'тариф по умолчанию' ), true );
     }
 
     /**

@@ -692,10 +692,11 @@ class CashbackPlugin {
 
         // Shop Importer + Dynamic Display: фасад WP-опций (v12)
         $this->require_file('includes/class-cashback-shop-options.php');
-        // Shop Importer (v12) — оркестратор + tariff sync + import log + group resolver + display calculator
+        // Shop Importer (v12) — оркестратор + tariff sync + import log + group resolver + display calculator + tab1 renderer
         $this->require_file('includes/shops/class-cashback-shop-import-log.php');
         $this->require_file('includes/shops/class-cashback-shop-tariff-sync.php');
         $this->require_file('includes/shops/class-cashback-shop-group-resolver.php');
+        $this->require_file('includes/shops/class-cashback-tab-conditions-renderer.php');
         $this->require_file('includes/shops/class-cashback-shop-importer.php');
         $this->require_file('includes/shops/class-cashback-cashback-display-calculator.php');
 
