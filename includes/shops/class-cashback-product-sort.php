@@ -286,7 +286,11 @@ class Cashback_Product_Sort {
     }
 
     /**
-     * Достать активный orderby-параметр из аргументов / $_GET / WC session.
+     * Достать активный orderby-параметр из аргументов / $_GET.
+     *
+     * WC core сам резолвит orderby из $_GET и `woocommerce_default_catalog_orderby`
+     * опции до вызова filter_ordering_args, поэтому отдельный WC session lookup
+     * здесь излишен (плюс PHPStan ругается на typed-non-nullable WC->session).
      */
     private static function resolve_orderby_param( $explicit ): string {
         if (is_string($explicit) && $explicit !== '') {
@@ -296,15 +300,6 @@ class Cashback_Product_Sort {
         if (isset($_GET['orderby']) && is_string($_GET['orderby'])) {
             // phpcs:ignore WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitize_key + matching против whitelist ниже.
             return sanitize_key((string) $_GET['orderby']);
-        }
-        if (function_exists('WC') && function_exists('is_object')) {
-            $wc = WC();
-            if (is_object($wc) && isset($wc->session) && is_object($wc->session) && method_exists($wc->session, 'get')) {
-                $session_value = $wc->session->get('orderby');
-                if (is_string($session_value)) {
-                    return $session_value;
-                }
-            }
         }
         return '';
     }
