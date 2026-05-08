@@ -94,6 +94,7 @@ final class TabConditionsRendererTest extends TestCase
         $this->assertStringContainsString('<h3><strong>Условия начисления:</strong></h3>', $html);
         $this->assertStringContainsString('Оплаченный заказ - новый клиент', $html);
         $this->assertStringContainsString('<strong>3,37%</strong>', $html);
+        $this->assertStringContainsString('Оплаченный заказ - новый клиент: <strong>3,37%</strong>', $html);
     }
 
     public function test_render_with_multiple_percent_tariffs_lists_each_separately(): void
@@ -148,7 +149,7 @@ final class TabConditionsRendererTest extends TestCase
         $html = Cashback_Tab_Conditions_Renderer::render(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
 
         // 30 + 3 = 33 days
-        $this->assertStringContainsString('Средний срок начисления <strong>33 дня</strong>', $html);
+        $this->assertStringContainsString('Средний срок начисления: <strong>33 дня</strong>', $html);
     }
 
     public function test_render_uses_meta_payment_days_plus_buffer(): void
