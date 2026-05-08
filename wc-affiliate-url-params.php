@@ -1287,6 +1287,10 @@ class WC_Affiliate_URL_Params {
 {$favicon_html}
 <title>{$text_heading} — {$site_name}</title>
 <style>
+:root{
+    --cb-accent:#5b6cf7;
+    --cb-accent-hover:#4555e8;
+}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{
     height:100%;
@@ -1367,7 +1371,7 @@ body{
 }
 .cb-activation__timer-progress{
     fill:none;
-    stroke:#4caf50;
+    stroke:var(--cb-accent);
     stroke-width:3;
     stroke-linecap:round;
     stroke-dasharray:201.06;
@@ -1382,7 +1386,7 @@ body{
     justify-content:center;
     font-size:24px;
     font-weight:700;
-    color:#4caf50;
+    color:var(--cb-accent);
     font-variant-numeric:tabular-nums;
 }
 .cb-activation__label{
@@ -1396,7 +1400,7 @@ body{
     font-size:14px;
     font-weight:500;
     color:#fff;
-    background:#4caf50;
+    background:var(--cb-accent);
     border:none;
     border-radius:8px;
     text-decoration:none;
@@ -1404,7 +1408,7 @@ body{
     transition:background .2s;
 }
 .cb-activation__link:hover{
-    background:#43a047;
+    background:var(--cb-accent-hover);
 }
 </style>
 </head>
