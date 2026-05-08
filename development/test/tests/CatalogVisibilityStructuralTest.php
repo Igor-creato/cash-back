@@ -152,9 +152,18 @@ final class CatalogVisibilityStructuralTest extends TestCase
     public function test_filter_skips_single_product_page(): void
     {
         $body = $this->filter_body();
+        // is_singular() БЕЗ аргумента — с 'product' возвращает false в pre_get_posts
+        // (get_queried_object не сформирован), и meta_query фильтр приводил к 404
+        // на single product page.
         $this->assertMatchesRegularExpression(
+            '/is_singular\s*\(\s*\)/',
+            $body,
+            'is_singular() должен вызываться без аргумента в pre_get_posts'
+        );
+        $this->assertDoesNotMatchRegularExpression(
             "/is_singular\s*\(\s*'product'\s*\)/",
-            $body
+            $body,
+            "is_singular('product') ломает single product page (404) — get_queried_object null в pre_get_posts"
         );
     }
 
@@ -204,6 +213,13 @@ final class CatalogVisibilityStructuralTest extends TestCase
         $body = $this->sync_group_body();
         $this->assertStringContainsString('Cashback_Shop_Group_Resolver::get_group_row', $body);
         $this->assertStringContainsString('Cashback_Shop_Group_Resolver::get_active_members', $body);
+        // Codex adversarial finding (split-brain): fallback при NULL preferred
+        // должен идти через общий helper, а не через локальный sort.
+        $this->assertStringContainsString(
+            'Cashback_Shop_Group_Resolver::pick_fallback_member',
+            $body,
+            'sync_group должен делегировать выбор anchor\'а в pick_fallback_member'
+        );
     }
 
     public function test_sync_group_pin_overrides_preferred(): void

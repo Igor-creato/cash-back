@@ -87,7 +87,13 @@ class Cashback_Catalog_Visibility {
             return;
         }
         // Single product page — не фильтруем (deeplinks из CPA-сессии).
-        if (method_exists($q, 'is_singular') && $q->is_singular('product')) {
+        // ВАЖНО: is_singular() БЕЗ аргумента post_type. С post_type-аргументом
+        // WP_Query требует get_queried_object(), который возвращает null
+        // в pre_get_posts (объект формируется ПОСЛЕ SQL). Метод тогда всегда
+        // отдавал бы false, и meta_query применялся бы к single product →
+        // 0 results → 404. Без аргумента читается $this->is_singular свойство,
+        // установленное в parse_query до хука.
+        if (method_exists($q, 'is_singular') && $q->is_singular()) {
             return;
         }
 
@@ -128,13 +134,22 @@ class Cashback_Catalog_Visibility {
      * Перерасчёт видимости для всех members группы.
      *
      * Effective preferred = pin_product_id если задан И жив, иначе preferred_product_id.
-     * Если effective указывает на не-active member (stale pin/preferred) —
-     * graceful fallback: помечаем ВСЕХ active members видимыми. Это предотвращает
-     * исчезновение всех карточек группы из каталога при stale pin (Codex finding).
-     * recompute_preferred должен починить состояние при следующем триггере.
      *
-     * Для member равного effective preferred — meta удаляется (visible).
-     * Для остальных — meta = '1' (hidden).
+     * Семантика fallback (Codex findings #2 и adversarial split-brain закрыты):
+     *   - Если effective валиден (>0 И в active members) — нормальный path.
+     *   - Иначе: делегируем выбор anchor'а в Cashback_Shop_Group_Resolver::pick_fallback_member.
+     *     Тот же helper использует resolve_preferred — один источник правды,
+     *     поэтому каталог и страница товара показывают ОДИН и тот же member
+     *     при NULL preferred (без него возникал split-brain между display
+     *     calculator и catalog visibility для no-tariff групп).
+     *     Сохраняет invariant «один магазин на витрине» даже когда:
+     *       (a) pin/preferred stale (товар удалён, но запись в БД осталась);
+     *       (b) recompute вернул 0 потому что у всех members нет тарифов
+     *           (CPA-сеть soft-delete'нула все офферы).
+     *     Раньше fallback показывал ВСЕХ members → дубли в каталоге.
+     *
+     * recompute_preferred при следующем tariff sync восстановит корректный
+     * preferred, и fallback больше не сработает.
      */
     public static function sync_group( int $group_id ): void {
         if ($group_id <= 0 || ! class_exists('Cashback_Shop_Group_Resolver')) {
@@ -146,8 +161,11 @@ class Cashback_Catalog_Visibility {
             return;
         }
 
-        $members = Cashback_Shop_Group_Resolver::get_active_members($group_id);
-        if (empty($members)) {
+        // Loop по active (включая draft/private), чтобы при их будущей
+        // публикации hide_meta уже был выставлен. Validation effective —
+        // против publishable (см. ниже).
+        $active_members = Cashback_Shop_Group_Resolver::get_active_members($group_id);
+        if (empty($active_members)) {
             return;
         }
 
@@ -155,17 +173,23 @@ class Cashback_Catalog_Visibility {
         $preferred = isset($group['preferred_product_id']) ? (int) $group['preferred_product_id'] : 0;
         $effective = $pin > 0 ? $pin : $preferred;
 
-        // Defense-in-depth: если effective не среди active members
-        // (stale pin/preferred от удалённого товара), не скрываем никого —
-        // лучше показать дубли чем спрятать живой магазин целиком.
-        if ($effective <= 0 || ! in_array($effective, $members, true)) {
-            foreach ($members as $member_id) {
-                self::mark_visible((int) $member_id);
+        // Codex Round 7 (R7-1): валидация effective идёт через PUBLISHABLE
+        // members. recompute_preferred может выбрать draft/private как
+        // best-by-tariffs (admin pre-publish), и preferred_product_id окажется
+        // на draft. Без publishable check sync_group hide'ил бы все publish
+        // (доверяя draft preferred), и WC default-фильтр post_status='publish'
+        // дополнительно скрыл бы draft → guest catalog пустой.
+        // Общий helper pick_fallback_member тоже publishable-first → split-brain
+        // с resolve_preferred невозможен.
+        $publishable = Cashback_Shop_Group_Resolver::get_publishable_members($group_id);
+        if ($effective <= 0 || ! in_array($effective, $publishable, true)) {
+            $effective = Cashback_Shop_Group_Resolver::pick_fallback_member($group_id);
+            if ($effective <= 0) {
+                return; // empty group (race с delete) — нечего синкать.
             }
-            return;
         }
 
-        foreach ($members as $member_id) {
+        foreach ($active_members as $member_id) {
             $member_id = (int) $member_id;
             if ($member_id <= 0) {
                 continue;

@@ -82,10 +82,14 @@ class Cashback_Cashback_Display_Calculator {
         $html = self::render_uncached($preferred_id, $user_id, $context, $standalone);
 
         if ($html === '') {
-            // Не удалось рассчитать → legacy fallback (по ОРИГИНАЛЬНОМУ
-            // product_id, не preferred — на случай если у preferred тарифы
-            // ещё не подтянулись).
-            $html = self::legacy_fallback($product_id, $context, $standalone);
+            // Codex Round 6: legacy fallback идёт по anchor'у ($preferred_id),
+            // не по исходному $product_id. Иначе catalog (показывает anchor)
+            // и direct link на скрытого члена группы рендерят разные
+            // _cashback_display_value → split-brain в legacy-метке.
+            // Pre-existing комментарий «preferred тарифы ещё не подтянулись»
+            // был валиден до Round 1, когда pick_fallback_member ещё не
+            // выбирал anchor с предпочтением members с usable display data.
+            $html = self::legacy_fallback($preferred_id, $context, $standalone);
         }
 
         self::cache_set($cache_key, $html);

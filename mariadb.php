@@ -4301,6 +4301,11 @@ class Mariadb_Plugin {
             $members_table
         ));
 
+        // Backfill recompute_preferred НЕ делается здесь — это unbounded
+        // synchronous loop на user-request. Перенесён в
+        // Cashback_Shop_Group_Resolver::ensure_preferred_backfilled() —
+        // batched wp-cron с resumable cursor.
+
         update_option('cashback_db_version', 13, false);
     }
 

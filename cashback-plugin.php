@@ -1145,6 +1145,16 @@ class CashbackPlugin {
         // поэтому visibility/sort работают корректно без destructive cleanup.
         if (class_exists('Cashback_Shop_Group_Resolver')) {
             add_action('before_delete_post', array( 'Cashback_Shop_Group_Resolver', 'on_before_delete_post' ), 10, 2);
+            // Закрывает race-condition в shop-importer: после tariff sync
+            // group preferred должен пересчитаться (recompute_preferred при
+            // reconcile_for_product мог вернуть -1, потому что тарифы ещё не
+            // синканы). Приоритет 30 — после nginx purger (10) и product-sort (20).
+            add_action('cashback_tariffs_changed', array( 'Cashback_Shop_Group_Resolver', 'on_tariffs_changed' ), 30, 1);
+            // Resumable batched backfill для групп с preferred_product_id IS NULL
+            // (existing v12-данные где race condition оставил preferred=NULL).
+            // Wp-cron handler + ensure-scheduling, аналогично Cashback_Product_Sort.
+            add_action(Cashback_Shop_Group_Resolver::PREFERRED_BACKFILL_CRON_HOOK, array( 'Cashback_Shop_Group_Resolver', 'handle_preferred_backfill_cron' ), 10, 0);
+            Cashback_Shop_Group_Resolver::ensure_preferred_backfilled();
         }
 
         // Admin UI Этапа 8: Settings + Import + Groups submenu pages.

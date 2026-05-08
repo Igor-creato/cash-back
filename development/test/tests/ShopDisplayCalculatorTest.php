@@ -307,6 +307,67 @@ final class ShopDisplayCalculatorTest extends TestCase
     // get_cashback_html / render_cashback_html / legacy_fallback.
     // ============================================================
 
+    // ============================================================
+    // Codex Round 6 — split-brain в legacy_fallback пути:
+    // render() при no-tariffs/no-manual падал на legacy по ОРИГИНАЛЬНОМУ
+    // input product_id, а не по resolved anchor (preferred_id). В смешанной
+    // группе catalog (показывает anchor) и direct link к hidden члену
+    // показывали РАЗНЫЕ _cashback_display_value → split-brain.
+    // ============================================================
+
+    public function test_render_legacy_fallback_uses_anchor_when_preferred_resolved_but_no_tariffs(): void
+    {
+        // Загружаем Group_Resolver, чтобы внутренний resolve_preferred wrapper
+        // делегировал в нём (иначе wrapper возвращает input product_id).
+        if (! class_exists('Cashback_Shop_Group_Resolver')) {
+            require_once self::$plugin_root . '/includes/shops/class-cashback-shop-tariff-sync.php';
+            require_once self::$plugin_root . '/includes/shops/class-cashback-shop-group-resolver.php';
+        }
+
+        global $wpdb;
+
+        // Изоляция между тестами — сбрасываем кеш и post_meta.
+        $GLOBALS['_cb_test_cache']      = array();
+        $GLOBALS['_cb_test_transients'] = array();
+        $GLOBALS['_cb_test_post_meta']  = array();
+
+        // get_group_for_product(100) → row с preferred=200.
+        $wpdb->next_get_row = array(
+            'id'                   => 5,
+            'pin_product_id'       => null,
+            'preferred_product_id' => 200,
+        );
+        // get_active_members(5) → оба члена (для pin/preferred validation Round 4).
+        $wpdb->next_get_results = array(
+            array('product_id' => 100),
+            array('product_id' => 200),
+        );
+
+        // Legacy display values на input (100) и anchor (200) — разные.
+        update_post_meta(100, '_cashback_display_value', '5%');
+        update_post_meta(200, '_cashback_display_value', '8%');
+
+        // network_id/offer_id/_rate_locked НЕ заданы на 200 → compute()
+        // возвращает [] → render_uncached возвращает '' → попадаем в
+        // legacy_fallback ветку.
+
+        $html = Cashback_Cashback_Display_Calculator::render(100, 'loop');
+
+        // Round 6 fix: legacy_fallback должен идти по anchor'у (200), не
+        // по исходному product_id (100). Catalog показывает anchor, direct
+        // link на скрытого члена должен показать ту же legacy-метку.
+        $this->assertStringContainsString(
+            '8%',
+            $html,
+            'render должен возвращать legacy от anchor (8%), не от input (5%) — split-brain fix'
+        );
+        $this->assertStringNotContainsString(
+            '5%',
+            $html,
+            'render НЕ должен включать legacy исходного товара — это создаёт split-brain'
+        );
+    }
+
     public function test_render_uncached_emits_label_span(): void
     {
         $php = file_get_contents(self::$plugin_root . '/includes/shops/class-cashback-cashback-display-calculator.php');

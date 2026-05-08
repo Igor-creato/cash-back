@@ -43,6 +43,10 @@ class Cashback_Shop_Group_Resolver {
     public const STATUS_MANUAL    = 'manual';
     public const STATUS_SPLIT     = 'split';
 
+    public const PREFERRED_BACKFILL_OPTION    = 'cashback_group_preferred_backfill_v1';
+    public const PREFERRED_BACKFILL_CRON_HOOK = 'cashback_group_preferred_backfill';
+    public const PREFERRED_BACKFILL_BATCH     = 50;
+
     /**
      * Default-приоритет валют для tie-break при равных payment_size.
      * Меньший индекс = выше приоритет (RUB первый).
@@ -79,8 +83,30 @@ class Cashback_Shop_Group_Resolver {
     /**
      * Найти product_id, чьи цифры показывать на витрине.
      *
-     * Если product входит в группу — возвращаем preferred_product_id (или
-     * pin_product_id если задан); иначе сам product_id.
+     * Приоритет:
+     *   1) pin_product_id (админ-override) — если product publishable в members.
+     *   2) preferred_product_id (лучший по тарифам, см. recompute_preferred) —
+     *      если product publishable в members.
+     *   3) deterministic fallback из pick_fallback_member — publishable member
+     *      с предпочтением manual override / legacy display value, последний
+     *      резерв — min(product_id). Используется когда preferred=NULL
+     *      (нет тарифов) ИЛИ pin/preferred указывает на trashed/draft/private
+     *      (тот же helper, что в Cashback_Catalog_Visibility::sync_group).
+     *   4) Если product вне группы — сам product_id (legacy compat).
+     *
+     * Codex Round 4 (medium): pin/preferred ВАЛИДИРУЮТСЯ — без этого trashed
+     * pin продолжал бы возвращаться слепо.
+     *
+     * Codex Round 7 (R7-1, high): валидация идёт через publishable, не active.
+     * recompute_preferred может выбрать draft/private member как best-by-tariffs
+     * (admin pre-publish workflow), и preferred_product_id окажется на draft.
+     * Frontend `resolve_preferred` тогда возвращал draft → catalog
+     * sync_group hide'ил всех publish → guest catalog пустой. Теперь:
+     * preferred=draft → не публично → fall through к publishable fallback.
+     *
+     * resolve_preferred — read-only hot path: НЕ делаем auto-clear stale pin
+     * (как `recompute_preferred` через `clear_pin`). Очистка происходит
+     * асинхронно в других местах.
      */
     public static function resolve_preferred( int $product_id ): int {
         if ($product_id <= 0) {
@@ -92,14 +118,121 @@ class Cashback_Shop_Group_Resolver {
             return $product_id;
         }
 
-        // Pin override.
-        $pin = isset($group['pin_product_id']) ? (int) $group['pin_product_id'] : 0;
-        if ($pin > 0) {
-            return $pin;
+        $group_id  = (int) ( $group['id'] ?? 0 );
+        $pin       = isset($group['pin_product_id']) ? (int) $group['pin_product_id'] : 0;
+        $preferred = isset($group['preferred_product_id']) ? (int) $group['preferred_product_id'] : 0;
+        $effective = $pin > 0 ? $pin : $preferred;
+
+        if ($effective > 0) {
+            // Validation против PUBLISHABLE members (Round 7) закрывает
+            // split-brain через draft/private preferred: catalog visibility
+            // делает то же самое в sync_group, оба пути выбирают один и
+            // тот же frontend-visible член.
+            $members = self::get_publishable_members($group_id);
+            if (in_array($effective, $members, true)) {
+                return $effective;
+            }
+            // Stale (trashed/deleted) ИЛИ не publishable (draft/private) —
+            // fall through к pick_fallback_member.
         }
 
-        $preferred = isset($group['preferred_product_id']) ? (int) $group['preferred_product_id'] : 0;
-        return $preferred > 0 ? $preferred : $product_id;
+        // No effective ИЛИ stale ИЛИ non-publishable → deterministic anchor.
+        $fallback = self::pick_fallback_member($group_id);
+        return $fallback > 0 ? $fallback : $product_id;
+    }
+
+    /**
+     * Deterministic anchor для группы при отсутствии preferred (no-tariff
+     * случай). Используется как single source of truth обоими местами:
+     *   - Cashback_Shop_Group_Resolver::resolve_preferred (display calculator);
+     *   - Cashback_Catalog_Visibility::sync_group (catalog meta_query).
+     *
+     * Оба места обязаны выбирать ОДИНАКОВЫЙ member в одинаковом состоянии БД,
+     * иначе пользователь увидит один товар в каталоге и другой при прямом
+     * заходе по deeplink (фильтр pre_get_posts намеренно пропускает
+     * is_singular для CPA-сессий) → split-brain в расчёте кэшбэка.
+     *
+     * Иерархия выбора (Codex Rounds 1, 2 и 5):
+     *   1) Publishable member с manual override (`_rate_locked=1` + непустой
+     *      `_manual_advertiser_rate`) — display calculator его рендерит без
+     *      тарифов;
+     *   2) Publishable member с непустым `_cashback_display_value` (legacy);
+     *   3) Publishable min(product_id) — никого с usable cashback, но
+     *      invariant «один товар на витрине» соблюдается;
+     *   4) Last-resort fallback на active (включая draft/private) — только
+     *      если publishable пусто. В нормальном catalog-flow guest всё равно
+     *      не увидит draft/private (WC default-фильтр post_status='publish'),
+     *      но invariant «sync_group вернул решение» сохраняется для
+     *      consistency с resolve_preferred. Tier 4 чаще всего relevant для
+     *      pre-publish админ-преview.
+     *
+     * Codex Round 5 regression fix: до tier 1-3 publishable, draft member
+     * с smaller product_id мог победить published sibling → sync_group
+     * скрывал published sibling → guest catalog пуст.
+     *
+     * Sort по SORT_NUMERIC даёт deterministic tie-break внутри каждого tier:
+     * если несколько members подходят — выбираем минимальный.
+     *
+     * @return int product_id или 0 если group_id невалиден / нет members.
+     */
+    public static function pick_fallback_member( int $group_id ): int {
+        if ($group_id <= 0) {
+            return 0;
+        }
+
+        // Tiers 1-3 ограничены publishable members — то, что guest реально
+        // увидит в catalog. Если publishable пусто, идём в tier 4 (active).
+        $publishable = self::get_publishable_members($group_id);
+        $picked      = self::pick_first_usable_member($publishable);
+        if ($picked > 0) {
+            return $picked;
+        }
+
+        // Tier 4: last-resort на active (для pre-publish/admin-preview).
+        $active = self::get_active_members($group_id);
+        return self::pick_first_usable_member($active);
+    }
+
+    /**
+     * Внутренний helper: выбирает member из набора по 3-tier иерархии
+     * (manual override → legacy display value → min product_id).
+     *
+     * @param array<int, int> $members product_ids
+     * @return int product_id или 0 если набор пуст.
+     */
+    private static function pick_first_usable_member( array $members ): int {
+        if (empty($members)) {
+            return 0;
+        }
+        $sorted = $members;
+        sort($sorted, SORT_NUMERIC);
+
+        if (! function_exists('get_post_meta')) {
+            return (int) $sorted[0];
+        }
+
+        // Tier 1: manual override.
+        foreach ($sorted as $pid) {
+            $pid = (int) $pid;
+            if ((string) get_post_meta($pid, '_rate_locked', true) !== '1') {
+                continue;
+            }
+            if ((string) get_post_meta($pid, '_manual_advertiser_rate', true) === '') {
+                continue;
+            }
+            return $pid;
+        }
+
+        // Tier 2: legacy display value.
+        foreach ($sorted as $pid) {
+            $pid = (int) $pid;
+            if ((string) get_post_meta($pid, '_cashback_display_value', true) !== '') {
+                return $pid;
+            }
+        }
+
+        // Tier 3: deterministic min product_id.
+        return (int) $sorted[0];
     }
 
     /**
@@ -467,6 +600,53 @@ class Cashback_Shop_Group_Resolver {
     }
 
     /**
+     * Только публично-видимые members (post_status='publish').
+     *
+     * Используется catalog-visibility fallback'ом (Codex Round 5): если
+     * pick_fallback_member выбирал draft member из-за smaller product_id
+     * либо manual override, sync_group скрывал published sibling, и WC
+     * default-фильтр (post_status='publish') скрывал draft → guest catalog
+     * пуст. Этот helper возвращает только members, которые WC реально
+     * показал бы в каталоге.
+     *
+     * Отдельный метод от `get_active_members`, потому что recompute_preferred
+     * и admin UI должны учитывать draft members (тарифы scoring'уются
+     * независимо от статуса; админ видит pre-publish state).
+     *
+     * @return array<int, int> product_ids
+     */
+    public static function get_publishable_members( int $group_id ): array {
+        if ($group_id <= 0) {
+            return array();
+        }
+        global $wpdb;
+
+        $members_table = $wpdb->prefix . self::TABLE_MEMBERS;
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Read-only group lookup; кеш сбивается на attach/detach/recompute.
+        $rows = $wpdb->get_results($wpdb->prepare(
+            'SELECT m.product_id FROM %i AS m
+               INNER JOIN %i AS p ON p.ID = m.product_id
+                                  AND p.post_type = %s
+                                  AND p.post_status = %s
+              WHERE m.group_id = %d AND m.is_excluded = 0',
+            $members_table,
+            $wpdb->posts,
+            'product',
+            'publish',
+            $group_id
+        ), ARRAY_A);
+
+        if (! is_array($rows)) {
+            return array();
+        }
+        $ids = array();
+        foreach ($rows as $r) {
+            $ids[] = (int) ( $r['product_id'] ?? 0 );
+        }
+        return array_filter($ids, static fn( int $i ): bool => $i > 0);
+    }
+
+    /**
      * Хук на permanent-delete WC product (before_delete_post).
      *
      * Чистит member-record, recompute_preferred оставшейся группы или
@@ -497,6 +677,33 @@ class Cashback_Shop_Group_Resolver {
             return;
         }
         self::detach_member($post_id);
+    }
+
+    /**
+     * Listener на cashback_tariffs_changed.
+     *
+     * Закрывает race-condition в shop-importer: reconcile_for_product вызывает
+     * recompute_preferred ДО синка тарифов (score=-1, preferred=NULL), а после
+     * tariff sync action не триггерит пересчёт. Без этого listener'а group
+     * preferred остаётся NULL до следующего цикла импорта (~24h), и админ-UI
+     * показывает «Нет тарифов» бейдж даже когда тарифы реально есть.
+     *
+     * @param int $product_id ID товара чьи тарифы изменились.
+     */
+    public static function on_tariffs_changed( $product_id ): void {
+        $product_id = (int) $product_id;
+        if ($product_id <= 0) {
+            return;
+        }
+        $group = self::get_group_for_product($product_id);
+        if ($group === null) {
+            return;
+        }
+        $group_id = (int) ($group['id'] ?? 0);
+        if ($group_id <= 0) {
+            return;
+        }
+        self::recompute_preferred($group_id);
     }
 
     /**
@@ -675,5 +882,255 @@ class Cashback_Shop_Group_Resolver {
             return Cashback_Time::now_mysql();
         }
         return gmdate('Y-m-d H:i:s');
+    }
+
+    /**
+     * One-shot backfill для групп с preferred_product_id IS NULL — race
+     * condition в импортере (recompute вызывался ДО tariff sync) оставлял
+     * preferred=NULL на v12-данных. Hook на cashback_tariffs_changed закрывает
+     * race для будущих синков, но existing-данные требуют one-shot recompute.
+     *
+     * Идемпотентный self-healing pattern (как Cashback_Product_Sort::ensure_backfilled):
+     * шедулится через wp-cron, выполняется в handle_preferred_backfill_cron
+     * batch'ами по PREFERRED_BACKFILL_BATCH. Терминальное состояние —
+     * только 'done' (когда WHERE preferred_product_id IS NULL вернул 0 rows).
+     * Любое другое значение опции (включая 'scheduled') считается not-done,
+     * и self-healing перепланирует событие если оно drop'нулось.
+     */
+    public static function ensure_preferred_backfilled(): void {
+        if (! function_exists('get_option') || ! function_exists('update_option')) {
+            return;
+        }
+        $current = (string) get_option(self::PREFERRED_BACKFILL_OPTION, '');
+        if ($current === 'done') {
+            return;
+        }
+        if (function_exists('wp_next_scheduled') && function_exists('wp_schedule_single_event')) {
+            if (wp_next_scheduled(self::PREFERRED_BACKFILL_CRON_HOOK)) {
+                return;
+            }
+            // partial → unresolvable группы (нет тарифов ни у одного member).
+            // Back-off 1ч чтобы не молотить cron между tariff sync'ами;
+            // как только тарифы появятся, on_tariffs_changed дёрнет recompute
+            // и обновит preferred естественным путём.
+            $delay = ($current === 'partial') ? 3600 : 30;
+            wp_schedule_single_event(time() + $delay, self::PREFERRED_BACKFILL_CRON_HOOK);
+            if ($current !== 'partial') {
+                update_option(self::PREFERRED_BACKFILL_OPTION, 'scheduled', false);
+            }
+            return;
+        }
+        // Fallback (CLI / окружение без wp-cron функций).
+        self::handle_preferred_backfill_cron();
+    }
+
+    /**
+     * wp-cron handler для backfill. Resumable: за один прогон обрабатывает
+     * до PREFERRED_BACKFILL_BATCH групп с preferred IS NULL. Если после batch'а
+     * осталось ещё >0 — перепланирует следующее событие. Когда все группы
+     * пересчитаны → state = 'done', cron больше не планируется.
+     *
+     * Failure handling (Codex finding):
+     *   - SELECT failure (false/null) НЕ трактуется как «нет rows». Schedule
+     *     retry с increased delay, состояние остаётся retryable.
+     *   - recompute exception на одной группе → прерываем batch, НЕ продвигаем
+     *     cursor дальше failed-группы. Следующий cron возьмёт ту же группу.
+     *     recompute_preferred идемпотентен — повторный прогон безопасен.
+     *
+     * Resumability обеспечивается тем, что recompute_preferred() пишет
+     * preferred_product_id (или 0 если score=-1 для всех members) → SELECT
+     * WHERE IS NULL на следующей итерации не вернёт уже обработанные.
+     *
+     * Финализация (Codex adversarial finding):
+     *   - 'done' пишется только если total-COUNT NULL-групп = 0 (все resolvable
+     *     группы получили preferred);
+     *   - 'partial' пишется когда после прохода остались no-tariff группы
+     *     (recompute оставил preferred=NULL). 'partial' трактуется как
+     *     non-terminal в ensure_preferred_backfilled, поэтому при следующей
+     *     загрузке cron перепланируется с back-off 1h. Когда тарифы появятся
+     *     (через api-sync), on_tariffs_changed вызовет recompute напрямую
+     *     и preferred установится без ожидания cron.
+     */
+    public static function handle_preferred_backfill_cron(): void {
+        global $wpdb;
+        if (! is_object($wpdb) || ! method_exists($wpdb, 'get_col')) {
+            return;
+        }
+
+        $cursor_option = self::PREFERRED_BACKFILL_OPTION . '_cursor';
+        $cursor        = function_exists('get_option') ? (int) get_option($cursor_option, 0) : 0;
+        $groups_table  = $wpdb->prefix . self::TABLE_GROUPS;
+        $batch         = self::PREFERRED_BACKFILL_BATCH;
+
+        // Codex Round 4 (high): $wpdb->last_error sticky между запросами разных
+        // плагинов/тем. Без явного сброса унаследованная чужая ошибка превращает
+        // успешный SELECT в ложно-failed → cron retry'ится навсегда. Сбрасываем
+        // ДО get_col(), чтобы детектировать именно нашу ошибку.
+        if (property_exists($wpdb, 'last_error')) {
+            $wpdb->last_error = '';
+        }
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Resumable backfill SELECT.
+        $ids = $wpdb->get_col($wpdb->prepare(
+            'SELECT id FROM %i
+              WHERE preferred_product_id IS NULL AND id > %d
+              ORDER BY id ASC
+              LIMIT %d',
+            $groups_table,
+            $cursor,
+            $batch
+        ));
+
+        // Различаем query-failure от empty-result. wpdb->get_col на ошибке
+        // возвращает пустой массив И выставляет $wpdb->last_error. Empty
+        // результат при успехе — пустой массив + last_error пустой.
+        $db_error = '';
+        if (property_exists($wpdb, 'last_error')) {
+            $db_error = (string) $wpdb->last_error;
+        }
+        if (! is_array($ids) || $db_error !== '') {
+            // SELECT упал → НЕ финализируем, оставляем retryable. Реструктируем
+            // через wp-cron с увеличенным delay (60s — backoff против тяжёлой
+            // нагрузки на БД).
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+            error_log('[Cashback Group Resolver] preferred backfill SELECT failed: ' . $db_error);
+            if (function_exists('update_option')) {
+                update_option(self::PREFERRED_BACKFILL_OPTION, 'scheduled', false);
+            }
+            if (function_exists('wp_schedule_single_event') && function_exists('wp_next_scheduled')) {
+                if (! wp_next_scheduled(self::PREFERRED_BACKFILL_CRON_HOOK)) {
+                    wp_schedule_single_event(time() + 60, self::PREFERRED_BACKFILL_CRON_HOOK);
+                }
+            }
+            return;
+        }
+
+        if (empty($ids)) {
+            // Cursor-окно опустело — но это не значит, что вся таблица чиста:
+            // recompute мог оставить preferred=NULL для no-tariff групп ниже
+            // курсора. Делаем total-COUNT (без cursor) и решаем done vs partial.
+            self::finalize_backfill_state($wpdb, $groups_table, $cursor_option);
+            return;
+        }
+
+        $max_id          = $cursor;
+        $batch_processed = 0;
+        $batch_failed    = false;
+
+        foreach ($ids as $gid) {
+            $gid = (int) $gid;
+            if ($gid <= 0) {
+                continue;
+            }
+            try {
+                self::recompute_preferred($gid);
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+                error_log('[Cashback Group Resolver] preferred backfill failed for group=' . $gid . ': ' . $e->getMessage());
+                $batch_failed = true;
+                // НЕ двигаем cursor дальше failed-группы — следующий cron
+                // возьмёт её повторно (recompute идемпотентен).
+                break;
+            }
+            if ($gid > $max_id) {
+                $max_id = $gid;
+            }
+            ++$batch_processed;
+        }
+
+        // Cursor продвигается ТОЛЬКО для успешно обработанных групп (см. break
+        // на exception выше). Это гарантирует retry для transient failures и
+        // одновременно предотвращает infinite-loop на «нерешаемых» группах
+        // (там recompute_preferred завершается без exception, пишет preferred=0).
+        if (function_exists('update_option') && $max_id > $cursor) {
+            update_option($cursor_option, $max_id, false);
+        }
+
+        // Если batch вернул меньше чем лимит И не было failure — больше
+        // неисследованных групп нет, финализируем. При $batch_failed оставляем
+        // retryable и планируем повтор.
+        if (! $batch_failed && count($ids) < $batch) {
+            self::finalize_backfill_state($wpdb, $groups_table, $cursor_option);
+            return;
+        }
+
+        if (function_exists('wp_schedule_single_event') && function_exists('wp_next_scheduled')) {
+            $delay = $batch_failed ? 60 : 30; // backoff на failure.
+            if (! wp_next_scheduled(self::PREFERRED_BACKFILL_CRON_HOOK)) {
+                wp_schedule_single_event(time() + $delay, self::PREFERRED_BACKFILL_CRON_HOOK);
+            }
+        }
+    }
+
+    /**
+     * Решить терминальный статус backfill после прохода: 'done' если все
+     * группы получили preferred, иначе 'partial' (no-tariff группы остались).
+     *
+     * Codex adversarial findings:
+     *   1) Раньше cron писал 'done' как только cursor-окно опустело, не
+     *      проверяя total-COUNT. Группы где recompute оставил preferred=NULL
+     *      (нет тарифов) застревали навсегда — ensure_preferred_backfilled
+     *      считает 'done' terminal'ом и больше не планирует cron.
+     *   2) Сам COUNT-запрос может упасть (deadlock, lost connection). (int)null
+     *      = 0 → ветка 'done' срабатывала ложно при transient DB-error и
+     *      перманентно замораживала backfill. Применяем ту же дисциплину
+     *      last_error, что в основном handler'е: при failure статус остаётся
+     *      'scheduled', cursor НЕ сбрасывается, следующий cron повторит.
+     */
+    private static function finalize_backfill_state(
+        object $wpdb,
+        string $groups_table,
+        string $cursor_option
+    ): void {
+        if (! function_exists('update_option')) {
+            return;
+        }
+        if (! method_exists($wpdb, 'get_var') || ! method_exists($wpdb, 'prepare')) {
+            // Окружение без полноценного wpdb — оставляем retryable, без записи
+            // терминального статуса (тест-стаб без get_var тоже сюда попадёт).
+            update_option(self::PREFERRED_BACKFILL_OPTION, 'scheduled', false);
+            return;
+        }
+
+        // Сбрасываем last_error до запроса, чтобы детектировать именно эту
+        // ошибку, а не унаследованную от предыдущего вызова.
+        if (property_exists($wpdb, 'last_error')) {
+            $wpdb->last_error = '';
+        }
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Total остатков NULL для решения done vs partial.
+        $raw = $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM %i WHERE preferred_product_id IS NULL',
+            $groups_table
+        ));
+
+        $db_error = property_exists($wpdb, 'last_error')
+            ? (string) $wpdb->last_error
+            : '';
+        if ($raw === null || $raw === false || $db_error !== '') {
+            // COUNT failed → НЕЛЬЗЯ интерпретировать (int)null как «0 NULL-групп».
+            // Оставляем retryable, cursor НЕ сбрасываем — следующий cron повторит
+            // total-COUNT и решит done vs partial по реальному состоянию.
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+            error_log('[Cashback Group Resolver] preferred backfill final COUNT failed: ' . $db_error);
+            update_option(self::PREFERRED_BACKFILL_OPTION, 'scheduled', false);
+            // Codex Round 7 (R7-2): зеркалим scheduling из main SELECT handler.
+            // Без этого option='scheduled' остаётся, но cron event не создан —
+            // backfill stalls до случайного page-load (ensure_preferred_backfilled).
+            if (function_exists('wp_schedule_single_event') && function_exists('wp_next_scheduled')) {
+                if (! wp_next_scheduled(self::PREFERRED_BACKFILL_CRON_HOOK)) {
+                    wp_schedule_single_event(time() + 60, self::PREFERRED_BACKFILL_CRON_HOOK);
+                }
+            }
+            return;
+        }
+
+        $remaining = (int) $raw;
+        if ($remaining > 0) {
+            update_option(self::PREFERRED_BACKFILL_OPTION, 'partial', false);
+        } else {
+            update_option(self::PREFERRED_BACKFILL_OPTION, 'done', false);
+        }
+        update_option($cursor_option, 0, false);
     }
 }

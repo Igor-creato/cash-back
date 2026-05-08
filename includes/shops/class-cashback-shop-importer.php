@@ -1187,14 +1187,20 @@ class Cashback_Shop_Importer {
             }
         }
 
-        $sync     = Cashback_Shop_Tariff_Sync::sync($network_id, $offer_id, $dtos);
-        $upserted = (int) ( $sync['upserted'] ?? 0 );
+        $sync         = Cashback_Shop_Tariff_Sync::sync($network_id, $offer_id, $dtos);
+        $upserted     = (int) ( $sync['upserted'] ?? 0 );
+        $soft_deleted = (int) ( $sync['soft_deleted'] ?? 0 );
 
         // Тарифы пишутся в кастомную таблицу cashback_shop_tariffs — стандартные
         // WP-хуки её не отлавливают. Триггерим явный action для nginx-purger'а
-        // (Cashback_Nginx_Cache_Hooks::on_tariffs_changed). Только при реальных
-        // изменениях, чтобы не сбрасывать кэш каждые 2ч на no-op-итерациях cron'а.
-        if ($upserted > 0) {
+        // (Cashback_Nginx_Cache_Hooks::on_tariffs_changed) + group preferred
+        // recompute (Cashback_Shop_Group_Resolver::on_tariffs_changed) +
+        // catalog sort meta (Cashback_Product_Sort::recompute_for_product).
+        //
+        // Срабатывает не только на upsert, но и на soft-delete: если CPA-сеть
+        // удалила все тарифы кампании, group preferred должен быть пересчитан
+        // (стейл preferred → пользователь получает обещание кэшбэка которого нет).
+        if ($upserted > 0 || $soft_deleted > 0) {
             $product_id = self::find_product_by_offer($network_id, $offer_id);
             if ($product_id > 0) {
                 do_action('cashback_tariffs_changed', $product_id);
