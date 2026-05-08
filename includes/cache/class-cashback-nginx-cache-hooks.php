@@ -73,24 +73,29 @@ class Cashback_Nginx_Cache_Hooks {
     }
 
     /**
-     * @param string  $new_status
-     * @param string  $old_status
-     * @param WP_Post $post
+     * @param string $new_status
+     * @param string $old_status
+     * @param mixed  $post WP_Post (тип ослаблен: некоторые edge-case вызовы могут передать null/object).
      */
     public static function on_transition_post_status( $new_status, $old_status, $post ): void {
-        if (!is_object($post) || !isset($post->post_type) || $post->post_type !== 'product') {
+        if (!is_object($post)) {
+            return;
+        }
+        $post_type = (string) ($post->post_type ?? '');
+        if ($post_type !== 'product') {
             return;
         }
         if ($new_status === $old_status) {
             return;
         }
-        self::dispatch_purge_post((int) $post->ID, "status:{$old_status}->{$new_status}");
+        $post_id = (int) ($post->ID ?? 0);
+        self::dispatch_purge_post($post_id, "status:{$old_status}->{$new_status}");
     }
 
     /**
-     * @param int     $post_id
-     * @param WP_Post $post
-     * @param bool    $update Передаётся WP, но семантика purge'а одинакова для insert/update.
+     * @param int   $post_id
+     * @param mixed $post   WP_Post (тип ослаблен для PHPStan).
+     * @param bool  $update Передаётся WP, но семантика purge'а одинакова для insert/update.
      */
     // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter -- $update диктуется сигнатурой WP-хука save_post_*.
     public static function on_save_post_product( $post_id, $post, $update ): void {
@@ -98,21 +103,24 @@ class Cashback_Nginx_Cache_Hooks {
         if (wp_is_post_revision($post_id) || wp_is_post_autosave($post_id)) {
             return;
         }
-        if (is_object($post) && isset($post->post_status) && $post->post_status === 'auto-draft') {
+        $post_status = is_object($post) ? (string) ($post->post_status ?? '') : '';
+        if ($post_status === 'auto-draft') {
             return;
         }
         self::dispatch_purge_post($post_id, 'save_post');
     }
 
     /**
-     * @param int     $post_id
-     * @param WP_Post $post
+     * @param int   $post_id
+     * @param mixed $post    WP_Post|null (тип ослаблен для PHPStan).
      */
     public static function on_before_delete_post( $post_id, $post = null ): void {
-        if (is_object($post) && isset($post->post_type) && $post->post_type !== 'product') {
-            return;
-        }
-        if (!is_object($post) && get_post_type((int) $post_id) !== 'product') {
+        if (is_object($post)) {
+            $post_type = (string) ($post->post_type ?? '');
+            if ($post_type !== 'product') {
+                return;
+            }
+        } elseif (get_post_type((int) $post_id) !== 'product') {
             return;
         }
         self::dispatch_purge_post((int) $post_id, 'before_delete');

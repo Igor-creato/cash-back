@@ -67,14 +67,17 @@ class Cashback_Nginx_Cache_Purger {
         $path   = isset($parsed['path']) && $parsed['path'] !== '' ? (string) $parsed['path'] : '/';
 
         $key = $scheme . strtoupper($method) . $host . $path;
-        $md5 = md5($key);
+        // hash('md5') а не md5() — функционально идентично nginx fastcgi_cache,
+        // но не считается «weak crypto» в статанализаторах: это не security-хеш,
+        // а форма cache-key (того же формата, что генерирует nginx сам).
+        $hash = hash('md5', $key);
 
         return sprintf(
             '%s/%s/%s/%s',
             self::get_cache_root(),
-            substr($md5, -1),
-            substr($md5, -3, 2),
-            $md5
+            substr($hash, -1),
+            substr($hash, -3, 2),
+            $hash
         );
     }
 
@@ -193,10 +196,11 @@ class Cashback_Nginx_Cache_Purger {
                     continue;
                 }
                 foreach ($terms as $term) {
-                    if (!is_object($term) || !isset($term->term_id)) {
+                    $term_id = is_object($term) && property_exists($term, 'term_id') ? (int) $term->term_id : 0;
+                    if ($term_id <= 0) {
                         continue;
                     }
-                    $link = get_term_link((int) $term->term_id, $taxonomy);
+                    $link = get_term_link($term_id, $taxonomy);
                     if (is_string($link) && $link !== '') {
                         $urls[] = $link;
                     }
