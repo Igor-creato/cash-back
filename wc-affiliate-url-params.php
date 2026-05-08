@@ -2097,9 +2097,10 @@ HTML;
 
             wp_enqueue_style(
                 'wc-affiliate-url-params',
-                plugins_url('assets/css/frontend.css', __FILE__),
+                cashback_asset_url('assets/css/frontend.css'),
                 array(),
-                '1.0.0'
+                // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
+                null
             );
         }
     }

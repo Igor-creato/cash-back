@@ -77,6 +77,27 @@ function cashback_generate_uuid7( bool $with_dashes = true ): string {
 }
 
 /**
+ * Возвращает URL ассета плагина с встроенной cache-bust меткой (?cv=<filemtime>).
+ *
+ * Имя query-параметра `cv` (а не стандартного `?ver=`) выбрано намеренно:
+ * плагины-оптимизаторы (Clearfy/WP-Rocket/Autoptimize) часто снимают
+ * именно `?ver=`. При вызове передавать четвёртым аргументом
+ * wp_enqueue_style/script значение null, чтобы WP не дописывал свой `?ver=`.
+ *
+ * @param string $relative_path относительный путь от корня плагина
+ *                              (например 'assets/css/frontend.css').
+ * @return string полный URL с cache-bust query
+ */
+function cashback_asset_url( string $relative_path ): string {
+    $relative = ltrim($relative_path, '/');
+    $absolute = plugin_dir_path(__FILE__) . $relative;
+    $version  = file_exists($absolute) ? (string) filemtime($absolute) : '1';
+    $url      = plugins_url($relative, __FILE__);
+
+    return add_query_arg('cv', $version, $url);
+}
+
+/**
  * Проверка совместимости с текущими версиями PHP и WordPress
  *
  * @return void

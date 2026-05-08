@@ -1348,9 +1348,10 @@ class CashbackWithdrawal {
         if (is_user_logged_in() && !is_admin() && function_exists('is_account_page') && is_account_page()) {
             wp_enqueue_style(
                 'cashback-withdrawal-styles',
-                plugins_url('assets/css/frontend.css', __FILE__),
+                cashback_asset_url('assets/css/frontend.css'),
                 array(),
-                '1.5.0'
+                // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
+                null
             );
 
             // Общий хелпер UX-валидации чекбоксов согласий (рамка + сообщение

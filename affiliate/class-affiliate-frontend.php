@@ -74,16 +74,18 @@ class Cashback_Affiliate_Frontend {
 
         wp_enqueue_style(
             'cashback-frontend',
-            plugins_url('../assets/css/frontend.css', __FILE__),
+            cashback_asset_url('assets/css/frontend.css'),
             array(),
-            '1.0.0'
+            // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
+            null
         );
 
         wp_enqueue_style(
             'cashback-affiliate-frontend',
-            plugins_url('../assets/css/affiliate-frontend.css', __FILE__),
+            cashback_asset_url('assets/css/affiliate-frontend.css'),
             array( 'cashback-frontend' ),
-            '1.1.0'
+            // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
+            null
         );
 
         Cashback_Assets::enqueue_safe_html();
