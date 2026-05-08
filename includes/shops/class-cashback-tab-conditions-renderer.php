@@ -1,14 +1,13 @@
 <?php
-
 /**
  * Cashback_Tab_Conditions_Renderer — генератор HTML-контента для WoodMart
  * Tab[1] «Условия» при импорте товара из CPA-сети.
  *
  * Производит две секции:
- *  1. «Условия начисления:» — список percent-тарифов, посчитанных как
+ *  1. «Условия начисления» — список percent-тарифов, посчитанных как
  *     `payment_size × cashback_guest_display_rate / 100`. Цифры одинаковые
  *     для всех пользователей (страница товара статична для гостя/юзера).
- *  2. «Срок начисления кэшбэка:» — «Средний срок начисления N дней», где
+ *  2. «Срок начисления кэшбэка» — «Средний срок начисления: N дней», где
  *     N = `_cashback_avg_payment_days` (Admitad: `avg_money_transfer_time`)
  *     + PAYMENT_DAYS_BUFFER. Если meta нет — используется FALLBACK_PAYMENT_DAYS.
  *
@@ -30,8 +29,7 @@ if (class_exists('Cashback_Tab_Conditions_Renderer', false)) {
     return;
 }
 
-final class Cashback_Tab_Conditions_Renderer
-{
+final class Cashback_Tab_Conditions_Renderer {
 
     public const SENTINEL              = '<!-- cashback:autogen:v1 -->';
     public const PAYMENT_DAYS_BUFFER   = 3;
@@ -44,21 +42,20 @@ final class Cashback_Tab_Conditions_Renderer
      * имеет fallback на 30 дней), секция «Условия начисления» — только если
      * есть хотя бы один активный percent-тариф.
      */
-    public static function render(int $product_id, int $network_id, string $offer_id): string
-    {
-        if (! class_exists('Cashback_Shop_Tariff_Sync')) {
+    public static function render( int $product_id, int $network_id, string $offer_id ): string {
+        if ( ! class_exists( 'Cashback_Shop_Tariff_Sync' ) ) {
             return '';
         }
 
-        $tariffs      = Cashback_Shop_Tariff_Sync::get_active($network_id, $offer_id);
+        $tariffs      = Cashback_Shop_Tariff_Sync::get_active( $network_id, $offer_id );
         $guest_rate   = self::resolve_guest_rate();
-        $days         = self::resolve_payment_days($product_id);
-        $tariff_lines = self::format_tariff_lines($tariffs, $guest_rate);
+        $days         = self::resolve_payment_days( $product_id );
+        $tariff_lines = self::format_tariff_lines( $tariffs, $guest_rate );
 
         $html = self::SENTINEL . "\n";
-        if ($tariff_lines !== array()) {
+        if ( $tariff_lines !== array() ) {
             $html .= "<h3><strong>Условия начисления</strong></h3>\n";
-            foreach ($tariff_lines as $line) {
+            foreach ( $tariff_lines as $line ) {
                 $html .= $line . "\n";
             }
         }
@@ -66,71 +63,68 @@ final class Cashback_Tab_Conditions_Renderer
         $html .= sprintf(
             "<p>Средний срок начисления: <strong>%d %s</strong></p>\n",
             $days,
-            self::pluralize_days($days)
+            self::pluralize_days( $days )
         );
 
-        return rtrim($html) . "\n";
+        return rtrim( $html ) . "\n";
     }
 
     /**
      * Проверить — autogen ли контент (стартует с sentinel).
      * Лидирующие пробелы/BOM игнорируются.
      */
-    public static function is_autogen(string $content): bool
-    {
-        $stripped = ltrim($content, "\xEF\xBB\xBF \t\n\r\0\x0B");
-        return strpos($stripped, self::SENTINEL) === 0;
+    public static function is_autogen( string $content ): bool {
+        $stripped = ltrim( $content, "\xEF\xBB\xBF \t\n\r\0\x0B" );
+        return strpos( $stripped, self::SENTINEL ) === 0;
     }
 
     /**
      * @param array<int, array<string, mixed>> $tariffs
      * @return array<int, string>
      */
-    private static function format_tariff_lines(array $tariffs, float $guest_rate): array
-    {
+    private static function format_tariff_lines( array $tariffs, float $guest_rate ): array {
         $lines = array();
-        foreach ($tariffs as $tariff) {
-            if (! is_array($tariff)) {
+        foreach ( $tariffs as $tariff ) {
+            if ( ! is_array( $tariff ) ) {
                 continue;
             }
-            $type = isset($tariff['tariff_type']) ? (string) $tariff['tariff_type'] : '';
-            if ($type !== 'percent') {
+            $type = isset( $tariff['tariff_type'] ) ? (string) $tariff['tariff_type'] : '';
+            if ( $type !== 'percent' ) {
                 continue;
             }
             $size_raw = $tariff['payment_size'] ?? 0;
-            if (! is_numeric($size_raw)) {
+            if ( ! is_numeric( $size_raw ) ) {
                 continue;
             }
-            $name = isset($tariff['name']) ? trim((string) $tariff['name']) : '';
-            if ($name === '') {
+            $name = isset( $tariff['name'] ) ? trim( (string) $tariff['name'] ) : '';
+            if ( $name === '' ) {
                 $name = 'Тариф';
             }
 
             $value = (float) $size_raw * $guest_rate / 100.0;
-            $value = round($value, 2);
+            $value = round( $value, 2 );
 
-            if ($value > 0 && $value < 0.01) {
+            if ( $value > 0 && $value < 0.01 ) {
                 $formatted = '<0,01';
             } else {
-                $formatted = number_format($value, 2, ',', '');
+                $formatted = number_format( $value, 2, ',', '' );
             }
 
             $lines[] = sprintf(
                 '<p>%s: <strong>%s%%</strong></p>',
-                esc_html($name),
+                esc_html( $name ),
                 $formatted
             );
         }
         return $lines;
     }
 
-    private static function resolve_guest_rate(): float
-    {
-        $rate = (float) get_option('cashback_guest_display_rate', 60.0);
-        if ($rate < 0.0) {
+    private static function resolve_guest_rate(): float {
+        $rate = (float) get_option( 'cashback_guest_display_rate', 60.0 );
+        if ( $rate < 0.0 ) {
             return 0.0;
         }
-        if ($rate > 100.0) {
+        if ( $rate > 100.0 ) {
             return 100.0;
         }
         return $rate;
@@ -142,19 +136,18 @@ final class Cashback_Tab_Conditions_Renderer
      * диапазона [0, 365] — используется FALLBACK_PAYMENT_DAYS, поэтому
      * метод всегда возвращает валидное число > 0.
      */
-    private static function resolve_payment_days(int $product_id): int
-    {
+    private static function resolve_payment_days( int $product_id ): int {
         $base = null;
-        if ($product_id > 0) {
-            $raw = get_post_meta($product_id, Cashback_Shop_Importer::META_AVG_PAYMENT_DAYS, true);
-            if (is_numeric($raw)) {
+        if ( $product_id > 0 ) {
+            $raw = get_post_meta( $product_id, Cashback_Shop_Importer::META_AVG_PAYMENT_DAYS, true );
+            if ( is_numeric( $raw ) ) {
                 $candidate = (int) $raw;
-                if ($candidate >= 0 && $candidate <= 365) {
+                if ( $candidate >= 0 && $candidate <= 365 ) {
                     $base = $candidate;
                 }
             }
         }
-        if ($base === null) {
+        if ( $base === null ) {
             $base = self::FALLBACK_PAYMENT_DAYS;
         }
 
@@ -165,15 +158,14 @@ final class Cashback_Tab_Conditions_Renderer
      * Русская плюрализация: 1 день / 2 дня / 5 дней.
      * Захардкоден — плагин рассчитан на ru-локаль; формы фиксированы.
      */
-    private static function pluralize_days(int $n): string
-    {
-        $abs = (int) abs($n);
+    private static function pluralize_days( int $n ): string {
+        $abs = (int) abs( $n );
         $mod10  = $abs % 10;
         $mod100 = $abs % 100;
-        if ($mod10 === 1 && $mod100 !== 11) {
+        if ( $mod10 === 1 && $mod100 !== 11 ) {
             return 'день';
         }
-        if ($mod10 >= 2 && $mod10 <= 4 && ($mod100 < 12 || $mod100 > 14)) {
+        if ( $mod10 >= 2 && $mod10 <= 4 && ( $mod100 < 12 || $mod100 > 14 ) ) {
             return 'дня';
         }
         return 'дней';

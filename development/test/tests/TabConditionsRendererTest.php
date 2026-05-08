@@ -91,7 +91,7 @@ final class TabConditionsRendererTest extends TestCase
 
         $html = Cashback_Tab_Conditions_Renderer::render(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
 
-        $this->assertStringContainsString('<h3><strong>Условия начисления:</strong></h3>', $html);
+        $this->assertStringContainsString('<h3><strong>Условия начисления</strong></h3>', $html);
         $this->assertStringContainsString('Оплаченный заказ - новый клиент', $html);
         $this->assertStringContainsString('<strong>3,37%</strong>', $html);
         $this->assertStringContainsString('Оплаченный заказ - новый клиент: <strong>3,37%</strong>', $html);
@@ -136,8 +136,8 @@ final class TabConditionsRendererTest extends TestCase
 
         $html = Cashback_Tab_Conditions_Renderer::render(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
 
-        $this->assertStringNotContainsString('Условия начисления:', $html);
-        $this->assertStringContainsString('Срок начисления кэшбэка:', $html);
+        $this->assertStringNotContainsString('Условия начисления', $html);
+        $this->assertStringContainsString('Срок начисления кэшбэка', $html);
         $this->assertStringContainsString('41 день', $html, '38 + 3 = 41');
     }
 

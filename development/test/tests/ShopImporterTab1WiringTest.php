@@ -152,7 +152,7 @@ final class ShopImporterTab1WiringTest extends TestCase
         $this->call_apply(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
 
         $content = get_post_meta(self::PRODUCT_ID, '_woodmart_product_custom_tab_content', true);
-        $this->assertStringContainsString('Срок начисления кэшбэка:', $content);
+        $this->assertStringContainsString('Срок начисления кэшбэка', $content);
         $this->assertStringContainsString('33 дня', $content);
     }
 
