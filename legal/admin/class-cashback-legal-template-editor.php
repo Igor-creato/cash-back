@@ -260,6 +260,11 @@ class Cashback_Legal_Template_Editor {
             ? Cashback_Legal_Operator::render_placeholders($body)
             : $body;
 
+        // F-P2-004: defense-in-depth — Validator::sanitize_html уже отрабатывает,
+        // но wp_kses_post матчит published-path (Shortcodes::render_doc) и
+        // отлавливает любую markup-щель которая могла бы пройти первый фильтр.
+        $rendered = wp_kses_post($rendered);
+
         wp_send_json_success(array( 'rendered_html' => $rendered ));
     }
 

@@ -157,6 +157,11 @@ class Cashback_SC_Auth_Pages_Register {
     }
 
     private static function auto_login( int $user_id ): void {
+        // F-P2-006: очищаем любые предыдущие auth-cookie ДО установки новой.
+        // Защита от session-fixation: WP-стандартный wp_signon делает то же.
+        if (function_exists('wp_clear_auth_cookie')) {
+            wp_clear_auth_cookie();
+        }
         if (function_exists('wp_set_current_user')) {
             wp_set_current_user($user_id);
         }

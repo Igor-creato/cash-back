@@ -99,6 +99,11 @@ abstract class Cashback_Social_Provider_Abstract implements Cashback_Social_Prov
             'method'  => 'POST',
             // phpcs:ignore WordPressVIPMinimum.Performance.RemoteRequestTimeout.timeout_timeout -- OAuth token exchange against external provider; 15s покрывает редкие сетевые задержки.
             'timeout' => 15,
+            // F-P3-002: explicit transport guards. Без них сторонний плагин-фильтр
+            // на http_request_args может перехватить и отключить TLS-валидацию или
+            // позволить SSRF на приватные IP в OAuth-flow (CA store скомпрометирован).
+            'sslverify'         => true,
+            'reject_unsafe_urls' => true,
             'headers' => array_merge(
                 array( 'Accept' => 'application/json' ),
                 $headers
@@ -121,6 +126,9 @@ abstract class Cashback_Social_Provider_Abstract implements Cashback_Social_Prov
             'method'  => 'GET',
             // phpcs:ignore WordPressVIPMinimum.Performance.RemoteRequestTimeout.timeout_timeout -- OAuth user_info against external provider; 15s покрывает редкие сетевые задержки.
             'timeout' => 15,
+            // F-P3-002: explicit transport guards (см. http_post выше).
+            'sslverify'         => true,
+            'reject_unsafe_urls' => true,
             'headers' => array_merge(
                 array( 'Accept' => 'application/json' ),
                 $headers

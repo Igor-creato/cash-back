@@ -65,6 +65,11 @@ class Cashback_Rate_Limiter {
         // в личном кабинете. write tier (10/мин per-user) защищает от bot-spam,
         // но позволяет юзеру нормально пощёлкать переключатель.
         'cashback_legal_toggle_consent'             => 'write',
+        // F-P2-002: cookies-banner AJAX (write tier 10/мин per-user/IP)
+        // защищает cashback_consent_log от bot-spam'а с одного IP — нонс
+        // защищает от CSRF, но валидный нонс из публичного HTML позволяет
+        // флудить ту же таблицу пермутациями request_id.
+        'cashback_legal_cookies_banner'             => 'write',
         'claims_mark_read'                          => 'write',
         'social_start'                              => 'write',
         'social_callback'                           => 'write',

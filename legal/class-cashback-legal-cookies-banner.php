@@ -108,6 +108,22 @@ class Cashback_Legal_Cookies_Banner {
     public static function handle_ajax(): void {
         check_ajax_referer(self::AJAX_ACTION_RECORD, 'nonce');
 
+        // F-P2-002: rate-limit для bot-spam protection (валидный nonce из
+        // публичного HTML позволял бы флудить cashback_consent_log).
+        if (class_exists('Cashback_Rate_Limiter')) {
+            $ip      = method_exists('Cashback_Encryption', 'get_client_ip')
+                ? Cashback_Encryption::get_client_ip()
+                : '0.0.0.0';
+            $user_id = function_exists('get_current_user_id') ? (int) get_current_user_id() : 0;
+            $rl      = Cashback_Rate_Limiter::check('cashback_legal_cookies_banner', $user_id, $ip);
+            if (!$rl['allowed']) {
+                wp_send_json_error(array(
+                    'code'        => 'rate_limit',
+                    'retry_after' => (int) ( $rl['retry_after'] ?? 0 ),
+                ), 429);
+            }
+        }
+
         // phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce проверен check_ajax_referer выше.
         $choice = isset($_POST['choice']) ? sanitize_text_field(wp_unslash((string) $_POST['choice'])) : '';
         if (!in_array($choice, array( 'granted', 'rejected' ), true)) {
@@ -156,9 +172,30 @@ class Cashback_Legal_Cookies_Banner {
 
         $inserted = Cashback_Legal_DB::insert_log_row($row);
         if ($inserted === false) {
+            // F-P2-003: отличить UNIQUE-дубликат от настоящей DB-ошибки
+            // (charset / FK / connection drop). Тихая трактовка всех false
+            // как duplicate скрывала бы потерю compliance-evidence.
+            global $wpdb;
+            $last_err = isset($wpdb) && is_object($wpdb) && isset($wpdb->last_error)
+                ? (string) $wpdb->last_error
+                : '';
+            $is_duplicate = $last_err === ''
+                || stripos($last_err, 'Duplicate entry') !== false
+                || stripos($last_err, 'UNIQUE') !== false;
+
+            if (!$is_duplicate) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- intentional plugin diagnostic logging.
+                error_log('[cashback-legal] cookies banner insert failed: ' . $last_err);
+            }
+
             // Idempotent retry с тем же request_id — UNIQUE отбрасывает дубликат,
-            // но это не ошибка для клиента: его выбор уже зафиксирован.
-            wp_send_json_success(array( 'recorded' => false, 'reason' => 'duplicate' ));
+            // это не ошибка для клиента (его выбор уже зафиксирован). Для
+            // настоящих ошибок тоже возвращаем success, чтобы не светить детали
+            // наружу, но в error_log уже есть запись для оператора.
+            wp_send_json_success(array(
+                'recorded' => false,
+                'reason'   => $is_duplicate ? 'duplicate' : 'transient',
+            ));
         }
 
         wp_send_json_success(array( 'recorded' => true, 'id' => $inserted ));

@@ -189,8 +189,10 @@ final class OAuth2ClientCredentialsHelperTest extends TestCase
 
     public function test_get_token_returns_cached_value_from_transient_without_http_call(): void
     {
+        // F-P3-001: токен в transient хранится зашифрованным; pre-set ciphertext.
         $cache_key = 'cashback_oauth2_token_admitad_' . md5('cid');
-        set_transient($cache_key, 'CACHED_TOKEN_XYZ', 3600);
+        $encrypted = Cashback_Encryption::encrypt('CACHED_TOKEN_XYZ');
+        set_transient($cache_key, $encrypted, 3600);
 
         $helper = new Cashback_OAuth2_Client_Credentials_Helper('cashback_oauth2_token_admitad');
         $token  = $helper->get_token(self::TOKEN_URL, 'cid', 'secret', 'scope_a');
@@ -200,7 +202,7 @@ final class OAuth2ClientCredentialsHelperTest extends TestCase
     }
 
     // ============================================================
-    // 7. После успешного fetch'а токен кешируется
+    // 7. После успешного fetch'а токен кешируется (зашифрованный)
     // ============================================================
 
     public function test_get_token_caches_token_in_transient_after_successful_fetch(): void
@@ -210,9 +212,13 @@ final class OAuth2ClientCredentialsHelperTest extends TestCase
 
         $this->assertSame('AT_TEST_123', $token);
 
+        // F-P3-001: transient содержит ciphertext, не plain. Расшифровка
+        // через Cashback_Encryption::decrypt должна вернуть исходный токен.
         $cache_key = 'cashback_oauth2_token_admitad_' . md5('cid');
         $cached    = get_transient($cache_key);
-        $this->assertSame('AT_TEST_123', $cached);
+        $this->assertIsString($cached);
+        $this->assertNotSame('AT_TEST_123', $cached, 'transient НЕ должен содержать plain (F-P3-001)');
+        $this->assertSame('AT_TEST_123', Cashback_Encryption::decrypt($cached));
     }
 
     // ============================================================

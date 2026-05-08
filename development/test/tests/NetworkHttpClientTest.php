@@ -97,7 +97,9 @@ final class NetworkHttpClientTest extends TestCase
     public function test_oauth2_uses_helper_to_obtain_token(): void
     {
         // Pre-cache токен через transient — helper вернёт его без HTTP-вызова к token URL.
-        set_transient('cashback_oauth2_admitad_' . md5('cid_a'), 'CACHED_TOKEN', 3600);
+        // F-P3-001: токен в transient хранится зашифрованным (Cashback_Encryption AES-256-GCM).
+        $encrypted = Cashback_Encryption::encrypt('CACHED_TOKEN');
+        set_transient('cashback_oauth2_admitad_' . md5('cid_a'), $encrypted, 3600);
 
         $client = new Cashback_Network_Http_Client();
         $client->get(

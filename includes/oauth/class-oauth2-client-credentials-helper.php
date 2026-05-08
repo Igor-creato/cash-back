@@ -79,9 +79,20 @@ final class Cashback_OAuth2_Client_Credentials_Helper {
 
         $cache_key = $this->cache_key( $client_id );
 
+        // F-P3-001: токен в transient хранится в зашифрованном виде. Plain в
+        // wp_options позволял бы DB-read атакующему использовать его пока
+        // он валиден (<= expires_in). Cashback_Encryption AES-256-GCM с
+        // dual-key rotation (Group 2) — то же шифрование что у других
+        // outbound credentials.
         $cached = get_transient( $cache_key );
         if ( is_string( $cached ) && $cached !== '' ) {
-            return $cached;
+            $decrypted = self::try_decrypt( $cached );
+            if ( $decrypted !== null && $decrypted !== '' ) {
+                return $decrypted;
+            }
+            // Расшифровать не удалось (key rotation completed без чистки) —
+            // считаем cache miss и идём за свежим токеном.
+            delete_transient( $cache_key );
         }
 
         if ( isset( $this->runtime_cache[ $cache_key ] ) ) {
@@ -127,10 +138,55 @@ final class Cashback_OAuth2_Client_Credentials_Helper {
         $expires = isset( $body['expires_in'] ) ? (int) $body['expires_in'] : 3600;
         $ttl     = max( 60, $expires - 300 );
 
-        set_transient( $cache_key, $token, $ttl );
+        // F-P3-001: encrypt перед persist в transient (см. try_decrypt выше).
+        // Если шифрование недоступно — сохраняем только в runtime_cache
+        // (in-memory), без durable persistence. Защищает от утечки через
+        // DB-dump / SQL-injection в неконтролируемом плагине.
+        $encrypted = self::try_encrypt( $token );
+        if ( $encrypted !== null ) {
+            set_transient( $cache_key, $encrypted, $ttl );
+        }
         $this->runtime_cache[ $cache_key ] = $token;
 
         return $token;
+    }
+
+    /**
+     * Шифрование через Cashback_Encryption если доступно.
+     *
+     * @return string|null Ciphertext или null если encryption недоступно
+     *                    (миграция / сбой ключа). Caller fall-back'нется на
+     *                    runtime cache без durable persistence.
+     */
+    private static function try_encrypt( string $plaintext ): ?string {
+        if ( ! class_exists( 'Cashback_Encryption' ) || ! method_exists( 'Cashback_Encryption', 'is_configured' ) ) {
+            return null;
+        }
+        if ( ! Cashback_Encryption::is_configured() ) {
+            return null;
+        }
+        $cipher = Cashback_Encryption::encrypt( $plaintext );
+        return ( $cipher !== '' ) ? $cipher : null;
+    }
+
+    /**
+     * Расшифровка через Cashback_Encryption (trial-decrypt по {primary, new, previous}).
+     *
+     * `Cashback_Encryption::decrypt` бросает RuntimeException на не-валидном
+     * ciphertext (legacy plain string в transient после deploy F-P3-001 на
+     * существующую установку, повреждённый payload). Мы перехватываем и
+     * возвращаем null — caller fall-back'нется на свежий fetch токена.
+     */
+    private static function try_decrypt( string $ciphertext ): ?string {
+        if ( ! class_exists( 'Cashback_Encryption' ) || ! method_exists( 'Cashback_Encryption', 'decrypt' ) ) {
+            return null;
+        }
+        try {
+            $plain = Cashback_Encryption::decrypt( $ciphertext );
+        } catch ( \Throwable $e ) {
+            return null;
+        }
+        return $plain !== '' ? $plain : null;
     }
 
     /**
