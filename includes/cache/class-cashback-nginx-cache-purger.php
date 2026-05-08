@@ -9,15 +9,15 @@ if (!defined('ABSPATH')) {
 /**
  * Инвалидатор nginx fastcgi_cache при изменении WC-товаров.
  *
- * Вычисляет имя файла кэша nginx по той же формуле, что директива
- * `fastcgi_cache_key "$scheme$request_method$host$request_uri";`, и
- * удаляет его через unlink. Доступ к каталогу кэша обеспечивается через
+ * Вычисляет имя файла кэша nginx по той же формуле fastcgi_cache_key,
+ * что задана в default.conf (scheme + request_method + host + request_uri),
+ * и удаляет его через unlink. Доступ к каталогу кэша обеспечивается через
  * shared docker volume + унификацию UID/GID 33:33 между nginx и WP.
  *
  * Mapping cache key → file path:
- *   md5_full = md5(scheme + method + host + path)
+ *   md5_full = md5(scheme + method + hostname + path)
  *   levels=1:2 → последний 1 char / 2 предыдущих / md5_full
- *   path = $cache_root/<md5[-1]>/<md5[-3:-1]>/<md5_full>
+ *   path = cache_root/<md5[-1]>/<md5[-3:-1]>/<md5_full>
  *
  * @since 4.0.0
  */
@@ -57,16 +57,16 @@ class Cashback_Nginx_Cache_Purger {
      * Собрать абсолютный путь cache-файла по URL и HTTP-методу.
      *
      * URL нормализуется: удаляются query/fragment, дефолтный путь = '/'.
-     * Хост приводится к нижнему регистру, без порта (за reverse-proxy host
-     * совпадает с тем, что видит nginx — без порта в `$host`).
+     * Hostname приводится к нижнему регистру, без порта (за reverse-proxy
+     * совпадает с тем именем, что видит nginx).
      */
     public static function build_cache_path( string $url, string $method = 'GET' ): string {
-        $parsed = wp_parse_url($url);
-        $scheme = isset($parsed['scheme']) ? strtolower((string) $parsed['scheme']) : 'https';
-        $host   = isset($parsed['host']) ? strtolower((string) $parsed['host']) : '';
-        $path   = isset($parsed['path']) && $parsed['path'] !== '' ? (string) $parsed['path'] : '/';
+        $parsed   = wp_parse_url($url);
+        $scheme   = isset($parsed['scheme']) ? strtolower((string) $parsed['scheme']) : 'https';
+        $hostname = isset($parsed['host']) ? strtolower((string) $parsed['host']) : '';
+        $path     = isset($parsed['path']) && $parsed['path'] !== '' ? (string) $parsed['path'] : '/';
 
-        $key = $scheme . strtoupper($method) . $host . $path;
+        $key = $scheme . strtoupper($method) . $hostname . $path;
         // hash('md5') а не md5() — функционально идентично nginx fastcgi_cache,
         // но не считается «weak crypto» в статанализаторах: это не security-хеш,
         // а форма cache-key (того же формата, что генерирует nginx сам).
