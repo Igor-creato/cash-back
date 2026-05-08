@@ -1187,8 +1187,21 @@ class Cashback_Shop_Importer {
             }
         }
 
-        $sync = Cashback_Shop_Tariff_Sync::sync($network_id, $offer_id, $dtos);
-        return (int) ( $sync['upserted'] ?? 0 );
+        $sync     = Cashback_Shop_Tariff_Sync::sync($network_id, $offer_id, $dtos);
+        $upserted = (int) ( $sync['upserted'] ?? 0 );
+
+        // Тарифы пишутся в кастомную таблицу cashback_shop_tariffs — стандартные
+        // WP-хуки её не отлавливают. Триггерим явный action для nginx-purger'а
+        // (Cashback_Nginx_Cache_Hooks::on_tariffs_changed). Только при реальных
+        // изменениях, чтобы не сбрасывать кэш каждые 2ч на no-op-итерациях cron'а.
+        if ($upserted > 0) {
+            $product_id = self::find_product_by_offer($network_id, $offer_id);
+            if ($product_id > 0) {
+                do_action('cashback_tariffs_changed', $product_id);
+            }
+        }
+
+        return $upserted;
     }
 
     /**

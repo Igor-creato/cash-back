@@ -587,6 +587,12 @@ class CashbackPlugin {
         $this->require_file('includes/class-cashback-captcha.php');
         $this->require_file('includes/class-cashback-bot-protection.php');
 
+        // Nginx fastcgi_cache purger (CPA-договор: пользователи должны видеть
+        // актуальные ставки/данные товаров; default TTL nginx 30m даёт окно
+        // несоответствия — закрываем хуками на изменение product/мета/таксономии).
+        $this->require_file('includes/cache/class-cashback-nginx-cache-purger.php');
+        $this->require_file('includes/cache/class-cashback-nginx-cache-hooks.php');
+
         // Утилита проверки статуса пользователя (для блокировки забаненных)
         $this->require_file('includes/class-cashback-user-status.php');
 
@@ -1081,6 +1087,11 @@ class CashbackPlugin {
         // Бот-защита: инициализация guard (до других компонентов)
         if (class_exists('Cashback_Bot_Protection')) {
             Cashback_Bot_Protection::init();
+        }
+
+        // Nginx fastcgi_cache invalidation (см. require_file выше).
+        if (class_exists('Cashback_Nginx_Cache_Hooks')) {
+            Cashback_Nginx_Cache_Hooks::init();
         }
 
         // Shop Importer (v12): регистрирует AS-handler cashback_shops_import_run.
