@@ -107,6 +107,26 @@ final class ShopTariffSyncTest extends TestCase
         $this->assertNotNull(self::find_query_containing($upserts, "'cat-2'"));
     }
 
+    public function test_payment_size_serialized_as_quoted_string_not_locale_float(): void
+    {
+        global $wpdb;
+
+        // F-P1-001: payment_size должен биндиться через '%s' (canonical decimal-string),
+        // НЕ через '%f' — иначе на ru_RU локали PHP-FPM `sprintf('%f', 5.5)` даёт
+        // "5,500000", и MariaDB читает это как 5.0 (truncate после запятой) → drift тарифа.
+        $r = Cashback_Shop_Tariff_Sync::sync(5, 'offer-1', array(
+            $this->dto('cat-1', 'percent', 5.5),
+        ));
+        $this->assertTrue($r['success']);
+
+        $upsert_sql = self::find_query_containing($wpdb->queries, 'ON DUPLICATE KEY UPDATE');
+        $this->assertNotNull($upsert_sql);
+
+        // Stub %s рендерит как "'5.5'" (с одинарными кавычками); %f рендерит как "5.5"
+        // (без кавычек) через `(string)(float) $val`. Контракт: payment_size в кавычках.
+        $this->assertStringContainsString("'5.5'", $upsert_sql, 'payment_size должен быть quoted string (%s placeholder)');
+    }
+
     public function test_active_tariffs_used_in_not_in_clause(): void
     {
         global $wpdb;

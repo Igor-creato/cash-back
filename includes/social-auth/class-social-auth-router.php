@@ -77,6 +77,13 @@ class Cashback_Social_Auth_Router {
         // Заголовки самого WP_REST_Response уже отправлены WP_REST_Server::serve_request()
         // через send_header() ДО этого фильтра — повторно не дёргаем.
 
+        // F-P2-001: HTML-формы социальной авторизации содержат email пользователя
+        // и одноразовый wp_rest nonce. Запрещаем кэширование на уровне браузера/прокси/CDN,
+        // чтобы случайный back-button или corporate proxy не показал чужой email.
+        if (function_exists('nocache_headers')) {
+            nocache_headers();
+        }
+
         status_header($result->get_status());
         // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Pre-rendered template HTML, escaping выполнено в шаблоне.
         echo $data;

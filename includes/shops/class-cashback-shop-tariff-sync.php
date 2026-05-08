@@ -78,12 +78,15 @@ class Cashback_Shop_Tariff_Sync {
                 // INSERT … ON DUPLICATE KEY UPDATE (UNIQUE по network_id+offer_id+tariff_id).
                 // Любой существующий ряд с теми же ключами получает is_deleted=0
                 // и обновлённые поля; новый — INSERT.
+                // payment_size биндится через '%s' (canonical decimal-string), а
+                // НЕ '%f' — sprintf('%f', 5.5) на ru_RU локали даёт "5,500000",
+                // и MariaDB читает это как 5.0 (truncate после запятой) → drift тарифа.
                 $sql = $wpdb->prepare(
                     'INSERT INTO %i
                        (network_id, offer_id, tariff_id, name, tariff_type,
                         payment_size, payment_min, payment_max, currency,
                         is_default, is_deleted, raw_payload, imported_at, updated_at)
-                     VALUES (%d, %s, %s, %s, %s, %f, %s, %s, %s, %d, 0, %s, %s, %s)
+                     VALUES (%d, %s, %s, %s, %s, %s, %s, %s, %s, %d, 0, %s, %s, %s)
                      ON DUPLICATE KEY UPDATE
                         name         = VALUES(name),
                         tariff_type  = VALUES(tariff_type),
@@ -101,7 +104,7 @@ class Cashback_Shop_Tariff_Sync {
                     $dto->tariff_id,
                     $dto->name,
                     $dto->tariff_type,
-                    $dto->payment_size,
+                    self::decimal_string($dto->payment_size),
                     self::nullable_float($dto->payment_min),
                     self::nullable_float($dto->payment_max),
                     $dto->currency,
@@ -233,11 +236,22 @@ class Cashback_Shop_Tariff_Sync {
      * Сериализация nullable float для wpdb->prepare. Используется потому что
      * %f не поддерживает NULL — passes NULL через %s даёт '' что превращается
      * в 0.0 при INSERT в DECIMAL колонку. Решение: возвращать NULL → передаём
-     * как '%s' с null значением (wpdb prepare сериализует null корректно
+     * как '%s' с null значением (wpdb prepare сериализует null корючно
      * только при формате %s со строкой '').
      */
     private static function nullable_float( ?float $value ): ?string {
         return $value === null ? null : (string) $value;
+    }
+
+    /**
+     * Locale-independent сериализация float для wpdb->prepare через '%s'.
+     *
+     * `(string) 5.5` в PHP 8+ возвращает "5.5" независимо от LC_NUMERIC.
+     * `sprintf('%f', 5.5)` на ru_RU вернёт "5,500000" — это и есть баг,
+     * который мы избегаем, не используя '%f' для денежных значений.
+     */
+    private static function decimal_string( float $value ): string {
+        return (string) $value;
     }
 
     /**
