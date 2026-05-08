@@ -105,28 +105,71 @@ final class NginxCachePurgerTest extends TestCase
         $this->assertSame($a, $b);
     }
 
-    public function test_purge_url_returns_true_when_file_missing(): void
+    public function test_purge_url_returns_zero_when_file_missing(): void
     {
-        // Файла нет — purge должен быть idempotent: вернуть true.
-        $this->assertTrue(Cashback_Nginx_Cache_Purger::purge_url('https://kashback.ru/nonexistent/'));
+        // Файла нет — purge возвращает 0 (idempotent, не ошибка).
+        $this->assertSame(0, Cashback_Nginx_Cache_Purger::purge_url('https://kashback.ru/nonexistent/'));
     }
 
     public function test_purge_url_unlinks_existing_file(): void
     {
         $url  = 'https://kashback.ru/test-page/';
-        $path = Cashback_Nginx_Cache_Purger::build_cache_path($url);
+        // build_cache_path использует scheme из URL по умолчанию (https) —
+        // создаём файл по этому пути и проверяем, что purge_url его удалит
+        // (purge_url пробует и https-вариант).
+        $path = Cashback_Nginx_Cache_Purger::build_cache_path($url, 'GET', 'https');
 
-        // Создаём файл (с подкаталогами).
         if (!is_dir(dirname($path))) {
             mkdir(dirname($path), 0o755, true);
         }
         file_put_contents($path, 'cached HTML');
         $this->assertFileExists($path);
 
-        $ok = Cashback_Nginx_Cache_Purger::purge_url($url);
+        $unlinked = Cashback_Nginx_Cache_Purger::purge_url($url);
 
-        $this->assertTrue($ok);
+        $this->assertSame(1, $unlinked);
         $this->assertFileDoesNotExist($path);
+    }
+
+    public function test_purge_url_unlinks_both_http_and_https_buckets(): void
+    {
+        // За reverse-proxy nginx видит scheme=http, но клиент ходит на https.
+        // purge_url должен удалить оба bucket'а.
+        $url       = 'https://kashback.ru/dual-scheme/';
+        $http_path = Cashback_Nginx_Cache_Purger::build_cache_path($url, 'GET', 'http');
+        $https_path = Cashback_Nginx_Cache_Purger::build_cache_path($url, 'GET', 'https');
+
+        foreach (array( $http_path, $https_path ) as $p) {
+            if (!is_dir(dirname($p))) {
+                mkdir(dirname($p), 0o755, true);
+            }
+            file_put_contents($p, 'cached');
+        }
+
+        $unlinked = Cashback_Nginx_Cache_Purger::purge_url($url);
+
+        $this->assertSame(2, $unlinked);
+        $this->assertFileDoesNotExist($http_path);
+        $this->assertFileDoesNotExist($https_path);
+    }
+
+    public function test_purge_url_per_request_dedup(): void
+    {
+        // Повторный purge_url на тот же URL в рамках request — no-op (0 unlink).
+        $url  = 'https://kashback.ru/dedup-test/';
+        $path = Cashback_Nginx_Cache_Purger::build_cache_path($url, 'GET', 'https');
+        if (!is_dir(dirname($path))) {
+            mkdir(dirname($path), 0o755, true);
+        }
+        file_put_contents($path, 'cached');
+
+        $first  = Cashback_Nginx_Cache_Purger::purge_url($url);
+        $second = Cashback_Nginx_Cache_Purger::purge_url($url);
+        $third  = Cashback_Nginx_Cache_Purger::purge_url($url);
+
+        $this->assertSame(1, $first);
+        $this->assertSame(0, $second, 'повторный purge того же URL — dedup → 0');
+        $this->assertSame(0, $third);
     }
 
     public function test_preflight_no_op_when_dir_missing(): void
@@ -137,20 +180,58 @@ final class NginxCachePurgerTest extends TestCase
         putenv('CASHBACK_NGINX_CACHE_PATH=' . $missing);
         Cashback_Nginx_Cache_Purger::reset_preflight_for_tests();
 
-        $this->assertFalse(Cashback_Nginx_Cache_Purger::purge_url('https://kashback.ru/'));
+        $this->assertSame(0, Cashback_Nginx_Cache_Purger::purge_url('https://kashback.ru/'));
     }
 
     public function test_disabled_via_option_skips_purge(): void
     {
         update_option(Cashback_Nginx_Cache_Purger::OPTION_ENABLED, '0');
 
-        // Если выключено — purge_url должен сразу false (без unlink).
-        $this->assertFalse(Cashback_Nginx_Cache_Purger::purge_url('https://kashback.ru/'));
+        $this->assertSame(0, Cashback_Nginx_Cache_Purger::purge_url('https://kashback.ru/'));
+    }
+
+    public function test_purge_all_refuses_root_outside_whitelist(): void
+    {
+        // Подменяем cache_root на путь вне /var/cache/nginx/ — purge_all должен
+        // отказаться (defense-in-depth против пост-RCE подмены env).
+        $rogue = sys_get_temp_dir() . '/cb_rogue_' . bin2hex(random_bytes(3));
+        mkdir($rogue, 0o755, true);
+        file_put_contents($rogue . '/should_not_be_deleted', 'data');
+        putenv('CASHBACK_NGINX_CACHE_PATH=' . $rogue);
+        Cashback_Nginx_Cache_Purger::reset_preflight_for_tests();
+
+        $count = Cashback_Nginx_Cache_Purger::purge_all();
+
+        $this->assertSame(0, $count, 'purge_all обязан отказаться при cache_root вне whitelist');
+        $this->assertFileExists($rogue . '/should_not_be_deleted');
+
+        // Cleanup
+        unlink($rogue . '/should_not_be_deleted');
+        rmdir($rogue);
+    }
+
+    public function test_levels_env_changes_cache_path(): void
+    {
+        // CASHBACK_NGINX_CACHE_LEVELS=2:2 → подкаталоги 2 и 2 символа от хвоста.
+        putenv('CASHBACK_NGINX_CACHE_LEVELS=2:2');
+        $hash = hash('md5', 'httpsGETkashback.ru/');
+        $expect_seg1 = substr($hash, -2, 2);    // 2 char from tail
+        $expect_seg2 = substr($hash, -4, 2);    // 2 chars before that
+        $expect      = sprintf('%s/%s/%s/%s', $this->tmp_root, $expect_seg1, $expect_seg2, $hash);
+
+        $actual = Cashback_Nginx_Cache_Purger::build_cache_path('https://kashback.ru/');
+
+        $this->assertSame($expect, $actual);
+
+        // Cleanup
+        putenv('CASHBACK_NGINX_CACHE_LEVELS');
     }
 
     public function test_purge_all_unlinks_all_files_in_cache_root(): void
     {
-        // Создаём 3 фейковых cache-файла в разных подкаталогах.
+        // tmp_root за whitelist'ом /var/cache/nginx/ — даём тест-разрешение.
+        Cashback_Nginx_Cache_Purger::set_test_root_prefix($this->tmp_root);
+
         $files = array(
             $this->tmp_root . '/a/12/abc123',
             $this->tmp_root . '/b/34/def456',

@@ -29,6 +29,15 @@ class Cashback_Nginx_Cache_Purger {
     /** Default-путь, если env CASHBACK_NGINX_CACHE_PATH не задан. */
     private const DEFAULT_CACHE_ROOT = '/var/cache/nginx/fastcgi';
 
+    /** Default `levels=` если env не задан (соответствует default.conf). */
+    private const DEFAULT_LEVELS = '1:2';
+
+    /** Whitelist разрешённых cache_root prefix'ов — защита purge_all() от
+     *  случайного RCE-redirect через putenv/getenv в чужой каталог. */
+    private const ALLOWED_ROOT_PREFIXES = array(
+        '/var/cache/nginx/',
+    );
+
     /** Префикс лог-сообщений (паттерн consistency с importer'ом). */
     private const LOG_PREFIX = '[Cashback Nginx Purger]';
 
@@ -38,6 +47,16 @@ class Cashback_Nginx_Cache_Purger {
      * @var bool|null
      */
     private static $preflight_result = null;
+
+    /**
+     * Per-request множество URL'ов, для которых purge_url уже был вызван.
+     * Защита от thundering-herd при bulk-импортe (1000 товаров → home_url
+     * в наборе раз 1000): первый purge home / archive — реальный, остальные
+     * no-op. См. M-3 в security review.
+     *
+     * @var array<string, true>
+     */
+    private static $purged_urls_in_request = array();
 
     /** Включён ли purger (option + env). */
     public static function is_enabled(): bool {
@@ -51,6 +70,27 @@ class Cashback_Nginx_Cache_Purger {
             return rtrim($env, '/');
         }
         return self::DEFAULT_CACHE_ROOT;
+    }
+
+    /**
+     * Распарсить `CASHBACK_NGINX_CACHE_LEVELS` (формат `M:N` или `M:N:O`) в массив
+     * длин подкаталогов от хвоста md5. Совпадает с nginx fastcgi_cache_path levels=.
+     *
+     * @return int[] Массив длин (например [1, 2] для levels=1:2). Default [1,2].
+     */
+    private static function get_levels(): array {
+        $env = (string) getenv('CASHBACK_NGINX_CACHE_LEVELS');
+        if ($env === '') {
+            $env = self::DEFAULT_LEVELS;
+        }
+        $parts = array_map('intval', explode(':', $env));
+        // Sanity: каждая часть 1..2 (nginx ограничивает; 0 или >2 = некорректно).
+        foreach ($parts as $p) {
+            if ($p < 1 || $p > 2) {
+                return array( 1, 2 );
+            }
+        }
+        return $parts;
     }
 
     /**
@@ -78,13 +118,16 @@ class Cashback_Nginx_Cache_Purger {
         // а форма cache-key (того же формата, что генерирует nginx сам).
         $hash = hash('md5', $key);
 
-        return sprintf(
-            '%s/%s/%s/%s',
-            self::get_cache_root(),
-            substr($hash, -1),
-            substr($hash, -3, 2),
-            $hash
-        );
+        // Поддержка любых levels=M:N (по умолчанию 1:2). nginx режет от ХВОСТА.
+        $levels = self::get_levels();
+        $offset = 0;
+        $segments = array();
+        foreach ($levels as $len) {
+            $offset   += $len;
+            $segments[] = substr($hash, -$offset, $len);
+        }
+
+        return self::get_cache_root() . '/' . implode('/', $segments) . '/' . $hash;
     }
 
     /**
@@ -96,61 +139,82 @@ class Cashback_Nginx_Cache_Purger {
      * Cache-key bucket поэтому будет с http; но если в каком-то setup
      * nginx стоит прямо за SSL — пробуем и https-вариант.
      *
-     * @return bool true — хотя бы один файл удалён или оба отсутствовали.
+     * Per-request URL-dedup защищает от thundering-herd при bulk-импорте.
+     *
+     * @return int Количество фактически удалённых файлов (0..2).
      */
-    public static function purge_url( string $url ): bool {
+    public static function purge_url( string $url ): int {
         if (!self::is_enabled() || !self::preflight()) {
-            return false;
+            return 0;
         }
 
-        $any_existed_or_unlinked = true;
-        foreach (array( 'http', 'https' ) as $scheme_override) {
-            $path = self::build_cache_path($url, 'GET', $scheme_override);
+        // Нормализуем URL для dedup-ключа (без query/fragment).
+        $parsed   = wp_parse_url($url);
+        $hostname = isset($parsed['host']) ? strtolower((string) $parsed['host']) : '';
+        $path     = isset($parsed['path']) && $parsed['path'] !== '' ? (string) $parsed['path'] : '/';
+        $dedup_key = $hostname . '|' . $path;
 
-            if (!file_exists($path)) {
+        if (isset(self::$purged_urls_in_request[ $dedup_key ])) {
+            return 0;
+        }
+        self::$purged_urls_in_request[ $dedup_key ] = true;
+
+        $unlinked = 0;
+        foreach (array( 'http', 'https' ) as $scheme_override) {
+            $cache_file = self::build_cache_path($url, 'GET', $scheme_override);
+
+            if (!file_exists($cache_file)) {
                 continue;
             }
 
             // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink, WordPress.PHP.NoSilencedErrors.Discouraged -- direct unlink (WP_Filesystem не маунтит /var/cache/nginx); @ подавляет E_WARNING при race-condition с nginx, который мог уже удалить файл по inactive=60m.
-            if (!@unlink($path)) {
-                self::log('warning', 'unlink failed', array( 'path' => $path, 'url' => $url ));
-                $any_existed_or_unlinked = false;
+            if (@unlink($cache_file)) {
+                ++$unlinked;
+            } else {
+                self::log('warning', 'unlink failed', array( 'path' => $cache_file, 'url' => $url ));
             }
         }
 
-        return $any_existed_or_unlinked;
+        return $unlinked;
     }
 
     /**
      * Удалить кэш для всех страниц, которые отображают данный товар.
      *
-     * @return int Количество вызовов purge_url (== число затронутых URL).
+     * @return int Количество фактически удалённых файлов (а не URL'ов).
      */
     public static function purge_post( int $post_id, ?string $reason = null ): int {
         if ($post_id <= 0 || !self::is_enabled()) {
             return 0;
         }
 
-        $urls = self::collect_urls_for_post($post_id);
-        $count = 0;
+        $urls       = self::collect_urls_for_post($post_id);
+        $unlinked   = 0;
+        $considered = 0;
         foreach ($urls as $url) {
-            self::purge_url($url);
-            ++$count;
+            $unlinked += self::purge_url($url);
+            ++$considered;
         }
 
-        if ($count > 0) {
+        if ($considered > 0) {
             self::log('debug', 'purged post', array(
-                'post_id' => $post_id,
-                'reason'  => $reason,
-                'urls'    => $count,
+                'post_id'    => $post_id,
+                'reason'     => $reason,
+                'urls'       => $considered,
+                'unlinked'   => $unlinked,
             ));
         }
 
-        return $count;
+        return $unlinked;
     }
 
     /**
      * Полный flush кэша (обход cache_root, unlink всех файлов).
+     *
+     * Защита: cache_root МОЖЕТ приходить из env, что в случае пост-RCE-сценария
+     * может быть подменено через putenv() в WP-процессе. Whitelist prefix'ов
+     * (ALLOWED_ROOT_PREFIXES) гарантирует, что purge_all НЕ удалит файлы вне
+     * `/var/cache/nginx/` даже при поломанной env.
      *
      * @return int Количество удалённых файлов.
      */
@@ -160,8 +224,25 @@ class Cashback_Nginx_Cache_Purger {
         }
 
         $root = self::get_cache_root();
-        $count = 0;
 
+        // Defense-in-depth: проверяем что root внутри whitelist'а.
+        $allowed_prefixes = self::ALLOWED_ROOT_PREFIXES;
+        if (self::$test_extra_root_prefix !== null) {
+            $allowed_prefixes[] = self::$test_extra_root_prefix;
+        }
+        $allowed = false;
+        foreach ($allowed_prefixes as $prefix) {
+            if (str_starts_with($root . '/', $prefix)) {
+                $allowed = true;
+                break;
+            }
+        }
+        if (!$allowed) {
+            self::log('error', 'purge_all refused: cache_root outside whitelist', array( 'root' => $root ));
+            return 0;
+        }
+
+        $count = 0;
         try {
             $iter = new RecursiveIteratorIterator(
                 new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
@@ -252,9 +333,22 @@ class Cashback_Nginx_Cache_Purger {
         return $ok;
     }
 
-    /** Reset preflight-кэша (для unit-тестов). */
+    /** Reset preflight-кэша + dedup'а (для unit-тестов). */
     public static function reset_preflight_for_tests(): void {
-        self::$preflight_result = null;
+        self::$preflight_result      = null;
+        self::$purged_urls_in_request = array();
+        self::$test_extra_root_prefix = null;
+    }
+
+    /**
+     * Дополнительный whitelist-prefix для unit-тестов (только тестам разрешено
+     * писать в произвольный tmp-каталог; production-код не имеет точки вызова).
+     */
+    private static ?string $test_extra_root_prefix = null;
+
+    /** Только для unit-тестов: разрешить дополнительный root-prefix. */
+    public static function set_test_root_prefix( string $prefix ): void {
+        self::$test_extra_root_prefix = rtrim($prefix, '/') . '/';
     }
 
     /**
