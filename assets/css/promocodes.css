@@ -37,7 +37,7 @@
 
 .cashback-promo-card {
     position: relative;
-    background: var(--cb-bg-surface, #fff);
+    background: #c3face;
     border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
     border-radius: var(--cb-radius-lg, 20px);
     padding: 18px;

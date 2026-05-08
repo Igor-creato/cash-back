@@ -107,7 +107,7 @@ final class Cashback_Promocodes_Shortcode {
             'cashback-promocodes',
             plugins_url( 'assets/css/promocodes.css', $plugin_root_file ),
             array(),
-            '7.3.1'
+            '7.3.2'
         );
 
         $deps = array();
