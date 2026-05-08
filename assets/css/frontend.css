@@ -908,3 +908,35 @@ p.price .cashback-display {
         font-size: 14px;
     }
 }
+
+/* ============================================================
+   Cashback shop catalog — равная высота карточек магазинов
+   Логотипы CPA-партнёров приходят с разной aspect ratio,
+   контейнер фиксируется на 3:2, лого вписывается через contain.
+   ============================================================ */
+
+.wd-product .wd-product-thumb,
+.wd-product .wd-product-img-link,
+.wd-product .product-image-link {
+    aspect-ratio: 3 / 2;
+    background: #fff;
+    overflow: hidden;
+}
+
+.wd-product .wd-product-thumb img,
+.wd-product .wd-product-img-link img,
+.wd-product .product-image-link img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    padding: 14px;
+    box-sizing: border-box;
+}
+
+@media (max-width: 600px) {
+    .wd-product .wd-product-thumb img,
+    .wd-product .wd-product-img-link img,
+    .wd-product .product-image-link img {
+        padding: 10px;
+    }
+}
