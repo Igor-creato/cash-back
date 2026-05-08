@@ -227,6 +227,12 @@ class Cashback_Shop_Group_Resolver {
             array( '%d' )
         );
 
+        if ($r !== false && function_exists('do_action')) {
+            // Pin меняет preferred напрямую без recompute_preferred — фирим
+            // action вручную для catalog visibility sync.
+            do_action('cashback_group_preferred_changed', $group_id);
+        }
+
         return $r !== false;
     }
 
@@ -287,8 +293,15 @@ class Cashback_Shop_Group_Resolver {
             array( '%d' )
         );
 
-        // Пересчитать preferred оставшейся группы.
+        // Пересчитать preferred оставшейся группы (фирит cashback_group_preferred_changed
+        // через write_preferred → catalog visibility sync для оставшихся members).
         self::recompute_preferred($group_id);
+
+        // Splitted product сам уже не в группе — отдельный mark_visible
+        // (он стал standalone, должен быть видим в каталоге).
+        if (class_exists('Cashback_Catalog_Visibility')) {
+            Cashback_Catalog_Visibility::mark_visible($product_id);
+        }
 
         return true;
     }
@@ -437,6 +450,9 @@ class Cashback_Shop_Group_Resolver {
 
     /**
      * Записать preferred_product_id (0 = NULL).
+     *
+     * Фирит action `cashback_group_preferred_changed` для синка catalog
+     * visibility (Cashback_Catalog_Visibility::on_group_preferred_changed).
      */
     private static function write_preferred( int $group_id, int $preferred_id ): void {
         global $wpdb;
@@ -452,6 +468,10 @@ class Cashback_Shop_Group_Resolver {
             array( '%d' ),
             array( '%d' )
         );
+
+        if (function_exists('do_action')) {
+            do_action('cashback_group_preferred_changed', $group_id);
+        }
     }
 
     /**

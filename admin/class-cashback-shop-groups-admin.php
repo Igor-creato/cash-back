@@ -26,6 +26,12 @@ class Cashback_Shop_Groups_Admin {
     public const NONCE_ACTION       = 'cashback_shop_group_action';
     public const PER_PAGE           = 20;
 
+    // Filter modes для основного списка групп.
+    // 'multi' (default) — показываем только группы с 2+ active members
+    // (реальные дубли, требующие внимания админа). 'all' — полный список.
+    public const FILTER_MULTI = 'multi';
+    public const FILTER_ALL   = 'all';
+
     public static function init(): void {
         add_action('admin_menu', array( self::class, 'register_menu' ), 32);
         add_action('admin_post_' . self::ADMIN_POST_ACTION, array( self::class, 'handle_action' ));
@@ -96,17 +102,39 @@ class Cashback_Shop_Groups_Admin {
             wp_die(esc_html__('Недостаточно прав.', 'cashback'));
         }
 
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing, sanitize_key + whitelist.
+        $filter_raw = isset($_GET['filter']) ? sanitize_key((string) wp_unslash($_GET['filter'])) : '';
+        $filter     = ($filter_raw === self::FILTER_ALL) ? self::FILTER_ALL : self::FILTER_MULTI;
+
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin listing pagination, intval-cast.
         $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
-        $total        = self::count_groups();
+        $total        = self::count_groups($filter);
         $total_pages  = $total > 0 ? (int) ceil($total / self::PER_PAGE) : 0;
         if ($total_pages > 0 && $current_page > $total_pages) {
             $current_page = $total_pages;
         }
         $offset = ( $current_page - 1 ) * self::PER_PAGE;
-        $groups = self::fetch_groups(self::PER_PAGE, $offset);
+        $groups = self::fetch_groups(self::PER_PAGE, $offset, $filter);
+
+        $count_multi = self::count_groups(self::FILTER_MULTI);
+        $count_all   = self::count_groups(self::FILTER_ALL);
 
         ?>
+        <style>
+            .cashback-group-badge {
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 3px;
+                font-size: 11px;
+                font-weight: 600;
+                line-height: 1.4;
+            }
+            .cashback-group-badge--warning {
+                background: #fff3cd;
+                color: #856404;
+                border: 1px solid #ffeeba;
+            }
+        </style>
         <div class="wrap">
             <h1><?php esc_html_e('Группы магазинов', 'cashback'); ?></h1>
             <p class="description">
@@ -115,8 +143,32 @@ class Cashback_Shop_Groups_Admin {
 
             <?php self::render_admin_notice(); ?>
 
+            <ul class="subsubsub">
+                <li>
+                    <a
+                        class="<?php echo $filter === self::FILTER_MULTI ? 'current' : ''; ?>"
+                        href="<?php echo esc_url(self::build_filter_url(self::FILTER_MULTI)); ?>"
+                    ><?php esc_html_e('С дублями', 'cashback'); ?>
+                        <span class="count">(<?php echo (int) $count_multi; ?>)</span></a> |
+                </li>
+                <li>
+                    <a
+                        class="<?php echo $filter === self::FILTER_ALL ? 'current' : ''; ?>"
+                        href="<?php echo esc_url(self::build_filter_url(self::FILTER_ALL)); ?>"
+                    ><?php esc_html_e('Все группы', 'cashback'); ?>
+                        <span class="count">(<?php echo (int) $count_all; ?>)</span></a>
+                </li>
+            </ul>
+            <br class="clear" />
+
             <?php if (empty($groups)) : ?>
-                <p><?php esc_html_e('Группы ещё не созданы. Запустите импорт магазинов — группы автоматически сформируются по доменам.', 'cashback'); ?></p>
+                <p>
+                    <?php if ($filter === self::FILTER_MULTI) : ?>
+                        <?php esc_html_e('Групп с дублями нет — каждый магазин уникален в своей CPA-сети.', 'cashback'); ?>
+                    <?php else : ?>
+                        <?php esc_html_e('Группы ещё не созданы. Запустите импорт магазинов — группы автоматически сформируются по доменам.', 'cashback'); ?>
+                    <?php endif; ?>
+                </p>
             <?php else : ?>
                 <table class="widefat striped">
                     <thead>
@@ -137,17 +189,32 @@ class Cashback_Shop_Groups_Admin {
                     </tbody>
                 </table>
                 <?php
-                Cashback_Pagination::render(array(
+                $pagination_args = array(
                     'total_items'  => $total,
                     'per_page'     => self::PER_PAGE,
                     'current_page' => $current_page,
                     'total_pages'  => $total_pages,
                     'page_slug'    => self::PAGE_SLUG,
-                ));
+                );
+                if ($filter !== self::FILTER_MULTI) {
+                    $pagination_args['add_args'] = array( 'filter' => $filter );
+                }
+                Cashback_Pagination::render($pagination_args);
                 ?>
             <?php endif; ?>
         </div>
         <?php
+    }
+
+    /**
+     * URL для filter-link в subsubsub.
+     */
+    private static function build_filter_url( string $filter ): string {
+        $args = array( 'page' => self::PAGE_SLUG );
+        if ($filter !== self::FILTER_MULTI) {
+            $args['filter'] = $filter;
+        }
+        return add_query_arg($args, admin_url('admin.php'));
     }
 
     /**
@@ -169,13 +236,40 @@ class Cashback_Shop_Groups_Admin {
                     echo '—';
                 } else {
                     foreach ($members as $m) {
-                        echo '<div>#' . esc_html((string) $m['id']) . ' '
-                            . esc_html((string) $m['title']) . '</div>';
+                        $mid      = (int) ($m['id'] ?? 0);
+                        $title    = (string) ($m['title'] ?? '');
+                        $edit_url = function_exists('get_edit_post_link')
+                            ? (string) get_edit_post_link($mid)
+                            : '';
+                        $label = '#' . $mid;
+                        if ($title !== '') {
+                            $label .= ' — ' . $title;
+                        }
+                        if ($edit_url !== '') {
+                            printf(
+                                '<div><a href="%s">%s</a></div>',
+                                esc_url($edit_url),
+                                esc_html($label)
+                            );
+                        } else {
+                            printf('<div>%s</div>', esc_html($label));
+                        }
                     }
                 }
                 ?>
             </td>
-            <td><?php echo $pref_id > 0 ? esc_html('#' . $pref_id) : '—'; ?></td>
+            <td>
+                <?php if ($pref_id > 0) : ?>
+                    <?php echo esc_html('#' . $pref_id); ?>
+                <?php elseif (! empty($members)) : ?>
+                    <span
+                        class="cashback-group-badge cashback-group-badge--warning"
+                        title="<?php esc_attr_e('У всех members группы score_product вернул −1: нет активных тарифов в cashback_shop_tariffs. Запустите ручной refresh tariff sync.', 'cashback'); ?>"
+                    ><?php esc_html_e('Нет тарифов', 'cashback'); ?></span>
+                <?php else : ?>
+                    —
+                <?php endif; ?>
+            </td>
             <td><?php echo $pin_id > 0 ? esc_html('#' . $pin_id) : '—'; ?></td>
             <td><?php echo esc_html((string) ( $group['status'] ?? 'auto' )); ?></td>
             <td>
@@ -220,10 +314,14 @@ class Cashback_Shop_Groups_Admin {
             <input type="hidden" name="op" value="pin" />
             <input type="hidden" name="group_id" value="<?php echo esc_attr((string) $group_id); ?>" />
             <select name="product_id">
-                <?php foreach ($members as $m) : ?>
-                    <option value="<?php echo esc_attr((string) $m['id']); ?>">
-                        #<?php echo esc_html((string) $m['id']); ?>
-                        — <?php echo esc_html((string) $m['title']); ?>
+                <?php
+                foreach ($members as $m) :
+                    $mid   = (int) ($m['id'] ?? 0);
+                    $title = (string) ($m['title'] ?? '');
+                    $label = '#' . $mid . ($title !== '' ? ' — ' . $title : '');
+                    ?>
+                    <option value="<?php echo esc_attr((string) $mid); ?>">
+                        <?php echo esc_html($label); ?>
                     </option>
                 <?php endforeach; ?>
             </select>
@@ -236,32 +334,66 @@ class Cashback_Shop_Groups_Admin {
     /**
      * @return array<int, array<string, mixed>>
      */
-    private static function fetch_groups( int $per_page, int $offset ): array {
+    private static function fetch_groups( int $per_page, int $offset, string $filter = self::FILTER_MULTI ): array {
         global $wpdb;
         if (! isset($wpdb) || ! is_object($wpdb)) {
             return array();
         }
-        $per_page = max(1, min(500, $per_page));
-        $offset   = max(0, $offset);
-        $table    = $wpdb->prefix . Cashback_Shop_Group_Resolver::TABLE_GROUPS;
-        $rows     = $wpdb->get_results($wpdb->prepare(
-            'SELECT * FROM %i ORDER BY id DESC LIMIT %d OFFSET %d',
-            $table,
-            $per_page,
-            $offset
-        ), ARRAY_A);
+        $per_page      = max(1, min(500, $per_page));
+        $offset        = max(0, $offset);
+        $groups_table  = $wpdb->prefix . Cashback_Shop_Group_Resolver::TABLE_GROUPS;
+        $members_table = $wpdb->prefix . Cashback_Shop_Group_Resolver::TABLE_MEMBERS;
+
+        if ($filter === self::FILTER_MULTI) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Admin listing, read-only; кеш сбивается на каждый pin/unpin/split.
+            $rows = $wpdb->get_results($wpdb->prepare(
+                'SELECT g.* FROM %i AS g
+                  WHERE (
+                    SELECT COUNT(*) FROM %i AS m
+                     WHERE m.group_id = g.id AND m.is_excluded = 0
+                  ) > 1
+                  ORDER BY g.id DESC LIMIT %d OFFSET %d',
+                $groups_table,
+                $members_table,
+                $per_page,
+                $offset
+            ), ARRAY_A);
+        } else {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Admin listing, read-only.
+            $rows = $wpdb->get_results($wpdb->prepare(
+                'SELECT * FROM %i ORDER BY id DESC LIMIT %d OFFSET %d',
+                $groups_table,
+                $per_page,
+                $offset
+            ), ARRAY_A);
+        }
         return is_array($rows) ? $rows : array();
     }
 
-    private static function count_groups(): int {
+    private static function count_groups( string $filter = self::FILTER_MULTI ): int {
         global $wpdb;
         if (! isset($wpdb) || ! is_object($wpdb)) {
             return 0;
         }
-        $table = $wpdb->prefix . Cashback_Shop_Group_Resolver::TABLE_GROUPS;
+        $groups_table  = $wpdb->prefix . Cashback_Shop_Group_Resolver::TABLE_GROUPS;
+        $members_table = $wpdb->prefix . Cashback_Shop_Group_Resolver::TABLE_MEMBERS;
+
+        if ($filter === self::FILTER_MULTI) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Admin listing count, read-only.
+            return (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*) FROM %i AS g
+                  WHERE (
+                    SELECT COUNT(*) FROM %i AS m
+                     WHERE m.group_id = g.id AND m.is_excluded = 0
+                  ) > 1',
+                $groups_table,
+                $members_table
+            ));
+        }
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Admin listing count, read-only.
         return (int) $wpdb->get_var($wpdb->prepare(
             'SELECT COUNT(*) FROM %i',
-            $table
+            $groups_table
         ));
     }
 
@@ -278,7 +410,7 @@ class Cashback_Shop_Groups_Admin {
             $title = function_exists('get_the_title') ? (string) get_the_title($id) : '';
             $out[] = array(
                 'id'    => $id,
-                'title' => $title !== '' ? $title : ('#' . $id),
+                'title' => $title,
             );
         }
         return $out;

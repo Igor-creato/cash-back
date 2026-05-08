@@ -731,6 +731,11 @@ class CashbackPlugin {
         // meta `_cashback_sort_value` (пересчёт на cashback_tariffs_changed
         // и при сохранении метабокса).
         $this->require_file('includes/shops/class-cashback-product-sort.php');
+        // Catalog visibility: скрытие non-preferred членов групп магазинов из
+        // основных catalog query. Реализует изначальное намерение «один
+        // WC-товар на витрине» — закрывает Codex finding #1 (рассогласование
+        // sort vs display). Sync через action cashback_group_preferred_changed.
+        $this->require_file('includes/shops/class-cashback-catalog-visibility.php');
 
         // API клиент и cron (синхронизация работает через WP Cron)
         $this->require_file('includes/class-cashback-api-client.php');
@@ -1111,6 +1116,13 @@ class CashbackPlugin {
         if (class_exists('Cashback_Product_Sort')) {
             Cashback_Product_Sort::register();
             Cashback_Product_Sort::ensure_backfilled();
+        }
+
+        // Catalog visibility: pre_get_posts фильтр + sync на cashback_group_preferred_changed.
+        // Idempotent self-healing backfill через wp-cron (опция cashback_catalog_visibility_backfill_v1).
+        if (class_exists('Cashback_Catalog_Visibility')) {
+            Cashback_Catalog_Visibility::register();
+            Cashback_Catalog_Visibility::ensure_backfilled();
         }
 
         // Admin UI Этапа 8: Settings + Import + Groups submenu pages.
