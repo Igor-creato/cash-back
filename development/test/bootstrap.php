@@ -577,6 +577,16 @@ if (!function_exists('plugins_url')) {
     }
 }
 
+// Стаб cashback_asset_url() для тестов: эмулирует реальную сигнатуру
+// (cashback-plugin.php:91), возвращает plugins_url() + ?cv=<filemtime|1>.
+if (!function_exists('cashback_asset_url')) {
+    function cashback_asset_url(string $relative_path): string
+    {
+        $relative = ltrim($relative_path, '/');
+        return 'http://localhost/wp-content/plugins/' . $relative . '?cv=1';
+    }
+}
+
 if (!function_exists('admin_url')) {
     function admin_url(string $path = '', string $scheme = 'admin'): string
     {
