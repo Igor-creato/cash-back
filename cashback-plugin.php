@@ -1081,6 +1081,45 @@ class CashbackPlugin {
             }
         }
 
+        // Phase 7 (2026-05-09 plan greedy-soaring-salamander): глобальный
+        // bump major для всех 9 типов юр.документов после переработки текстов.
+        // Гейт через опцию cashback_legal_rewrite_2026_05_09_done — повторно
+        // не выполняется. Существующие consent-записи будут отмечены как
+        // superseded на следующем входе пользователя через
+        // Cashback_Legal_Reconsent_Modal — re-consent для всех ранее
+        // согласовавших.
+        if (class_exists('Cashback_Legal_Documents')
+            && get_option('cashback_legal_rewrite_2026_05_09_done', '') !== '1') {
+            try {
+                $bumped = array();
+                foreach (Cashback_Legal_Documents::all_types() as $legal_type) {
+                    $old              = Cashback_Legal_Documents::get_active_version($legal_type);
+                    $new              = Cashback_Legal_Documents::bump_major($legal_type);
+                    $bumped[ $legal_type ] = array( 'old' => $old, 'new' => $new );
+                }
+                update_option('cashback_legal_rewrite_2026_05_09_done', '1', false);
+
+                // Audit best-effort. Не валим миграцию, если encryption ещё не готов.
+                if (class_exists('Cashback_Encryption')
+                    && method_exists('Cashback_Encryption', 'write_audit_log')) {
+                    try {
+                        Cashback_Encryption::write_audit_log(
+                            'legal_global_bump_2026_05_09',
+                            0,
+                            'legal',
+                            0,
+                            array( 'bumped' => $bumped )
+                        );
+                    } catch (\Throwable $audit_error) {
+                        unset($audit_error);
+                    }
+                }
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Legal] bump_major migration 2026-05-09 failed: ' . $e->getMessage());
+            }
+        }
+
         // Legal template storage (UI-редактирование текстов): создание таблицы
         // wp_cashback_legal_template_versions. Идемпотентно — fast-path через
         // cashback_legal_template_db_version.
