@@ -672,9 +672,10 @@ class Cashback_Legal_Admin {
      * Для legacy/неизвестных ключей в БД возвращает сырое значение (fail-safe).
      */
     private static function journal_consent_type_label( string $type ): string {
-        $meta = Cashback_Legal_Documents::get_meta($type);
-        if (is_array($meta) && !empty($meta['title'])) {
-            return (string) $meta['title'];
+        $meta  = Cashback_Legal_Documents::get_meta($type);
+        $title = $meta['title'] ?? '';
+        if (is_string($title) && $title !== '') {
+            return $title;
         }
         return $type;
     }
