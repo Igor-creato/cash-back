@@ -259,21 +259,25 @@ final class Cashback_Coupons_Icons_Shortcode {
             return;
         }
 
-        $plugin_root_file = dirname( __DIR__, 2 ) . '/cashback-plugin.php';
-
+        // Cache-bust через ?cv=<filemtime> вместо хардкоженной ?ver=7.5.5:
+        // оптимизаторы (Clearfy/Autoptimize/WP-Rocket) часто стрипают `?ver=`,
+        // а статика отдаётся nginx'ом с `expires 365d; immutable`. Без свежего
+        // query-параметра правки CSS/JS не доезжают до браузера до года.
         wp_enqueue_style(
             'cashback-coupons-icons',
-            plugins_url( 'assets/css/coupons-icons.css', $plugin_root_file ),
+            cashback_asset_url( 'assets/css/coupons-icons.css' ),
             array(),
-            '7.5.5'
+            // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
+            null
         );
 
         if ( function_exists( 'wp_enqueue_script' ) ) {
             wp_enqueue_script(
                 'cashback-coupons-icons',
-                plugins_url( 'assets/js/coupons-icons.js', $plugin_root_file ),
+                cashback_asset_url( 'assets/js/coupons-icons.js' ),
                 array(),
-                '7.5.9',
+                // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
+                null,
                 true
             );
         }
