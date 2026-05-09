@@ -202,13 +202,29 @@
         // на DOMContentLoaded уже стабильна (заголовок таба + sticky-nav).
         instantScrollToTabs();
 
-        // Шаг 3: safety-net через MutationObserver. WoodMart's
+        // Шаг 3: one-shot retry через requestAnimationFrame. На мобильных
+        // WoodMart accordion-handler (themes/woodmart/js/scripts/elements/
+        // accordion.js) может attached позже DOMContentLoaded — на следующем
+        // frame повторно findTabAnchor()+activate(). Idempotent через
+        // isAlreadyActive() guard в activate().
+        if (typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(function () {
+                var retryAnchor = findTabAnchor(safeSlug);
+                if (retryAnchor && !isAlreadyActive(retryAnchor)) {
+                    activate(retryAnchor);
+                }
+            });
+        }
+
+        // Шаг 4: safety-net через MutationObserver. WoodMart's
         // singleProductTabsAccordion на $(document).ready может выстрелить
         // ПОСЛЕ нашего DOMContentLoaded и кликнуть .wd-nav a:first.
         // Если сервер не пре-активировал наш таб — WoodMart активирует
         // первый (не наш). Observer ловит class-mutation на .wd-nav,
         // переактивирует наш таб один раз, disconnect.
-        var observerTarget = document.querySelector('.wc-tabs-wrapper, .woocommerce-tabs, .wd-tabs');
+        // .wd-accordion — mobile-only DOM-узел WoodMart; без него на
+        // мобильных observer не находил target и тихо отключался.
+        var observerTarget = document.querySelector('.wc-tabs-wrapper, .woocommerce-tabs, .wd-tabs, .wd-accordion');
         if (!observerTarget || typeof window.MutationObserver !== 'function') {
             return;
         }

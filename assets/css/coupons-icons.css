@@ -172,7 +172,11 @@ html.cashback-coupons-icons-js .cashback-coupons-icons__tooltip {
     flex: 0 0 auto;
     width: auto;
     height: auto;
-    z-index: 2;
+    /* z-index 11 перекрывает WoodMart hover-mask / .product-element-top
+       (типичные значения темы 3-10) — на мобильных без этого тематический
+       overlay перехватывал тап и клик доходил до бесфрагового permalink
+       вместо нашего href с ?cb_tab=coupons. */
+    z-index: 11;
     /* Overlay-колонка не должна перехватывать клики на сердечке/
        изображении. pointer-events возвращаем на сами иконки купонов
        через дочерний селектор. */
@@ -183,5 +187,10 @@ html.cashback-coupons-icons-js .cashback-coupons-icons__tooltip {
     > .wp-block-wd-column:not(:has(.wd-wishlist-btn)) .cashback-coupons-icons,
 .wd-product .wp-block-wd-row:has(> .wp-block-wd-column .wd-wishlist-btn)
     > .wp-block-wd-column:not(:has(.wd-wishlist-btn)) .cashback-coupons-icons__item {
+    /* position:relative + z-index:12 защищают тач-таргет на мобильных:
+       <a> иконки гарантированно лежит выше любых тематических overlay'ев
+       в той же визуальной точке (z-index:11 на родителе уже выше hover-mask). */
+    position: relative;
+    z-index: 12;
     pointer-events: auto;
 }

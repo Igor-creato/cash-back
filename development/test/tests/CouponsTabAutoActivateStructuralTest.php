@@ -196,6 +196,82 @@ final class CouponsTabAutoActivateStructuralTest extends TestCase
         );
     }
 
+    /**
+     * Mobile-fix: observer-target должен включать .wd-accordion (mobile-only
+     * DOM-узел WoodMart). Без него на мобильных observer не находит
+     * контейнер для наблюдения, тихо отключается, и таб не активируется
+     * если серверная пре-активация (priority=-100) не сработала.
+     */
+    public function test_js_observer_target_includes_wd_accordion_for_mobile(): void
+    {
+        $js_file = self::$plugin_root . '/assets/js/cashback-coupons-tab.js';
+        $source  = (string) file_get_contents($js_file);
+
+        $this->assertMatchesRegularExpression(
+            '/querySelector\([\'"][^\'"]*\.wd-accordion[^\'"]*[\'"]\)/',
+            $source,
+            'Observer-target selector должен включать .wd-accordion для mobile WoodMart'
+        );
+    }
+
+    /**
+     * Mobile-fix: после первого activate() добавлен one-shot retry через
+     * requestAnimationFrame. Покрывает случай когда WoodMart accordion-handler
+     * attached позже DOMContentLoaded — на следующем frame повторно
+     * findTabAnchor()+activate(). Idempotent через isAlreadyActive() guard.
+     */
+    public function test_js_has_request_animation_frame_retry(): void
+    {
+        $js_file = self::$plugin_root . '/assets/js/cashback-coupons-tab.js';
+        $source  = (string) file_get_contents($js_file);
+
+        $this->assertMatchesRegularExpression(
+            '/requestAnimationFrame\s*\(/',
+            $source,
+            'JS должен иметь requestAnimationFrame-retry для late-init WoodMart accordion handler'
+        );
+    }
+
+    /**
+     * Mobile-fix (Branch A): z-index overlay-колонки должен быть >= 11,
+     * чтобы перекрывать WoodMart hover-mask / .product-element-top
+     * (типичные значения темы 3-10). Иначе на мобильных тематический
+     * overlay перехватывает тап раньше иконки, и URL без ?cb_tab=coupons
+     * приводит на product page без открытия таба.
+     */
+    public function test_css_overlay_column_zindex_above_woodmart_overlays(): void
+    {
+        $css_file = self::$plugin_root . '/assets/css/coupons-icons.css';
+        $this->assertFileExists($css_file);
+        $source = (string) file_get_contents($css_file);
+
+        // Извлекаем правило для overlay-колонки (содержит position:absolute и pointer-events:none).
+        $this->assertMatchesRegularExpression(
+            '/:not\(:has\(\.wd-wishlist-btn\)\)\s*\{[^}]*z-index:\s*(1[1-9]|[2-9]\d|\d{3,})\s*;[^}]*\}/s',
+            $source,
+            'Overlay-колонка должна иметь z-index >= 11 для перекрытия WoodMart hover-mask'
+        );
+    }
+
+    /**
+     * Mobile-fix (Branch A): сами иконки имеют position:relative + z-index >= 12
+     * (выше overlay-колонки), чтобы клик на них гарантированно достигал
+     * <a> даже если parent-overlay темы имеет промежуточный z-index.
+     */
+    public function test_css_icon_item_zindex_above_overlay_column(): void
+    {
+        $css_file = self::$plugin_root . '/assets/css/coupons-icons.css';
+        $source   = (string) file_get_contents($css_file);
+
+        // Override-правило для .cashback-coupons-icons / __item должно
+        // содержать position:relative и z-index >= 12.
+        $this->assertMatchesRegularExpression(
+            '/\.cashback-coupons-icons__item[^{]*\{[^}]*position:\s*relative\s*;[^}]*z-index:\s*(1[2-9]|[2-9]\d|\d{3,})\s*;/s',
+            $source,
+            'Иконки должны иметь position:relative + z-index >= 12 (выше overlay-колонки)'
+        );
+    }
+
     public function test_priority_override_when_cb_tab_coupons_present(): void
     {
         if (!class_exists('Cashback_Promocodes_Bootstrap')) {
