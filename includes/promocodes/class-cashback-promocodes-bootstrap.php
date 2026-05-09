@@ -187,12 +187,19 @@ final class Cashback_Promocodes_Bootstrap {
         if ( ! function_exists( 'wp_enqueue_script' ) ) {
             return;
         }
-        $plugin_root_file = dirname( __DIR__, 2 ) . '/cashback-plugin.php';
+        // Cache-bust через ?cv=<filemtime> вместо хардкоженной ?ver=:
+        // оптимизаторы (Clearfy/Autoptimize, WoodMart "Convert large CSS
+        // to inline styles") стрипают `?ver=` из URL. nginx отдаёт статику
+        // с `expires 365d; immutable` (Cache-Control: max-age=31536000).
+        // Без свежего query-параметра браузер держит старую версию JS
+        // из cache до года, и правки логики активации таба не докатываются.
+        // Тот же паттерн применён к coupons-icons.{css,js} в commit 4d1b618.
         wp_enqueue_script(
             'cashback-coupons-tab',
-            plugins_url( 'assets/js/cashback-coupons-tab.js', $plugin_root_file ),
+            cashback_asset_url( 'assets/js/cashback-coupons-tab.js' ),
             array(),
-            '7.6.0',
+            // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
+            null,
             true
         );
     }
