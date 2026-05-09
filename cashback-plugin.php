@@ -714,6 +714,12 @@ class CashbackPlugin {
         // для всех модулей, вставляющих server-generated HTML через jQuery.html().
         $this->require_file('includes/class-cashback-assets.php');
 
+        // Frontend perf: defer cookie-banner и bot-protection CSS (preload-swap),
+        // инлайн критичного `.is-hidden { display:none }` в head. Сокращает
+        // 2 рендер-блокирующих таблицы стилей на каждой странице — ощутимо для
+        // мобильного канала с RTT 100–150 мс.
+        $this->require_file('includes/class-cashback-frontend-performance.php');
+
         // Checkpoint-хранилище cron-прогонов (Group 8 Step 3, F-8-005)
         $this->require_file('includes/class-cashback-cron-state.php');
 
@@ -1109,6 +1115,12 @@ class CashbackPlugin {
         // Бот-защита: инициализация guard (до других компонентов)
         if (class_exists('Cashback_Bot_Protection')) {
             Cashback_Bot_Protection::init();
+        }
+
+        // Frontend perf: ставит фильтр style_loader_tag и инлайн critical-rule
+        // ДО любого wp_enqueue_scripts в этом приходе init().
+        if (class_exists('Cashback_Frontend_Performance')) {
+            Cashback_Frontend_Performance::init();
         }
 
         // Nginx fastcgi_cache invalidation (см. require_file выше).
