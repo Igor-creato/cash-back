@@ -543,7 +543,8 @@ button#save_payout_details_btn:hover {
     border-left: 3px solid var(--cb-danger, #e5484d);
 }
 
-#save_payout_settings_btn {
+#save_payout_settings_btn,
+.cashback-affiliate-activation-submit {
     border-radius: var(--cb-radius-pill, 999px) !important;
     color: var(--cb-text-on-accent, #fff) !important;
     box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
@@ -556,7 +557,8 @@ button#save_payout_details_btn:hover {
     transition: background-color 0.15s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
 }
 
-#save_payout_settings_btn:hover {
+#save_payout_settings_btn:hover,
+.cashback-affiliate-activation-submit:hover {
     color: var(--cb-text-on-accent, #fff) !important;
     box-shadow: var(--cb-shadow-raised, 0 18px 36px -16px rgba(15, 18, 34, 0.14)) !important;
     background-color: var(--cb-accent-hover, #4555e8) !important;
