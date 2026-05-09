@@ -804,44 +804,52 @@ echo 'style="display:none"';}
             wp_send_json_error(array( 'message' => 'Укажите корректный User ID' ));
         }
 
-        $client = Cashback_API_Client::get_instance();
+        try {
+            $client = Cashback_API_Client::get_instance();
 
-        // Проверка по всем сетям
-        if ($network === '__all__') {
-            if ($user_id > 0) {
+            // Проверка по всем сетям
+            if ($network === '__all__') {
+                if ($user_id > 0) {
+                    $user = get_user_by('id', $user_id);
+                    if (!$user) {
+                        wp_send_json_error(array( 'message' => "Пользователь #{$user_id} не найден" ));
+                    }
+                }
+
+                $all_networks = $client->get_all_active_networks();
+                if (empty($all_networks)) {
+                    wp_send_json_error(array( 'message' => 'Нет активных сетей с настроенным API' ));
+                }
+
+                $result = $this->validate_all_networks($client, $user_id, $all_networks, !$full);
+
+                $this->log_audit('api_validation', $user_id, $result);
+                wp_send_json_success($result);
+            }
+
+            if ($user_id === 0) {
+                // Проверка незарегистрированных транзакций
+                $result = $client->validate_unregistered($network, !$full);
+            } else {
+                // Проверяем существование пользователя
                 $user = get_user_by('id', $user_id);
                 if (!$user) {
                     wp_send_json_error(array( 'message' => "Пользователь #{$user_id} не найден" ));
                 }
+                $result = $client->validate_user($user_id, $network, !$full);
             }
 
-            $all_networks = $client->get_all_active_networks();
-            if (empty($all_networks)) {
-                wp_send_json_error(array( 'message' => 'Нет активных сетей с настроенным API' ));
-            }
-
-            $result = $this->validate_all_networks($client, $user_id, $all_networks, !$full);
-
+            // Логируем в аудит
             $this->log_audit('api_validation', $user_id, $result);
+
             wp_send_json_success($result);
-        }
-
-        if ($user_id === 0) {
-            // Проверка незарегистрированных транзакций
-            $result = $client->validate_unregistered($network, !$full);
-        } else {
-            // Проверяем существование пользователя
-            $user = get_user_by('id', $user_id);
-            if (!$user) {
-                wp_send_json_error(array( 'message' => "Пользователь #{$user_id} не найден" ));
+        } catch (Exception $e) {
+            if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging (debug only).
+                error_log('[cashback] api-validation validate_user: ' . $e->getMessage());
             }
-            $result = $client->validate_user($user_id, $network, !$full);
+            wp_send_json_error(array( 'message' => 'Ошибка валидации. Подробности записаны в журнал.' ));
         }
-
-        // Логируем в аудит
-        $this->log_audit('api_validation', $user_id, $result);
-
-        wp_send_json_success($result);
     }
 
     /**
@@ -1135,13 +1143,21 @@ echo 'style="display:none"';}
             wp_send_json_error(array( 'message' => 'Неверный ID сети' ));
         }
 
-        $client = Cashback_API_Client::get_instance();
-        $result = $client->test_connection($network_id);
+        try {
+            $client = Cashback_API_Client::get_instance();
+            $result = $client->test_connection($network_id);
 
-        if ($result['success']) {
-            wp_send_json_success(array( 'message' => $result['message'] ));
-        } else {
-            wp_send_json_error(array( 'message' => $result['message'] ));
+            if ($result['success']) {
+                wp_send_json_success(array( 'message' => $result['message'] ));
+            } else {
+                wp_send_json_error(array( 'message' => $result['message'] ));
+            }
+        } catch (Exception $e) {
+            if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging (debug only).
+                error_log('[cashback] api-validation test_connection: ' . $e->getMessage());
+            }
+            wp_send_json_error(array( 'message' => 'Ошибка проверки соединения. Подробности записаны в журнал.' ));
         }
     }
 
@@ -1192,15 +1208,23 @@ echo 'style="display:none"';}
         }
         set_transient($rate_key, $rate_count + 1, 5 * MINUTE_IN_SECONDS);
 
-        $result = Cashback_API_Cron::manual_sync();
+        try {
+            $result = Cashback_API_Cron::manual_sync();
 
-        if (!empty($result['locked'])) {
-            wp_send_json_error(array( 'message' => 'Синхронизация уже выполняется. Попробуйте через несколько секунд.' ));
+            if (!empty($result['locked'])) {
+                wp_send_json_error(array( 'message' => 'Синхронизация уже выполняется. Попробуйте через несколько секунд.' ));
+            }
+
+            $this->log_audit('manual_sync', 0, $result);
+
+            wp_send_json_success($result);
+        } catch (Exception $e) {
+            if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging (debug only).
+                error_log('[cashback] api-validation manual_sync: ' . $e->getMessage());
+            }
+            wp_send_json_error(array( 'message' => 'Ошибка ручной синхронизации. Подробности записаны в журнал.' ));
         }
-
-        $this->log_audit('manual_sync', 0, $result);
-
-        wp_send_json_success($result);
     }
 
     /**
