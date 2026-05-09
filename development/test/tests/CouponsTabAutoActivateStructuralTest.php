@@ -284,6 +284,34 @@ final class CouponsTabAutoActivateStructuralTest extends TestCase
     }
 
     /**
+     * Mobile-fix: WoodMart accordion может оставить content в inconsistent
+     * state — class wd-active, но style.display="none". Title визуально
+     * выделен, но содержимое таба collapsed. ensureContentExpanded()
+     * принудительно открывает content в этом случае.
+     */
+    public function test_js_has_ensure_content_expanded(): void
+    {
+        $js_file = self::$plugin_root . '/assets/js/cashback-coupons-tab.js';
+        $source  = (string) file_get_contents($js_file);
+
+        $this->assertStringContainsString(
+            'ensureContentExpanded',
+            $source,
+            'JS должен иметь ensureContentExpanded() для inconsistent accordion state'
+        );
+        $this->assertMatchesRegularExpression(
+            '/style\.display\s*===?\s*[\'"]none[\'"]/',
+            $source,
+            'ensureContentExpanded должен проверять inline display:none'
+        );
+        $this->assertMatchesRegularExpression(
+            '/style\.display\s*=\s*[\'"]block[\'"]/',
+            $source,
+            'ensureContentExpanded должен принудительно ставить display:block'
+        );
+    }
+
+    /**
      * Mobile-fix (Branch A): z-index overlay-колонки должен быть >= 11,
      * чтобы перекрывать WoodMart hover-mask / .product-element-top
      * (типичные значения темы 3-10). Иначе на мобильных тематический

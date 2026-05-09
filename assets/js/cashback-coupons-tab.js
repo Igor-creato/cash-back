@@ -152,9 +152,37 @@
         return false;
     }
 
+    // Финальный фиксап inconsistent state в WoodMart accordion: class wd-active
+    // на title и content уже есть, но content.style.display="none" остался от
+    // initial state (WoodMart accordion init проигнорировал наш wd-active или
+    // не успел сделать slideDown). Без этого title визуально выделен, но
+    // содержимое таба collapsed. Применяется ТОЛЬКО для accordion-title (mobile);
+    // desktop <a> такой проблемы не имеет.
+    function ensureContentExpanded(anchor) {
+        if (!anchor || !anchor.classList || !anchor.getAttribute) { return; }
+        if (!anchor.classList.contains('wd-accordion-title')) { return; }
+        var key = anchor.getAttribute('data-accordion-index');
+        if (!key) { return; }
+        var safeKey = escapeForSelector(key);
+        var content = document.querySelector(
+            '.wd-accordion-content[data-accordion-index="' + safeKey + '"]'
+        );
+        if (!content) { return; }
+        // Inconsistent state: class active, но display:none — принудительно открываем.
+        if (anchor.classList.contains('wd-active')
+            && content.classList.contains('wd-active')
+            && content.style.display === 'none'
+        ) {
+            content.style.display = 'block';
+        }
+    }
+
     function activate(anchor) {
         if (!anchor) { return false; }
-        if (isAlreadyActive(anchor)) { return true; }
+        if (isAlreadyActive(anchor)) {
+            ensureContentExpanded(anchor);
+            return true;
+        }
 
         // Подавляем нативный default action клика по anchor:
         // <a href="#tab-promokody"> при срабатывании default action делает
@@ -176,6 +204,7 @@
         } catch (e) {}
 
         anchor.removeEventListener('click', suppressDefault, true);
+        ensureContentExpanded(anchor);
         return true;
     }
 
