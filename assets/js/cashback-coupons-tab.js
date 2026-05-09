@@ -37,6 +37,12 @@
 (function () {
     'use strict';
 
+    // DIAG: TODO remove after verify fix-4. Помечает что IIFE запустился.
+    if (typeof window !== 'undefined') {
+        window.__cb_tab_iife_at = Date.now();
+        window.__cb_tab_iife_ready = document.readyState;
+    }
+
     var params = null;
     try {
         params = new URLSearchParams(window.location.search);
@@ -45,11 +51,16 @@
     }
     var wanted = params && params.get ? params.get('cb_tab') : null;
     if (!wanted) {
+        if (typeof window !== 'undefined') { window.__cb_tab_no_param = true; }
         return;
     }
     var safeSlug = String(wanted).replace(/[^a-zA-Z0-9_\-]/g, '');
     if (!safeSlug) {
         return;
+    }
+    // DIAG
+    if (typeof window !== 'undefined') {
+        window.__cb_tab_safeslug = safeSlug;
     }
 
     function escapeForSelector(value) {
@@ -190,13 +201,26 @@
     }
 
     function run() {
+        // DIAG
+        if (typeof window !== 'undefined') {
+            window.__cb_tab_run_at = Date.now();
+            window.__cb_tab_run_ready = document.readyState;
+        }
         // Шаг 1: проверяем серверную пре-активацию. Если сервер уже
         // отрендерил наш таб первым и WoodMart-template поставил
         // wd-active — activate() сделает no-op (isAlreadyActive guard).
         // Если нет (accordion_state≠'first', сторонний плагин и т.п.) —
         // активируем сейчас.
         var anchor = findTabAnchor(safeSlug);
+        if (typeof window !== 'undefined') {
+            window.__cb_tab_initial_anchor = anchor ? (anchor.tagName + '.' + anchor.className.substring(0, 60)) : null;
+            window.__cb_tab_initial_anchor_visible = anchor ? (anchor.offsetParent !== null) : null;
+            window.__cb_tab_initial_anchor_already_active = anchor ? isAlreadyActive(anchor) : null;
+        }
         activate(anchor);
+        if (typeof window !== 'undefined') {
+            window.__cb_tab_after_initial_active = document.querySelector('.wd-accordion-title.wd-active')?.getAttribute('data-accordion-index');
+        }
 
         // Шаг 2: мгновенный скролл к табам — высота контейнера табов
         // на DOMContentLoaded уже стабильна (заголовок таба + sticky-nav).
@@ -227,8 +251,17 @@
         function pollActivate() {
             pollAttempts++;
             var pollAnchor = findTabAnchor(safeSlug);
+            if (typeof window !== 'undefined') {
+                window['__cb_tab_poll_' + pollAttempts] = {
+                    found: pollAnchor ? pollAnchor.tagName : null,
+                    activeBefore: document.querySelector('.wd-accordion-title.wd-active')?.getAttribute('data-accordion-index'),
+                };
+            }
             if (pollAnchor && !isAlreadyActive(pollAnchor)) {
                 activate(pollAnchor);
+            }
+            if (typeof window !== 'undefined') {
+                window['__cb_tab_poll_' + pollAttempts + '_after'] = document.querySelector('.wd-accordion-title.wd-active')?.getAttribute('data-accordion-index');
             }
             if (pollAttempts < pollMax) {
                 var current = findTabAnchor(safeSlug);
