@@ -566,7 +566,9 @@ class Cashback_Legal_Admin {
             $filters['date_to'] = $filter_to;
         }
 
-        $rows = Cashback_Legal_DB::query_log($filters, $per_page, $offset);
+        $total_items = Cashback_Legal_DB::count_log($filters);
+        $total_pages = $total_items > 0 ? (int) ceil($total_items / $per_page) : 0;
+        $rows        = Cashback_Legal_DB::query_log($filters, $per_page, $offset);
 
         ?>
         <div class="wrap cashback-legal-admin">
@@ -640,29 +642,25 @@ class Cashback_Legal_Admin {
                     </tbody>
                 </table>
 
-                <p style="margin-top:16px;">
-                    <?php
-                    $base = admin_url('admin.php?page=' . self::PAGE_SLUG_JOURNAL);
-                    $build = static function ( int $p ) use ( $base, $filter_user_id, $filter_type, $filter_action, $filter_from, $filter_to ): string {
-                        $args = array_filter(array(
-                            'user_id'      => $filter_user_id > 0 ? $filter_user_id : null,
-                            'consent_type' => $filter_type !== '' ? $filter_type : null,
-                            'log_action'   => $filter_action !== '' ? $filter_action : null,
-                            'date_from'    => $filter_from !== '' ? $filter_from : null,
-                            'date_to'      => $filter_to !== '' ? $filter_to : null,
-                            'paged'        => $p,
-                        ), static fn( $v ): bool => $v !== null );
-                        return add_query_arg($args, $base);
-                    };
-                    if ($page_num > 1) :
-                        ?>
-                        <a class="button" href="<?php echo esc_url($build($page_num - 1)); ?>">← <?php esc_html_e('Предыдущая', 'cashback-plugin'); ?></a>
-                    <?php endif; ?>
-                    <span style="margin:0 12px;"><?php echo esc_html(sprintf('%s %d', __('Страница', 'cashback-plugin'), $page_num)); ?></span>
-                    <?php if (count($rows) === $per_page) : ?>
-                        <a class="button" href="<?php echo esc_url($build($page_num + 1)); ?>"><?php esc_html_e('Следующая', 'cashback-plugin'); ?> →</a>
-                    <?php endif; ?>
-                </p>
+                <?php
+                Cashback_Pagination::render(array(
+                    'total_items'  => $total_items,
+                    'per_page'     => $per_page,
+                    'current_page' => $page_num,
+                    'total_pages'  => $total_pages,
+                    'page_slug'    => self::PAGE_SLUG_JOURNAL,
+                    'add_args'     => array_filter(
+                        array(
+                            'user_id'      => $filter_user_id > 0 ? (string) $filter_user_id : '',
+                            'consent_type' => $filter_type,
+                            'log_action'   => $filter_action,
+                            'date_from'    => $filter_from,
+                            'date_to'      => $filter_to,
+                        ),
+                        static fn( $v ): bool => $v !== ''
+                    ),
+                ));
+                ?>
             <?php endif; ?>
         </div>
         <?php

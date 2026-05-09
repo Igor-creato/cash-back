@@ -243,17 +243,12 @@ class Cashback_Legal_DB {
     }
 
     /**
-     * Запрос журнала с фильтрами (для admin-страницы).
+     * Построение WHERE-условий для журнала. Используется и в query_log, и в count_log.
      *
      * @param array<string, mixed> $filters user_id|consent_type|action|date_from|date_to
-     * @param int $limit
-     * @param int $offset
-     * @return array<int, array<string, mixed>>
+     * @return array{0: string, 1: array<int, mixed>} [where_sql_без_'WHERE', where_args]
      */
-    public static function query_log( array $filters = array(), int $limit = 50, int $offset = 0 ): array {
-        global $wpdb;
-        $table = self::table_name();
-
+    private static function build_log_where( array $filters ): array {
         $where      = array( '1=1' );
         $where_args = array();
 
@@ -278,7 +273,24 @@ class Cashback_Legal_DB {
             $where_args[] = (string) $filters['date_to'];
         }
 
-        $sql        = "SELECT * FROM `{$table}` WHERE " . implode(' AND ', $where) .
+        return array( implode(' AND ', $where), $where_args );
+    }
+
+    /**
+     * Запрос журнала с фильтрами (для admin-страницы).
+     *
+     * @param array<string, mixed> $filters user_id|consent_type|action|date_from|date_to
+     * @param int $limit
+     * @param int $offset
+     * @return array<int, array<string, mixed>>
+     */
+    public static function query_log( array $filters = array(), int $limit = 50, int $offset = 0 ): array {
+        global $wpdb;
+        $table = self::table_name();
+
+        list( $where_sql, $where_args ) = self::build_log_where($filters);
+
+        $sql          = "SELECT * FROM `{$table}` WHERE {$where_sql}" .
             ' ORDER BY granted_at DESC, id DESC LIMIT %d OFFSET %d';
         $where_args[] = max(1, $limit);
         $where_args[] = max(0, $offset);
@@ -286,5 +298,26 @@ class Cashback_Legal_DB {
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared -- Условия prepared через prepare().
         $rows = $wpdb->get_results($wpdb->prepare($sql, $where_args), ARRAY_A);
         return is_array($rows) ? $rows : array();
+    }
+
+    /**
+     * Подсчёт записей журнала с теми же фильтрами, что у query_log() — для пагинации.
+     *
+     * @param array<string, mixed> $filters user_id|consent_type|action|date_from|date_to
+     */
+    public static function count_log( array $filters = array() ): int {
+        global $wpdb;
+        $table = self::table_name();
+
+        list( $where_sql, $where_args ) = self::build_log_where($filters);
+        $sql = "SELECT COUNT(*) FROM `{$table}` WHERE {$where_sql}";
+
+        if (empty($where_args)) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared -- Параметров нет, prepare не требуется.
+            return (int) $wpdb->get_var($sql);
+        }
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared -- Условия prepared через prepare().
+        return (int) $wpdb->get_var($wpdb->prepare($sql, $where_args));
     }
 }
