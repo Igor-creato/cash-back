@@ -55,6 +55,9 @@ class Cashback_Catalog_Visibility {
             add_action('pre_get_posts', array( __CLASS__, 'filter_pre_get_posts' ), 20, 1);
             // Sync видимости при изменении preferred в группе.
             add_action('cashback_group_preferred_changed', array( __CLASS__, 'on_group_preferred_changed' ), 10, 1);
+            // Sync видимости при смене post_status у member-продукта (закрывает
+            // gap «пропадающего шопа» — см. on_transition_post_status docblock).
+            add_action('transition_post_status', array( __CLASS__, 'on_transition_post_status' ), 10, 3);
             // Deferred one-shot backfill (см. ensure_backfilled).
             add_action(self::CRON_BACKFILL_HOOK, array( __CLASS__, 'handle_backfill_cron' ), 10, 0);
         }
@@ -128,6 +131,74 @@ class Cashback_Catalog_Visibility {
             return;
         }
         self::sync_group($group_id);
+    }
+
+    /**
+     * Listener на transition_post_status для product.
+     *
+     * Замыкает gap между cashback_group_preferred_changed (фирится только при
+     * изменении preferred_product_id в recompute_preferred) и реальной видимостью
+     * members в каталоге. Сценарий бага: pre-publish группа со всеми members
+     * draft/private — pick_fallback_member tier 4 выбирает draft anchor X,
+     * остальные active помечаются hide_meta='1'. Когда позже Y транзитит
+     * draft→publish, recompute_preferred НЕ срабатывает (нет cashback_tariffs_changed)
+     * → hide-meta на Y остаётся → WC скрывает X (draft) → шоп пропадает из
+     * каталога до следующего tariff sync.
+     *
+     * Фильтр publish-involved: переходы внутри set {draft, pending, private,
+     * auto-draft, future} не меняют get_publishable_members() выборку →
+     * sync_group был бы no-op rewrite. Отсекаем ~95% продуктовых транзишенов
+     * (importer создаёт draft, autosave-ы drafts и т.д.).
+     *
+     * Idempotence: sync_group идемпотентен — safe to double-fire вместе с
+     * cashback_group_preferred_changed (когда recompute_preferred сработает после
+     * publish и эмитит этот action). Дедупа нет намеренно — публикация редкая.
+     *
+     * Edge case `trash → draft` (untrash to draft) НЕ триггерит — publishable
+     * выборка не меняется. Sync произойдёт при будущем → publish или
+     * cashback_tariffs_changed.
+     *
+     * Early-return ordering — cheapest-first: хук фирится для ВСЕХ постов сайта,
+     * каждое лишнее условие умножается на global frequency. post_type guard стоит
+     * вторым (после null-check), DB-hit get_group_for_product — последним.
+     *
+     * @param string $new_status
+     * @param string $old_status
+     * @param mixed  $post WP_Post (тип ослаблен: edge-case вызовы могут передать null/object).
+     */
+    public static function on_transition_post_status( $new_status, $old_status, $post ): void {
+        if (! is_object($post)) {
+            return;
+        }
+        $post_type = (string) ( $post->post_type ?? '' );
+        if ($post_type !== 'product') {
+            return;
+        }
+        if ($new_status === $old_status) {
+            return;
+        }
+        // Только переходы, меняющие publishable-набор группы.
+        if ($new_status !== 'publish' && $old_status !== 'publish') {
+            return;
+        }
+        $post_id = (int) ( $post->ID ?? 0 );
+        if ($post_id <= 0) {
+            return;
+        }
+        if (function_exists('wp_is_post_revision') && wp_is_post_revision($post_id)) {
+            return;
+        }
+        if (function_exists('wp_is_post_autosave') && wp_is_post_autosave($post_id)) {
+            return;
+        }
+        if (! class_exists('Cashback_Shop_Group_Resolver')) {
+            return;
+        }
+        $group = Cashback_Shop_Group_Resolver::get_group_for_product($post_id);
+        if (! is_array($group) || empty($group['id'])) {
+            return;
+        }
+        self::sync_group((int) $group['id']);
     }
 
     /**

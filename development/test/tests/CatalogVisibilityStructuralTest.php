@@ -366,4 +366,124 @@ final class CatalogVisibilityStructuralTest extends TestCase
             self::$cashback_plugin_php
         );
     }
+
+    // ============================================================
+    // 10. on_transition_post_status — listener на смену статуса member-продукта.
+    // Закрывает gap «пропадающего шопа»: когда у группы все active members
+    // в draft/private, sync_group выбирает draft anchor через pick_fallback_member
+    // tier 4 и помечает остальных hide_meta='1'. При последующей публикации
+    // одного из них preferred не пересчитывается → hide-meta остаётся → шоп
+    // пропадает. Listener вызывает sync_group на любой transition с участием publish.
+    // ============================================================
+
+    private function on_transition_body(): string
+    {
+        $start = strpos(self::$vis_php, 'function on_transition_post_status');
+        $this->assertNotFalse($start);
+        $end = strpos(self::$vis_php, "\n    public", $start + 1);
+        if ($end === false) {
+            $end = strpos(self::$vis_php, "\n    private", $start + 1);
+        }
+        if ($end === false) {
+            $end = strpos(self::$vis_php, "\n}", $start);
+        }
+        return substr(self::$vis_php, $start, $end - $start);
+    }
+
+    public function test_register_adds_transition_post_status_action(): void
+    {
+        $this->assertMatchesRegularExpression(
+            "/add_action\s*\(\s*'transition_post_status'\s*,\s*array\s*\(\s*__CLASS__\s*,\s*'on_transition_post_status'\s*\)\s*,\s*10\s*,\s*3\s*\)/",
+            self::$vis_php,
+            'transition_post_status должен быть навешен с приоритетом 10 и accepted_args=3'
+        );
+    }
+
+    public function test_on_transition_method_exists(): void
+    {
+        $this->assertMatchesRegularExpression(
+            '/public\s+static\s+function\s+on_transition_post_status\s*\(/',
+            self::$vis_php
+        );
+    }
+
+    public function test_on_transition_early_return_non_product(): void
+    {
+        $body = $this->on_transition_body();
+        $this->assertMatchesRegularExpression(
+            "/\\\$post_type\s*!==\s*'product'/",
+            $body,
+            'нет проверки post_type !== "product"'
+        );
+    }
+
+    public function test_on_transition_early_return_same_status(): void
+    {
+        $body = $this->on_transition_body();
+        $this->assertMatchesRegularExpression(
+            '/\$new_status\s*===\s*\$old_status/',
+            $body,
+            'нет early-return на $new_status === $old_status'
+        );
+    }
+
+    public function test_on_transition_publish_involved_guard(): void
+    {
+        $body = $this->on_transition_body();
+        $this->assertMatchesRegularExpression(
+            "/\\\$new_status\s*!==\s*'publish'\s*&&\s*\\\$old_status\s*!==\s*'publish'/",
+            $body,
+            'нет фильтра на publish-involved transitions'
+        );
+    }
+
+    public function test_on_transition_skips_revisions_and_autosaves(): void
+    {
+        $body = $this->on_transition_body();
+        $this->assertStringContainsString('wp_is_post_revision', $body);
+        $this->assertStringContainsString('wp_is_post_autosave', $body);
+    }
+
+    public function test_on_transition_uses_get_group_for_product(): void
+    {
+        $body = $this->on_transition_body();
+        $this->assertStringContainsString(
+            'Cashback_Shop_Group_Resolver::get_group_for_product',
+            $body
+        );
+    }
+
+    public function test_on_transition_calls_sync_group(): void
+    {
+        $body = $this->on_transition_body();
+        $this->assertMatchesRegularExpression(
+            '/self::sync_group\s*\(/',
+            $body
+        );
+    }
+
+    public function test_on_transition_handles_null_group(): void
+    {
+        $body = $this->on_transition_body();
+        // null/empty check на результат get_group_for_product перед sync_group.
+        $this->assertMatchesRegularExpression(
+            "/!\s*is_array\s*\(\s*\\\$group\s*\)\s*\|\|\s*empty\s*\(\s*\\\$group\[\s*'id'\s*\]\s*\)/",
+            $body,
+            'нет null/empty guard на результат get_group_for_product'
+        );
+    }
+
+    public function test_on_transition_post_type_guard_before_db_call(): void
+    {
+        $body = $this->on_transition_body();
+        $product_pos = strpos($body, "'product'");
+        $db_pos      = strpos($body, 'get_group_for_product');
+        $this->assertNotFalse($product_pos, 'нет post_type guard');
+        $this->assertNotFalse($db_pos, 'нет вызова get_group_for_product');
+        $this->assertLessThan(
+            $db_pos,
+            $product_pos,
+            'post_type guard должен стоять ДО DB-hit get_group_for_product (perf invariant)'
+        );
+    }
 }
