@@ -127,7 +127,7 @@ class Cashback_Affiliate_Activation {
                     </span>
                 </label>
 
-                <button type="submit" class="button button-primary cashback-affiliate-activation-submit">
+                <button type="submit" class="woocommerce-Button button cashback-affiliate-activation-submit">
                     <?php echo esc_html__('Активировать партнёрскую программу', 'cashback-plugin'); ?>
                 </button>
 
