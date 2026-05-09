@@ -256,14 +256,19 @@
         function pollActivate() {
             pollAttempts++;
             var pollAnchor = findTabAnchor(safeSlug);
-            if (pollAnchor && !isAlreadyActive(pollAnchor)) {
-                activate(pollAnchor);
+            if (pollAnchor) {
+                if (!isAlreadyActive(pollAnchor)) {
+                    activate(pollAnchor);
+                } else {
+                    // Title уже active — но content может быть в inconsistent
+                    // state (class wd-active, но style.display:none). Это
+                    // happens когда WoodMart accordion init runs ПОСЛЕ нашего
+                    // initial click и оставляет display:none на не-первом табе.
+                    ensureContentExpanded(pollAnchor);
+                }
             }
             if (pollAttempts < pollMax) {
-                var current = findTabAnchor(safeSlug);
-                if (!current || !isAlreadyActive(current)) {
-                    window.setTimeout(pollActivate, 80);
-                }
+                window.setTimeout(pollActivate, 80);
             }
         }
         window.setTimeout(pollActivate, 80);
