@@ -43,6 +43,18 @@
     letter-spacing: 0.2px;
 }
 
+/**
+ * Header-row: на десктопе обычный блок (только заголовок виден),
+ * на мобильной превращается в flex-row «заголовок ← → кнопка».
+ */
+.sc-auth-pages-form__header {
+    display: block;
+}
+
+.sc-auth-pages-form__nav-link {
+    display: none;
+}
+
 .sc-auth-pages-form .form-row {
     margin-bottom: 18px;
 }
@@ -214,5 +226,49 @@
     .sc-auth-pages-form {
         margin: 16px;
         padding: 20px 22px;
+    }
+
+    .sc-auth-pages-form__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 0 0 22px;
+        padding: 0 0 14px;
+        border-bottom: 1px solid var(--sc-auth-pages-border);
+    }
+
+    .sc-auth-pages-form__header .sc-auth-pages-form__title {
+        margin: 0;
+        padding: 0;
+        border-bottom: none;
+        text-align: left;
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .sc-auth-pages-form__nav-link {
+        display: inline-block;
+        flex: 0 0 auto;
+        padding: 7px 14px;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1;
+        color: var(--sc-auth-pages-primary);
+        background: transparent;
+        border: 1px solid var(--sc-auth-pages-primary);
+        border-radius: var(--sc-auth-pages-radius, 6px);
+        text-decoration: none;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+        white-space: nowrap;
+        transition: background-color 0.15s ease, color 0.15s ease;
+    }
+
+    .sc-auth-pages-form__nav-link:hover,
+    .sc-auth-pages-form__nav-link:focus {
+        color: #fff;
+        background: var(--sc-auth-pages-primary);
+        text-decoration: none;
     }
 }

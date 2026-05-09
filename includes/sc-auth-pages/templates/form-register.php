@@ -25,7 +25,12 @@ if (!defined('ABSPATH')) {
     $sc_register_title = (string) apply_filters('sc_auth_pages_register_form_title', __('Регистрация', 'cashback-plugin'));
     if ($sc_register_title !== '') :
         ?>
-        <h2 class="sc-auth-pages-form__title"><?php echo esc_html($sc_register_title); ?></h2>
+        <div class="sc-auth-pages-form__header">
+            <h2 class="sc-auth-pages-form__title"><?php echo esc_html($sc_register_title); ?></h2>
+            <a class="sc-auth-pages-form__nav-link" href="<?php echo esc_url($login_url); ?>">
+                <?php esc_html_e('Войти', 'cashback-plugin'); ?>
+            </a>
+        </div>
         <?php
     endif;
     ?>
