@@ -138,8 +138,12 @@
         submitBtn.textContent = cfg.i18n.submit;
 
         var logoutLink = document.createElement('a');
-        // /my-account/customer-logout/ — стандартный WC endpoint, разрешён в allowedPaths.
-        logoutLink.href = '/my-account/customer-logout/';
+        // wp_logout_url() выдаёт wp-login.php?action=logout с одноразовым nonce —
+        // мгновенный logout без WC confirmation page. Fallback оставлен на случай
+        // старого закэшированного JS без cfg.logoutUrl.
+        logoutLink.href = (typeof cfg.logoutUrl === 'string' && cfg.logoutUrl)
+            ? cfg.logoutUrl
+            : '/my-account/customer-logout/';
         logoutLink.className = 'cashback-legal-reconsent-modal__btn cashback-legal-reconsent-modal__btn--secondary';
         logoutLink.textContent = cfg.i18n.logout;
 

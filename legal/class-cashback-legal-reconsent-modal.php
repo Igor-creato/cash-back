@@ -103,12 +103,17 @@ class Cashback_Legal_Reconsent_Modal {
             self::SCRIPT_HANDLE,
             'cashbackLegalReconsent',
             array(
-                'ajaxUrl' => admin_url('admin-ajax.php'),
-                'action'  => self::AJAX_ACTION,
-                'nonce'   => wp_create_nonce(self::AJAX_ACTION),
-                'types'   => $types_payload,
-                'allowedPaths' => array( '/my-account/', '/wp-login.php', '/wp-logout' ),
-                'i18n'    => array(
+                'ajaxUrl'      => admin_url('admin-ajax.php'),
+                'action'       => self::AJAX_ACTION,
+                'nonce'        => wp_create_nonce(self::AJAX_ACTION),
+                'types'        => $types_payload,
+                // Logout-флоу через wp-login.php?action=logout с одноразовым nonce —
+                // мгновенный logout без WC confirmation page (которая позволяла обход).
+                'logoutUrl'    => wp_logout_url(home_url('/')),
+                // Только wp-login.php (через него идёт wp_logout_url). /my-account/
+                // намеренно убран: после акцепта или logout юзер сам туда вернётся.
+                'allowedPaths' => array( '/wp-login.php' ),
+                'i18n'         => array(
                     'title'                => __('Условия обновлены', 'cashback-plugin'),
                     'message'              => __('Юридические документы изменились. Чтобы продолжить пользоваться сервисом, подтвердите согласие с обновлённой редакцией.', 'cashback-plugin'),
                     'logout'               => __('Выйти', 'cashback-plugin'),
@@ -177,16 +182,35 @@ class Cashback_Legal_Reconsent_Modal {
     // ────────────────────────────────────────────────────────────
 
     /**
-     * Страницы, на которых модал не показываем (юзер должен иметь
-     * возможность дойти до настроек/логаута).
+     * Страницы, на которых модал не показываем:
+     *   - админка;
+     *   - публичные страницы юр.документов (юзер должен иметь возможность их прочитать);
+     *   - wp-login.php / wp-logout (логаут-флоу).
+     *
+     * /my-account/* в whitelist НЕ входит: модалка должна блокировать ЛК
+     * до акцепта новых условий, иначе обход через customer-logout confirmation.
      */
     private static function is_safe_page(): bool {
         if (function_exists('is_admin') && is_admin()) {
             return true;
         }
-        // /my-account/ — для всех endpoints WC.
-        if (function_exists('is_account_page') && is_account_page()) {
-            return true;
+        // Публичные страницы юр.документов — иначе модалка блокирует чтение
+        // документа, на принятие которого ссылается сама же.
+        if (
+            function_exists('is_singular') && is_singular('page')
+            && function_exists('get_queried_object_id')
+            && class_exists('Cashback_Legal_Pages_Installer')
+        ) {
+            $page_id = (int) get_queried_object_id();
+            if ($page_id > 0) {
+                $map = get_option(Cashback_Legal_Pages_Installer::PAGES_MAP_OPTION, array());
+                if (is_array($map)) {
+                    $page_ids = array_map('intval', array_values($map));
+                    if (in_array($page_id, $page_ids, true)) {
+                        return true;
+                    }
+                }
+            }
         }
         // wp-login.php / wp-logout actions.
         // phpcs:ignore WordPressVIPMinimum.Variables.RestrictedVariables.cache_constraints___SERVER__REQUEST_URI__,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
@@ -205,13 +229,15 @@ class Cashback_Legal_Reconsent_Modal {
 
     /**
      * Сводная сигнатура версий всех pending-типов — для cache-busting JS/CSS.
+     * Префикс r2- маркирует JS-контракт (cfg.logoutUrl) и форсирует
+     * инвалидацию старого кэша браузера/CDN при выкатке этого фикса.
      */
     private static function cumulative_versions_signature(): string {
         $parts = array();
         foreach (self::$pending_types as $type) {
             $parts[] = $type . ':' . Cashback_Legal_Documents::get_active_version($type);
         }
-        return substr(md5(implode('|', $parts)), 0, 12);
+        return 'r2-' . substr(md5(implode('|', $parts)), 0, 12);
     }
 
     private static function base_url(): string {
