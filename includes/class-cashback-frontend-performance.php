@@ -40,6 +40,43 @@ class Cashback_Frontend_Performance {
     );
 
     /**
+     * Handle'ы JS-ассетов, безопасные для атрибута `defer`.
+     *
+     * Defer = parser-blocking download removed: HTML-парсинг идёт непрерывно,
+     * скрипт скачивается параллельно и исполняется после DOMContentLoaded
+     * в порядке появления тегов. Подходит для:
+     *  - Cashback-плагин: собственные скрипты, все навешиваются на jQuery
+     *    `(document).ready()` или DOMContentLoaded — нет inline-call'ов до
+     *    DOM-готовности.
+     *  - WC analytics/tracking: чисто аналитика, не блокирует UX.
+     *
+     * Allowlist (vs denylist) выбран намеренно: безопаснее консервативно
+     * добавлять handle сюда, чем случайно сломать сторонний плагин с
+     * inline-скриптом, депендящимся на синхронной загрузке другого. Сторонним
+     * темам / плагинам можно расширить allowlist через filter
+     * `cashback_defer_js_handles`.
+     *
+     * НЕ defer'им: jquery, jquery-migrate, woodmart-theme-init, любые
+     * скрипты с inline-зависимостями до DOMContentLoaded.
+     *
+     * @var string[]
+     */
+    private const DEFER_JS_HANDLES = array(
+        // Cashback-плагин (полный контроль).
+        'cashback-legal-cookies-banner',
+        'cashback-bot-protection',
+        'cashback-coupons-icons',
+        'cashback-contact-form',
+        'cashback-consent-validate',
+        'cashback-legal-my-account-toggle',
+        'cashback-legal-registration-validate',
+        'wc-affiliate-url-params',
+        // WooCommerce analytics (DOM-ready, без UX-зависимости).
+        'sourcebuster-js',
+        'wc-order-attribution',
+    );
+
+    /**
      * Подключение хуков. Идемпотентно — повторный вызов не создаёт дублей
      * (WP сам дедуплицирует add_filter / add_action по callable).
      */
@@ -48,6 +85,7 @@ class Cashback_Frontend_Performance {
             return;
         }
         add_filter('style_loader_tag', array( __CLASS__, 'defer_non_critical_css' ), 10, 2);
+        add_filter('script_loader_tag', array( __CLASS__, 'defer_non_critical_js' ), 10, 2);
         add_action('wp_head', array( __CLASS__, 'inline_critical_cookies_banner_rule' ), 1);
     }
 
@@ -94,6 +132,43 @@ class Cashback_Frontend_Performance {
         // Это даёт идентичный fallback браузерам с отключённым JS без необходимости
         // обратного преобразования preload-тега.
         return $preload_tag . '<noscript>' . $tag . '</noscript>';
+    }
+
+    /**
+     * Добавляет атрибут `defer` к non-critical JS-handle'ам из DEFER_JS_HANDLES
+     * (расширяется фильтром `cashback_defer_js_handles`).
+     *
+     * Защиты от двойного применения / поломок:
+     *  - Inline-script (без `src=`) — defer бессмысленен, не трогаем.
+     *  - Уже defer/async — пропускаем (filter повторно срабатывает в
+     *    некоторых сценариях preview/customizer).
+     *
+     * @param string $tag    Исходный <script>-тег от wp_print_scripts.
+     * @param string $handle Handle скрипта.
+     * @return string
+     */
+    public static function defer_non_critical_js( string $tag, string $handle ): string {
+        $allowed = apply_filters('cashback_defer_js_handles', self::DEFER_JS_HANDLES);
+        if (!is_array($allowed) || !in_array($handle, $allowed, true)) {
+            return $tag;
+        }
+
+        // Inline-script (нет src=) — defer бессмыслен, defer-attribute
+        // на inline'ах в HTML5 spec игнорируется, но валидаторы ругаются.
+        if (false === stripos($tag, ' src=')) {
+            return $tag;
+        }
+
+        // Уже defer / async — двойное применение запрещено spec'ом и
+        // визуально шумит в DevTools.
+        if (preg_match('/<script\b[^>]*\s(?:defer|async)\b/i', $tag)) {
+            return $tag;
+        }
+
+        // Добавляем defer сразу после `<script`. Регэксп ловит и `<script src=...`,
+        // и теоретическое `<script>` (но src-guard выше не пустит сюда последний).
+        $new_tag = preg_replace('/<script(\s|>)/', '<script defer$1', $tag, 1);
+        return null === $new_tag ? $tag : $new_tag;
     }
 
     /**
