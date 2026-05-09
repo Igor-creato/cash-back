@@ -134,6 +134,18 @@ class Cashback_Affiliate_Frontend {
         // Убеждаемся что профиль есть
         Cashback_Affiliate_DB::ensure_profile($user_id);
 
+        // Legal opt-in gate: до явного акцепта Условий партнёрской программы
+        // (consent_type='affiliate_program') скрываем UI и показываем форму
+        // активации. После акцепта пользователь увидит обычный экран.
+        if (class_exists('Cashback_Affiliate_Activation')
+            && !Cashback_Affiliate_Activation::is_activated($user_id)) {
+            echo '<div class="cashback-affiliate-page cashback-affiliate-page--activation">';
+            // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- HTML собран в render_activation_form() с esc_*; локальные плейсхолдеры экранируются там же.
+            echo Cashback_Affiliate_Activation::render_activation_form($user_id);
+            echo '</div>';
+            return;
+        }
+
         // Проверяем affiliate_status
         global $wpdb;
         $aff_table  = $wpdb->prefix . 'cashback_affiliate_profiles';

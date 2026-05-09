@@ -10,13 +10,15 @@ if (!defined('ABSPATH')) {
  * Cashback_Legal_Documents
  *
  * Реестр 6 юридических документов плагина (152-ФЗ, 38-ФЗ, 161-ФЗ, ГК ст. 437):
- *   - pd_policy        — Политика обработки ПД (152-ФЗ ст. 18.1, публичная)
- *   - pd_consent       — Согласие на обработку ПД (152-ФЗ ст. 9, чекбокс)
- *   - payment_pd       — Согласие на обработку платёжных данных (161-ФЗ, чекбокс)
- *   - terms_offer      — Пользовательское соглашение / публичная оферта (ГК ст. 437)
- *   - marketing        — Согласие на рекламные рассылки (38-ФЗ ст. 18, опц.)
- *   - cookies_policy   — Соглашение об использовании cookies
- *   - contact_form_pd  — короткое согласие на обработку ПД для гостевой контактной формы
+ *   - pd_policy         — Политика обработки ПД (152-ФЗ ст. 18.1, публичная)
+ *   - pd_consent        — Согласие на обработку ПД (152-ФЗ ст. 9, чекбокс)
+ *   - payment_pd        — Согласие на обработку платёжных данных (161-ФЗ, чекбокс)
+ *   - terms_offer       — Пользовательское соглашение / публичная оферта (ГК ст. 437)
+ *   - marketing         — Согласие на рекламные рассылки (38-ФЗ ст. 18, опц.)
+ *   - cookies_policy    — Соглашение об использовании cookies
+ *   - contact_form_pd   — короткое согласие на обработку ПД для гостевой контактной формы
+ *   - tech_data         — Согласие на обработку технических данных (149-ФЗ ст. 10)
+ *   - affiliate_program — Условия партнёрской (реферальной) программы (ГК ст. 437; opt-in)
  *
  * Версии хранятся в опции cashback_legal_consent_versions (JSON map: type → semver).
  * Текст шаблона — PHP-файл legal/templates/{slug}.php, return string с placeholder'ами.
@@ -38,6 +40,7 @@ class Cashback_Legal_Documents {
     public const TYPE_COOKIES_POLICY  = 'cookies_policy';
     public const TYPE_CONTACT_FORM_PD = 'contact_form_pd';
     public const TYPE_TECH_DATA       = 'tech_data';
+    public const TYPE_AFFILIATE_PROGRAM = 'affiliate_program';
 
     public const VERSIONS_OPTION = 'cashback_legal_consent_versions';
 
@@ -58,6 +61,7 @@ class Cashback_Legal_Documents {
             self::TYPE_COOKIES_POLICY,
             self::TYPE_CONTACT_FORM_PD,
             self::TYPE_TECH_DATA,
+            self::TYPE_AFFILIATE_PROGRAM,
         );
     }
 
@@ -76,6 +80,7 @@ class Cashback_Legal_Documents {
             self::TYPE_COOKIES_POLICY,
             self::TYPE_CONTACT_FORM_PD,
             self::TYPE_TECH_DATA,
+            self::TYPE_AFFILIATE_PROGRAM,
         );
     }
 
@@ -148,6 +153,14 @@ class Cashback_Legal_Documents {
                 'slug'          => 'tech-data',
                 'title'         => 'Согласие на обработку технических данных (149-ФЗ)',
                 'template_path' => 'legal/templates/tech-data.php',
+                'is_public'     => true,
+                'is_consent'    => true,
+                'is_required'   => false,
+            ),
+            self::TYPE_AFFILIATE_PROGRAM => array(
+                'slug'          => 'affiliate-program',
+                'title'         => 'Условия партнёрской (реферальной) программы',
+                'template_path' => 'legal/templates/affiliate-program.php',
                 'is_public'     => true,
                 'is_consent'    => true,
                 'is_required'   => false,

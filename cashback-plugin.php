@@ -807,6 +807,7 @@ class CashbackPlugin {
         $this->require_file('affiliate/class-affiliate-antifraud.php');
         $this->require_file('affiliate/class-affiliate-service.php');
         $this->require_file('affiliate/class-affiliate-frontend.php');
+        $this->require_file('affiliate/class-affiliate-activation.php');
 
         // Claims module (неначисленный кэшбэк) — загружается везде (фронт + админ + AJAX)
         $this->require_file('claims/class-claims-db.php');
@@ -1317,6 +1318,9 @@ class CashbackPlugin {
         }
         if (class_exists('Cashback_Affiliate_Frontend')) {
             Cashback_Affiliate_Frontend::get_instance();
+        }
+        if (class_exists('Cashback_Affiliate_Activation')) {
+            Cashback_Affiliate_Activation::init();
         }
         if (is_admin() && class_exists('Cashback_Affiliate_Admin')) {
             new Cashback_Affiliate_Admin();

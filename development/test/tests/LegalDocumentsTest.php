@@ -36,7 +36,8 @@ final class LegalDocumentsTest extends TestCase
     {
         $types = Cashback_Legal_Documents::all_types();
         // VULN-04: восьмой тип tech_data добавлен (149-ФЗ ст. 10).
-        $this->assertCount(8, $types);
+        // Phase 7 (2026-05-09): девятый тип affiliate_program (партнёрская программа).
+        $this->assertCount(9, $types);
         $this->assertContains('pd_policy', $types);
         $this->assertContains('pd_consent', $types);
         $this->assertContains('payment_pd', $types);
@@ -45,6 +46,7 @@ final class LegalDocumentsTest extends TestCase
         $this->assertContains('cookies_policy', $types);
         $this->assertContains('contact_form_pd', $types);
         $this->assertContains('tech_data', $types);
+        $this->assertContains('affiliate_program', $types);
     }
 
     public function test_consent_types_excludes_pd_policy(): void
