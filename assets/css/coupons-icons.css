@@ -131,3 +131,44 @@ html.cashback-coupons-icons-js .cashback-coupons-icons__tooltip {
         transition: none;
     }
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   Woodmart Custom Loop Layout: одна линия для иконок купонов + ❤
+   ─────────────────────────────────────────────────────────────────
+   Если шорткод [cashback_coupons_icons] и кнопка wishlist лежат в
+   двух соседних колонках одной .wp-block-wd-row, row на узких
+   вьюпортах рендерится как flex-direction: column → колонки стекаются
+   вертикально, сердечко уезжает под купоны.
+
+   Фикс: row становится position: relative; колонка с купонами вынимается
+   из потока (position: absolute, top:0 left:0). Колонка с сердечком
+   занимает первое место в потоке. Визуально оба элемента на одной линии.
+
+   Используется CSS :has() (Safari 15.4+ / Chrome 105+ / Firefox 121+).
+   На старых браузерах правило не срабатывает, layout остаётся прежним —
+   деградация без ошибок.
+*/
+.wd-product .wp-block-wd-row:has(.cashback-coupons-icons):has(.wd-wishlist-btn) {
+    position: relative;
+}
+
+.wd-product .wp-block-wd-row:has(.cashback-coupons-icons):has(.wd-wishlist-btn)
+    > .wp-block-wd-column:has(.cashback-coupons-icons) {
+    position: absolute;
+    top: 0;
+    left: 0;
+    flex: 0 0 auto;
+    width: auto;
+    height: auto;
+    z-index: 2;
+    /* Колонка-overlay не должна перехватывать клики на сердечке/изображении.
+       pointer-events возвращаем на сами иконки купонов через дочерний селектор. */
+    pointer-events: none;
+}
+
+.wd-product .wp-block-wd-row:has(.cashback-coupons-icons):has(.wd-wishlist-btn)
+    > .wp-block-wd-column:has(.cashback-coupons-icons) .cashback-coupons-icons,
+.wd-product .wp-block-wd-row:has(.cashback-coupons-icons):has(.wd-wishlist-btn)
+    > .wp-block-wd-column:has(.cashback-coupons-icons) .cashback-coupons-icons__item {
+    pointer-events: auto;
+}
