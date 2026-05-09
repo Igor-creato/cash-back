@@ -274,4 +274,103 @@ final class NginxCachePurgerTest extends TestCase
 
         $this->assertTrue(true, 'dispatch_purge_post: dedup не падает на повторах и сбрасывается через reset');
     }
+
+    // ================================================================
+    // Auto-purge на updated_option (WoodMart settings, Clearfy Pro)
+    // ================================================================
+
+    public function test_is_global_settings_option_recognises_xts_prefix(): void
+    {
+        // Главный options-blob WoodMart (saved on "Save options" в Theme Settings).
+        self::assertTrue(Cashback_Nginx_Cache_Hooks::is_global_settings_option('xts-woodmart-options'));
+        // Версия dynamic-CSS, при изменении меняется timestamp в xts-{name}-{TS}.css.
+        self::assertTrue(Cashback_Nginx_Cache_Hooks::is_global_settings_option('xts-default_header-version'));
+        self::assertTrue(Cashback_Nginx_Cache_Hooks::is_global_settings_option('xts-theme_settings_default-version'));
+        self::assertTrue(Cashback_Nginx_Cache_Hooks::is_global_settings_option('xts-options-presets'));
+    }
+
+    public function test_is_global_settings_option_recognises_wbcr_clearfy(): void
+    {
+        // Главный options-blob Clearfy Pro.
+        self::assertTrue(Cashback_Nginx_Cache_Hooks::is_global_settings_option('wbcr_clearfy_options'));
+        // Доп.секции Clearfy (compress, optimize и т.п.).
+        self::assertTrue(Cashback_Nginx_Cache_Hooks::is_global_settings_option('wbcr_clearfy_compress_options'));
+    }
+
+    public function test_is_global_settings_option_rejects_unrelated(): void
+    {
+        // woodmart_* (без дефиса) — служебные опции, обновляются часто, не
+        // меняют HTML; их purge стоил бы кэш-storm.
+        self::assertFalse(Cashback_Nginx_Cache_Hooks::is_global_settings_option('woodmart_added_column_on_sale_in_product_db'));
+        self::assertFalse(Cashback_Nginx_Cache_Hooks::is_global_settings_option('woodmart_revslider_version'));
+        self::assertFalse(Cashback_Nginx_Cache_Hooks::is_global_settings_option('woodmart_failed_local_google_fonts'));
+
+        // Совершенно посторонние опции (WP core, WC, плагины).
+        self::assertFalse(Cashback_Nginx_Cache_Hooks::is_global_settings_option('siteurl'));
+        self::assertFalse(Cashback_Nginx_Cache_Hooks::is_global_settings_option('woocommerce_default_country'));
+        self::assertFalse(Cashback_Nginx_Cache_Hooks::is_global_settings_option('cashback_some_random_option'));
+        self::assertFalse(Cashback_Nginx_Cache_Hooks::is_global_settings_option(''));
+    }
+
+    public function test_dispatch_purge_all_invokes_purger_once_per_request(): void
+    {
+        // tmp_root за whitelist'ом /var/cache/nginx/ — даём тест-разрешение.
+        Cashback_Nginx_Cache_Purger::set_test_root_prefix($this->tmp_root);
+
+        // Засеиваем 2 файла кэша.
+        $f1 = $this->tmp_root . '/a/12/abc123';
+        $f2 = $this->tmp_root . '/b/34/def456';
+        mkdir(dirname($f1), 0o755, true);
+        mkdir(dirname($f2), 0o755, true);
+        file_put_contents($f1, 'cached');
+        file_put_contents($f2, 'cached');
+
+        // Первый dispatch — должен реально удалить файлы.
+        Cashback_Nginx_Cache_Hooks::dispatch_purge_all('test-1');
+        self::assertFileDoesNotExist($f1, 'Первый dispatch_purge_all должен удалить файл');
+        self::assertFileDoesNotExist($f2, 'Первый dispatch_purge_all должен удалить файл');
+
+        // Засеиваем заново — второй dispatch в том же request не должен трогать.
+        if (!is_dir(dirname($f1))) {
+            mkdir(dirname($f1), 0o755, true);
+        }
+        file_put_contents($f1, 'cached-again');
+        Cashback_Nginx_Cache_Hooks::dispatch_purge_all('test-2');
+        self::assertFileExists($f1, 'Второй dispatch в том же request — no-op (per-request guard)');
+
+        // После reset — guard сбрасывается, новый purge снова работает.
+        Cashback_Nginx_Cache_Hooks::reset_dedup_for_tests();
+        Cashback_Nginx_Cache_Hooks::dispatch_purge_all('test-3');
+        self::assertFileDoesNotExist($f1, 'После reset_dedup — purge снова работает');
+    }
+
+    public function test_on_option_updated_skips_unrelated_options(): void
+    {
+        // tmp_root + засеянный файл. Если on_option_updated некорректно покроет
+        // siteurl — purge_all удалит файл и тест зафейлится.
+        Cashback_Nginx_Cache_Purger::set_test_root_prefix($this->tmp_root);
+
+        $f = $this->tmp_root . '/c/56/cached_unrelated';
+        mkdir(dirname($f), 0o755, true);
+        file_put_contents($f, 'should_survive');
+
+        Cashback_Nginx_Cache_Hooks::on_option_updated('siteurl', 'old', 'new');
+        Cashback_Nginx_Cache_Hooks::on_option_updated('woodmart_revslider_version', '6.7.40', '6.7.41');
+        Cashback_Nginx_Cache_Hooks::on_option_updated('', null, null);
+
+        self::assertFileExists($f, 'Не-whitelisted опции не должны триггерить purge_all');
+    }
+
+    public function test_on_option_updated_triggers_purge_for_xts_options(): void
+    {
+        Cashback_Nginx_Cache_Purger::set_test_root_prefix($this->tmp_root);
+
+        $f = $this->tmp_root . '/d/78/cached_xts';
+        mkdir(dirname($f), 0o755, true);
+        file_put_contents($f, 'will_be_purged');
+
+        Cashback_Nginx_Cache_Hooks::on_option_updated('xts-woodmart-options', array(), array( 'foo' => 'bar' ));
+
+        self::assertFileDoesNotExist($f, 'on_option_updated с xts-woodmart-options должен триггерить purge_all');
+    }
 }
