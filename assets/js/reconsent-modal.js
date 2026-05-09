@@ -136,7 +136,6 @@
         submitBtn.type = 'button';
         submitBtn.className = 'cashback-legal-reconsent-modal__btn cashback-legal-reconsent-modal__btn--primary';
         submitBtn.textContent = cfg.i18n.submit;
-        submitBtn.disabled = true;
 
         var logoutLink = document.createElement('a');
         // /my-account/customer-logout/ — стандартный WC endpoint, разрешён в allowedPaths.
@@ -144,28 +143,57 @@
         logoutLink.className = 'cashback-legal-reconsent-modal__btn cashback-legal-reconsent-modal__btn--secondary';
         logoutLink.textContent = cfg.i18n.logout;
 
+        var errorBox = document.createElement('p');
+        errorBox.className = 'cashback-legal-reconsent-modal__error';
+        errorBox.textContent = cfg.i18n.errorAcceptRequired || 'Примите новые пользовательские соглашения';
+        errorBox.setAttribute('role', 'alert');
+        dialog.appendChild(errorBox);
+
         actions.appendChild(submitBtn);
         actions.appendChild(logoutLink);
         dialog.appendChild(actions);
 
         container.appendChild(dialog);
 
-        // Toggle submit-кнопки в зависимости от того, отмечены ли все чекбоксы.
         var checkboxes = container.querySelectorAll('[data-cashback-reconsent]');
-        function updateSubmit() {
-            var allChecked = true;
-            checkboxes.forEach(function (cb) {
-                if (!cb.checked) {
-                    allChecked = false;
+
+        // На change снимаем подсветку у этой строки и (если все отмечены) скрываем общую ошибку.
+        checkboxes.forEach(function (cb) {
+            cb.addEventListener('change', function () {
+                var row = cb.closest('.cashback-legal-reconsent-modal__row');
+                if (cb.checked && row) {
+                    row.classList.remove('has-error');
+                }
+                var allChecked = true;
+                checkboxes.forEach(function (other) {
+                    if (!other.checked) {
+                        allChecked = false;
+                    }
+                });
+                if (allChecked) {
+                    errorBox.classList.remove('is-visible');
                 }
             });
-            submitBtn.disabled = !allChecked;
-        }
-        checkboxes.forEach(function (cb) {
-            cb.addEventListener('change', updateSubmit);
         });
 
         submitBtn.addEventListener('click', function () {
+            var allChecked = true;
+            checkboxes.forEach(function (cb) {
+                var row = cb.closest('.cashback-legal-reconsent-modal__row');
+                if (!cb.checked) {
+                    allChecked = false;
+                    if (row) {
+                        row.classList.add('has-error');
+                    }
+                } else if (row) {
+                    row.classList.remove('has-error');
+                }
+            });
+            if (!allChecked) {
+                errorBox.classList.add('is-visible');
+                return;
+            }
+            errorBox.classList.remove('is-visible');
             submitBtn.disabled = true;
             submitConsent(submitBtn, container);
         });

@@ -109,11 +109,12 @@ class Cashback_Legal_Reconsent_Modal {
                 'types'   => $types_payload,
                 'allowedPaths' => array( '/my-account/', '/wp-login.php', '/wp-logout' ),
                 'i18n'    => array(
-                    'title'    => __('Условия обновлены', 'cashback-plugin'),
-                    'message'  => __('Юридические документы изменились. Чтобы продолжить пользоваться сервисом, подтвердите согласие с обновлённой редакцией.', 'cashback-plugin'),
-                    'logout'   => __('Выйти', 'cashback-plugin'),
-                    'submit'   => __('Принять обновлённые условия', 'cashback-plugin'),
-                    'reading'  => __('Открыть документ', 'cashback-plugin'),
+                    'title'                => __('Условия обновлены', 'cashback-plugin'),
+                    'message'              => __('Юридические документы изменились. Чтобы продолжить пользоваться сервисом, подтвердите согласие с обновлённой редакцией.', 'cashback-plugin'),
+                    'logout'               => __('Выйти', 'cashback-plugin'),
+                    'submit'               => __('Принять обновлённые условия', 'cashback-plugin'),
+                    'reading'              => __('Открыть документ', 'cashback-plugin'),
+                    'errorAcceptRequired'  => __('Примите новые пользовательские соглашения', 'cashback-plugin'),
                 ),
             )
         );
