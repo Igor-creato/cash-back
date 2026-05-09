@@ -42,11 +42,42 @@ class Cashback_Nginx_Cache_Hooks {
     );
 
     /**
+     * Префиксы option_name, изменения которых требуют purge_all().
+     *
+     * - `xts-` — WoodMart/XTS Theme Options. Главный — `xts-woodmart-options`,
+     *   но также `xts-default_header-version`, `xts-theme_settings_default-version`
+     *   которые меняют timestamp в URL динамически генерируемых CSS-файлов
+     *   (xts-default_header-{TS}.css, xts-theme_settings_default-{TS}.css).
+     *   Если HTML с СТАРЫМ timestamp лежит в fastcgi_cache, а на диске уже
+     *   новый файл — браузер ловит 404→text/html и MIME-error.
+     * - `wbcr_clearfy` — Clearfy Pro options (combine/defer toggles меняют
+     *   набор и порядок enqueue, изменяя `<link>` в HTML).
+     *
+     * `woodmart_*` (без дефиса) НЕ покрываем намеренно: в WP-options есть
+     * `woodmart_failed_local_google_fonts`, `woodmart_revslider_version` и
+     * пр. служебные опции, которые обновляются часто и не меняют HTML.
+     */
+    private const PURGE_GLOBAL_OPTION_PREFIXES = array(
+        'xts-',
+        'wbcr_clearfy',
+    );
+
+    /**
      * Per-request набор уже purged post_ids, для дедупа.
      *
      * @var array<int, true>
      */
     private static $purged_in_request = array();
+
+    /**
+     * Per-request guard для purge_all(): несколько `xts-*` опций могут
+     * обновиться в одном save (xts-woodmart-options + xts-default_header-version
+     * + xts-theme_settings_default-version), но purge_all() достаточно
+     * вызвать ОДИН раз за request.
+     *
+     * @var bool
+     */
+    private static $purge_all_in_request = false;
 
     /** Регистрация всех хуков. */
     public static function init(): void {
@@ -70,6 +101,16 @@ class Cashback_Nginx_Cache_Hooks {
 
         // тарифы (custom DB-таблица cashback_shop_tariffs) — триггерится из shop-importer
         add_action('cashback_tariffs_changed', array( __CLASS__, 'on_tariffs_changed' ), 10, 1);
+
+        // Глобальные настройки (тема WoodMart, плагин Clearfy Pro): любая правка
+        // в админке темы/оптимизатора меняет состав/URL ассетов в HTML, а
+        // fastcgi_cache хранит старый HTML до 30 мин — пользователь ловит
+        // визуальную ломку (404 на CSS/JS с устаревшим timestamp). Сбрасываем
+        // ВЕСЬ кэш на любое updated_option с whitelisted prefix'ом.
+        add_action('updated_option', array( __CLASS__, 'on_option_updated' ), 10, 3);
+
+        // Customizer: smaller scope, но тоже меняет HTML/CSS-выдачу.
+        add_action('customize_save_after', array( __CLASS__, 'on_customize_save' ), 10);
     }
 
     /**
@@ -201,8 +242,66 @@ class Cashback_Nginx_Cache_Hooks {
         }
     }
 
+    /**
+     * Хук `updated_option`: проверяет prefix option_name против
+     * PURGE_GLOBAL_OPTION_PREFIXES; если подходит — триггерит purge_all().
+     *
+     * @param string $option    Имя опции.
+     * @param mixed  $old_value Передаётся WP-хуком, не используется.
+     * @param mixed  $value     Передаётся WP-хуком, не используется.
+     */
+    // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter -- $old_value/$value диктуются сигнатурой WP-хука updated_option.
+    public static function on_option_updated( $option, $old_value, $value ): void {
+        if (!is_string($option) || $option === '') {
+            return;
+        }
+        if (!self::is_global_settings_option($option)) {
+            return;
+        }
+        self::dispatch_purge_all('option:' . $option);
+    }
+
+    /**
+     * Хук `customize_save_after`: WP Customizer сохранил changeset.
+     */
+    public static function on_customize_save(): void {
+        self::dispatch_purge_all('customize_save');
+    }
+
+    /**
+     * Проверяет, попадает ли option_name под whitelist для full purge.
+     */
+    public static function is_global_settings_option( string $option ): bool {
+        foreach (self::PURGE_GLOBAL_OPTION_PREFIXES as $prefix) {
+            // str_starts_with доступен на PHP 8+ (Requires PHP 8.3 в плагине).
+            if (str_starts_with($option, $prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Точка диспетчеризации full purge с per-request дедупом. Идемпотентен:
+     * повторный вызов в том же request — no-op.
+     */
+    public static function dispatch_purge_all( string $reason ): void {
+        if (self::$purge_all_in_request) {
+            return;
+        }
+        self::$purge_all_in_request = true;
+
+        try {
+            Cashback_Nginx_Cache_Purger::purge_all();
+        } catch (\Throwable $e) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic; never fail option-save.
+            error_log('[Cashback Nginx Purger] dispatch_purge_all failed: ' . $e->getMessage() . ' (reason=' . $reason . ')');
+        }
+    }
+
     /** Reset для unit-тестов. */
     public static function reset_dedup_for_tests(): void {
-        self::$purged_in_request = array();
+        self::$purged_in_request    = array();
+        self::$purge_all_in_request = false;
     }
 }
