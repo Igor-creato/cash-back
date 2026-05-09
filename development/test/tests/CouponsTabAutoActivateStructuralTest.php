@@ -233,6 +233,25 @@ final class CouponsTabAutoActivateStructuralTest extends TestCase
     }
 
     /**
+     * Mobile-fix: window.load retry как last-resort backstop. WoodMart
+     * accordion attaches click-handler в $(document).ready который может
+     * runs ПОСЛЕ нашего DOMContentLoaded. window.load гарантированно runs
+     * после всех ready-handlers — последний шанс активировать таб когда
+     * accordion полностью готов.
+     */
+    public function test_js_has_window_load_retry(): void
+    {
+        $js_file = self::$plugin_root . '/assets/js/cashback-coupons-tab.js';
+        $source  = (string) file_get_contents($js_file);
+
+        $this->assertMatchesRegularExpression(
+            '/window\.addEventListener\(\s*[\'"]load[\'"]\s*,/',
+            $source,
+            'JS должен иметь window.load retry как last-resort backstop'
+        );
+    }
+
+    /**
      * Mobile-fix (Branch A): z-index overlay-колонки должен быть >= 11,
      * чтобы перекрывать WoodMart hover-mask / .product-element-top
      * (типичные значения темы 3-10). Иначе на мобильных тематический
