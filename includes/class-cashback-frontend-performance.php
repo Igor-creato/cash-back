@@ -74,6 +74,20 @@ class Cashback_Frontend_Performance {
         // WooCommerce analytics (DOM-ready, без UX-зависимости).
         'sourcebuster-js',
         'wc-order-attribution',
+        // Elementor — frontend крутится на DOMContentLoaded; webpack runtime
+        // и frontend-modules идут как зависимости, defer сохраняет порядок.
+        'elementor-webpack-runtime',
+        'elementor-frontend-modules',
+        'elementor-frontend',
+        // WoodMart — non-init utility-скрипты для shop-страницы / mobile UX.
+        // НЕ покрываем: woodmart-theme (helpers.min.js — главный init,
+        // зависимости плагинов читают window.wd* инлайном),
+        // wd-elementor-integration (вызывается Elementor'ом).
+        'wd-products-load-more',
+        'wd-ajax-filters',
+        'wd-shop-page-init',
+        'wd-mobile-navigation',
+        'wd-hidden-sidebar',
     );
 
     /**
