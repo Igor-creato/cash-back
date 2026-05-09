@@ -216,7 +216,23 @@
             });
         }
 
-        // Шаг 4: safety-net через MutationObserver. WoodMart's
+        // Шаг 4: window.load retry — last-resort backstop. WoodMart accordion
+        // init выполняется в $(document).ready, который идёт в одной очереди
+        // с нашим DOMContentLoaded handler'ом. Если наш скрипт attached
+        // первым, click в активаторе уходит до того как WoodMart прикрепил
+        // click-handler к .wd-accordion-title. Window.load fires ПОСЛЕ
+        // всех ready-handlers — гарантия что accordion полностью готов.
+        if (window.addEventListener) {
+            window.addEventListener('load', function () {
+                var lateAnchor = findTabAnchor(safeSlug);
+                if (lateAnchor && !isAlreadyActive(lateAnchor)) {
+                    activate(lateAnchor);
+                    instantScrollToTabs();
+                }
+            }, false);
+        }
+
+        // Шаг 5: safety-net через MutationObserver. WoodMart's
         // singleProductTabsAccordion на $(document).ready может выстрелить
         // ПОСЛЕ нашего DOMContentLoaded и кликнуть .wd-nav a:first.
         // Если сервер не пре-активировал наш таб — WoodMart активирует
@@ -237,7 +253,13 @@
                 return;
             }
             activate(current);
-            observer.disconnect();
+            // Намеренно НЕ disconnect здесь: если WoodMart accordion-handler
+            // ещё не был attached, наш click ушёл в пустоту, и наш таб
+            // не стал активным. Оставляем observer слушать дальнейшие
+            // class-mutations (включая ту, что выстрелит, когда WoodMart
+            // активирует первый таб) — на каждой mutation повторяем
+            // activate(). Hard-disconnect через 3000ms всё равно остановит
+            // observer чтобы не было утечки.
         });
 
         observer.observe(observerTarget, {
