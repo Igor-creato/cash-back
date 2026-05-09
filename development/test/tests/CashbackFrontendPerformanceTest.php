@@ -162,6 +162,107 @@ class CashbackFrontendPerformanceTest extends TestCase
     }
 
     // ================================================================
+    // defer_non_critical_js() — defer для allowlisted JS-handle'ов
+    // ================================================================
+
+    public function test_defer_js_returns_unchanged_for_non_allowlisted(): void
+    {
+        self::assertTrue(class_exists('Cashback_Frontend_Performance'));
+
+        $tag    = "<script src='https://example.com/foo.js' id='woodmart-theme-js'></script>\n";
+        $result = Cashback_Frontend_Performance::defer_non_critical_js($tag, 'woodmart-theme');
+
+        self::assertSame($tag, $result, 'Не allowlisted handle не должен модифицироваться');
+    }
+
+    public function test_defer_js_adds_defer_to_cashback_handle(): void
+    {
+        self::assertTrue(class_exists('Cashback_Frontend_Performance'));
+
+        $tag    = "<script src='https://example.com/cookies-banner.js' id='cashback-legal-cookies-banner-js'></script>\n";
+        $result = Cashback_Frontend_Performance::defer_non_critical_js($tag, 'cashback-legal-cookies-banner');
+
+        self::assertNotSame($tag, $result, 'Allowlisted handle должен быть модифицирован');
+        self::assertStringContainsString('<script defer', $result, 'defer-атрибут должен быть добавлен');
+        self::assertStringContainsString('cookies-banner.js', $result, 'href должен сохраниться');
+    }
+
+    public function test_defer_js_adds_defer_to_wc_analytics_handles(): void
+    {
+        self::assertTrue(class_exists('Cashback_Frontend_Performance'));
+
+        foreach (array( 'sourcebuster-js', 'wc-order-attribution' ) as $handle) {
+            $tag    = "<script src='https://example.com/{$handle}.js' id='{$handle}-js'></script>";
+            $result = Cashback_Frontend_Performance::defer_non_critical_js($tag, $handle);
+            self::assertStringContainsString(
+                '<script defer',
+                $result,
+                "WC analytics handle '{$handle}' должен получить defer"
+            );
+        }
+    }
+
+    public function test_defer_js_skips_inline_scripts(): void
+    {
+        self::assertTrue(class_exists('Cashback_Frontend_Performance'));
+
+        // Inline script (нет src=).
+        $tag    = "<script id='cashback-legal-cookies-banner-js-extra'>var a = 1;</script>\n";
+        $result = Cashback_Frontend_Performance::defer_non_critical_js($tag, 'cashback-legal-cookies-banner');
+
+        self::assertSame($tag, $result, 'Inline-script не должен получать defer');
+    }
+
+    public function test_defer_js_skips_already_deferred(): void
+    {
+        self::assertTrue(class_exists('Cashback_Frontend_Performance'));
+
+        $tag    = "<script defer src='https://example.com/foo.js' id='cashback-bot-protection-js'></script>";
+        $result = Cashback_Frontend_Performance::defer_non_critical_js($tag, 'cashback-bot-protection');
+
+        self::assertSame($tag, $result, 'Уже defer-нутый тег не должен модифицироваться повторно');
+    }
+
+    public function test_defer_js_skips_already_async(): void
+    {
+        self::assertTrue(class_exists('Cashback_Frontend_Performance'));
+
+        $tag    = "<script async src='https://example.com/foo.js' id='cashback-bot-protection-js'></script>";
+        $result = Cashback_Frontend_Performance::defer_non_critical_js($tag, 'cashback-bot-protection');
+
+        self::assertSame($tag, $result, 'async-тег не должен переписываться в defer');
+    }
+
+    public function test_defer_js_filter_extends_allowlist(): void
+    {
+        self::assertTrue(class_exists('Cashback_Frontend_Performance'));
+
+        // Без фильтра — handle не в списке, тег не меняется.
+        $tag1    = "<script src='https://example.com/custom.js' id='my-custom-script-js'></script>";
+        $result1 = Cashback_Frontend_Performance::defer_non_critical_js($tag1, 'my-custom-script');
+        self::assertSame($tag1, $result1, 'До фильтра кастомный handle не в allowlist');
+
+        // С фильтром — попадает в allowlist.
+        $filter = static function ( array $handles ): array {
+            $handles[] = 'my-custom-script';
+            return $handles;
+        };
+        add_filter('cashback_defer_js_handles', $filter, 10, 1);
+
+        $tag2    = "<script src='https://example.com/custom.js' id='my-custom-script-js'></script>";
+        $result2 = Cashback_Frontend_Performance::defer_non_critical_js($tag2, 'my-custom-script');
+
+        // Cleanup сразу, чтобы не утекало в другие тесты.
+        remove_filter('cashback_defer_js_handles', $filter, 10);
+
+        self::assertStringContainsString(
+            '<script defer',
+            $result2,
+            'Handle добавленный через filter cashback_defer_js_handles должен получить defer'
+        );
+    }
+
+    // ================================================================
     // inline_critical_cookies_banner_rule()
     // ================================================================
 
