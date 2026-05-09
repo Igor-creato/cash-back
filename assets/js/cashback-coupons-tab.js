@@ -216,20 +216,45 @@
             });
         }
 
-        // Шаг 4: window.load retry — last-resort backstop. WoodMart accordion
-        // init выполняется в $(document).ready, который идёт в одной очереди
-        // с нашим DOMContentLoaded handler'ом. Если наш скрипт attached
-        // первым, click в активаторе уходит до того как WoodMart прикрепил
-        // click-handler к .wd-accordion-title. Window.load fires ПОСЛЕ
-        // всех ready-handlers — гарантия что accordion полностью готов.
-        if (window.addEventListener) {
-            window.addEventListener('load', function () {
-                var lateAnchor = findTabAnchor(safeSlug);
-                if (lateAnchor && !isAlreadyActive(lateAnchor)) {
-                    activate(lateAnchor);
-                    instantScrollToTabs();
+        // Шаг 4: polling retry с интервалом 80ms × 5 попыток (400ms total).
+        // Покрывает случай когда WoodMart accordion init или его reset на
+        // первый таб случается между нашим DOMContentLoaded handler'ом и
+        // полностью «settled» состоянием. Идемпотентно через
+        // isAlreadyActive() guard — лишних кликов не будет, как только
+        // наш таб станет активным, polling ничего не делает.
+        var pollAttempts = 0;
+        var pollMax = 5;
+        function pollActivate() {
+            pollAttempts++;
+            var pollAnchor = findTabAnchor(safeSlug);
+            if (pollAnchor && !isAlreadyActive(pollAnchor)) {
+                activate(pollAnchor);
+            }
+            if (pollAttempts < pollMax) {
+                var current = findTabAnchor(safeSlug);
+                if (!current || !isAlreadyActive(current)) {
+                    window.setTimeout(pollActivate, 80);
                 }
-            }, false);
+            }
+        }
+        window.setTimeout(pollActivate, 80);
+
+        // Шаг 5: late retry — last-resort backstop когда документ полностью
+        // загрузился. Если наш скрипт runs after window.load (footer-script
+        // на быстрой mobile-странице), addEventListener('load') бесполезен —
+        // event уже выстрелил. В этом случае делаем setTimeout-retry на
+        // следующем tick. Иначе вешаем 'load' listener.
+        function lateActivate() {
+            var lateAnchor = findTabAnchor(safeSlug);
+            if (lateAnchor && !isAlreadyActive(lateAnchor)) {
+                activate(lateAnchor);
+                instantScrollToTabs();
+            }
+        }
+        if (document.readyState === 'complete') {
+            window.setTimeout(lateActivate, 0);
+        } else if (window.addEventListener) {
+            window.addEventListener('load', lateActivate, false);
         }
 
         // Шаг 5: safety-net через MutationObserver. WoodMart's

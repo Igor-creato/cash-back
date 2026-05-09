@@ -186,13 +186,13 @@ final class CouponsTabAutoActivateStructuralTest extends TestCase
         $this->assertMatchesRegularExpression(
             '/observer\.disconnect\(\)/',
             $source,
-            'Observer должен disconnect после первой успешной активации (idempotent)'
+            'Observer должен disconnect когда наш таб уже активен (idempotent)'
         );
-        // Должен остаться ровно один setTimeout — hard-disconnect через 3000ms.
-        $this->assertSame(
-            1,
-            preg_match_all('/setTimeout\(/', $source) ?: 0,
-            'Должен остаться ровно один setTimeout (hard-disconnect 3000ms)'
+        // Hard-disconnect через 3000ms должен присутствовать как leak-prevent.
+        $this->assertMatchesRegularExpression(
+            '/setTimeout\([^,]+,\s*3000\s*\)/',
+            $source,
+            'Hard-disconnect через 3000ms (leak-prevent) должен присутствовать'
         );
     }
 
@@ -237,7 +237,9 @@ final class CouponsTabAutoActivateStructuralTest extends TestCase
      * accordion attaches click-handler в $(document).ready который может
      * runs ПОСЛЕ нашего DOMContentLoaded. window.load гарантированно runs
      * после всех ready-handlers — последний шанс активировать таб когда
-     * accordion полностью готов.
+     * accordion полностью готов. Если же наш скрипт runs after window.load
+     * (документ уже complete), используется setTimeout-fallback вместо
+     * addEventListener (event уже выстрелил, listener бесполезен).
      */
     public function test_js_has_window_load_retry(): void
     {
@@ -247,7 +249,37 @@ final class CouponsTabAutoActivateStructuralTest extends TestCase
         $this->assertMatchesRegularExpression(
             '/window\.addEventListener\(\s*[\'"]load[\'"]\s*,/',
             $source,
-            'JS должен иметь window.load retry как last-resort backstop'
+            'JS должен иметь window.load retry как backstop'
+        );
+        // Защита от случая когда readyState уже complete: addEventListener('load')
+        // не сработает, нужен setTimeout-fallback.
+        $this->assertMatchesRegularExpression(
+            '/document\.readyState\s*===?\s*[\'"]complete[\'"]/',
+            $source,
+            'JS должен проверять readyState=== "complete" для setTimeout-fallback'
+        );
+    }
+
+    /**
+     * Mobile-fix: polling retry с интервалом 80ms × 5 попыток.
+     * Покрывает race с WoodMart accordion init / re-activation. Без него
+     * single rAF retry может промахнуться если WoodMart attaches handlers
+     * через несколько ticks или re-activates первый таб после нашего click.
+     */
+    public function test_js_has_polling_retry(): void
+    {
+        $js_file = self::$plugin_root . '/assets/js/cashback-coupons-tab.js';
+        $source  = (string) file_get_contents($js_file);
+
+        $this->assertMatchesRegularExpression(
+            '/pollActivate|pollMax/',
+            $source,
+            'JS должен иметь polling retry для устойчивости к WoodMart timing race'
+        );
+        $this->assertMatchesRegularExpression(
+            '/setTimeout\([^,]+,\s*80\s*\)/',
+            $source,
+            'JS должен использовать 80ms интервал между polling-попытками'
         );
     }
 
