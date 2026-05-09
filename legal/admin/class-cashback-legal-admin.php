@@ -546,7 +546,7 @@ class Cashback_Legal_Admin {
         $page_num       = isset($_GET['paged']) ? max(1, (int) $_GET['paged']) : 1;
         // phpcs:enable WordPress.Security.NonceVerification.Recommended
 
-        $per_page = 50;
+        $per_page = 20;
         $offset   = ( $page_num - 1 ) * $per_page;
 
         $filters = array();
@@ -585,7 +585,7 @@ class Cashback_Legal_Admin {
                     <select name="consent_type">
                         <option value=""><?php esc_html_e('— любой —', 'cashback-plugin'); ?></option>
                         <?php foreach (Cashback_Legal_Documents::all_types() as $type) : ?>
-                            <option value="<?php echo esc_attr($type); ?>" <?php selected($filter_type, $type); ?>><?php echo esc_html($type); ?></option>
+                            <option value="<?php echo esc_attr($type); ?>" <?php selected($filter_type, $type); ?>><?php echo esc_html(self::journal_consent_type_label($type)); ?></option>
                         <?php endforeach; ?>
                     </select>
                 </label>
@@ -594,7 +594,7 @@ class Cashback_Legal_Admin {
                     <select name="log_action">
                         <option value=""><?php esc_html_e('— любое —', 'cashback-plugin'); ?></option>
                         <?php foreach (array( 'granted', 'revoked', 'superseded' ) as $a) : ?>
-                            <option value="<?php echo esc_attr($a); ?>" <?php selected($filter_action, $a); ?>><?php echo esc_html($a); ?></option>
+                            <option value="<?php echo esc_attr($a); ?>" <?php selected($filter_action, $a); ?>><?php echo esc_html(self::journal_action_label($a)); ?></option>
                         <?php endforeach; ?>
                     </select>
                 </label>
@@ -608,6 +608,7 @@ class Cashback_Legal_Admin {
                 </label>
 
                 <button type="submit" class="button" style="margin-left:12px;"><?php esc_html_e('Применить', 'cashback-plugin'); ?></button>
+                <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=' . self::PAGE_SLUG_JOURNAL)); ?>" style="margin-left:6px;"><?php esc_html_e('Сбросить фильтры', 'cashback-plugin'); ?></a>
             </form>
 
             <?php if (empty($rows)) : ?>
@@ -631,10 +632,10 @@ class Cashback_Legal_Admin {
                         <tr>
                             <td><?php echo esc_html((string) $row['id']); ?></td>
                             <td><?php echo $row['user_id'] === null ? '<em>guest</em>' : esc_html((string) $row['user_id']); ?></td>
-                            <td><code><?php echo esc_html((string) $row['consent_type']); ?></code></td>
-                            <td><?php echo esc_html((string) $row['action']); ?></td>
+                            <td><?php echo esc_html(self::journal_consent_type_label((string) $row['consent_type'])); ?></td>
+                            <td><?php echo esc_html(self::journal_action_label((string) $row['action'])); ?></td>
                             <td><code><?php echo esc_html((string) $row['document_version']); ?></code></td>
-                            <td><?php echo esc_html((string) $row['source']); ?></td>
+                            <td><?php echo esc_html(self::journal_source_label((string) ( $row['source'] ?? '' ))); ?></td>
                             <td><?php echo esc_html((string) ( $row['ip_address'] ?? '' )); ?></td>
                             <td><?php echo esc_html((string) $row['granted_at']); ?></td>
                         </tr>
@@ -664,6 +665,54 @@ class Cashback_Legal_Admin {
             <?php endif; ?>
         </div>
         <?php
+    }
+
+    /**
+     * Русский заголовок consent_type для журнала. Источник правды — Cashback_Legal_Documents::get_meta().
+     * Для legacy/неизвестных ключей в БД возвращает сырое значение (fail-safe).
+     */
+    private static function journal_consent_type_label( string $type ): string {
+        $meta = Cashback_Legal_Documents::get_meta($type);
+        if (is_array($meta) && !empty($meta['title'])) {
+            return (string) $meta['title'];
+        }
+        return $type;
+    }
+
+    /**
+     * Русский лейбл action: granted | revoked | superseded.
+     */
+    private static function journal_action_label( string $action ): string {
+        $map = array(
+            'granted'    => __('Дано', 'cashback-plugin'),
+            'revoked'    => __('Отозвано', 'cashback-plugin'),
+            'superseded' => __('Заменено новой версией', 'cashback-plugin'),
+        );
+        return $map[ $action ] ?? $action;
+    }
+
+    /**
+     * Русский лейбл source. Покрывает call-sites Cashback_Legal_Consent_Manager::record_consent /
+     * withdraw_consent. Для неизвестных значений возвращает сырое (fail-safe).
+     */
+    private static function journal_source_label( string $source ): string {
+        $map = array(
+            'registration'            => __('Регистрация', 'cashback-plugin'),
+            'wc_register'             => __('Регистрация (WC)', 'cashback-plugin'),
+            'wc_registration'         => __('Регистрация (WC)', 'cashback-plugin'),
+            'social_auth'             => __('Соц-авторизация', 'cashback-plugin'),
+            'social_register_consent' => __('Соц-авторизация', 'cashback-plugin'),
+            'my_account'              => __('Личный кабинет', 'cashback-plugin'),
+            'profile'                 => __('Профиль (реквизиты)', 'cashback-plugin'),
+            'payout'                  => __('Вывод средств', 'cashback-plugin'),
+            'cookies_banner'          => __('Cookie-баннер', 'cashback-plugin'),
+            'contact'                 => __('Контактная форма', 'cashback-plugin'),
+            'reconsent_modal'         => __('Модал re-consent', 'cashback-plugin'),
+            'affiliate_activation'    => __('Партнёрская программа', 'cashback-plugin'),
+            'admin_anonymize'         => __('Анонимизация (админ)', 'cashback-plugin'),
+            'admin_bump'              => __('Bump версии (админ)', 'cashback-plugin'),
+        );
+        return $map[ $source ] ?? $source;
     }
 
     // ────────────────────────────────────────────────────────────
