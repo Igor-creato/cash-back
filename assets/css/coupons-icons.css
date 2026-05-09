@@ -133,27 +133,39 @@ html.cashback-coupons-icons-js .cashback-coupons-icons__tooltip {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   Woodmart Custom Loop Layout: одна линия для иконок купонов + ❤
+   Woodmart Custom Loop Layout: ❤ всегда на одной линии (с купонами
+   или без)
    ─────────────────────────────────────────────────────────────────
-   Если шорткод [cashback_coupons_icons] и кнопка wishlist лежат в
-   двух соседних колонках одной .wp-block-wd-row, row на узких
-   вьюпортах рендерится как flex-direction: column → колонки стекаются
-   вертикально, сердечко уезжает под купоны.
+   Контекст: в Woodmart Custom Loop Layout (Gutenberg-блоки) шорткод
+   [cashback_coupons_icons] и кнопка wishlist лежат в двух соседних
+   .wp-block-wd-column внутри одной .wp-block-wd-row. На узких
+   вьюпортах row рендерится как flex-direction: column.
 
-   Фикс: row становится position: relative; колонка с купонами вынимается
-   из потока (position: absolute, top:0 left:0). Колонка с сердечком
-   занимает первое место в потоке. Визуально оба элемента на одной линии.
+   Issue 1 (карточки С купонами): купоны выводятся в первой колонке,
+   row становится высокой (32 + 10 gap + 34), сердечко оказывается в
+   y≈42 row.
+   Issue 2 (карточки БЕЗ купонов): первая колонка пустая (shortcode
+   возвращает '' когда нет активных купонов), но gap=10px между
+   колонками всё равно применяется — сердечко в y=10 row.
+   Результат до фикса: сердечки на разных Y между карточками с/без
+   купонов.
 
-   Используется CSS :has() (Safari 15.4+ / Chrome 105+ / Firefox 121+).
-   На старых браузерах правило не срабатывает, layout остаётся прежним —
-   деградация без ошибок.
+   Фикс: row position: relative; ЛЮБАЯ non-wishlist колонка-сосед в
+   row становится position: absolute (top:0 left:0). Колонка с
+   wishlist всегда первая в потоке row, на y=0. Это работает и для
+   купонов (overlay поверх), и для пустой колонки (h=0 не добавляет
+   gap).
+
+   Использует CSS :has() / :not(:has()) (Safari 15.4+, Chrome 105+,
+   Firefox 121+). На старых браузерах правило игнорируется, layout
+   остаётся прежним — graceful degradation.
 */
-.wd-product .wp-block-wd-row:has(.cashback-coupons-icons):has(.wd-wishlist-btn) {
+.wd-product .wp-block-wd-row:has(> .wp-block-wd-column .wd-wishlist-btn) {
     position: relative;
 }
 
-.wd-product .wp-block-wd-row:has(.cashback-coupons-icons):has(.wd-wishlist-btn)
-    > .wp-block-wd-column:has(.cashback-coupons-icons) {
+.wd-product .wp-block-wd-row:has(> .wp-block-wd-column .wd-wishlist-btn)
+    > .wp-block-wd-column:not(:has(.wd-wishlist-btn)) {
     position: absolute;
     top: 0;
     left: 0;
@@ -161,14 +173,15 @@ html.cashback-coupons-icons-js .cashback-coupons-icons__tooltip {
     width: auto;
     height: auto;
     z-index: 2;
-    /* Колонка-overlay не должна перехватывать клики на сердечке/изображении.
-       pointer-events возвращаем на сами иконки купонов через дочерний селектор. */
+    /* Overlay-колонка не должна перехватывать клики на сердечке/
+       изображении. pointer-events возвращаем на сами иконки купонов
+       через дочерний селектор. */
     pointer-events: none;
 }
 
-.wd-product .wp-block-wd-row:has(.cashback-coupons-icons):has(.wd-wishlist-btn)
-    > .wp-block-wd-column:has(.cashback-coupons-icons) .cashback-coupons-icons,
-.wd-product .wp-block-wd-row:has(.cashback-coupons-icons):has(.wd-wishlist-btn)
-    > .wp-block-wd-column:has(.cashback-coupons-icons) .cashback-coupons-icons__item {
+.wd-product .wp-block-wd-row:has(> .wp-block-wd-column .wd-wishlist-btn)
+    > .wp-block-wd-column:not(:has(.wd-wishlist-btn)) .cashback-coupons-icons,
+.wd-product .wp-block-wd-row:has(> .wp-block-wd-column .wd-wishlist-btn)
+    > .wp-block-wd-column:not(:has(.wd-wishlist-btn)) .cashback-coupons-icons__item {
     pointer-events: auto;
 }
