@@ -68,13 +68,7 @@ if (!defined('ABSPATH')) {
     $sc_auto_password = class_exists('Cashback_SC_Auth_Pages_Register')
         && Cashback_SC_Auth_Pages_Register::is_auto_password_mode();
 
-    if ($sc_auto_password) :
-        ?>
-        <p class="form-row form-row-wide sc-auth-pages-info">
-            <?php esc_html_e('После регистрации мы отправим вам письмо со ссылкой на установку пароля.', 'cashback-plugin'); ?>
-        </p>
-        <?php
-    else :
+    if (!$sc_auto_password) :
         ?>
         <p class="form-row form-row-wide">
             <label for="sc_auth_pwd">
@@ -135,6 +129,12 @@ if (!defined('ABSPATH')) {
             <?php esc_html_e('Уже есть аккаунт? Войти', 'cashback-plugin'); ?>
         </a>
     </p>
+
+    <?php if ($sc_auto_password) : ?>
+        <p class="form-row form-row-wide sc-auth-pages-info">
+            <?php esc_html_e('После регистрации мы отправим вам письмо со ссылкой на установку пароля.', 'cashback-plugin'); ?>
+        </p>
+    <?php endif; ?>
 
     <?php do_action('woocommerce_register_form_end'); ?>
 </form>
