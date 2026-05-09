@@ -39,7 +39,7 @@
     width: 100%;
     background: #ffffff;
     color: #1f2937;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 24px;
     box-shadow: 0 24px 64px rgba(0, 0, 0, 0.32);
     font-size: 15px;
@@ -70,7 +70,7 @@
     gap: 10px;
     padding: 10px 12px;
     background: #f3f4f6;
-    border-radius: 6px;
+    border-radius: 10px;
     cursor: pointer;
 }
 
@@ -84,8 +84,16 @@
 
 .cashback-legal-reconsent-modal__link {
     color: var(--cb-accent, rgb(69, 85, 232));
-    text-decoration: underline;
+    text-decoration: none;
     font-size: 13px;
+    transition: color 0.15s ease;
+}
+
+.cashback-legal-reconsent-modal__link:hover,
+.cashback-legal-reconsent-modal__link:focus-visible {
+    color: var(--cb-accent-hover, rgb(91, 108, 247));
+    text-decoration: none;
+    outline: none;
 }
 
 .cashback-legal-reconsent-modal__actions {
@@ -102,38 +110,49 @@
     border-radius: var(--cb-radius-pill, 10px);
     cursor: pointer;
     font: inherit;
+    font-weight: 600;
     text-decoration: none;
     text-align: center;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .cashback-legal-reconsent-modal__btn--primary {
-    background: var(--cb-accent, rgb(69, 85, 232));
+    background: var(--cb-accent-hover, rgb(91, 108, 247));
     color: #ffffff;
-    border-color: var(--cb-accent, rgb(69, 85, 232));
+    border-color: var(--cb-accent-hover, rgb(91, 108, 247));
+    box-shadow: 0 8px 24px -12px rgba(15, 18, 34, 0.10);
 }
 
 .cashback-legal-reconsent-modal__btn--primary:disabled {
     background: #9ca3af;
     border-color: #9ca3af;
     cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
 }
 
 .cashback-legal-reconsent-modal__btn--primary:hover:enabled,
 .cashback-legal-reconsent-modal__btn--primary:focus-visible:enabled {
-    background: var(--cb-accent-hover, rgb(91, 108, 247));
-    border-color: var(--cb-accent-hover, rgb(91, 108, 247));
+    background: var(--cb-accent, rgb(69, 85, 232));
+    border-color: var(--cb-accent, rgb(69, 85, 232));
+    box-shadow: 0 18px 36px -16px rgba(15, 18, 34, 0.14);
+    transform: translateY(-1px);
+    outline: none;
 }
 
 .cashback-legal-reconsent-modal__btn--secondary {
     background: transparent;
-    color: #1f2937;
-    border-color: #d1d5db;
+    color: var(--cb-accent, rgb(69, 85, 232));
+    border-color: var(--cb-accent, rgb(69, 85, 232));
 }
 
 .cashback-legal-reconsent-modal__btn--secondary:hover,
 .cashback-legal-reconsent-modal__btn--secondary:focus-visible {
-    background: #f3f4f6;
-    border-color: #9ca3af;
+    background: var(--cb-accent, rgb(69, 85, 232));
+    border-color: var(--cb-accent, rgb(69, 85, 232));
+    color: #ffffff;
+    box-shadow: 0 8px 24px -12px rgba(15, 18, 34, 0.10);
+    transform: translateY(-1px);
     outline: none;
 }
 
