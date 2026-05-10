@@ -587,6 +587,9 @@ class CashbackPlugin {
         $this->require_file('includes/class-cashback-captcha.php');
         $this->require_file('includes/class-cashback-bot-protection.php');
 
+        // Блокировка author enumeration (?author=N → /author/<slug>/ раскрывает username админа).
+        $this->require_file('includes/class-cashback-author-enum-block.php');
+
         // Nginx fastcgi_cache purger (CPA-договор: пользователи должны видеть
         // актуальные ставки/данные товаров; default TTL nginx 30m даёт окно
         // несоответствия — закрываем хуками на изменение product/мета/таксономии).
