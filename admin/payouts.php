@@ -832,6 +832,13 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
             return;
         }
 
+        // Codex round 15 (2026-05-10): round-13 top-level guard reverted —
+        // он блокировал ВСЕ payout edits (paid/failed/needs_retry/metadata)
+        // на missing v7 schema, хотя только переход в `declined`
+        // действительно использует frozen_balance_admin. Guard перенесён
+        // вниз внутрь declined-branch'а (см. отметку `Codex round 15:
+        // declined branch guard`).
+
         // Server-side дедуп request_id (Группа 5 ADR, F-32-004).
         // Клиент опционально шлёт UUID; если он валиден и слот уже занят — возвращаем
         // сохранённый ответ (retry/замешкавшийся двойной POST), либо отказываем, если
@@ -905,6 +912,27 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
             if (!in_array($status, $allowed_statuses, true)) {
                 wp_send_json_error(array( 'message' => __('Недопустимый статус выплаты.', 'cashback-plugin') ));
                 return;
+            }
+
+            // Codex round 15 (2026-05-10): declined branch guard — point-of-use
+            // защита для v7 schema artifacts (frozen_balance_admin). Только
+            // переход в 'declined' использует эту колонку (см.
+            // update_user_balance_on_declined). Остальные status transitions
+            // (paid/failed/needs_retry/processing) и metadata-edits
+            // (provider_payout_id/attempts/fail_reason без status change)
+            // НЕ трогают v7 — operators могут recovery-править их даже на
+            // missing schema.
+            // Codex round 16 (2026-05-10): subset=['v7_frozen_balance_admin'] —
+            // payout decline не зависит от v6 ban_reason_admin.
+            if ($status === 'declined' && function_exists('cashback_check_required_schema_present')) {
+                $schema_error = cashback_check_required_schema_present(null, array( 'v7_frozen_balance_admin' ));
+                if ($schema_error !== null) {
+                    wp_send_json_error(array(
+                        'code'    => 'required_schema_missing',
+                        'message' => $schema_error,
+                    ), 503);
+                    return;
+                }
             }
 
             // F-S9-01 (P2.3): defense-in-depth перед START TRANSACTION.
@@ -1592,6 +1620,26 @@ class="cashback-inactive-warning" title="<?php echo esc_attr__('Банк деа�
         if (!current_user_can('manage_options')) {
             wp_send_json_error(array( 'message' => __('Недостаточно прав.', 'cashback-plugin') ), 403);
             return;
+        }
+
+        // Codex round 13 (2026-05-10): point-of-use guard для v7 schema.
+        // Unfreeze path UPDATE'ит frozen_balance_admin и INSERT'ит ledger
+        // запись с type='payout_unfreeze' (оба — v7 artifacts). Missing
+        // schema → SQL error 1054 / enum-out-of-range.
+        // Codex round 16 (2026-05-10): subset=['v7_frozen_balance_admin',
+        // 'v7_payout_unfreeze'] — оба нужны, v6 — нет.
+        if (function_exists('cashback_check_required_schema_present')) {
+            $schema_error = cashback_check_required_schema_present(
+                null,
+                array( 'v7_frozen_balance_admin', 'v7_payout_unfreeze' )
+            );
+            if ($schema_error !== null) {
+                wp_send_json_error(array(
+                    'code'    => 'required_schema_missing',
+                    'message' => $schema_error,
+                ), 503);
+                return;
+            }
         }
 
         // Server-side дедуп request_id (паттерн handle_update_payout_request).

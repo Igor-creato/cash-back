@@ -3183,9 +3183,7 @@ class Mariadb_Plugin {
             $payouts_table
         ));
         if ($backfill_result === false) {
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('[Cashback Migration v5] backfill fail_reason failed: ' . $wpdb->last_error);
-            return;
+            throw new \RuntimeException(esc_html('[Cashback Migration v5] backfill fail_reason failed: ' . $wpdb->last_error));
         }
 
         // ------------------------------------------------------------------
@@ -3222,9 +3220,7 @@ class Mariadb_Plugin {
             // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static CREATE TRIGGER DDL, $safe_prefix validated.
             $create_result = $wpdb->query($sql);
             if ($create_result === false) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                error_log('[Cashback Migration v5] CREATE TRIGGER failed: ' . $wpdb->last_error);
-                return;
+                throw new \RuntimeException(esc_html('[Cashback Migration v5] CREATE TRIGGER failed: ' . $wpdb->last_error));
             }
         }
 
@@ -3297,9 +3293,7 @@ class Mariadb_Plugin {
             // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL ALTER TABLE.
             $alter_result = $wpdb->query( $alter_sql[0] );
             if ($alter_result === false) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                error_log('[Cashback Migration v6] ADD COLUMN ban_reason_admin failed: ' . $wpdb->last_error);
-                return;
+                throw new \RuntimeException(esc_html('[Cashback Migration v6] ADD COLUMN ban_reason_admin failed: ' . $wpdb->last_error));
             }
 
             // Post-verify (per feedback_alter_table_no_prepare).
@@ -3312,9 +3306,7 @@ class Mariadb_Plugin {
                 'ban_reason_admin'
             ));
             if ($verify === 0) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                error_log('[Cashback Migration v6] post-verify failed: ban_reason_admin column missing after ALTER');
-                return;
+                throw new \RuntimeException(esc_html('[Cashback Migration v6] post-verify failed: ban_reason_admin column missing after ALTER'));
             }
         }
 
@@ -3335,9 +3327,7 @@ class Mariadb_Plugin {
             $profile_table
         ));
         if ($backfill_result === false) {
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('[Cashback Migration v6] backfill ban_reason → ban_reason_admin failed: ' . $wpdb->last_error);
-            return;
+            throw new \RuntimeException(esc_html('[Cashback Migration v6] backfill ban_reason → ban_reason_admin failed: ' . $wpdb->last_error));
         }
 
         // ------------------------------------------------------------------
@@ -3356,9 +3346,7 @@ class Mariadb_Plugin {
             $profile_table
         ));
         if ($clear_result === false) {
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('[Cashback Migration v6] clear ban_reason failed: ' . $wpdb->last_error);
-            return;
+            throw new \RuntimeException(esc_html('[Cashback Migration v6] clear ban_reason failed: ' . $wpdb->last_error));
         }
 
         // ------------------------------------------------------------------
@@ -3388,9 +3376,7 @@ class Mariadb_Plugin {
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static CREATE OR REPLACE TRIGGER DDL.
         $create_result = $wpdb->query( $create_trigger_sql[0] );
         if ($create_result === false) {
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('[Cashback Migration v6] CREATE OR REPLACE TRIGGER tr_clear_ban_on_unban failed: ' . $wpdb->last_error);
-            return;
+            throw new \RuntimeException(esc_html('[Cashback Migration v6] CREATE OR REPLACE TRIGGER tr_clear_ban_on_unban failed: ' . $wpdb->last_error));
         }
 
         update_option('cashback_db_version', 6, false);
@@ -3463,9 +3449,7 @@ class Mariadb_Plugin {
             // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL ALTER TABLE.
             $alter_result = $wpdb->query( $alter_sql[0] );
             if ($alter_result === false) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                error_log('[Cashback Migration v7] ADD COLUMN frozen_balance_admin failed: ' . $wpdb->last_error);
-                return;
+                throw new \RuntimeException(esc_html('[Cashback Migration v7] ADD COLUMN frozen_balance_admin failed: ' . $wpdb->last_error));
             }
 
             // Post-verify (per feedback_alter_table_no_prepare).
@@ -3478,9 +3462,7 @@ class Mariadb_Plugin {
                 'frozen_balance_admin'
             ));
             if ($verify === 0) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                error_log('[Cashback Migration v7] post-verify failed: frozen_balance_admin column missing after ALTER');
-                return;
+                throw new \RuntimeException(esc_html('[Cashback Migration v7] post-verify failed: frozen_balance_admin column missing after ALTER'));
             }
         }
 
@@ -3507,9 +3489,7 @@ class Mariadb_Plugin {
             // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL MODIFY enum.
             $modify_result = $wpdb->query( $modify_sql[0] );
             if ($modify_result === false) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                error_log('[Cashback Migration v7] MODIFY enum cashback_balance_ledger.type failed: ' . $wpdb->last_error);
-                return;
+                throw new \RuntimeException(esc_html('[Cashback Migration v7] MODIFY enum cashback_balance_ledger.type failed: ' . $wpdb->last_error));
             }
 
             // Post-verify (per feedback_alter_table_no_prepare).
@@ -3521,9 +3501,7 @@ class Mariadb_Plugin {
                 $ledger_table
             ));
             if (strpos($verify_enum, "'payout_unfreeze'") === false) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                error_log('[Cashback Migration v7] post-verify failed: payout_unfreeze missing in ledger.type enum after MODIFY');
-                return;
+                throw new \RuntimeException(esc_html('[Cashback Migration v7] post-verify failed: payout_unfreeze missing in ledger.type enum after MODIFY'));
             }
         }
 
@@ -3552,9 +3530,7 @@ class Mariadb_Plugin {
             $payouts_table
         ));
         if ($backfill_result === false) {
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('[Cashback Migration v7] backfill frozen_balance_admin failed: ' . $wpdb->last_error);
-            return;
+            throw new \RuntimeException(esc_html('[Cashback Migration v7] backfill frozen_balance_admin failed: ' . $wpdb->last_error));
         }
 
         update_option('cashback_db_version', 7, false);

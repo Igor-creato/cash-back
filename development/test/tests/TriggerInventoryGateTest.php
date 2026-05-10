@@ -194,7 +194,9 @@ final class TriggerInventoryGateTest extends TestCase
         $src   = $this->plugin_src();
         $start = strpos($src, 'public function init()');
         $this->assertNotFalse($start, 'init() должен существовать');
-        $body = substr($src, $start, 8000);
+        // Codex round 8 (2026-05-10): init() расширился доп. trigger-migration
+        // gate'ом — окно увеличено с 8000 до 12000 байт.
+        $body = substr($src, $start, 12000);
 
         $migrations_pos = strpos($body, '$this->maybe_run_migrations()');
         $check_pos      = strpos($body, 'cashback_check_triggers_present(');

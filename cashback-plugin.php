@@ -647,6 +647,44 @@ class CashbackPlugin {
                 }
             }
 
+            // Codex adversarial-review round 10 (2026-05-10): round 8/9
+            // additional gate на $this->trigger_migration_failed reverted.
+            // MariaDB CREATE OR REPLACE TRIGGER drop-then-create non-atomic:
+            // при сбое CREATE триггер ОТСУТСТВУЕТ — inventory check выше уже
+            // его поймает. Дополнительный gate на throw блокировал read-only
+            // paths на любом transient SQL-сбое (lock-wait timeout, metadata
+            // lock) — availability regression. Throws из миграций по-прежнему
+            // регистрируют admin notice через register_trigger_failure_notice
+            // в catch'ах maybe_run_migrations(), но НЕ блокируют init.
+
+            // Codex adversarial-review round 11 (2026-05-10): physical-state
+            // probe для миграционных артефактов v6/v7 (колонки ban_reason_admin,
+            // frozen_balance_admin, enum-value 'payout_unfreeze' в ledger.type).
+            //
+            // Codex round 12 (2026-05-10): артефакты — admin-only (используются
+            // только в admin/users-management.php и admin/payouts.php). Round 11
+            // блокировал глобально через `return;` — это убивало frontend/cron/
+            // webhook receiver на admin-only schema gap'е (большой outage из
+            // узкой проблемы). Теперь init() ограничивается admin notice +
+            // error_log: оператор видит предупреждение, остальной плагин
+            // работает. Защита от runtime SQL error 1054 — на уровне
+            // конкретных admin-handler'ов через cashback_check_required_schema_present()
+            // в point-of-use.
+            if (function_exists('cashback_check_required_schema_present')) {
+                $schema_error = cashback_check_required_schema_present();
+                if ($schema_error !== null) {
+                    add_action('admin_notices', static function () use ( $schema_error ) {
+                        echo '<div class="notice notice-error"><p><strong>'
+                            . esc_html__('Cashback Plugin: missing schema artifacts (admin features may be degraded). ', 'cashback-plugin')
+                            . '</strong>'
+                            . esc_html($schema_error)
+                            . '</p></div>';
+                    });
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                    error_log('[Cashback] Required-schema artifacts missing (admin features degraded): ' . $schema_error);
+                }
+            }
+
             $this->initialize_components();
 
             // Одноразовый сброс rewrite rules после обновления кода
@@ -1105,6 +1143,14 @@ class CashbackPlugin {
                 error_log('[Cashback] Ledger accrual backfill auto-migration failed: ' . $e->getMessage());
             }
 
+            // Codex round 16 (2026-05-10): family-A (v5/v6/v7) cascade abort
+            // через flag вместо method-level `return;` (round 11). Внутри
+            // family v5/v6/v7 каскад abort'ится при failure (защита от
+            // shared-`cashback_db_version` version-skew), но v8+ независимые
+            // family — промокоды (v8-v11), shop importer (v12-v13) — больше
+            // НЕ блокируются на trigger-migration failure.
+            $family_a_failed = false;
+
             // E2E 2026-04-29 P2-A1-2: BEFORE INSERT/UPDATE триггеры на cashback_payout_requests
             // требуют fail_reason при status IN ('declined','failed'). Идемпотентно через
             // cashback_db_version >= 5 fast-path. Runtime-вызов нужен на existing installs
@@ -1114,25 +1160,41 @@ class CashbackPlugin {
             } catch (\Throwable $e) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback] Payout fail_reason trigger auto-migration failed: ' . $e->getMessage());
+                // Codex round 10 (2026-05-10): admin notice через transient.
+                self::register_trigger_failure_notice($e);
+                // Codex round 16: family-A flag (вместо round 11 method-return).
+                $family_a_failed = true;
             }
 
             // OBS-06 (E2E run B 2026-04-30): split ban_reason на public + admin поля.
             // Идемпотентно через cashback_db_version >= 6 fast-path.
-            try {
-                Mariadb_Plugin::get_instance()->migrate_split_ban_reason_v6();
-            } catch (\Throwable $e) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                error_log('[Cashback] Split ban_reason auto-migration failed: ' . $e->getMessage());
+            if (!$family_a_failed) {
+                try {
+                    Mariadb_Plugin::get_instance()->migrate_split_ban_reason_v6();
+                } catch (\Throwable $e) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                    error_log('[Cashback] Split ban_reason auto-migration failed: ' . $e->getMessage());
+                    // Codex round 10 (2026-05-10): см. v5.
+                    self::register_trigger_failure_notice($e);
+                    // Codex round 16: family-A flag.
+                    $family_a_failed = true;
+                }
             }
 
             // F-S9-NEW-UNFREEZE (Session 8, 2026-05-01): frozen_balance_admin bucket +
             // ledger enum 'payout_unfreeze' + backfill для existing declined-выплат.
             // Идемпотентно через cashback_db_version >= 7 fast-path.
-            try {
-                Mariadb_Plugin::get_instance()->migrate_payout_unfreeze_v7();
-            } catch (\Throwable $e) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                error_log('[Cashback] Payout unfreeze v7 auto-migration failed: ' . $e->getMessage());
+            if (!$family_a_failed) {
+                try {
+                    Mariadb_Plugin::get_instance()->migrate_payout_unfreeze_v7();
+                } catch (\Throwable $e) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                    error_log('[Cashback] Payout unfreeze v7 auto-migration failed: ' . $e->getMessage());
+                    // Codex round 10 (2026-05-10): см. v5.
+                    self::register_trigger_failure_notice($e);
+                    // Codex round 16: family-A flag.
+                    $family_a_failed = true;
+                }
             }
 
             // Промокоды (Шаг 1 плана generic-coupons-engine, 2026-05-03): +4 колонки

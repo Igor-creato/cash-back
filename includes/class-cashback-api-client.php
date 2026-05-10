@@ -2324,7 +2324,12 @@ class Cashback_API_Client {
                     return;
                 }
 
-                ++$updated;
+                // Codex round 16 (2026-05-10): `++$updated` перенесён ПОСЛЕ
+                // reversal-логики и refetch-блока. Раньше он стоял здесь, и
+                // последующий ROLLBACK (из reversal или refetch failure) не
+                // отменял уже инкрементированный counter — sync stats
+                // считали rolled-back UPDATE как successful (observability bug,
+                // алертинг/retry опираются на эти счётчики).
 
                 // Группа 14 (ledger-first, шаг D): reversal. Если транзакция уже
                 // процессена в ledger (processed_at IS NOT NULL) и CPA-сеть изменила
@@ -2404,6 +2409,59 @@ class Cashback_API_Client {
                     }
                 }
 
+                // Codex adversarial-review round 8 (2026-05-10): после
+                // MariaDB-only рефакторинга поле cashback пересчитывается
+                // DB-триггером calculate_cashback_before_update и НЕ
+                // присутствует в $update_data. Чтобы transaction_data_changed
+                // payload не врал пользователю старым значением, рефетчим
+                // свежий cashback из строки прямо в той же транзакции.
+                //
+                // Codex round 13 (2026-05-10): refetch ОБЯЗАТЕЛЕН только для
+                // ветки `transaction_data_changed` (commission/cart change без
+                // status change). enqueue_notification_on_update для status_changed
+                // выходит раньше и не использует refetched cashback. Безусловный
+                // refetch + ROLLBACK на любой transient SELECT failure отменял
+                // status-only sync, который даже не нуждался в cashback. Узим
+                // scope к ветке, где значение действительно нужно.
+                $cashback_after_trigger = null;
+                $needs_cashback_refetch = ( ! $status_changed )
+                    && ( $commission_changed || $cart_changed );
+                if ($needs_cashback_refetch) {
+                    $cashback_after_trigger = $wpdb->get_var( $wpdb->prepare(
+                        'SELECT cashback FROM %i WHERE id = %d',
+                        $table,
+                        (int) $fresh['id']
+                    ) );
+
+                    // Codex round 10 (2026-05-10): refetch — часть transactional
+                    // success criteria для data_changed-уведомления. Если SELECT
+                    // упал (lock-wait, deadlock) или вернул NULL — ROLLBACK,
+                    // counter, return. throw_if_deadlock для retry на верхнем уровне.
+                    $refetch_err = (string) $wpdb->last_error;
+                    if ($refetch_err !== '' || $cashback_after_trigger === null) {
+                        $this->throw_if_deadlock($wpdb);
+                        ++$update_errors;
+                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                        error_log(sprintf(
+                            '[Cashback Sync] cashback refetch failed for %s id=%d: %s',
+                            $table,
+                            (int) $fresh['id'],
+                            $refetch_err !== '' ? $refetch_err : 'row missing or NULL after UPDATE'
+                        ));
+                        if ($owns_tx) {
+                            $wpdb->query('ROLLBACK');
+                        }
+                        return;
+                    }
+                }
+
+                // Codex round 16 (2026-05-10): инкрементируем counter ТОЛЬКО
+                // ПОСЛЕ всех rollback-capable работ (UPDATE error check на
+                // 2298, reversal logic, refetch). Все ранние return'ы
+                // делают `++$update_errors` + ROLLBACK, поэтому здесь мы
+                // уже гарантированно committable.
+                ++$updated;
+
                 // Запись в очередь уведомлений (вместо MySQL триггера)
                 $this->enqueue_notification_on_update(
                     $wpdb,
@@ -2415,7 +2473,8 @@ class Cashback_API_Client {
                     $commission_changed,
                     $cart_changed,
                     $fresh,
-                    $update_data
+                    $update_data,
+                    $cashback_after_trigger !== null ? (string) $cashback_after_trigger : null
                 );
 
                 $this->log_sync_event(
@@ -3446,7 +3505,8 @@ class Cashback_API_Client {
         bool $commission_changed,
         bool $cart_changed,
         array $local,
-        array $update_data
+        array $update_data,
+        ?string $new_cashback_after_trigger = null
     ): void {
         if ($user_id <= 0) {
             return;
@@ -3476,8 +3536,25 @@ class Cashback_API_Client {
             $new_comission = isset($update_data['comission']) ? (float) $update_data['comission'] : $old_comission;
             $old_sum_order = (float) ( $local['sum_order'] ?? 0 );
             $new_sum_order = isset($update_data['sum_order']) ? (float) $update_data['sum_order'] : $old_sum_order;
-            $old_cashback  = (float) ( $local['cashback'] ?? 0 );
-            $new_cashback  = isset($update_data['cashback']) ? (float) $update_data['cashback'] : $old_cashback;
+            $old_cashback = (float) ( $local['cashback'] ?? 0 );
+            // Codex round 9 (2026-05-10): fail-closed на refetch'е. После
+            // MariaDB-only рефакторинга cashback пересчитывает DB-триггер,
+            // и если caller не смог рефетчить свежее значение (SQL-сбой,
+            // deadlock, lock-wait timeout, гонка с DELETE) — мы НЕ имеем
+            // права подставить old_cashback в payload, иначе уведомление
+            // снова будет врать пользователю. Лучше silent-skip enqueue
+            // с error_log, чем silent-lying payload.
+            if ($new_cashback_after_trigger === null) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log(sprintf(
+                    '[Cashback Sync] refetched cashback was null for tx id=%d (commission_changed=%s, cart_changed=%s) — transaction_data_changed notification skipped to avoid stale payload',
+                    $transaction_id,
+                    $commission_changed ? '1' : '0',
+                    $cart_changed ? '1' : '0'
+                ));
+                return;
+            }
+            $new_cashback = (float) $new_cashback_after_trigger;
 
             $extra = wp_json_encode(array(
                 'old_comission' => $old_comission,

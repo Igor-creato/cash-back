@@ -48,22 +48,27 @@ class Cashback_User_Status {
     /**
      * Получает информацию о бане пользователя.
      *
-     * Возвращаются ОБА поля: `ban_reason` (публичная причина — для пользователя)
-     * и `ban_reason_admin` (внутренняя — только для админов). Закрывает OBS-06
-     * (E2E run B 2026-04-30): админ-комментарии не должны утекать пользователю.
+     * Возвращает ПУБЛИЧНУЮ причину `ban_reason` (для user-facing message
+     * через get_banned_message) и `banned_at` (для audit-log).
      *
-     * Колонка `ban_reason_admin` добавлена в миграции v6 — на legacy инсталляциях
-     * до v6 поле может отсутствовать, читаем через массив-доступ с null-coalesce.
+     * Codex adversarial-review round 14 (2026-05-10): метод вызывается с
+     * frontend-path (фильтр `wp_authenticate_user` через block_banned_login,
+     * cashback-withdrawal.php). Поле `ban_reason_admin` (v6 column) НЕ
+     * читается callers'ом из return-значения — оно осталось как dead-branch
+     * с OBS-06 (admin handler читает его через свой собственный SELECT в
+     * admin/users-management.php, защищённый round-13 schema-guard'ом). Чтобы
+     * frontend login/cabinet НЕ упирались в SQL error 1054 при transient
+     * v6 migration failure, не селектим ban_reason_admin отсюда.
      *
      * @param int $user_id ID пользователя
-     * @return array{banned_at:?string,ban_reason:?string,ban_reason_admin:?string}|null
+     * @return array{banned_at:?string,ban_reason:?string}|null
      */
     public static function get_ban_info( int $user_id ): ?array {
         global $wpdb;
 
         $table = $wpdb->prefix . 'cashback_user_profile';
         $info  = $wpdb->get_row( $wpdb->prepare(
-            "SELECT banned_at, ban_reason, ban_reason_admin FROM %i
+            "SELECT banned_at, ban_reason FROM %i
              WHERE user_id = %d AND status = 'banned'",
             $table,
             $user_id
@@ -73,9 +78,8 @@ class Cashback_User_Status {
             return null;
         }
 
-        // Гарантируем наличие ключей даже если миграция v6 ещё не прошла.
-        $info['ban_reason']       = isset( $info['ban_reason'] ) ? (string) $info['ban_reason'] : '';
-        $info['ban_reason_admin'] = isset( $info['ban_reason_admin'] ) ? (string) $info['ban_reason_admin'] : '';
+        // Гарантируем наличие ключа ban_reason (публичная причина).
+        $info['ban_reason'] = isset( $info['ban_reason'] ) ? (string) $info['ban_reason'] : '';
 
         return $info;
     }

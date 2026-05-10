@@ -115,10 +115,11 @@ final class CodexRound6FixesTest extends TestCase
         );
 
         // На init() следующего request'а проверяется transient → admin_notices.
-        // 8000 chars — gate-блок + load_dependencies + check'и encryption/trigger.
+        // Codex round 8 (2026-05-10): окно расширено с 8000 до 12000 — init()
+        // получил доп. trigger-migration-failure gate, transient-check сместился.
         $init_start = strpos($src, 'public function init()');
         $this->assertNotFalse($init_start, 'init() должен существовать');
-        $init_body = substr($src, $init_start, 8000);
+        $init_body = substr($src, $init_start, 12000);
         $this->assertMatchesRegularExpression(
             "/get_transient\s*\(\s*'cashback_trigger_failure_notice'\s*\)/",
             $init_body,

@@ -176,6 +176,22 @@ class Cashback_Users_Management_Admin {
             wp_die(esc_html__('У вас недостаточно прав для просмотра этой страницы.', 'cashback-plugin'));
         }
 
+        // Codex round 13 (2026-05-10): point-of-use guard для v6 schema.
+        // Codex round 16 (2026-05-10): subset=['v6_ban_reason_admin'] —
+        // user-list страница не зависит от v7 артефактов, не должна
+        // блокироваться на missing payout schema.
+        if (function_exists('cashback_check_required_schema_present')) {
+            $schema_error = cashback_check_required_schema_present(null, array( 'v6_ban_reason_admin' ));
+            if ($schema_error !== null) {
+                echo '<div class="wrap"><div class="notice notice-error"><p><strong>'
+                    . esc_html__('Cashback Plugin: ', 'cashback-plugin')
+                    . '</strong>'
+                    . esc_html($schema_error)
+                    . '</p></div></div>';
+                return;
+            }
+        }
+
         global $wpdb;
 
         // Получаем параметры для пагинации и фильтрации
@@ -442,6 +458,19 @@ class Cashback_Users_Management_Admin {
         if (!current_user_can('manage_options')) {
             wp_send_json_error(array( 'message' => 'Недостаточно прав для выполнения этого действия.' ));
             return;
+        }
+
+        // Codex round 13 (2026-05-10): point-of-use guard для v6 schema.
+        // Codex round 16 (2026-05-10): subset=['v6_ban_reason_admin'].
+        if (function_exists('cashback_check_required_schema_present')) {
+            $schema_error = cashback_check_required_schema_present(null, array( 'v6_ban_reason_admin' ));
+            if ($schema_error !== null) {
+                wp_send_json_error(array(
+                    'code'    => 'required_schema_missing',
+                    'message' => $schema_error,
+                ), 503);
+                return;
+            }
         }
 
         // Проверяем наличие и корректность user_id
@@ -753,6 +782,19 @@ class Cashback_Users_Management_Admin {
         if (!current_user_can('manage_options')) {
             wp_send_json_error(array( 'message' => 'Недостаточно прав для выполнения этого действия.' ));
             return;
+        }
+
+        // Codex round 13 (2026-05-10): см. handle_update_user_profile.
+        // Codex round 16 (2026-05-10): subset=['v6_ban_reason_admin'].
+        if (function_exists('cashback_check_required_schema_present')) {
+            $schema_error = cashback_check_required_schema_present(null, array( 'v6_ban_reason_admin' ));
+            if ($schema_error !== null) {
+                wp_send_json_error(array(
+                    'code'    => 'required_schema_missing',
+                    'message' => $schema_error,
+                ), 503);
+                return;
+            }
         }
 
         // Проверяем наличие user_id
