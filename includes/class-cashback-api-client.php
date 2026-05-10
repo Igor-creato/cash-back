@@ -3750,13 +3750,22 @@ class Cashback_API_Client {
                 }
             }
 
-            // Проверяем ранее деактивированные товары на реактивацию
+            // Проверяем ранее деактивированные товары на реактивацию.
+            // Дополнительный INNER JOIN на `_cashback_auto_publish_enabled='1'`:
+            // авто-реактивация делается ТОЛЬКО для товаров, у которых админ
+            // явно включил переключатель «Автопубликация» в Publish-метабоксе
+            // (см. Cashback_Product_Autopublish). Свежеимпортированные draft
+            // (без переключателя) и снятые админом вручную не публикуются
+            // обратно автоматически.
             // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
             $draft_products = $wpdb->get_results($wpdb->prepare(
                 "SELECT p.ID, pm_offer.meta_value AS offer_id
                  FROM {$wpdb->posts} p
                  INNER JOIN {$wpdb->postmeta} pm_net ON p.ID = pm_net.post_id AND pm_net.meta_key = '_affiliate_network_id'
                  INNER JOIN {$wpdb->postmeta} pm_deact ON p.ID = pm_deact.post_id AND pm_deact.meta_key = '_cashback_auto_deactivated'
+                 INNER JOIN {$wpdb->postmeta} pm_autopub ON p.ID = pm_autopub.post_id
+                    AND pm_autopub.meta_key = '_cashback_auto_publish_enabled'
+                    AND pm_autopub.meta_value = '1'
                  LEFT JOIN {$wpdb->postmeta} pm_offer ON p.ID = pm_offer.post_id AND pm_offer.meta_key = '_offer_id'
                  WHERE pm_net.meta_value = %d
                    AND p.post_status = 'draft'

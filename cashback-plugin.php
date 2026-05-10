@@ -894,6 +894,11 @@ class CashbackPlugin {
         // WC-товар на витрине» — закрывает Codex finding #1 (рассогласование
         // sort vs display). Sync через action cashback_group_preferred_changed.
         $this->require_file('includes/shops/class-cashback-catalog-visibility.php');
+        // Per-product «Автопубликация» переключатель: meta
+        // `_cashback_auto_publish_enabled`, чекбокс в Publish-метабоксе товара,
+        // INNER JOIN в SQL реактивации Cashback_API_Client::check_campaign_statuses,
+        // очистка маркеров деактивации при ручной публикации.
+        $this->require_file('includes/shops/class-cashback-product-autopublish.php');
 
         // API клиент и cron (синхронизация работает через WP Cron)
         $this->require_file('includes/class-cashback-api-client.php');
@@ -1387,6 +1392,15 @@ class CashbackPlugin {
         if (class_exists('Cashback_Catalog_Visibility')) {
             Cashback_Catalog_Visibility::register();
             Cashback_Catalog_Visibility::ensure_backfilled();
+        }
+
+        // Per-product «Автопубликация» — чекбокс в Publish-метабоксе, hook на
+        // transition_post_status (очистка 4 маркеров при ручной публикации).
+        // Idempotent self-healing backfill (опция cashback_product_autopublish_backfill_v1)
+        // ставит флаг для текущих publish-товаров и draft-с-_cashback_auto_deactivated=1.
+        if (class_exists('Cashback_Product_Autopublish')) {
+            Cashback_Product_Autopublish::register();
+            Cashback_Product_Autopublish::ensure_backfilled();
         }
 
         // Shop Group Resolver: cleanup member-record ТОЛЬКО при permanent

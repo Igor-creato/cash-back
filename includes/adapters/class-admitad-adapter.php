@@ -273,11 +273,30 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
     /**
      * {@inheritdoc}
      *
-     * Admitad: GET /advcampaigns/?limit=500
-     * Требует scope 'advcampaigns' в OAuth2 credentials (через пробел с другими scope).
-     * Кампания активна при status=active.
+     * Admitad: GET /advcampaigns/website/{website_id}/?limit=500&offset=N — список
+     * программ, к которым площадка реально подключена (а не весь каталог Admitad).
+     * Каждая запись содержит `connection_status` со значениями active / pending /
+     * declined / suspend; учитываем только active — это «наши» подключённые программы.
+     *
+     * Без `api_website_id` метод НЕ делает HTTP-запроса и возвращает понятную
+     * ошибку — общий endpoint /advcampaigns/ возвращает весь каталог Admitad
+     * (тысячи неподключённых мерчантов), что засоряет «Статус кампаний» и не
+     * имеет смысла для проверки наших товаров.
+     *
+     * Требует scope 'advcampaigns' в OAuth2 credentials. Поле `status` отражает
+     * жизненный цикл программы у рекламодателя (is_active = status === 'active').
      */
     public function fetch_campaigns( array $credentials, array $network_config ): array {
+        $website_id = trim((string) ( $network_config['api_website_id'] ?? '' ));
+        if ($website_id === '') {
+            return array(
+                'success'   => false,
+                'campaigns' => array(),
+                'error'     => 'Admitad: api_website_id не задан в «Партнёры → Параметры API». '
+                    . 'Без website_id невозможно отфильтровать программы, подключённые к нашему сайту.',
+            );
+        }
+
         $auth_headers = $this->build_auth_headers($credentials, $network_config);
         if (!$auth_headers) {
             return array(
@@ -288,7 +307,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
         }
 
         $base_url = rtrim($network_config['api_base_url'] ?? 'https://api.admitad.com', '/');
-        $url      = $base_url . '/advcampaigns/';
+        $url      = $base_url . '/advcampaigns/website/' . rawurlencode($website_id) . '/';
 
         $query = array(
 			'limit'  => 500,
@@ -366,6 +385,18 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             $results = $body['results'] ?? array();
 
             foreach ($results as $campaign) {
+                $connection_status = strtolower((string) ( $campaign['connection_status'] ?? '' ));
+
+                // Только программы со статусом подключения = active.
+                // pending  — заявка отправлена, ещё не одобрена;
+                // declined — отказ;
+                // suspend  — временно приостановлено.
+                // Пустой connection_status оставляем для backward-compat
+                // (тестовые fixture без поля и потенциальные кастомные вызовы через filter).
+                if ($connection_status !== '' && $connection_status !== 'active') {
+                    continue;
+                }
+
                 $status = strtolower((string) ( $campaign['status'] ?? '' ));
 
                 $all_campaigns[] = array(
@@ -373,7 +404,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
                     'name'              => (string) ( $campaign['name'] ?? '' ),
                     'is_active'         => ( $status === 'active' ),
                     'status'            => $status,
-                    'connection_status' => '',
+                    'connection_status' => $connection_status,
                 );
             }
 

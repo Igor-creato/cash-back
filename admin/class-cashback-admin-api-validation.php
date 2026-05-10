@@ -2100,6 +2100,11 @@ echo 'style="display:none"';}
             'post_status' => 'publish',
         ));
 
+        // Явная реактивация админом → отдаёт товар в авто-режим, чтобы
+        // последующие циклы «отключили / включили кампанию» обрабатывались
+        // автоматически без ручных действий (см. Cashback_Product_Autopublish).
+        update_post_meta($product_id, '_cashback_auto_publish_enabled', '1');
+
         update_post_meta($product_id, '_cashback_admin_override', '1');
         delete_post_meta($product_id, '_cashback_auto_deactivated');
         delete_post_meta($product_id, '_cashback_deactivation_reason');
