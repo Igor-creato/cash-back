@@ -6,7 +6,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Cashback Plugin
  * Description: Объединенный плагин для системы кэшбэка и аффилиат-партнерства
- * Version: 1.2.0
+ * Version: 3.1.0
  * Author: Cashback
  * Author URI: https://example.com
  * Text Domain: cashback-plugin
@@ -42,23 +42,24 @@ define('CASHBACK_MIN_WC_VERSION', '5.0');
  * @param bool $with_dashes true = стандартный формат (36 символов), false = только hex (32 символа)
  * @return string UUID v7
  */
-function cashback_generate_uuid7( bool $with_dashes = true ): string {
-    $time  = (int) ( microtime(true) * 1000 );
+function cashback_generate_uuid7(bool $with_dashes = true): string
+{
+    $time  = (int) (microtime(true) * 1000);
     $bytes = random_bytes(16);
 
     // 48-bit timestamp (bytes 0-5)
-    $bytes[0] = chr(( $time >> 40 ) & 0xFF);
-    $bytes[1] = chr(( $time >> 32 ) & 0xFF);
-    $bytes[2] = chr(( $time >> 24 ) & 0xFF);
-    $bytes[3] = chr(( $time >> 16 ) & 0xFF);
-    $bytes[4] = chr(( $time >> 8 ) & 0xFF);
+    $bytes[0] = chr(($time >> 40) & 0xFF);
+    $bytes[1] = chr(($time >> 32) & 0xFF);
+    $bytes[2] = chr(($time >> 24) & 0xFF);
+    $bytes[3] = chr(($time >> 16) & 0xFF);
+    $bytes[4] = chr(($time >> 8) & 0xFF);
     $bytes[5] = chr($time & 0xFF);
 
     // Version 7 (bits 48-51)
-    $bytes[6] = chr(( ord($bytes[6]) & 0x0F ) | 0x70);
+    $bytes[6] = chr((ord($bytes[6]) & 0x0F) | 0x70);
 
     // Variant 10xx (bits 64-65)
-    $bytes[8] = chr(( ord($bytes[8]) & 0x3F ) | 0x80);
+    $bytes[8] = chr((ord($bytes[8]) & 0x3F) | 0x80);
 
     $hex = bin2hex($bytes);
 
@@ -88,7 +89,8 @@ function cashback_generate_uuid7( bool $with_dashes = true ): string {
  *                              (например 'assets/css/frontend.css').
  * @return string полный URL с cache-bust query
  */
-function cashback_asset_url( string $relative_path ): string {
+function cashback_asset_url(string $relative_path): string
+{
     $relative = ltrim($relative_path, '/');
     $absolute = plugin_dir_path(__FILE__) . $relative;
     $version  = file_exists($absolute) ? (string) filemtime($absolute) : '1';
@@ -102,7 +104,8 @@ function cashback_asset_url( string $relative_path ): string {
  *
  * @return void
  */
-function cashback_check_requirements() {
+function cashback_check_requirements()
+{
     $errors = array();
 
     // Проверка версии PHP
@@ -150,7 +153,7 @@ function cashback_check_requirements() {
         wp_die(
             wp_kses_post($error_message),
             esc_html__('Plugin Activation Error', 'cashback-plugin'),
-            array( 'back_link' => true )
+            array('back_link' => true)
         );
     }
 }
@@ -162,50 +165,52 @@ register_activation_hook(__FILE__, 'cashback_check_requirements');
  * Основной класс плагина Cashback
  */
 // phpcs:ignore Universal.Files.SeparateFunctionsFromOO.Mixed -- Main plugin bootstrap file mixes class definitions with helper functions by design.
-class CashbackPlugin {
+class CashbackPlugin
+{
 
     private const ACTIVATION_ERROR_TITLE = 'Ошибка активации плагина';
 
     /**
      * Конструктор класса
      */
-    public function __construct() {
-        register_activation_hook(__FILE__, array( $this, 'activate' ));
-        register_deactivation_hook(__FILE__, array( $this, 'deactivate' ));
-        add_action('plugins_loaded', array( $this, 'init' ));
-        add_action('init', array( $this, 'load_textdomain' ));
+    public function __construct()
+    {
+        register_activation_hook(__FILE__, array($this, 'activate'));
+        register_deactivation_hook(__FILE__, array($this, 'deactivate'));
+        add_action('plugins_loaded', array($this, 'init'));
+        add_action('init', array($this, 'load_textdomain'));
         // One-time миграция plaintext-секретов в wp_options → ENC:v1:ciphertext.
         // Запуск после load_dependencies (prio=10 в init), идемпотентна (guard по флагу).
-        add_action('plugins_loaded', array( 'Cashback_Encryption', 'migrate_plaintext_options' ), 100);
+        add_action('plugins_loaded', array('Cashback_Encryption', 'migrate_plaintext_options'), 100);
         // Миграция группы 6 (шаг 2 ADR): schema-level idempotency. Идемпотентна (guard по флагу),
         // auto-run на plugins_loaded чтобы подхватить upgrade без re-activation плагина.
-        add_action('plugins_loaded', array( 'CashbackPlugin', 'migrate_schema_idempotency_v1' ), 110);
-        add_action('admin_notices', array( 'CashbackPlugin', 'schema_idempotency_blocked_notice' ));
+        add_action('plugins_loaded', array('CashbackPlugin', 'migrate_schema_idempotency_v1'), 110);
+        add_action('admin_notices', array('CashbackPlugin', 'schema_idempotency_blocked_notice'));
         // Миграция группы 7 (шаг 3 ADR): создание таблицы cashback_rate_limit_counters
         // для атомарного INSERT ... ON DUPLICATE KEY UPDATE (SQL rate-limit backend).
-        add_action('plugins_loaded', array( 'CashbackPlugin', 'migrate_rate_limit_v1' ), 115);
+        add_action('plugins_loaded', array('CashbackPlugin', 'migrate_rate_limit_v1'), 115);
         // Миграция группы 8 (шаг 3 ADR): создание таблицы cashback_cron_state
         // для checkpoint-истории прогонов cashback_api_sync cron.
-        add_action('plugins_loaded', array( 'Cashback_Cron_State', 'migrate_v1' ), 118);
+        add_action('plugins_loaded', array('Cashback_Cron_State', 'migrate_v1'), 118);
         // GC группы 7 (шаг 10 ADR): hourly очистка expired rate-limit counters.
-        add_action('cashback_rate_limit_gc_cron', array( 'CashbackPlugin', 'rate_limit_gc_cron_handler' ));
-        add_action('before_woocommerce_init', array( $this, 'declare_woocommerce_compatibility' ));
+        add_action('cashback_rate_limit_gc_cron', array('CashbackPlugin', 'rate_limit_gc_cron_handler'));
+        add_action('before_woocommerce_init', array($this, 'declare_woocommerce_compatibility'));
         // Единая пагинация — CSS для админки (используется на всех cashback-* страницах).
-        add_action('admin_enqueue_scripts', array( $this, 'enqueue_pagination_admin_assets' ));
+        add_action('admin_enqueue_scripts', array($this, 'enqueue_pagination_admin_assets'));
         // WooCommerce транзакционные письма используют собственный фильтр woocommerce_email_from_name
-        add_filter('woocommerce_email_from_name', function ( string $name ): string {
+        add_filter('woocommerce_email_from_name', function (string $name): string {
             $custom = (string) get_option('cashback_email_sender_name', '');
             return trim($custom) !== '' ? $custom : $name;
         });
         // WordPress core и прочие письма — приоритет 20 перекрывает WC_Emails (приоритет 10)
-        add_filter('wp_mail_from_name', function ( string $name ): string {
+        add_filter('wp_mail_from_name', function (string $name): string {
             $custom = (string) get_option('cashback_email_sender_name', '');
             return trim($custom) !== '' ? $custom : $name;
         }, 20);
         // Override WC-шаблона myaccount/dashboard.php — убираем стандартный
         // описательный абзац «From your account dashboard…» (нерелевантен:
         // у сервиса нет реальных WC-заказов, вкладки кабинета свои).
-        add_filter('wc_get_template', array( $this, 'override_wc_dashboard_template' ), 10, 5);
+        add_filter('wc_get_template', array($this, 'override_wc_dashboard_template'), 10, 5);
     }
 
     /**
@@ -213,7 +218,8 @@ class CashbackPlugin {
      *
      * @return void
      */
-    public function load_textdomain() {
+    public function load_textdomain()
+    {
         load_plugin_textdomain(
             'cashback-plugin',
             false,
@@ -231,7 +237,8 @@ class CashbackPlugin {
      * @param string $hook Hook-идентификатор текущей админ-страницы.
      * @return void
      */
-    public function enqueue_pagination_admin_assets( string $hook ): void {
+    public function enqueue_pagination_admin_assets(string $hook): void
+    {
         if (strpos($hook, 'cashback-') === false) {
             return;
         }
@@ -289,7 +296,8 @@ class CashbackPlugin {
      *
      * @return void
      */
-    public function declare_woocommerce_compatibility() {
+    public function declare_woocommerce_compatibility()
+    {
         if (class_exists(\Automattic\WooCommerce\Utilities\FeaturesUtil::class)) {
             \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('custom_order_tables', __FILE__, true);
             \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('cart_checkout_blocks', __FILE__, true);
@@ -299,15 +307,16 @@ class CashbackPlugin {
     /**
      * Метод активации плагина
      */
-    public function activate() {
+    public function activate()
+    {
         // Проверка обязательного расширения BCMath (используется для точных вычислений с балансами)
         if (!extension_loaded('bcmath')) {
             wp_die(
-                wp_kses_post( '<h1>' . self::ACTIVATION_ERROR_TITLE . '</h1>' .
+                wp_kses_post('<h1>' . self::ACTIVATION_ERROR_TITLE . '</h1>' .
                     '<p><strong>Cashback Plugin:</strong> Требуется PHP-расширение <code>bcmath</code>. ' .
-                    'Установите его и повторите активацию.</p>' ),
-                esc_html( self::ACTIVATION_ERROR_TITLE ),
-                array( 'back_link' => true )
+                    'Установите его и повторите активацию.</p>'),
+                esc_html(self::ACTIVATION_ERROR_TITLE),
+                array('back_link' => true)
             );
         }
 
@@ -336,19 +345,19 @@ class CashbackPlugin {
                 error_log('Stack trace: ' . $e->getTraceAsString());
                 // Показываем пользователю
                 wp_die(
-                    wp_kses_post( '<h1>' . self::ACTIVATION_ERROR_TITLE . '</h1>' .
+                    wp_kses_post('<h1>' . self::ACTIVATION_ERROR_TITLE . '</h1>' .
                         '<p><strong>Cashback Plugin:</strong> ' . esc_html($e->getMessage()) . '</p>' .
-                        '<p>Проверьте логи ошибок для получения дополнительной информации.</p>' ),
-                    esc_html( self::ACTIVATION_ERROR_TITLE ),
-                    array( 'back_link' => true )
+                        '<p>Проверьте логи ошибок для получения дополнительной информации.</p>'),
+                    esc_html(self::ACTIVATION_ERROR_TITLE),
+                    array('back_link' => true)
                 );
             }
         } else {
             wp_die(
-                wp_kses_post( '<h1>' . self::ACTIVATION_ERROR_TITLE . '</h1>' .
-                    '<p><strong>Cashback Plugin:</strong> Класс Mariadb_Plugin не найден.</p>' ),
-                esc_html( self::ACTIVATION_ERROR_TITLE ),
-                array( 'back_link' => true )
+                wp_kses_post('<h1>' . self::ACTIVATION_ERROR_TITLE . '</h1>' .
+                    '<p><strong>Cashback Plugin:</strong> Класс Mariadb_Plugin не найден.</p>'),
+                esc_html(self::ACTIVATION_ERROR_TITLE),
+                array('back_link' => true)
             );
         }
 
@@ -483,7 +492,8 @@ class CashbackPlugin {
     /**
      * Метод деактивации плагина
      */
-    public function deactivate() {
+    public function deactivate()
+    {
         // WP-Cron хуки (остаются на нативном планировщике)
         $cron_hooks = array(
             'cashback_support_auto_delete_cron',
@@ -528,7 +538,8 @@ class CashbackPlugin {
     /**
      * Инициализация основного функционала плагина
      */
-    public function init() {
+    public function init()
+    {
         // Проверяем, что WooCommerce активирован
         if (class_exists('WooCommerce')) {
             $this->load_dependencies();
@@ -548,22 +559,23 @@ class CashbackPlugin {
 
             // Предупреждение если ключ шифрования не настроен
             if (class_exists('Cashback_Encryption') && !Cashback_Encryption::is_configured()) {
-                add_action('admin_notices', array( $this, 'encryption_key_missing_notice' ));
+                add_action('admin_notices', array($this, 'encryption_key_missing_notice'));
             }
 
             // Предупреждение если триггеры не созданы
             if (get_option('cashback_triggers_active') === false) {
-                add_action('admin_notices', array( $this, 'triggers_unavailable_notice' ));
+                add_action('admin_notices', array($this, 'triggers_unavailable_notice'));
             }
         } else {
-            add_action('admin_notices', array( $this, 'woocommerce_required_notice' ));
+            add_action('admin_notices', array($this, 'woocommerce_required_notice'));
         }
     }
 
     /**
      * Загрузка зависимостей плагина
      */
-    public function load_dependencies() {
+    public function load_dependencies()
+    {
         // Подключаем ключ шифрования из wp-content/.cashback-encryption-key.php
         $this->load_encryption_key();
 
@@ -602,17 +614,17 @@ class CashbackPlugin {
         // Запрет логина для забаненных юзеров (OBS-05 E2E run B 2026-04-30).
         // Приоритет 30 — после стандартных проверок (auth_cookie/password/wp_login_failed
         // на 20), чтобы не маскировать «неверный пароль».
-        add_filter( 'wp_authenticate_user', array( 'Cashback_User_Status', 'block_banned_login' ), 30, 1 );
+        add_filter('wp_authenticate_user', array('Cashback_User_Status', 'block_banned_login'), 30, 1);
 
         // OBS-05 cosmetic: заменяем WC generic «Неверный логин/пароль» на наше
         // специфичное сообщение «Ваш аккаунт заблокирован...» для cashback_user_banned.
-        add_filter( 'woocommerce_login_errors', array( 'Cashback_User_Status', 'override_wc_login_error' ), 20, 1 );
+        add_filter('woocommerce_login_errors', array('Cashback_User_Status', 'override_wc_login_error'), 20, 1);
 
         // OBS-05 cosmetic (anti-mask): clearfy-pro и подобные anti-enumeration
         // плагины через `login_errors` (prio 10 default) затирают всё на generic
         // «Неверный логин/пароль». Hook'аемся на тот же filter с prio 50 (после
         // них) и читаем per-request flag из block_banned_login().
-        add_filter( 'login_errors', array( 'Cashback_User_Status', 'override_login_error' ), 50, 1 );
+        add_filter('login_errors', array('Cashback_User_Status', 'override_login_error'), 50, 1);
 
         // Server-side дедуп request_id (Группа 5 ADR) — общий helper для admin-AJAX хендлеров.
         // Подключается рано: используется в разных AJAX-обработчиках (payouts/transactions/claims).
@@ -870,7 +882,8 @@ class CashbackPlugin {
      * Запуск одноразовых миграций без реактивации плагина.
      * Каждая миграция защищена опцией-флагом (идемпотентно).
      */
-    private function maybe_run_migrations(): void {
+    private function maybe_run_migrations(): void
+    {
         if (!class_exists('Mariadb_Plugin')) {
             return;
         }
@@ -1091,27 +1104,31 @@ class CashbackPlugin {
         // superseded на следующем входе пользователя через
         // Cashback_Legal_Reconsent_Modal — re-consent для всех ранее
         // согласовавших.
-        if (class_exists('Cashback_Legal_Documents')
-            && get_option('cashback_legal_rewrite_2026_05_09_done', '') !== '1') {
+        if (
+            class_exists('Cashback_Legal_Documents')
+            && get_option('cashback_legal_rewrite_2026_05_09_done', '') !== '1'
+        ) {
             try {
                 $bumped = array();
                 foreach (Cashback_Legal_Documents::all_types() as $legal_type) {
                     $old              = Cashback_Legal_Documents::get_active_version($legal_type);
                     $new              = Cashback_Legal_Documents::bump_major($legal_type);
-                    $bumped[ $legal_type ] = array( 'old' => $old, 'new' => $new );
+                    $bumped[$legal_type] = array('old' => $old, 'new' => $new);
                 }
                 update_option('cashback_legal_rewrite_2026_05_09_done', '1', false);
 
                 // Audit best-effort. Не валим миграцию, если encryption ещё не готов.
-                if (class_exists('Cashback_Encryption')
-                    && method_exists('Cashback_Encryption', 'write_audit_log')) {
+                if (
+                    class_exists('Cashback_Encryption')
+                    && method_exists('Cashback_Encryption', 'write_audit_log')
+                ) {
                     try {
                         Cashback_Encryption::write_audit_log(
                             'legal_global_bump_2026_05_09',
                             0,
                             'legal',
                             0,
-                            array( 'bumped' => $bumped )
+                            array('bumped' => $bumped)
                         );
                     } catch (\Throwable $audit_error) {
                         unset($audit_error);
@@ -1141,7 +1158,8 @@ class CashbackPlugin {
      *
      * @param string $filename Имя файла для подключения
      */
-    private function require_file( $filename ) {
+    private function require_file($filename)
+    {
         $filepath = plugin_dir_path(__FILE__) . $filename;
         if (file_exists($filepath)) {
             require_once $filepath;
@@ -1154,7 +1172,8 @@ class CashbackPlugin {
     /**
      * Инициализация компонентов плагина
      */
-    private function initialize_components() {
+    private function initialize_components()
+    {
         // Бот-защита: инициализация guard (до других компонентов)
         if (class_exists('Cashback_Bot_Protection')) {
             Cashback_Bot_Protection::init();
@@ -1199,16 +1218,16 @@ class CashbackPlugin {
         // в get_active_members (post_status NOT IN ('trash','auto-draft')),
         // поэтому visibility/sort работают корректно без destructive cleanup.
         if (class_exists('Cashback_Shop_Group_Resolver')) {
-            add_action('before_delete_post', array( 'Cashback_Shop_Group_Resolver', 'on_before_delete_post' ), 10, 2);
+            add_action('before_delete_post', array('Cashback_Shop_Group_Resolver', 'on_before_delete_post'), 10, 2);
             // Закрывает race-condition в shop-importer: после tariff sync
             // group preferred должен пересчитаться (recompute_preferred при
             // reconcile_for_product мог вернуть -1, потому что тарифы ещё не
             // синканы). Приоритет 30 — после nginx purger (10) и product-sort (20).
-            add_action('cashback_tariffs_changed', array( 'Cashback_Shop_Group_Resolver', 'on_tariffs_changed' ), 30, 1);
+            add_action('cashback_tariffs_changed', array('Cashback_Shop_Group_Resolver', 'on_tariffs_changed'), 30, 1);
             // Resumable batched backfill для групп с preferred_product_id IS NULL
             // (existing v12-данные где race condition оставил preferred=NULL).
             // Wp-cron handler + ensure-scheduling, аналогично Cashback_Product_Sort.
-            add_action(Cashback_Shop_Group_Resolver::PREFERRED_BACKFILL_CRON_HOOK, array( 'Cashback_Shop_Group_Resolver', 'handle_preferred_backfill_cron' ), 10, 0);
+            add_action(Cashback_Shop_Group_Resolver::PREFERRED_BACKFILL_CRON_HOOK, array('Cashback_Shop_Group_Resolver', 'handle_preferred_backfill_cron'), 10, 0);
             Cashback_Shop_Group_Resolver::ensure_preferred_backfilled();
         }
 
@@ -1282,7 +1301,7 @@ class CashbackPlugin {
         // чтобы плагиновые DELETE прошли (или wp_die сработал) до того как WP пытается
         // удалить wp_users (FK fk_balance_user).
         if (class_exists('Cashback_User_Anonymizer')) {
-            add_action('pre_delete_user', array( 'Cashback_User_Anonymizer', 'on_pre_delete_user' ), 5, 3);
+            add_action('pre_delete_user', array('Cashback_User_Anonymizer', 'on_pre_delete_user'), 5, 3);
         }
 
         if (is_admin() && class_exists('Cashback_Fraud_Admin')) {
@@ -1406,7 +1425,8 @@ class CashbackPlugin {
     /**
      * Путь к файлу с основным ключом шифрования (CB_ENCRYPTION_KEY).
      */
-    private function get_encryption_key_path(): string {
+    private function get_encryption_key_path(): string
+    {
         return WP_CONTENT_DIR . '/.cashback-encryption-key.php';
     }
 
@@ -1414,7 +1434,8 @@ class CashbackPlugin {
      * Путь к staging-файлу нового ключа (CB_ENCRYPTION_KEY_NEW).
      * Существует только в фазах ротации staging/migrating/migrated.
      */
-    private function get_encryption_key_new_path(): string {
+    private function get_encryption_key_new_path(): string
+    {
         return WP_CONTENT_DIR . '/.cashback-encryption-key.new.php';
     }
 
@@ -1422,7 +1443,8 @@ class CashbackPlugin {
      * Путь к файлу предыдущего ключа (CB_ENCRYPTION_KEY_PREVIOUS).
      * Существует только в окне отката после finalize (7 дней по умолчанию).
      */
-    private function get_encryption_key_previous_path(): string {
+    private function get_encryption_key_previous_path(): string
+    {
         return WP_CONTENT_DIR . '/.cashback-encryption-key.previous.php';
     }
 
@@ -1437,7 +1459,8 @@ class CashbackPlugin {
      * Файлы NEW и PREVIOUS живут только на время ротации / окна отката,
      * их отсутствие — штатное состояние. См. Cashback_Key_Rotation.
      */
-    private function load_encryption_key(): void {
+    private function load_encryption_key(): void
+    {
         if (!defined('CB_ENCRYPTION_KEY')) {
             $primary = $this->get_encryption_key_path();
             if (file_exists($primary)) {
@@ -1465,7 +1488,8 @@ class CashbackPlugin {
      *
      * @return bool true если ключ уже существует или был успешно создан
      */
-    private function maybe_generate_encryption_key(): bool {
+    private function maybe_generate_encryption_key(): bool
+    {
         // Ключ уже определён (из файла или wp-config.php) — ничего не делаем
         if (defined('CB_ENCRYPTION_KEY')) {
             return true;
@@ -1533,7 +1557,8 @@ class CashbackPlugin {
      * Сообщает админу, что сохранение и чтение реквизитов выплат отключены
      * до восстановления ключа (fail-closed guard). См. ADR Группа 4 (F-1-001).
      */
-    public function encryption_key_missing_notice() {
+    public function encryption_key_missing_notice()
+    {
         $key_file = $this->get_encryption_key_path();
         printf(
             '<div class="notice notice-error"><p><strong>%s:</strong> %s</p><p>%s</p><p><strong>%s</strong> %s <code>%s</code></p></div>',
@@ -1546,7 +1571,8 @@ class CashbackPlugin {
         );
     }
 
-    public function triggers_unavailable_notice() {
+    public function triggers_unavailable_notice()
+    {
         printf(
             '<div class="notice notice-warning"><p><strong>%s:</strong> %s</p></div>',
             esc_html__('Cashback Plugin', 'cashback-plugin'),
@@ -1559,14 +1585,15 @@ class CashbackPlugin {
      * Static — чтобы вызываться из plugins_loaded без инстанса плагина.
      * Идемпотентна (внутренний guard по option cashback_schema_idempotency_v1_applied).
      */
-    public static function migrate_schema_idempotency_v1(): void {
+    public static function migrate_schema_idempotency_v1(): void
+    {
         global $wpdb;
 
         if (!class_exists('Cashback_Schema_Idempotency_Migration')) {
             require_once __DIR__ . '/includes/class-cashback-schema-idempotency-migration.php';
         }
 
-        ( new Cashback_Schema_Idempotency_Migration($wpdb) )->run();
+        (new Cashback_Schema_Idempotency_Migration($wpdb))->run();
     }
 
     /**
@@ -1575,21 +1602,23 @@ class CashbackPlugin {
      * INSERT ... ON DUPLICATE KEY UPDATE (Cashback_Rate_Limit_SQL_Counter).
      * Идемпотентна (guard по option cashback_rate_limit_v1_applied + CREATE TABLE IF NOT EXISTS).
      */
-    public static function migrate_rate_limit_v1(): void {
+    public static function migrate_rate_limit_v1(): void
+    {
         global $wpdb;
 
         if (!class_exists('Cashback_Rate_Limit_Migration')) {
             require_once __DIR__ . '/includes/class-cashback-rate-limit-migration.php';
         }
 
-        ( new Cashback_Rate_Limit_Migration($wpdb) )->run();
+        (new Cashback_Rate_Limit_Migration($wpdb))->run();
     }
 
     /**
      * Группа 7 (шаг 10 ADR): hourly GC для cashback_rate_limit_counters.
      * Удаляет expired rows, batch-лимит 5000 (защита от OLTP-лока).
      */
-    public static function rate_limit_gc_cron_handler(): void {
+    public static function rate_limit_gc_cron_handler(): void
+    {
         if (!class_exists('Cashback_Rate_Limit_GC')) {
             require_once __DIR__ . '/includes/class-cashback-rate-limit-gc.php';
         }
@@ -1601,7 +1630,8 @@ class CashbackPlugin {
      * Admin-notice: миграция группы 6 заблокирована из-за найденных дублей.
      * Сообщает админу, что нужно запустить tools/dedup-rows-*.php перед применением UNIQUE.
      */
-    public static function schema_idempotency_blocked_notice(): void {
+    public static function schema_idempotency_blocked_notice(): void
+    {
         $blocked = get_option('cashback_schema_idempotency_v1_blocked');
         if (!is_array($blocked) || empty($blocked['duplicate_checks'])) {
             return;
@@ -1630,7 +1660,8 @@ class CashbackPlugin {
     /**
      * Уведомление о необходимости установки WooCommerce
      */
-    public function woocommerce_required_notice() {
+    public function woocommerce_required_notice()
+    {
         $message = sprintf(
             '<strong>%s</strong> %s',
             esc_html__('Cashback Plugin', 'cashback-plugin'),
