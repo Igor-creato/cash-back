@@ -530,24 +530,10 @@ class Cashback_Transactions_Admin {
                 }
             }
 
-            // iter-28 F-28-002: проверяем state-machine переход через общий валидатор
-            // (такой же контур используется в admin-api-validation). MariaDB-trigger
-            // валидирует переходы на уровне БД как fallback, но раннее обнаружение
-            // в PHP даёт понятное сообщение оператору и избегает «DB error».
-            if (isset($update_data['order_status'])
-                && class_exists('Cashback_Trigger_Fallbacks')
-                && (string) $update_data['order_status'] !== (string) $current['order_status']) {
-                $validation = Cashback_Trigger_Fallbacks::validate_status_transition(
-                    (string) $current['order_status'],
-                    (string) $update_data['order_status']
-                );
-                if ($validation !== true) {
-                    $wpdb->query('ROLLBACK');
-                    wp_send_json_error(array( 'message' => $validation ));
-                    return;
-                }
-            }
-
+            // State-machine валидация выполняется триггером
+            // cashback_tr_validate_status_transition[_unregistered] — он бросает
+            // SIGNAL SQLSTATE '45000' с локализованным MESSAGE_TEXT при недопустимом
+            // переходе. Сообщение доходит до пользователя через $wpdb->last_error.
             $result = $wpdb->update(
                 $table_name,
                 $update_data,
@@ -561,7 +547,10 @@ class Cashback_Transactions_Admin {
                 $wpdb->query('ROLLBACK');
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log(sprintf('[Cashback Transactions] Update failed for ID %d: %s', $transaction_id, $db_error));
-                wp_send_json_error(array( 'message' => 'Ошибка при обновлении транзакции.' ));
+                // Если ошибка от status-validation триггера — пробрасываем
+                // её русскоязычный текст пользователю; иначе generic-сообщение.
+                $signal_message = self::extract_trigger_signal_message($db_error);
+                wp_send_json_error(array( 'message' => $signal_message ?? 'Ошибка при обновлении транзакции.' ));
                 return;
             }
 
@@ -931,6 +920,31 @@ class Cashback_Transactions_Admin {
             'balance'   => 'Зачислена на баланс',
         );
         return $labels[ $status ] ?? $status;
+    }
+
+    /**
+     * Распознаёт SIGNAL SQLSTATE '45000' MESSAGE_TEXT от MariaDB-триггеров в
+     * `$wpdb->last_error` и возвращает локализованную строку для UI.
+     * См. cashback_tr_validate_status_transition[_unregistered] в mariadb.php.
+     *
+     * @param string $last_error Содержимое $wpdb->last_error
+     * @return string|null Извлечённое user-friendly сообщение либо null
+     */
+    private static function extract_trigger_signal_message( string $last_error ): ?string {
+        $known_signals = array(
+            'Удаление запрещено: запись с финальным статусом не может быть удалена.',
+            'Изменение запрещено: запись с финальным статусом не может быть изменена.',
+            'Понижение статуса до waiting запрещено.',
+            'Перевод в balance возможен только из completed.',
+            'Перевод в hold возможен только из completed.',
+            'Из declined возможен переход только в completed.',
+        );
+        foreach ($known_signals as $signal_text) {
+            if (strpos($last_error, $signal_text) !== false) {
+                return $signal_text;
+            }
+        }
+        return null;
     }
 }
 

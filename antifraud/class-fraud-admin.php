@@ -1359,18 +1359,21 @@ class Cashback_Fraud_Admin {
                 throw new \Exception('Пользователь уже забанен');
             }
 
-            $banned_at_mysql = Cashback_Time::now_mysql();
+            // banned_at заполняется триггером tr_banned_user_update_banned_at
+            // (BEFORE UPDATE: NEW.banned_at = UTC_TIMESTAMP()). НЕ передаём
+            // PHP-значение — оно перезаписалось бы триггером, и ledger-key
+            // ушёл бы от реального DB-значения (drift в миллисекундах между
+            // PHP и DB clock'ом → разный idempotency_key при retry).
             $profile_updated = $wpdb->update(
                 $profile_table,
                 array(
                     'status'           => 'banned',
                     'ban_reason'       => null,
                     'ban_reason_admin' => $ban_reason_admin,
-                    'banned_at'        => $banned_at_mysql,
-                    'updated_at'       => $banned_at_mysql,
+                    'updated_at'       => Cashback_Time::now_mysql(),
                 ),
                 array( 'user_id' => $user_id ),
-                array( '%s', '%s', '%s', '%s', '%s' ),
+                array( '%s', '%s', '%s', '%s' ),
                 array( '%d' )
             );
 
@@ -1378,16 +1381,26 @@ class Cashback_Fraud_Admin {
                 throw new \Exception('Не удалось обновить профиль пользователя');
             }
 
-            // PHP-фолбэк: заморозка баланса (идемпотентно при наличии триггера)
-            Cashback_Trigger_Fallbacks::freeze_balance_on_ban($user_id);
+            // Заморозка баланса выполняется триггером tr_freeze_balance_on_ban
+            // (AFTER UPDATE при OLD.status != 'banned' AND NEW.status = 'banned').
+            // К этой точке available+pending → frozen_*_ban уже перенесены.
 
-            // Группа 14 (ledger-first): после того, как триггер/fallback переместили
-            // available+pending → frozen_*_ban, фиксируем заморозку в cashback_balance_ledger.
-            // Идемпотентно через UNIQUE idempotency_key = ban_freeze_{user_id}_{banned_at_unix}.
+            // Группа 14 (ledger-first): фиксируем заморозку в cashback_balance_ledger.
+            // Читаем banned_at, который ТОЛЬКО ЧТО проставил триггер
+            // (UTC_TIMESTAMP()) — это значение нужно для детерминированного
+            // idempotency_key = ban_freeze_{user_id}_{banned_at_unix}. Без SELECT'а
+            // ledger использовал бы PHP-clock и drift'ил бы по retry'ям.
             if (class_exists('Cashback_Ban_Ledger')) {
-                $banned_at_unix = Cashback_Time::parse((string) $banned_at_mysql);
-                if ($banned_at_unix > 0) {
-                    Cashback_Ban_Ledger::write_freeze_entry($user_id, $banned_at_unix);
+                $banned_at_db = $wpdb->get_var($wpdb->prepare(
+                    'SELECT banned_at FROM %i WHERE user_id = %d',
+                    $profile_table,
+                    $user_id
+                ));
+                if ($banned_at_db !== null) {
+                    $banned_at_unix = Cashback_Time::parse((string) $banned_at_db);
+                    if ($banned_at_unix > 0) {
+                        Cashback_Ban_Ledger::write_freeze_entry($user_id, $banned_at_unix);
+                    }
                 }
             }
 

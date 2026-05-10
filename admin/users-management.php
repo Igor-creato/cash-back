@@ -591,30 +591,23 @@ class Cashback_Users_Management_Admin {
                 ? (int) strtotime((string) $profile->banned_at)
                 : 0;
 
-            // PHP-фолбэк: установка banned_at при бане / очистка при разбане
-            if (isset($status)) {
-                if ($old_status !== 'banned' && $status === 'banned') {
-                    Cashback_Trigger_Fallbacks::set_banned_at($update_data);
-                    $update_formats[] = '%s';
-                } elseif ($old_status === 'banned' && $status !== 'banned') {
-                    Cashback_Trigger_Fallbacks::clear_ban_fields($update_data);
-                    // 3 поля: banned_at, ban_reason, ban_reason_admin (v6, OBS-06).
-                    $update_formats[] = '%s';
-                    $update_formats[] = '%s';
-                    $update_formats[] = '%s';
-                }
-            }
+            // banned_at и ban_reason/ban_reason_admin полностью обслуживаются
+            // MariaDB-триггерами:
+            //   - tr_banned_user_update_banned_at (BEFORE UPDATE): NEW.banned_at = UTC_TIMESTAMP()
+            //     при OLD.status != 'banned' AND NEW.status = 'banned'
+            //   - tr_clear_ban_on_unban (BEFORE UPDATE): NEW.banned_at = NEW.ban_reason
+            //     = NEW.ban_reason_admin = NULL при OLD.status = 'banned' AND NEW.status != 'banned'
+            // Поля НЕ передаём в $update_data — БД проставит сама.
 
             // Добавляем дату обновления
             $update_data['updated_at'] = Cashback_Time::now_mysql();
             $update_formats[]          = '%s';
 
             // Группа 14 (ledger-first): пишем ban_unfreeze в ledger ДО UPDATE profile.
-            // Триггер tr_unfreeze_balance_on_unban (или PHP-fallback
-            // Cashback_Trigger_Fallbacks::unfreeze_balance_on_unban) обнулит ban-бакеты
-            // при срабатывании на UPDATE → нужно зафиксировать сумму, пока она ещё в
-            // frozen_balance_ban / frozen_pending_balance_ban. Идемпотентно через
-            // UNIQUE ledger.idempotency_key = ban_unfreeze_{user_id}_{old_banned_at}.
+            // Триггер tr_unfreeze_balance_on_unban обнулит ban-бакеты при срабатывании
+            // на UPDATE → нужно зафиксировать сумму, пока она ещё в frozen_balance_ban
+            // / frozen_pending_balance_ban. Идемпотентно через UNIQUE
+            // ledger.idempotency_key = ban_unfreeze_{user_id}_{old_banned_at}.
             if ($old_status === 'banned' && isset($status) && $status !== 'banned'
                 && $old_banned_at_unix > 0 && class_exists('Cashback_Ban_Ledger')
             ) {
@@ -650,14 +643,23 @@ class Cashback_Users_Management_Admin {
                     throw new Exception('Ошибка при обработке бана пользователя');
                 }
 
-                // Группа 14 (ledger-first): пишем ban_freeze в ledger ПОСЛЕ UPDATE profile
-                // и после handle_user_ban (freeze_balance_on_ban fallback + триггер уже
-                // переместили available/pending → frozen_*_ban). idempotency_key =
-                // ban_freeze_{user_id}_{new_banned_at} детерминирован от set_banned_at().
-                if (isset($update_data['banned_at']) && class_exists('Cashback_Ban_Ledger')) {
-                    $new_banned_at_unix = (int) strtotime((string) $update_data['banned_at']);
-                    if ($new_banned_at_unix > 0) {
-                        Cashback_Ban_Ledger::write_freeze_entry($user_id, $new_banned_at_unix);
+                // Группа 14 (ledger-first): пишем ban_freeze в ledger ПОСЛЕ UPDATE profile.
+                // Читаем banned_at, который ТОЛЬКО ЧТО проставил триггер
+                // tr_banned_user_update_banned_at (UTC_TIMESTAMP()) — это значение
+                // нужно для детерминированного idempotency_key
+                // = ban_freeze_{user_id}_{banned_at_unix}. Без этого SELECT'а
+                // ledger-write пропустится, и audit-trail freeze-операции потеряется.
+                if (class_exists('Cashback_Ban_Ledger')) {
+                    $new_banned_at = $wpdb->get_var($wpdb->prepare(
+                        'SELECT banned_at FROM %i WHERE user_id = %d',
+                        $this->profile_table_name,
+                        $user_id
+                    ));
+                    if ($new_banned_at !== null) {
+                        $new_banned_at_unix = (int) strtotime((string) $new_banned_at);
+                        if ($new_banned_at_unix > 0) {
+                            Cashback_Ban_Ledger::write_freeze_entry($user_id, $new_banned_at_unix);
+                        }
                     }
                 }
             }
@@ -1040,8 +1042,11 @@ class Cashback_Users_Management_Admin {
                 }
             }
 
-            // PHP-фолбэк: заморозка баланса (идемпотентно при наличии триггера)
-            Cashback_Trigger_Fallbacks::freeze_balance_on_ban($user_id);
+            // Заморозка баланса выполняется триггером tr_freeze_balance_on_ban
+            // (AFTER UPDATE на cashback_user_profile при OLD.status != 'banned'
+            // AND NEW.status = 'banned'). Триггер уже отработал на UPDATE profile
+            // в parent flow (update_user строка 625) — здесь дополнительных
+            // действий не требуется.
 
             // Логируем бан пользователя — записываем ВНУТРЕННЮЮ причину для
             // forensics. Если есть публичная — тоже фиксируем (для аудита того,
@@ -1134,8 +1139,11 @@ class Cashback_Users_Management_Admin {
                 }
             }
 
-            // PHP-фолбэк: разморозка баланса (идемпотентно при наличии триггера)
-            Cashback_Trigger_Fallbacks::unfreeze_balance_on_unban($user_id);
+            // Разморозка баланса выполняется триггером tr_unfreeze_balance_on_unban
+            // (AFTER UPDATE на cashback_user_profile при OLD.status = 'banned'
+            // AND NEW.status != 'banned'). Триггер уже отработал на UPDATE profile
+            // в parent flow (update_user строка 625) — здесь дополнительных
+            // действий не требуется.
 
             // Re-freeze affiliate-части ПОД ТОЙ ЖЕ TX — до COMMIT.
             // F-28-001: post-commit вызов давал race-окно, когда разбан

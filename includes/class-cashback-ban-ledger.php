@@ -3,8 +3,8 @@
  * Ledger-запись для заморозки/разморозки баланса при бане пользователя.
  *
  * Группа 14 (ledger-first coverage): до этого модуля ban/unban меняли
- * cashback_user_balance через MySQL-триггер или PHP-fallback (см. Cashback_Trigger_Fallbacks),
- * но не писали в cashback_balance_ledger. Consistency-чекер
+ * cashback_user_balance через MariaDB-триггер, но не писали в
+ * cashback_balance_ledger. Consistency-чекер
  * Mariadb_Plugin::validate_user_balance_consistency() поэтому давал false-positive
  * для каждого забаненного пользователя.
  *
@@ -17,19 +17,20 @@
  *     или ban_unfreeze (положительный amount) через INSERT ... ON DUPLICATE KEY UPDATE id=id,
  *     что делает операцию идемпотентной по UNIQUE idempotency_key.
  *
- * Предполагается, что cashback_user_balance уже обновлён к моменту вызова —
- * MySQL-триггером tr_freeze_balance_on_ban или PHP-fallback'ом
- * Cashback_Trigger_Fallbacks::freeze_balance_on_ban(). Мы просто фиксируем в ledger
- * уже произошедшее перемещение между бакетами.
+ * Предполагается, что cashback_user_balance уже обновлён к моменту вызова
+ * MariaDB-триггером `tr_freeze_balance_on_ban` (AFTER UPDATE на cashback_user_profile
+ * при OLD.status != 'banned' AND NEW.status = 'banned'). Мы просто фиксируем
+ * в ledger уже произошедшее перемещение между бакетами.
  *
  * idempotency_key формат:
  *   ban_freeze_{user_id}_{banned_at_unix}
  *   ban_unfreeze_{user_id}_{banned_at_unix}
  *
  * banned_at берётся из cashback_user_profile.banned_at — для freeze значение
- * только что установлено (set_banned_at), для unfreeze значение бралось ДО очистки
- * (clear_ban_fields обнуляет поле), поэтому вызов должен произойти до UPDATE profile
- * с clear_ban_fields. Caller отвечает за передачу правильного unix-timestamp.
+ * только что установлено триггером tr_banned_user_update_banned_at (UTC_TIMESTAMP());
+ * для unfreeze значение бралось ДО UPDATE (триггер tr_clear_ban_on_unban обнуляет
+ * поле), поэтому вызов должен произойти до UPDATE profile с clear-логикой.
+ * Caller отвечает за передачу правильного unix-timestamp.
  */
 
 if (!defined('ABSPATH')) {
@@ -120,9 +121,8 @@ class Cashback_Ban_Ledger {
     /**
      * Пишет запись ban_unfreeze в ledger при разбане.
      *
-     * Вызывается ДО того, как MySQL-триггер tr_unfreeze_balance_on_unban или
-     * PHP-fallback Cashback_Trigger_Fallbacks::unfreeze_balance_on_unban()
-     * переместят значения обратно — поэтому тут читаем и фиксируем ban-бакеты
+     * Вызывается ДО того, как MariaDB-триггер tr_unfreeze_balance_on_unban
+     * переместит значения обратно — поэтому тут читаем и фиксируем ban-бакеты
      * ПЕРЕД их обнулением. Caller должен держать START TRANSACTION.
      *
      * Идемпотентно через UNIQUE idempotency_key = ban_unfreeze_{user_id}_{banned_at_unix}.

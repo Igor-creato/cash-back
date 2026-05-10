@@ -242,78 +242,47 @@ class WithdrawalConcurrencyTest extends TestCase
     // ТЕСТЫ: Статус-машина выплат
     // ================================================================
 
-    public static function payout_valid_status_transitions_provider(): array
+    /**
+     * Структурный тест immutability финальных payout-статусов.
+     *
+     * Раньше тестировал Cashback_Trigger_Fallbacks::validate_payout_update
+     * (метод-orphan без production-callsites; класс удалён 2026-05-10).
+     * Теперь immutability обеспечивается DB-триггерами:
+     *   - tr_prevent_delete_paid_payout / tr_prevent_update_paid_payout
+     *   - tr_prevent_delete_failed_payout / tr_prevent_update_failed_payout
+     * Тест проверяет что все 4 триггера присутствуют в DDL-source.
+     */
+    public function test_payout_immutability_triggers_present(): void
     {
-        return [
-            'waiting → processing'              => ['waiting', 'processing', true],
-            'waiting → declined'                => ['waiting', 'declined', true],
-            'waiting → waiting (без изменений)' => ['waiting', 'waiting', true],
-            'processing → paid'                 => ['processing', 'paid', true],
-            'processing → failed'               => ['processing', 'failed', true],
-            'processing → needs_retry'          => ['processing', 'needs_retry', true],
-            'needs_retry → processing'          => ['needs_retry', 'processing', true],
-            'declined → waiting'                => ['declined', 'waiting', true],
+        $mariadb_src = file_get_contents(dirname(__DIR__, 3) . '/mariadb.php');
+        $this->assertIsString($mariadb_src, 'mariadb.php must be readable');
+
+        $required_triggers = [
+            'tr_prevent_delete_paid_payout'   => "OLD.status = 'paid'",
+            'tr_prevent_update_paid_payout'   => "OLD.status = 'paid'",
+            'tr_prevent_delete_failed_payout' => "OLD.status = 'failed'",
+            'tr_prevent_update_failed_payout' => "OLD.status = 'failed'",
         ];
-    }
 
-    public static function payout_invalid_status_transitions_provider(): array
-    {
-        return [
-            'paid → waiting (финальный)'        => ['paid', 'waiting', false],
-            'paid → processing (финальный)'     => ['paid', 'processing', false],
-            'paid → failed (финальный)'         => ['paid', 'failed', false],
-            'paid → declined (финальный)'       => ['paid', 'declined', false],
-            'failed → waiting (финальный)'      => ['failed', 'waiting', false],
-            'failed → processing (финальный)'   => ['failed', 'processing', false],
-            'failed → paid (финальный)'         => ['failed', 'paid', false],
-        ];
-    }
+        foreach ($required_triggers as $trigger_name => $expected_condition) {
+            $needle = $trigger_name . '`';
+            $start  = strpos($mariadb_src, $needle);
+            $this->assertNotFalse(
+                $start,
+                "триггер {$trigger_name} должен быть определён в mariadb.php"
+            );
+            $body = substr($mariadb_src, $start, 600);
 
-    #[DataProvider('payout_valid_status_transitions_provider')]
-    public function test_payout_valid_status_transition(string $from, string $to, bool $expected): void
-    {
-        // Логика из validate_payout_update: paid/failed — финальные статусы
-        $result = Cashback_Trigger_Fallbacks::validate_payout_update($from);
-
-        if ($expected) {
-            $this->assertTrue($result === true, "Переход из '{$from}' должен быть разрешён");
-        } else {
-            $this->assertNotTrue($result, "Переход из '{$from}' должен быть запрещён");
-        }
-    }
-
-    #[DataProvider('payout_invalid_status_transitions_provider')]
-    public function test_payout_invalid_status_transition(string $from, string $to, bool $expected): void
-    {
-        $result = Cashback_Trigger_Fallbacks::validate_payout_update($from);
-
-        $this->assertIsString($result, "Финальный статус '{$from}' должен запрещать изменения");
-        $this->assertNotEmpty($result, 'Сообщение об ошибке не должно быть пустым');
-    }
-
-    public function test_paid_payout_is_immutable(): void
-    {
-        $result = Cashback_Trigger_Fallbacks::validate_payout_update('paid');
-
-        $this->assertIsString($result, 'paid — финальный статус, изменения запрещены');
-        $this->assertStringContainsString('выплачен', $result);
-    }
-
-    public function test_failed_payout_is_immutable(): void
-    {
-        $result = Cashback_Trigger_Fallbacks::validate_payout_update('failed');
-
-        $this->assertIsString($result, 'failed — финальный статус, изменения запрещены');
-        $this->assertStringContainsString('failed', $result);
-    }
-
-    public function test_all_non_final_payout_statuses_allow_updates(): void
-    {
-        $non_final_statuses = ['waiting', 'processing', 'needs_retry', 'declined'];
-
-        foreach ($non_final_statuses as $status) {
-            $result = Cashback_Trigger_Fallbacks::validate_payout_update($status);
-            $this->assertTrue($result, "Статус '{$status}' должен разрешать изменения");
+            $this->assertStringContainsString(
+                $expected_condition,
+                $body,
+                "триггер {$trigger_name} должен проверять {$expected_condition}"
+            );
+            $this->assertStringContainsString(
+                "SIGNAL SQLSTATE '45000'",
+                $body,
+                "триггер {$trigger_name} должен бросать SIGNAL SQLSTATE 45000"
+            );
         }
     }
 
@@ -344,14 +313,27 @@ class WithdrawalConcurrencyTest extends TestCase
 
     public function test_cashback_status_balance_prevents_double_accrual(): void
     {
-        // Транзакция со статусом 'balance' не может быть начислена повторно
-        // Статус 'balance' — финальный (из Cashback_Trigger_Fallbacks::validate_status_transition)
-        $result = Cashback_Trigger_Fallbacks::validate_status_transition('balance', 'balance');
-        $this->assertTrue($result, 'balance → balance (без изменений) разрешён');
+        // Транзакция со статусом 'balance' не может быть начислена повторно.
+        // Защита реализована триггером cashback_tr_validate_status_transition
+        // (mariadb.php) — SIGNAL SQLSTATE '45000' при OLD.order_status = 'balance'.
+        // Структурный assertion: проверяем что в DDL-теле триггера есть это правило.
+        $mariadb_src = file_get_contents(dirname(__DIR__, 3) . '/mariadb.php');
+        $this->assertIsString($mariadb_src, 'mariadb.php must be readable');
+        $needle = 'cashback_tr_validate_status_transition`';
+        $start  = strpos($mariadb_src, $needle);
+        $this->assertNotFalse($start, 'триггер должен быть в mariadb.php');
+        $body = substr($mariadb_src, $start, 2500);
 
-        // Но любое изменение из 'balance' запрещено
-        $result_to_completed = Cashback_Trigger_Fallbacks::validate_status_transition('balance', 'completed');
-        $this->assertIsString($result_to_completed, 'balance → completed запрещено');
+        $this->assertStringContainsString(
+            "OLD.order_status = 'balance'",
+            $body,
+            'balance — финальный статус, любое изменение должно бросать SIGNAL'
+        );
+        $this->assertStringContainsString(
+            'Изменение запрещено: запись с финальным статусом не может быть изменена.',
+            $body,
+            'SIGNAL message_text для balance должен быть локализован'
+        );
     }
 
     // ================================================================

@@ -25,11 +25,10 @@ use PHPUnit\Framework\Attributes\Group;
 #[Group('affiliate-unban')]
 final class AffiliateBanUnbanConcurrencyTest extends TestCase
 {
-    private const SERVICE_FILE   = __DIR__ . '/../../../affiliate/class-affiliate-service.php';
-    private const USERS_ADMIN    = __DIR__ . '/../../../admin/users-management.php';
-    private const TRIGGER_FB     = __DIR__ . '/../../../includes/class-cashback-trigger-fallbacks.php';
-    private const MARIADB_FILE   = __DIR__ . '/../../../mariadb.php';
-    private const PLUGIN_BOOT    = __DIR__ . '/../../../cashback-plugin.php';
+    private const SERVICE_FILE = __DIR__ . '/../../../affiliate/class-affiliate-service.php';
+    private const USERS_ADMIN  = __DIR__ . '/../../../admin/users-management.php';
+    private const MARIADB_FILE = __DIR__ . '/../../../mariadb.php';
+    private const PLUGIN_BOOT  = __DIR__ . '/../../../cashback-plugin.php';
 
     private function read(string $path): string
     {
@@ -161,40 +160,28 @@ final class AffiliateBanUnbanConcurrencyTest extends TestCase
         );
     }
 
-    public function test_trigger_fallback_uses_bucket_columns(): void
-    {
-        $src = $this->read(self::TRIGGER_FB);
-
-        // freeze: pending должен уходить в frozen_pending_balance_ban (не в общий frozen_balance)
-        $this->assertStringContainsString(
-            'frozen_pending_balance_ban',
-            $src,
-            'freeze_balance_on_ban PHP-fallback должен заполнять frozen_pending_balance_ban (F-11-003).'
-        );
-        $this->assertStringContainsString(
-            'frozen_balance_ban',
-            $src,
-            'freeze_balance_on_ban PHP-fallback должен заполнять frozen_balance_ban (F-11-003).'
-        );
-    }
-
     public function test_mariadb_trigger_freeze_uses_bucket_columns(): void
     {
         $src = $this->read(self::MARIADB_FILE);
 
-        // Находим именно CREATE TRIGGER-блок для tr_freeze_balance_on_ban
-        // (первое вхождение имени — в списке DROP TRIGGER).
+        // Находим CREATE [OR REPLACE] TRIGGER-блок для tr_freeze_balance_on_ban.
+        // Триггер пересоздаётся через CREATE OR REPLACE TRIGGER (atomic, MariaDB 10.1.4+) —
+        // явный список DROP TRIGGER больше не используется, поэтому первое вхождение
+        // имени и есть DDL-блок.
         $trigger_start = false;
-        $offset = 0;
+        $offset        = 0;
         while (($pos = strpos($src, 'tr_freeze_balance_on_ban', $offset)) !== false) {
             $window = substr($src, max(0, $pos - 200), 400);
-            if (stripos($window, 'CREATE TRIGGER') !== false) {
+            if (preg_match('/CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER/i', $window) === 1) {
                 $trigger_start = $pos;
                 break;
             }
             $offset = $pos + 1;
         }
-        $this->assertIsInt($trigger_start, 'CREATE TRIGGER tr_freeze_balance_on_ban должен быть определён в mariadb.php.');
+        $this->assertIsInt(
+            $trigger_start,
+            'CREATE [OR REPLACE] TRIGGER tr_freeze_balance_on_ban должен быть определён в mariadb.php.'
+        );
 
         $trigger_body = substr($src, $trigger_start, 2000);
 

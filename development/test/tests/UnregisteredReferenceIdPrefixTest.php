@@ -40,8 +40,10 @@ class UnregisteredReferenceIdPrefixTest extends TestCase
     {
         $src = self::source();
 
-        // Извлекаем тело триггера calculate_cashback_before_insert_unregistered
-        $pattern = '/CREATE TRIGGER `\{?\$?safe_prefix\}?calculate_cashback_before_insert_unregistered.*?END;/s';
+        // Извлекаем тело триггера calculate_cashback_before_insert_unregistered.
+        // Триггер регистрируется через CREATE OR REPLACE TRIGGER (atomic rebuild,
+        // MariaDB 10.1.4+) — без gap'а между DROP и CREATE.
+        $pattern = '/CREATE\s+OR\s+REPLACE\s+TRIGGER `\{?\$?safe_prefix\}?calculate_cashback_before_insert_unregistered.*?END;/s';
         $this->assertSame(
             1,
             preg_match($pattern, $src, $matches),
@@ -67,8 +69,9 @@ class UnregisteredReferenceIdPrefixTest extends TestCase
     {
         $src = self::source();
 
-        // Триггер для cashback_transactions (без _unregistered)
-        $pattern = '/CREATE TRIGGER `\{?\$?safe_prefix\}?calculate_cashback_before_insert`.*?END;/s';
+        // Триггер для cashback_transactions (без _unregistered).
+        // Регистрируется через CREATE OR REPLACE TRIGGER (atomic rebuild).
+        $pattern = '/CREATE\s+OR\s+REPLACE\s+TRIGGER `\{?\$?safe_prefix\}?calculate_cashback_before_insert`.*?END;/s';
         $this->assertSame(
             1,
             preg_match($pattern, $src, $matches),

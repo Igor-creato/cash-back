@@ -1052,9 +1052,6 @@ require_once $plugin_root . '/includes/class-cashback-encryption.php';
 // Ротация ключа шифрования (admin)
 require_once $plugin_root . '/admin/class-cashback-key-rotation.php';
 
-// PHP-фолбэки триггеров
-require_once $plugin_root . '/includes/class-cashback-trigger-fallbacks.php';
-
 // Основной класс плагина (для generate_reference_id)
 require_once $plugin_root . '/mariadb.php';
 

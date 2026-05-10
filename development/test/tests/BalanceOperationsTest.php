@@ -553,45 +553,33 @@ class BalanceOperationsTest extends TestCase
     }
 
     // ================================================================
-    // ТЕСТЫ: Начисление кэшбэка через Cashback_Trigger_Fallbacks
-    //        (интеграция с реальными методами)
+    // ТЕСТЫ: арифметические инварианты заморозки/разморозки баланса.
+    // Раньше тестировали Cashback_Trigger_Fallbacks (удалён 2026-05-10,
+    // Codex round 5). Теперь это структурные инварианты SQL-триггеров
+    // tr_freeze_balance_on_ban / tr_unfreeze_balance_on_unban.
     // ================================================================
 
-    public function test_trigger_fallback_calculate_cashback_sets_correct_rate(): void
+    public function test_freeze_arithmetic_invariant(): void
     {
-        $data = [
-            'comission' => 100.00,
-            'user_id'   => null,  // нет user_id → дефолтная ставка
-        ];
-
-        Cashback_Trigger_Fallbacks::calculate_cashback($data, false);
-
-        $this->assertSame(60.00, $data['applied_cashback_rate']);
-        $this->assertSame(60.00, $data['cashback']);
-        $this->assertGreaterThanOrEqual(0.0, $data['cashback'], 'Кэшбэк должен быть >= 0');
-    }
-
-    public function test_trigger_fallback_freeze_logic_correct(): void
-    {
-        // Проверяем что логика из Cashback_Trigger_Fallbacks::freeze_balance_on_ban()
-        // работает правильно (арифметика, без реальной БД)
+        // Триггер tr_freeze_balance_on_ban: frozen += available + pending;
+        // available = 0; pending = 0
         $available = 500.0;
         $pending   = 200.0;
         $frozen    = 0.0;
 
-        // Симулируем логику: frozen += available + pending; available = 0; pending = 0
         $new_frozen = $frozen + $available + $pending;
 
         $this->assertSame(700.0, $new_frozen, 'Заморозка: frozen = available + pending');
         $this->assertGreaterThanOrEqual(0.0, $new_frozen, 'frozen_balance не может быть отрицательным');
     }
 
-    public function test_trigger_fallback_unfreeze_logic_correct(): void
+    public function test_unfreeze_arithmetic_invariant(): void
     {
+        // Триггер tr_unfreeze_balance_on_unban: available += frozen_balance_ban;
+        // pending += frozen_pending_balance_ban; frozen-bucket'ы = 0
         $available = 100.0;
         $frozen    = 700.0;
 
-        // Симулируем логику: available += frozen; frozen = 0
         $new_available = $available + $frozen;
         $new_frozen    = 0.0;
 

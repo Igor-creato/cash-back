@@ -202,41 +202,64 @@ class DataIntegrityTest extends TestCase
     // ================================================================
 
     /**
-     * Граф допустимых переходов транзакций (state machine)
-     * Проверяем полный граф допустимых переходов
+     * Структурный тест state-machine допустимых переходов транзакций.
+     *
+     * Раньше проверял Cashback_Trigger_Fallbacks::validate_status_transition
+     * (удалён 2026-05-10, Codex round 5). Теперь валидация выполняется
+     * MariaDB-триггером cashback_tr_validate_status_transition в mariadb.php.
+     * Тест проверяет что все 5 правил state-machine присутствуют в DDL-теле
+     * триггера через regex (источник правды — SQL).
      */
-    public function test_complete_transaction_state_machine(): void
+    public function test_status_transition_trigger_contains_all_rules(): void
     {
-        // Допустимые переходы (полный список из validate_status_transition):
-        // Правила запрещают только КОНКРЕТНЫЕ переходы, остальные разрешены.
-        // Запрещено:
-        // 1. Из balance — всё (финальный)
-        // 2. Любой → waiting (downgrade запрещён)
-        // 3. Не-completed → balance
-        // 4. Не-completed → hold
-        // 5. Из declined → не completed и не declined
-        $allowed = [
-            'waiting'   => ['completed', 'declined', 'waiting'],          // нет запрета для waiting → completed/declined
-            'completed' => ['balance', 'hold', 'completed', 'declined'],  // completed может перейти в declined (нет запрета)
-            'declined'  => ['completed', 'declined'],                     // из declined только в completed или остаться
-            'hold'      => ['hold', 'completed', 'declined'],             // из hold: нет явного запрета на completed/declined
-            'balance'   => ['balance'],                                   // финальный — только себя сам (early return)
-        ];
+        $mariadb_src = file_get_contents(dirname(__DIR__, 3) . '/mariadb.php');
+        $this->assertIsString($mariadb_src, 'mariadb.php must be readable');
 
-        $all_statuses = ['waiting', 'completed', 'declined', 'hold', 'balance'];
+        // Локализуем тело триггера cashback_tr_validate_status_transition.
+        $needle = 'cashback_tr_validate_status_transition`';
+        $start  = strpos($mariadb_src, $needle);
+        $this->assertNotFalse($start, 'триггер cashback_tr_validate_status_transition должен быть в mariadb.php');
+        $body = substr($mariadb_src, $start, 3000);
 
-        foreach ($all_statuses as $from) {
-            foreach ($all_statuses as $to) {
-                $result = Cashback_Trigger_Fallbacks::validate_status_transition($from, $to);
-                $is_allowed = in_array($to, $allowed[$from], true);
+        // Правило 1: balance — полная блокировка (финальный статус).
+        $this->assertStringContainsString(
+            "OLD.order_status = 'balance'",
+            $body,
+            'rule 1: запрет любых изменений из balance'
+        );
+        $this->assertStringContainsString(
+            'Изменение запрещено: запись с финальным статусом не может быть изменена.',
+            $body,
+            'rule 1: SIGNAL message_text для balance'
+        );
 
-                if ($is_allowed) {
-                    $this->assertTrue($result, "Переход {$from} → {$to} должен быть допустим");
-                } else {
-                    $this->assertNotTrue($result, "Переход {$from} → {$to} должен быть запрещён");
-                }
-            }
-        }
+        // Правило 2: any → waiting запрещён.
+        $this->assertMatchesRegularExpression(
+            "/NEW\.order_status\s*=\s*'waiting'\s+AND\s+OLD\.order_status\s*!=\s*'waiting'/i",
+            $body,
+            'rule 2: запрет downgrade в waiting'
+        );
+
+        // Правило 3: → balance только из completed.
+        $this->assertMatchesRegularExpression(
+            "/NEW\.order_status\s*=\s*'balance'\s+AND\s+OLD\.order_status\s*!=\s*'completed'/i",
+            $body,
+            'rule 3: balance только из completed'
+        );
+
+        // Правило 4: → hold только из completed.
+        $this->assertMatchesRegularExpression(
+            "/NEW\.order_status\s*=\s*'hold'\s+AND\s+OLD\.order_status\s*!=\s*'completed'/i",
+            $body,
+            'rule 4: hold только из completed'
+        );
+
+        // Правило 5: из declined только в completed (или остаётся declined).
+        $this->assertMatchesRegularExpression(
+            "/OLD\.order_status\s*=\s*'declined'[\s\S]+?NEW\.order_status\s*!=\s*'completed'/i",
+            $body,
+            'rule 5: из declined только в completed'
+        );
     }
 
     // ================================================================

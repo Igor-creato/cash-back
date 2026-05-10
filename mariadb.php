@@ -73,6 +73,11 @@ class Mariadb_Plugin {
             $instance->create_tables();
             $instance->create_triggers();
             $instance->create_events();
+            // Cleanup legacy option (Codex round 5, 2026-05-10): после удаления
+            // PHP-фолбэков `cashback_triggers_active` больше не имеет смысла.
+            // Удаляем для existing-installs где option остался в wp_options
+            // от предыдущих версий плагина.
+            delete_option('cashback_triggers_active');
             $instance->initialize_existing_users();
             $instance->migrate_rate_history_enum();
             $instance->migrate_ledger_ban_enum();
@@ -109,6 +114,23 @@ class Mariadb_Plugin {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging (debug only).
                 error_log('Mariadb Plugin Activation Error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
             }
+
+            // Codex round 6 #3 (2026-05-10): trigger-failure от create_triggers()
+            // распознаём по message-prefix и показываем явное диагностическое
+            // сообщение про SUPER privilege вместо generic-фразы.
+            if (strpos($e->getMessage(), 'Failed to create cashback triggers:') === 0) {
+                wp_die(
+                    wp_kses_post(
+                        '<h1>' . esc_html__('Cashback Plugin Activation Failed', 'cashback-plugin') . '</h1>'
+                        . '<p>' . esc_html__('Plugin requires SUPER privilege for CREATE TRIGGER on this MariaDB host. Schema-level financial integrity guards (ledger triggers, payout immutability, fail_reason invariant) cannot be installed.', 'cashback-plugin') . '</p>'
+                        . '<p><strong>' . esc_html__('Error:', 'cashback-plugin') . '</strong> ' . esc_html($e->getMessage()) . '</p>'
+                        . '<p>' . esc_html__('Contact hosting provider to grant SUPER privilege or migrate to a self-managed MariaDB instance.', 'cashback-plugin') . '</p>'
+                    ),
+                    esc_html__('Cashback Plugin: DDL Permission Error', 'cashback-plugin'),
+                    array( 'response' => 500, 'back_link' => true )
+                );
+            }
+
             wp_die(esc_html__('Ошибка активации плагина. Подробности записаны в журнал.', 'cashback-plugin'));
         }
     }
@@ -987,7 +1009,13 @@ class Mariadb_Plugin {
     }
 
     /**
-     * Создание триггеров
+     * Создание триггеров.
+     *
+     * Все триггеры создаются через `CREATE OR REPLACE TRIGGER` (MariaDB 10.1.4+) —
+     * атомарный rebuild без окна между DROP и CREATE. Закрывает риск deployment-gap'а:
+     * раньше при INSERT в `cashback_balance_ledger` в момент пересоздания триггера
+     * UPDATE баланса мог не выполниться, что приводило к расхождению ledger ↔ balance
+     * (детектилось reconciliation cron'ом). Теперь schema-replace атомарен.
      */
     private function create_triggers() {
         global $wpdb;
@@ -995,41 +1023,8 @@ class Mariadb_Plugin {
         // Валидация префикса таблицы для безопасности
         $safe_prefix = $this->validate_table_prefix($wpdb->prefix);
 
-        // Удаляем существующие триггеры перед созданием новых
-        $drop_triggers = array(
-            'calculate_cashback_before_insert',
-            'calculate_cashback_before_insert_unregistered',
-            'calculate_cashback_before_update',
-            'calculate_cashback_before_update_unregistered',
-            'cashback_tr_prevent_delete_final_status',
-            'cashback_tr_prevent_update_final_status',
-            'cashback_tr_validate_status_transition',
-            'cashback_tr_validate_status_transition_unregistered',
-            'tr_prevent_delete_paid_payout',
-            'tr_prevent_update_paid_payout',
-            'tr_prevent_delete_failed_payout',
-            'tr_prevent_update_failed_payout',
-            'tr_payout_require_fail_reason_ins',
-            'tr_payout_require_fail_reason_upd',
-            'tr_banned_user_update_banned_at',
-            'tr_webhook_payload_hash',
-            // Пересоздать с bucket-логикой (F-11-003 part 2).
-            'tr_freeze_balance_on_ban',
-            'tr_unfreeze_balance_on_unban',
-            'tr_clear_ban_on_unban',
-        );
-
-        foreach ($drop_triggers as $trigger_base) {
-            $trigger_full = $safe_prefix . $trigger_base;
-            $result       = $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS %i', $trigger_full));
-            if ($result === false) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                error_log('Mariadb Plugin Warning: Failed to drop trigger. Error: ' . $wpdb->last_error);
-            }
-        }
-
         $triggers = array(
-            "CREATE TRIGGER `{$safe_prefix}calculate_cashback_before_insert`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}calculate_cashback_before_insert`
             BEFORE INSERT ON `{$safe_prefix}cashback_transactions`
             FOR EACH ROW
             -- 'Автоматически рассчитывает кэшбэк и генерирует reference_id при вставке'
@@ -1055,7 +1050,7 @@ class Mariadb_Plugin {
                 END IF;
             END;",
 
-            "CREATE TRIGGER `{$safe_prefix}calculate_cashback_before_insert_unregistered`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}calculate_cashback_before_insert_unregistered`
             BEFORE INSERT ON `{$safe_prefix}cashback_unregistered_transactions`
             FOR EACH ROW
             --  'Рассчитывает кэшбэк и генерирует reference_id (TU-XXXXXXXX) для незарегистрированных пользователей'
@@ -1069,7 +1064,7 @@ class Mariadb_Plugin {
                 END IF;
             END;",
 
-            "CREATE TRIGGER `{$safe_prefix}calculate_cashback_before_update`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}calculate_cashback_before_update`
             BEFORE UPDATE ON `{$safe_prefix}cashback_transactions`
             FOR EACH ROW
             --  'Пересчитывает кэшбэк только при изменении comission, используя сохранённую applied_cashback_rate'
@@ -1079,7 +1074,7 @@ class Mariadb_Plugin {
                 END IF;
             END;",
 
-            "CREATE TRIGGER `{$safe_prefix}calculate_cashback_before_update_unregistered`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}calculate_cashback_before_update_unregistered`
             BEFORE UPDATE ON `{$safe_prefix}cashback_unregistered_transactions`
             FOR EACH ROW
             --  'Пересчитывает кэшбэк для незарегистрированных пользователей при изменении comission'
@@ -1089,7 +1084,7 @@ class Mariadb_Plugin {
                 END IF;
             END;",
 
-            "CREATE TRIGGER `{$safe_prefix}cashback_tr_prevent_delete_final_status`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}cashback_tr_prevent_delete_final_status`
             BEFORE DELETE ON `{$safe_prefix}cashback_transactions`
             FOR EACH ROW
             --  'Запрещает удаление транзакций со статусом ''balance'' (финальный статус)'
@@ -1100,7 +1095,7 @@ class Mariadb_Plugin {
                 END IF;
             END;",
 
-            "CREATE TRIGGER `{$safe_prefix}cashback_tr_validate_status_transition`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}cashback_tr_validate_status_transition`
             BEFORE UPDATE ON `{$safe_prefix}cashback_transactions`
             FOR EACH ROW
             BEGIN
@@ -1137,7 +1132,7 @@ class Mariadb_Plugin {
                 END IF;
             END;",
 
-            "CREATE TRIGGER `{$safe_prefix}cashback_tr_validate_status_transition_unregistered`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}cashback_tr_validate_status_transition_unregistered`
             BEFORE UPDATE ON `{$safe_prefix}cashback_unregistered_transactions`
             FOR EACH ROW
             BEGIN
@@ -1169,7 +1164,7 @@ class Mariadb_Plugin {
                 END IF;
             END;",
 
-            "CREATE TRIGGER `{$safe_prefix}tr_prevent_delete_paid_payout`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_prevent_delete_paid_payout`
             BEFORE DELETE ON `{$safe_prefix}cashback_payout_requests`
             FOR EACH ROW
             --  'Запрещает удаление заявок на выплату со статусом ''paid'' выплачена'
@@ -1180,7 +1175,7 @@ class Mariadb_Plugin {
                 END IF;
             END;",
 
-            "CREATE TRIGGER `{$safe_prefix}tr_prevent_update_paid_payout`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_prevent_update_paid_payout`
             BEFORE UPDATE ON `{$safe_prefix}cashback_payout_requests`
             FOR EACH ROW
             --  'Запрещает изменение заявок на выплату со статусом ''paid'' выплачена'
@@ -1191,7 +1186,7 @@ class Mariadb_Plugin {
                 END IF;
             END;",
 
-            "CREATE TRIGGER `{$safe_prefix}tr_prevent_delete_failed_payout`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_prevent_delete_failed_payout`
             BEFORE DELETE ON `{$safe_prefix}cashback_payout_requests`
             FOR EACH ROW
             --  'Запрещает удаление заявок на выплату со статусом ''failed'' (возвращено в баланс)'
@@ -1202,7 +1197,7 @@ class Mariadb_Plugin {
                 END IF;
             END;",
 
-            "CREATE TRIGGER `{$safe_prefix}tr_prevent_update_failed_payout`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_prevent_update_failed_payout`
             BEFORE UPDATE ON `{$safe_prefix}cashback_payout_requests`
             FOR EACH ROW
             --  'Запрещает изменение заявок на выплату со статусом ''failed'' (возвращено в баланс)'
@@ -1218,7 +1213,7 @@ class Mariadb_Plugin {
             // (admin/payouts, admin/users-management, antifraud/class-fraud-admin,
             // admin/class-cashback-encryption-recovery) уже заполняют fail_reason,
             // так что триггер не сломает legitimate flow — закрывает только обход через raw SQL.
-            "CREATE TRIGGER `{$safe_prefix}tr_payout_require_fail_reason_ins`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_payout_require_fail_reason_ins`
             BEFORE INSERT ON `{$safe_prefix}cashback_payout_requests`
             FOR EACH ROW
             --  'Требует fail_reason при создании заявки со статусом declined/failed'
@@ -1230,7 +1225,7 @@ class Mariadb_Plugin {
                 END IF;
             END;",
 
-            "CREATE TRIGGER `{$safe_prefix}tr_payout_require_fail_reason_upd`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_payout_require_fail_reason_upd`
             BEFORE UPDATE ON `{$safe_prefix}cashback_payout_requests`
             FOR EACH ROW
             --  'Требует fail_reason при переходе заявки в declined/failed'
@@ -1242,7 +1237,7 @@ class Mariadb_Plugin {
                 END IF;
             END;",
 
-            "CREATE TRIGGER `{$safe_prefix}tr_banned_user_update_banned_at`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_banned_user_update_banned_at`
             BEFORE UPDATE ON `{$safe_prefix}cashback_user_profile`
             FOR EACH ROW
             --  'Обновляет поле banned_at текущей датой и временем при изменении статуса на ''banned'''
@@ -1252,7 +1247,7 @@ class Mariadb_Plugin {
                 END IF;
             END;",
 
-            "CREATE TRIGGER IF NOT EXISTS `{$safe_prefix}tr_freeze_balance_on_ban`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_freeze_balance_on_ban`
             AFTER UPDATE ON `{$safe_prefix}cashback_user_profile`
             FOR EACH ROW
             --  'Замораживает доступный и pending баланс при бане (bucket-split: F-11-003)'
@@ -1270,7 +1265,7 @@ class Mariadb_Plugin {
                 END IF;
             END;",
 
-            "CREATE TRIGGER IF NOT EXISTS `{$safe_prefix}tr_clear_ban_on_unban`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_clear_ban_on_unban`
             BEFORE UPDATE ON `{$safe_prefix}cashback_user_profile`
             FOR EACH ROW
             --  'Очищает поля banned_at и ban_reason при разбане пользователя'
@@ -1282,7 +1277,7 @@ class Mariadb_Plugin {
                 END IF;
             END;",
 
-            "CREATE TRIGGER IF NOT EXISTS `{$safe_prefix}tr_unfreeze_balance_on_unban`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_unfreeze_balance_on_unban`
             AFTER UPDATE ON `{$safe_prefix}cashback_user_profile`
             FOR EACH ROW
             --  'Размораживает баланс при разбане (bucket-split: pending→pending, F-11-003)'
@@ -1307,7 +1302,7 @@ class Mariadb_Plugin {
 
             // Автоматический расчёт payload_hash при INSERT в cashback_webhooks
             // Заменяет GENERATED ALWAYS AS (SHA2(payload, 256)) STORED, убранный для совместимости
-            "CREATE TRIGGER IF NOT EXISTS `{$safe_prefix}tr_webhook_payload_hash`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_webhook_payload_hash`
             BEFORE INSERT ON `{$safe_prefix}cashback_webhooks`
             FOR EACH ROW
             BEGIN
@@ -1329,14 +1324,29 @@ class Mariadb_Plugin {
         }
 
         if (!empty($failed_triggers)) {
-            update_option('cashback_triggers_active', false);
+            // Codex adversarial-review #1 round 5 (2026-05-10): hard-fail вместо
+            // soft-degrade. Раньше при провале CREATE TRIGGER плагин ставил
+            // `cashback_triggers_active=false` и полагался на PHP-фолбэки в
+            // Cashback_Trigger_Fallbacks. Класс удалён (MariaDB-only by design),
+            // и без триггеров нет schema-level защиты payout immutability,
+            // fail_reason invariant и status transitions — финансовые данные
+            // не защищены. Лучше явный фейл с диагностикой, чем silent corrupt.
+            //
+            // Codex round 6 #3 (2026-05-10): бросаем RuntimeException вместо wp_die.
+            // create_triggers() вызывается и из activate() (где caller ловит и
+            // делает wp_die), и из recreate_triggers() через runtime
+            // maybe_run_migrations() (где caller ловит и показывает admin notice
+            // без 500-ки на frontend/cron-запросе). wp_die() не throwable —
+            // обёртка try/catch её не поймала бы.
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('Mariadb Plugin Warning: Failed to create triggers (PHP fallbacks will be used): ' . implode('; ', $failed_triggers));
-        } else {
-            update_option('cashback_triggers_active', true);
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('Mariadb Plugin: All triggers created successfully');
+            error_log('Mariadb Plugin Fatal: Failed to create triggers: ' . implode('; ', $failed_triggers));
+            throw new \RuntimeException(
+                esc_html('Failed to create cashback triggers: ' . $failed_triggers[0])
+            );
         }
+
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+        error_log('Mariadb Plugin: All triggers created successfully');
     }
 
     /**
@@ -2582,37 +2592,51 @@ class Mariadb_Plugin {
                     ? $wpdb->prefix . 'cashback_tr_validate_status_transition'
                     : $wpdb->prefix . 'cashback_tr_validate_status_transition_unregistered';
 
-                $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS %i', $trigger_name));
+                // Codex round 6 #2 (2026-05-10): чтобы concurrent admin/API write
+                // не пробил status-validation в окне DROP+UPDATE+CREATE TRIGGER,
+                // берём LOCK TABLES WRITE на таблицу. Это сериализует backfill
+                // с любыми параллельными writes — окно гарантировано без
+                // unprotected UPDATE'ов. UNLOCK TABLES в finally — защита от
+                // exception между DROP и CREATE (иначе таблица осталась бы
+                // залоченной до конца session'а PHP-FPM воркера).
+                // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL.
+                $wpdb->query($wpdb->prepare('LOCK TABLES %i WRITE', $table));
+                try {
+                    $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS %i', $trigger_name));
 
-                $total_filled = 0;
+                    $total_filled = 0;
 
-                for ($i = 0; $i < 10000; $i++) {
-                    $ids = $wpdb->get_col(
-                        $wpdb->prepare('SELECT id FROM %i WHERE reference_id = %s LIMIT 500', $table, '')
-                    );
+                    for ($i = 0; $i < 10000; $i++) {
+                        $ids = $wpdb->get_col(
+                            $wpdb->prepare('SELECT id FROM %i WHERE reference_id = %s LIMIT 500', $table, '')
+                        );
 
-                    if (empty($ids)) {
-                        break;
+                        if (empty($ids)) {
+                            break;
+                        }
+
+                        $cases = array();
+                        foreach ($ids as $id) {
+                            $ref     = $ref_prefix . strtoupper(substr(md5(wp_generate_uuid4() . wp_rand()), 0, 8));
+                            $cases[] = $wpdb->prepare('WHEN %d THEN %s', (int) $id, $ref);
+                        }
+
+                        $ids_list = implode(',', array_map('intval', $ids));
+                        $case_sql = implode(' ', $cases);
+                        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $case_sql is pre-prepared WHEN/THEN pairs (integer ids + TX-/TU- 11-char strings), $ids_list is intval-cast list.
+                        $wpdb->query($wpdb->prepare("UPDATE %i SET reference_id = CASE id {$case_sql} END WHERE id IN ({$ids_list})", $table));
+
+                        if ($wpdb->last_error) {
+                            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                            error_log("[Cashback Migration] Backfill error on {$table}: " . $wpdb->last_error);
+                            break;
+                        }
+
+                        $total_filled += count($ids);
                     }
-
-                    $cases = array();
-                    foreach ($ids as $id) {
-                        $ref     = $ref_prefix . strtoupper(substr(md5(wp_generate_uuid4() . wp_rand()), 0, 8));
-                        $cases[] = $wpdb->prepare('WHEN %d THEN %s', (int) $id, $ref);
-                    }
-
-                    $ids_list = implode(',', array_map('intval', $ids));
-                    $case_sql = implode(' ', $cases);
-                    // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $case_sql is pre-prepared WHEN/THEN pairs (integer ids + TX-/TU- 11-char strings), $ids_list is intval-cast list.
-                    $wpdb->query($wpdb->prepare("UPDATE %i SET reference_id = CASE id {$case_sql} END WHERE id IN ({$ids_list})", $table));
-
-                    if ($wpdb->last_error) {
-                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                        error_log("[Cashback Migration] Backfill error on {$table}: " . $wpdb->last_error);
-                        break;
-                    }
-
-                    $total_filled += count($ids);
+                } finally {
+                    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL.
+                    $wpdb->query('UNLOCK TABLES');
                 }
             }
 
@@ -2671,47 +2695,60 @@ class Mariadb_Plugin {
 
         // Отключаем триггер валидации статусов — он блокирует UPDATE записей с order_status='balance'.
         // Пересоздаётся в recreate_triggers() (вызывается в caller после миграции).
+        //
+        // Codex round 6 #2 (2026-05-10): LOCK TABLES WRITE сериализует backfill
+        // с concurrent admin/API writes — окно между DROP TRIGGER и UPDATE
+        // batch'ами не пропустит запрещённые status-transitions без проверки.
+        // UNLOCK TABLES в finally — защита от exception (иначе таблица осталась
+        // бы залоченной до конца session'а PHP-FPM воркера).
         $status_trigger = $wpdb->prefix . 'cashback_tr_validate_status_transition_unregistered';
-        $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS %i', $status_trigger));
+        $total_updated  = 0;
 
-        $total_updated = 0;
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL.
+        $wpdb->query($wpdb->prepare('LOCK TABLES %i WRITE', $table));
+        try {
+            $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS %i', $status_trigger));
 
-        for ($batch = 0; $batch < 10000; $batch++) {
-            $ids = $wpdb->get_col(
-                $wpdb->prepare('SELECT id FROM %i WHERE reference_id LIKE %s LIMIT 500', $table, 'TX-%')
-            );
+            for ($batch = 0; $batch < 10000; $batch++) {
+                $ids = $wpdb->get_col(
+                    $wpdb->prepare('SELECT id FROM %i WHERE reference_id LIKE %s LIMIT 500', $table, 'TX-%')
+                );
 
-            if (empty($ids)) {
-                break;
-            }
+                if (empty($ids)) {
+                    break;
+                }
 
-            foreach ($ids as $id) {
-                $id = (int) $id;
-                for ($attempt = 0; $attempt < 3; $attempt++) {
-                    $new_ref = 'TU-' . strtoupper(substr(md5(wp_generate_uuid4() . wp_rand()), 0, 8));
-                    $result  = $wpdb->query($wpdb->prepare(
-                        'UPDATE %i SET reference_id = %s WHERE id = %d AND reference_id LIKE %s',
-                        $table,
-                        $new_ref,
-                        $id,
-                        'TX-%'
-                    ));
+                foreach ($ids as $id) {
+                    $id = (int) $id;
+                    for ($attempt = 0; $attempt < 3; $attempt++) {
+                        $new_ref = 'TU-' . strtoupper(substr(md5(wp_generate_uuid4() . wp_rand()), 0, 8));
+                        $result  = $wpdb->query($wpdb->prepare(
+                            'UPDATE %i SET reference_id = %s WHERE id = %d AND reference_id LIKE %s',
+                            $table,
+                            $new_ref,
+                            $id,
+                            'TX-%'
+                        ));
 
-                    if ($result !== false) {
-                        ++$total_updated;
-                        break;
-                    }
+                        if ($result !== false) {
+                            ++$total_updated;
+                            break;
+                        }
 
-                    // UNIQUE-коллизия — ретраим с новым suffix.
-                    if (stripos((string) $wpdb->last_error, 'uk_utx_reference_id') === false
-                        && stripos((string) $wpdb->last_error, 'reference_id') === false) {
-                        // Неизвестная ошибка — прерываемся, логируем.
-                        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                        error_log("[Cashback Migration] TX->TU update error on id={$id}: " . $wpdb->last_error);
-                        break;
+                        // UNIQUE-коллизия — ретраим с новым suffix.
+                        if (stripos((string) $wpdb->last_error, 'uk_utx_reference_id') === false
+                            && stripos((string) $wpdb->last_error, 'reference_id') === false) {
+                            // Неизвестная ошибка — прерываемся, логируем.
+                            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                            error_log("[Cashback Migration] TX->TU update error on id={$id}: " . $wpdb->last_error);
+                            break;
+                        }
                     }
                 }
             }
+        } finally {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL.
+            $wpdb->query('UNLOCK TABLES');
         }
 
         // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
@@ -3105,9 +3142,11 @@ class Mariadb_Plugin {
      *   1. Backfill legacy строк: пустой fail_reason у уже-declined/failed заявок →
      *      '(legacy: причина не указана)' (иначе триггер потом отклонит legitimate
      *      UPDATE других полей у legacy строки).
-     *   2. DROP TRIGGER IF EXISTS — идемпотентность для повторного прогона миграции.
-     *   3. CREATE TRIGGER tr_payout_require_fail_reason_ins / _upd — SIGNAL SQLSTATE
-     *      '45000' если NEW.status IN ('declined','failed') AND NEW.fail_reason пуст.
+     *   2. CREATE OR REPLACE TRIGGER tr_payout_require_fail_reason_ins / _upd —
+     *      SIGNAL SQLSTATE '45000' если NEW.status IN ('declined','failed') AND
+     *      NEW.fail_reason пуст. Атомарный rebuild (MariaDB 10.1.4+) — без gap'а
+     *      между DROP и CREATE, в котором концурентный INSERT мог бы пройти без
+     *      проверки fail_reason.
      *
      * Версионизация: cashback_db_version = 5. Idempotent через get_option fast-path.
      * Используется raw $wpdb->query (триггерное тело — multi-statement DDL,
@@ -3150,25 +3189,14 @@ class Mariadb_Plugin {
         }
 
         // ------------------------------------------------------------------
-        // Шаг 2: DROP TRIGGER IF EXISTS (idempotent)
+        // Шаг 2: CREATE OR REPLACE TRIGGER tr_payout_require_fail_reason_ins / _upd
+        //
+        // Атомарный rebuild — без окна между DROP и CREATE. Идемпотентно
+        // (повторный прогон миграции просто перезапишет триггер).
         // ------------------------------------------------------------------
-        $safe_prefix = $this->validate_table_prefix($wpdb->prefix);
-        foreach (array( 'tr_payout_require_fail_reason_ins', 'tr_payout_require_fail_reason_upd' ) as $trig_base) {
-            $trig_full = $safe_prefix . $trig_base;
-            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL.
-            $drop_result = $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS %i', $trig_full));
-            if ($drop_result === false) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                error_log("[Cashback Migration v5] DROP TRIGGER {$trig_full} failed: " . $wpdb->last_error);
-                return;
-            }
-        }
-
-        // ------------------------------------------------------------------
-        // Шаг 3: CREATE TRIGGER tr_payout_require_fail_reason_ins / _upd
-        // ------------------------------------------------------------------
+        $safe_prefix     = $this->validate_table_prefix($wpdb->prefix);
         $create_triggers = array(
-            "CREATE TRIGGER `{$safe_prefix}tr_payout_require_fail_reason_ins`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_payout_require_fail_reason_ins`
             BEFORE INSERT ON `{$safe_prefix}cashback_payout_requests`
             FOR EACH ROW
             BEGIN
@@ -3178,7 +3206,7 @@ class Mariadb_Plugin {
                     SET MESSAGE_TEXT = 'fail_reason required for declined/failed payout status';
                 END IF;
             END",
-            "CREATE TRIGGER `{$safe_prefix}tr_payout_require_fail_reason_upd`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_payout_require_fail_reason_upd`
             BEFORE UPDATE ON `{$safe_prefix}cashback_payout_requests`
             FOR EACH ROW
             BEGIN
@@ -3335,22 +3363,17 @@ class Mariadb_Plugin {
 
         // ------------------------------------------------------------------
         // Шаг 4: Обновляем триггер tr_clear_ban_on_unban — должен очищать
-        // ОБА поля при разбане (DROP + CREATE с обновлённым телом).
+        // ОБА поля при разбане. CREATE OR REPLACE TRIGGER (MariaDB 10.1.4+) —
+        // атомарная замена тела без gap'а между DROP и CREATE, в котором
+        // концурентный UNBAN мог бы пройти без очистки ban_reason_admin.
         // ------------------------------------------------------------------
         $safe_prefix = $this->validate_table_prefix($wpdb->prefix);
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL.
-        $drop_result = $wpdb->query($wpdb->prepare('DROP TRIGGER IF EXISTS %i', $safe_prefix . 'tr_clear_ban_on_unban'));
-        if ($drop_result === false) {
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('[Cashback Migration v6] DROP TRIGGER tr_clear_ban_on_unban failed: ' . $wpdb->last_error);
-            return;
-        }
 
-        // Используем массив с SQL-литералом (паттерн migrate_payout_require_fail_reason_v5)
-        // — phpcs InterpolatedNotPrepared молчит для array-элементов в отличие от прямого
-        // $wpdb->query("...interpolation..."). $safe_prefix validated.
+        // Используем массив с SQL-литералом — phpcs InterpolatedNotPrepared
+        // молчит для array-элементов в отличие от прямого $wpdb->query("...
+        // interpolation..."). $safe_prefix validated.
         $create_trigger_sql = array(
-            "CREATE TRIGGER `{$safe_prefix}tr_clear_ban_on_unban`
+            "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_clear_ban_on_unban`
             BEFORE UPDATE ON `{$safe_prefix}cashback_user_profile`
             FOR EACH ROW
             BEGIN
@@ -3362,11 +3385,11 @@ class Mariadb_Plugin {
             END",
         );
 
-        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static CREATE TRIGGER DDL.
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static CREATE OR REPLACE TRIGGER DDL.
         $create_result = $wpdb->query( $create_trigger_sql[0] );
         if ($create_result === false) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-            error_log('[Cashback Migration v6] CREATE TRIGGER tr_clear_ban_on_unban failed: ' . $wpdb->last_error);
+            error_log('[Cashback Migration v6] CREATE OR REPLACE TRIGGER tr_clear_ban_on_unban failed: ' . $wpdb->last_error);
             return;
         }
 

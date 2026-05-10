@@ -13,10 +13,11 @@ use PHPUnit\Framework\Attributes\Group;
  * через raw UPDATE/INSERT перевести заявку в declined/failed без fail_reason.
  *
  * Source-based: парсит mariadb.php / cashback-plugin.php и проверяет:
- *   1. CREATE TRIGGER tr_payout_require_fail_reason_ins / _upd присутствуют;
+ *   1. CREATE [OR REPLACE] TRIGGER tr_payout_require_fail_reason_ins / _upd присутствуют;
  *   2. SIGNAL SQLSTATE '45000' с понятным MESSAGE_TEXT;
  *   3. условие покрывает declined+failed и NULL+пустую fail_reason;
- *   4. drop_triggers list содержит новые имена (idempotent recreate);
+ *   4. триггеры пересоздаются атомарно через CREATE OR REPLACE (без gap'а
+ *      между DROP и CREATE — финансовая безопасность при deploy);
  *   5. миграция migrate_payout_require_fail_reason_v5 существует, идемпотентна
  *      через cashback_db_version, выполняет backfill и регистрируется в
  *      activate() + maybe_run_migrations().
@@ -50,44 +51,43 @@ final class PayoutFailReasonTriggerTest extends TestCase
     public function test_create_triggers_includes_require_fail_reason_insert(): void
     {
         $this->assertMatchesRegularExpression(
-            '/CREATE TRIGGER\s+`?\{?\$?safe_prefix\}?tr_payout_require_fail_reason_ins`?\s+BEFORE\s+INSERT\s+ON\s+`?\{?\$?safe_prefix\}?cashback_payout_requests/i',
+            '/CREATE\s+OR\s+REPLACE\s+TRIGGER\s+`?\{?\$?safe_prefix\}?tr_payout_require_fail_reason_ins`?\s+BEFORE\s+INSERT\s+ON\s+`?\{?\$?safe_prefix\}?cashback_payout_requests/i',
             $this->mariadb_src(),
-            'create_triggers() должен содержать BEFORE INSERT trigger tr_payout_require_fail_reason_ins'
+            'create_triggers() должен содержать BEFORE INSERT trigger tr_payout_require_fail_reason_ins (atomic CREATE OR REPLACE)'
         );
     }
 
     public function test_create_triggers_includes_require_fail_reason_update(): void
     {
         $this->assertMatchesRegularExpression(
-            '/CREATE TRIGGER\s+`?\{?\$?safe_prefix\}?tr_payout_require_fail_reason_upd`?\s+BEFORE\s+UPDATE\s+ON\s+`?\{?\$?safe_prefix\}?cashback_payout_requests/i',
+            '/CREATE\s+OR\s+REPLACE\s+TRIGGER\s+`?\{?\$?safe_prefix\}?tr_payout_require_fail_reason_upd`?\s+BEFORE\s+UPDATE\s+ON\s+`?\{?\$?safe_prefix\}?cashback_payout_requests/i',
             $this->mariadb_src(),
-            'create_triggers() должен содержать BEFORE UPDATE trigger tr_payout_require_fail_reason_upd'
+            'create_triggers() должен содержать BEFORE UPDATE trigger tr_payout_require_fail_reason_upd (atomic CREATE OR REPLACE)'
         );
     }
 
-    public function test_drop_triggers_lists_new_names_for_idempotent_recreate(): void
+    public function test_create_triggers_uses_atomic_or_replace(): void
     {
         $src = $this->mariadb_src();
-        $this->assertStringContainsString(
-            "'tr_payout_require_fail_reason_ins'",
+        // create_triggers() больше не должен полагаться на отдельный DROP TRIGGER массив —
+        // CREATE OR REPLACE TRIGGER (MariaDB 10.1.4+) делает rebuild атомарно.
+        // Закрывает риск deployment-gap'а: между DROP и CREATE концурентный INSERT
+        // в cashback_balance_ledger мог не выполнить UPDATE баланса.
+        $this->assertStringNotContainsString(
+            "'tr_payout_require_fail_reason_ins',\n",
             $src,
-            'drop_triggers list должен содержать tr_payout_require_fail_reason_ins для idempotent recreate'
-        );
-        $this->assertStringContainsString(
-            "'tr_payout_require_fail_reason_upd'",
-            $src,
-            'drop_triggers list должен содержать tr_payout_require_fail_reason_upd для idempotent recreate'
+            'create_triggers() не должен содержать список drop_triggers — CREATE OR REPLACE атомарен'
         );
     }
 
     /**
-     * Возвращает body первого CREATE TRIGGER tr_payout_require_fail_reason_ins
-     * (от 'CREATE TRIGGER' до закрывающего "END;" / "END\"" / 'END,').
+     * Возвращает body первого CREATE [OR REPLACE] TRIGGER {$name}
+     * (от 'CREATE' до закрывающего END в конце array-элемента).
      */
     private function trigger_body(string $name): string
     {
         $src    = $this->mariadb_src();
-        $needle = 'CREATE TRIGGER `{$safe_prefix}' . $name . '`';
+        $needle = 'CREATE OR REPLACE TRIGGER `{$safe_prefix}' . $name . '`';
         $start  = strpos($src, $needle);
         $this->assertNotFalse($start, "{$needle} должен присутствовать в mariadb.php");
         // ~2000 символов хватит на body одного триггера.
@@ -203,23 +203,26 @@ final class PayoutFailReasonTriggerTest extends TestCase
         );
     }
 
-    public function test_migration_drops_then_creates_triggers(): void
+    public function test_migration_creates_triggers_atomically(): void
     {
         $body = $this->migration_body();
+        // Миграция использует CREATE OR REPLACE TRIGGER (MariaDB 10.1.4+) —
+        // атомарный rebuild без gap'а между DROP и CREATE. Идемпотентно
+        // (повторный прогон просто перезапишет триггер).
         $this->assertMatchesRegularExpression(
-            "/DROP\s+TRIGGER\s+IF\s+EXISTS[\s\S]+?tr_payout_require_fail_reason_ins/i",
+            "/CREATE\s+OR\s+REPLACE\s+TRIGGER[\s\S]+?tr_payout_require_fail_reason_ins[\s\S]+?BEFORE\s+INSERT/i",
             $body,
-            'миграция должна DROP TRIGGER IF EXISTS перед CREATE (idempotent)'
+            'миграция должна использовать CREATE OR REPLACE TRIGGER tr_payout_require_fail_reason_ins (атомарно, без gap)'
         );
         $this->assertMatchesRegularExpression(
-            "/CREATE\s+TRIGGER[\s\S]+?tr_payout_require_fail_reason_ins[\s\S]+?BEFORE\s+INSERT/i",
+            "/CREATE\s+OR\s+REPLACE\s+TRIGGER[\s\S]+?tr_payout_require_fail_reason_upd[\s\S]+?BEFORE\s+UPDATE/i",
             $body,
-            'миграция должна CREATE TRIGGER tr_payout_require_fail_reason_ins'
+            'миграция должна использовать CREATE OR REPLACE TRIGGER tr_payout_require_fail_reason_upd (атомарно, без gap)'
         );
-        $this->assertMatchesRegularExpression(
-            "/CREATE\s+TRIGGER[\s\S]+?tr_payout_require_fail_reason_upd[\s\S]+?BEFORE\s+UPDATE/i",
+        $this->assertDoesNotMatchRegularExpression(
+            "/DROP\s+TRIGGER\s+IF\s+EXISTS[\s\S]{0,200}?tr_payout_require_fail_reason/i",
             $body,
-            'миграция должна CREATE TRIGGER tr_payout_require_fail_reason_upd'
+            'миграция не должна явно DROPать триггеры — CREATE OR REPLACE делает это атомарно'
         );
     }
 

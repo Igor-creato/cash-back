@@ -2281,29 +2281,11 @@ class Cashback_API_Client {
                     $update_formats[]           = '%d';
                 }
 
-                // PHP-фолбэк: валидация перехода статуса
-                if ($status_changed) {
-                    $validation = Cashback_Trigger_Fallbacks::validate_status_transition($local_status, $mapped_status);
-                    if ($validation !== true) {
-                        ++$skipped;
-                        if ($owns_tx) {
-                            $wpdb->query('COMMIT');
-                        }
-                        return;
-                    }
-                }
-
-                // PHP-фолбэк: пересчёт кешбэка при изменении комиссии
-                if ($commission_changed) {
-                    $is_registered = ( $table === $this->transactions_table );
-                    $old_row       = (object) $fresh;
-                    Cashback_Trigger_Fallbacks::recalculate_cashback_on_update($update_data, $old_row, $is_registered);
-                    if (isset($update_data['cashback'])) {
-                        // Trigger_Fallbacks пишет float — нормализуем на границе wpdb (F-8-003).
-                        $update_data['cashback'] = number_format((float) $update_data['cashback'], 2, '.', '');
-                        $update_formats[]        = '%s'; // cashback (money → decimal-string)
-                    }
-                }
+                // Status-transition валидация и пересчёт cashback выполняются
+                // MariaDB-триггерами (cashback_tr_validate_status_transition[_unregistered]
+                // SIGNAL'ит SQLSTATE '45000' на запрещённых переходах;
+                // calculate_cashback_before_update пересчитывает cashback при
+                // изменении comission). Поле cashback НЕ передаём в $update_data.
 
                 $wpdb->update(
                     $table,
@@ -2315,6 +2297,18 @@ class Cashback_API_Client {
 
                 $update_err = (string) $wpdb->last_error;
                 if ($update_err !== '') {
+                    // Распознаём SIGNAL SQLSTATE '45000' от status-validation триггера.
+                    // Запрещённые переходы — это БИЗНЕС-логика (CPA-сеть прислала
+                    // невалидный переход), а не ошибка БД. Учитываем как skipped,
+                    // НЕ как update_error → preserve current behavior.
+                    if (self::is_status_transition_signal($update_err)) {
+                        ++$skipped;
+                        if ($owns_tx) {
+                            $wpdb->query('COMMIT');
+                        }
+                        return;
+                    }
+
                     $this->throw_if_deadlock($wpdb);
                     ++$update_errors;
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
@@ -2458,6 +2452,32 @@ class Cashback_API_Client {
      * Вызывается после каждого wpdb-вызова внутри sync_update_local. На обычные
      * SQL-ошибки не реагирует — те обрабатываются штатно (++update_errors + ROLLBACK).
      */
+    /**
+     * Распознаёт SIGNAL SQLSTATE '45000' от MariaDB-триггеров validate_status_transition
+     * в `$wpdb->last_error`. Используется в sync_update_local для отличия
+     * бизнес-валидации (запрещённый переход → skipped) от реальной DB-ошибки.
+     *
+     * См. cashback_tr_validate_status_transition[_unregistered] в mariadb.php.
+     *
+     * @param string $last_error Содержимое $wpdb->last_error
+     * @return bool true если ошибка от status-validation триггера
+     */
+    private static function is_status_transition_signal( string $last_error ): bool {
+        $known_signals = array(
+            'Изменение запрещено: запись с финальным статусом не может быть изменена.',
+            'Понижение статуса до waiting запрещено.',
+            'Перевод в balance возможен только из completed.',
+            'Перевод в hold возможен только из completed.',
+            'Из declined возможен переход только в completed.',
+        );
+        foreach ($known_signals as $signal_text) {
+            if (strpos($last_error, $signal_text) !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private function throw_if_deadlock( \wpdb $wpdb ): void {
         $err = (string) $wpdb->last_error;
         if ($err === '') {
@@ -2678,16 +2698,10 @@ class Cashback_API_Client {
             '%s',  // idempotency_key
         );
 
-        // 11. PHP-фолбэк расчёта кешбэка (идемпотентен при наличии триггеров)
-        Cashback_Trigger_Fallbacks::calculate_cashback($data, !$is_unregistered);
-        if (isset($data['applied_cashback_rate'])) {
-            $data['applied_cashback_rate'] = number_format((float) $data['applied_cashback_rate'], 2, '.', '');
-        }
-        if (isset($data['cashback'])) {
-            $data['cashback'] = number_format((float) $data['cashback'], 2, '.', '');
-        }
-        $formats[] = '%s'; // applied_cashback_rate (rate-as-string, 2 знака)
-        $formats[] = '%s'; // cashback (money → decimal-string)
+        // applied_cashback_rate и cashback заполняются BEFORE INSERT-триггером
+        // calculate_cashback_before_insert (mariadb.php) — он читает rate из
+        // user_profile и считает cashback = ROUND(comission * rate / 100).
+        // Поля НЕ передаём в $data — БД проставит сама.
 
         // 12. Убираем NULL-значения (аналогично ajax_add_transaction)
         $clean_data    = array();

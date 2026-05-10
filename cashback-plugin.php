@@ -28,6 +28,11 @@ defined('ABSPATH') || die('No script kiddies please!');
 define('CASHBACK_MIN_PHP_VERSION', '8.3');
 define('CASHBACK_MIN_WP_VERSION', '6.2');
 define('CASHBACK_MIN_WC_VERSION', '5.0');
+// MariaDB 10.1.4+ требуется для CREATE OR REPLACE TRIGGER (атомарный rebuild
+// без gap-окна между DROP и CREATE). MySQL не поддерживает этот синтаксис ни в
+// одной версии — на нём триггеры просто не создадутся, что отключает schema-level
+// защиту payout immutability, status transitions, ban freeze и fail_reason invariant.
+define('CASHBACK_MIN_MARIADB_VERSION', '10.1.4');
 
 /**
  * Генерация UUID v7 (RFC 9562) — time-ordered UUID.
@@ -97,6 +102,18 @@ function cashback_asset_url( string $relative_path ): string {
     return add_query_arg('cv', $version, $url);
 }
 
+// DB capability gate: проверка совместимости БД (MariaDB 10.1.4+, не MySQL).
+// Вынесено в отдельный файл для unit-тестируемости парсера версии в изоляции
+// (см. development/test/tests/DbCapabilityGateTest.php). Загружаем рано —
+// функция нужна и в cashback_check_requirements (activation hook), и в
+// CashbackPlugin::init() (runtime gate).
+require_once __DIR__ . '/includes/cashback-db-capability.php';
+
+// Trigger inventory gate: отказывает write-paths плагину если хотя бы один
+// обязательный MariaDB-триггер отсутствует в БД (Codex round 7, 2026-05-10).
+// Загружаем рано — функция нужна в CashbackPlugin::init() ДО initialize_components.
+require_once __DIR__ . '/includes/cashback-triggers-inventory.php';
+
 /**
  * Проверка совместимости с текущими версиями PHP и WordPress
  *
@@ -133,6 +150,14 @@ function cashback_check_requirements() {
             WC_VERSION,
             CASHBACK_MIN_WC_VERSION
         );
+    }
+
+    // Hard-fail на MySQL и старых MariaDB — без CREATE OR REPLACE TRIGGER
+    // schema-level защита финансовых инвариантов не поднимется (Codex
+    // adversarial-review 2026-05-10).
+    $db_error = cashback_check_db_capabilities();
+    if ($db_error !== null) {
+        $errors[] = $db_error;
     }
 
     // Если есть ошибки, деактивируем плагин и показываем сообщение
@@ -526,15 +551,101 @@ class CashbackPlugin {
     }
 
     /**
-     * Инициализация основного функционала плагина
+     * Инициализация основного функционала плагина.
+     *
+     * Архитектурный trade-off (Codex adversarial-review #1, 2026-05-10):
+     * на несовместимой БД (MySQL / MariaDB <10.1.4) плагин hard-fail'ит
+     * прямо в init() — admin notice + полный отказ от регистрации хуков.
+     * Альтернативу «запустить плагин и надеяться что бизнес-логика выживет»
+     * мы НЕ выбираем: наш стек — MariaDB-only (см. obsidian/atlas/деплой и
+     * инфраструктура.md, mariadb:12.2.2), CREATE OR REPLACE TRIGGER —
+     * жёсткая зависимость для атомарного rebuild'а финансовых триггеров.
+     * Soft-fail на стейле schema может привести к расхождению ledger ↔
+     * balance, которое скрывается до ежедневного reconciliation. Hard-fail
+     * виден сразу.
      */
     public function init() {
         // Проверяем, что WooCommerce активирован
         if (class_exists('WooCommerce')) {
+            // Hard gate: на несовместимой БД плагин НЕ должен инициализироваться.
+            //
+            // Активационный hook ловит fresh-install и явное re-activate,
+            // но НЕ ловит обычный update через git pull / WP plugin updater
+            // (`upgrader_process_complete` в этом стеке не используется).
+            // Поэтому runtime shutdown здесь — единственный надёжный gate
+            // для existing-installs.
+            if (function_exists('cashback_check_db_capabilities')) {
+                $db_error = cashback_check_db_capabilities();
+                if ($db_error !== null) {
+                    // Codex adversarial-review #2 (2026-05-10): early return
+                    // оставляет зарегистрированные plugins_loaded callbacks,
+                    // которые ссылаются на классы из load_dependencies()
+                    // (Cashback_Encryption, Cashback_Cron_State). Без снятия
+                    // эти callbacks дойдут до 'Class not found' fatal вместо
+                    // graceful admin notice. Снимаем ВСЕ зарегистрированные
+                    // в __construct callbacks с того же plugins_loaded hook'а.
+                    remove_action('plugins_loaded', array( 'Cashback_Encryption', 'migrate_plaintext_options' ), 100);
+                    remove_action('plugins_loaded', array( 'CashbackPlugin', 'migrate_schema_idempotency_v1' ), 110);
+                    remove_action('plugins_loaded', array( 'CashbackPlugin', 'migrate_rate_limit_v1' ), 115);
+                    remove_action('plugins_loaded', array( 'Cashback_Cron_State', 'migrate_v1' ), 118);
+                    // admin_notices от schema_idempotency_blocked_notice тоже
+                    // снимаем — он смотрит option, безопасен, но дублирует наш notice.
+                    remove_action('admin_notices', array( 'CashbackPlugin', 'schema_idempotency_blocked_notice' ));
+
+                    // Codex adversarial-review round 5 #2 (2026-05-10):
+                    // gate срабатывает per-request на основе runtime-state
+                    // (`SELECT VERSION()` может временно фальшивить при
+                    // connection-blip). Permanent side-effect от транзиентного
+                    // сбоя недопустим — НЕ вызываем wp_clear_scheduled_hook.
+                    //
+                    // remove_action достаточно: handler не запустится в текущем
+                    // процессе если gate сработал. Cron event остаётся
+                    // зашедуленным; на следующем successful request handler
+                    // регистрируется заново через __construct → cron работает
+                    // нормально без необходимости re-activate'а плагина.
+                    remove_action('cashback_rate_limit_gc_cron', array( 'CashbackPlugin', 'rate_limit_gc_cron_handler' ));
+
+                    add_action('admin_notices', static function () use ( $db_error ) {
+                        echo '<div class="notice notice-error"><p><strong>'
+                            . esc_html__('Cashback Plugin disabled: ', 'cashback-plugin')
+                            . '</strong>'
+                            . esc_html($db_error)
+                            . '</p></div>';
+                    });
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                    error_log('[Cashback] DB capability gate failed at init() — plugin disabled: ' . $db_error);
+                    return;
+                }
+            }
+
             $this->load_dependencies();
 
             // Автомиграция ПЕРЕД initialize_components — колонки должны существовать до регистрации хуков
             $this->maybe_run_migrations();
+
+            // Codex adversarial-review round 7 (2026-05-10): trigger inventory
+            // gate. После удаления PHP-fallbacks плагин полагается на DB-триггеры
+            // для критичных финансовых инвариантов (status transitions, payout
+            // immutability, fail_reason invariant, ban freeze/unfreeze). Если
+            // хотя бы один триггер отсутствует (failed recreate в maybe_run_migrations
+            // выше, ручной DROP оператором БД, restore из бэкапа без триггеров) —
+            // НЕ регистрируем write-paths. Иначе любой admin/API edit_transaction
+            // прошёл бы без schema-уровневой защиты — silent corruption.
+            if (function_exists('cashback_check_triggers_present')) {
+                $trig_error = cashback_check_triggers_present();
+                if ($trig_error !== null) {
+                    add_action('admin_notices', static function () use ( $trig_error ) {
+                        echo '<div class="notice notice-error"><p><strong>'
+                            . esc_html__('Cashback Plugin disabled: ', 'cashback-plugin')
+                            . '</strong>'
+                            . esc_html($trig_error)
+                            . '</p></div>';
+                    });
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                    error_log('[Cashback] Trigger inventory gate failed at init() — plugin disabled: ' . $trig_error);
+                    return;
+                }
+            }
 
             $this->initialize_components();
 
@@ -551,9 +662,12 @@ class CashbackPlugin {
                 add_action('admin_notices', array( $this, 'encryption_key_missing_notice' ));
             }
 
-            // Предупреждение если триггеры не созданы
-            if (get_option('cashback_triggers_active') === false) {
-                add_action('admin_notices', array( $this, 'triggers_unavailable_notice' ));
+            // Codex round 6 #3 (2026-05-10): persistent admin notice если
+            // recreate_triggers() упал в предыдущем request'е (transient
+            // выставлен в register_trigger_failure_notice). Без этого админ
+            // увидел бы notice только в request когда падение случилось.
+            if (get_transient('cashback_trigger_failure_notice')) {
+                add_action('admin_notices', array( __CLASS__, 'trigger_failure_notice' ));
             }
         } else {
             add_action('admin_notices', array( $this, 'woocommerce_required_notice' ));
@@ -627,9 +741,6 @@ class CashbackPlugin {
         // Все timestamp'ы плагина пишутся/сравниваются в UTC, отображение —
         // через wp_date() в зоне сайта. Замена смешивания current_time('mysql') и gmdate(...).
         $this->require_file('includes/class-cashback-time.php');
-
-        // PHP-фолбэки для логики MySQL-триггеров
-        $this->require_file('includes/class-cashback-trigger-fallbacks.php');
 
         // Ledger-write helper для ban/unban (Группа 14) — парная запись в
         // cashback_balance_ledger при заморозке/разморозке баланса пользователя.
@@ -875,6 +986,27 @@ class CashbackPlugin {
             return;
         }
 
+        // Defense-in-depth: если БД мигрировали под живым плагином (без
+        // re-activation), активационный gate не отработает. Скип ВСЕХ миграций
+        // включая recreate_triggers() — без этого backfill-миграции
+        // (migrate_add_transaction_reference_id и т.п.) могли бы DROP'ом снять
+        // status-validation триггер, а CREATE OR REPLACE на MySQL не вернул бы
+        // его обратно — schema-level защита payout immutability и status
+        // transitions исчезла бы навсегда.
+        if (function_exists('cashback_check_db_capabilities')) {
+            $db_error = cashback_check_db_capabilities();
+            if ($db_error !== null) {
+                add_action('admin_notices', static function () use ( $db_error ) {
+                    echo '<div class="notice notice-error"><p>'
+                        . esc_html($db_error)
+                        . '</p></div>';
+                });
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] DB capability check failed at runtime: ' . $db_error);
+                return;
+            }
+        }
+
         // Миграция: reference_id для таблиц транзакций.
         // Проверяем фактическое наличие колонки, а не флаг в wp_options
         // (флаг мог установиться при провалившейся миграции).
@@ -890,6 +1022,7 @@ class CashbackPlugin {
             } catch (\Throwable $e) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback] Auto-migration failed: ' . $e->getMessage());
+                self::register_trigger_failure_notice($e);
             }
         } else {
             // Колонка есть, но бэкфилл мог не отработать (например, при предыдущей неудачной миграции).
@@ -905,6 +1038,7 @@ class CashbackPlugin {
                 } catch (\Throwable $e) {
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                     error_log('[Cashback] Auto-migration backfill failed: ' . $e->getMessage());
+                    self::register_trigger_failure_notice($e);
                 }
             } else {
                 // Колонка и TX- backfill в порядке, но может быть старый TX- префикс в unregistered-таблице
@@ -923,6 +1057,7 @@ class CashbackPlugin {
                     } catch (\Throwable $e) {
                         // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                         error_log('[Cashback] Auto-migration TX->TU failed: ' . $e->getMessage());
+                        self::register_trigger_failure_notice($e);
                     }
                 }
             }
@@ -1546,14 +1681,6 @@ class CashbackPlugin {
         );
     }
 
-    public function triggers_unavailable_notice() {
-        printf(
-            '<div class="notice notice-warning"><p><strong>%s:</strong> %s</p></div>',
-            esc_html__('Cashback Plugin', 'cashback-plugin'),
-            esc_html__('MySQL-триггеры не были созданы (binary logging без SUPER привилегии). Плагин работает в режиме PHP-фолбэков. Для полной защиты данных на уровне БД обратитесь к хостинг-провайдеру.', 'cashback-plugin')
-        );
-    }
-
     /**
      * Группа 6 (шаг 2 ADR): schema-level idempotency миграция.
      * Static — чтобы вызываться из plugins_loaded без инстанса плагина.
@@ -1599,6 +1726,43 @@ class CashbackPlugin {
 
     /**
      * Admin-notice: миграция группы 6 заблокирована из-за найденных дублей.
+     * Сохраняет ошибку recreate_triggers() для последующего показа admin notice.
+     *
+     * Codex round 6 #3 (2026-05-10): runtime-failure CREATE TRIGGER нельзя
+     * терминировать через wp_die — это убило бы обычные frontend/cron запросы.
+     * Вместо этого пишем в transient + admin_notices: пользователь увидит
+     * проблему и должен re-activate плагин (тогда сработает activation-time
+     * gate с детальной диагностикой).
+     */
+    private static function register_trigger_failure_notice( \Throwable $e ): void {
+        if (!function_exists('set_transient')) {
+            return;
+        }
+        // 1 день — достаточно чтобы admin увидел и отреагировал.
+        set_transient('cashback_trigger_failure_notice', $e->getMessage(), DAY_IN_SECONDS);
+        if (function_exists('add_action')) {
+            add_action('admin_notices', array( __CLASS__, 'trigger_failure_notice' ));
+        }
+    }
+
+    /**
+     * Admin notice: triggers не пересоздались на runtime — нужно re-activate.
+     */
+    public static function trigger_failure_notice(): void {
+        $msg = get_transient('cashback_trigger_failure_notice');
+        if (!is_string($msg) || $msg === '') {
+            return;
+        }
+        printf(
+            '<div class="notice notice-error"><p><strong>%s:</strong> %s</p><p>%s</p><p><code>%s</code></p></div>',
+            esc_html__('Cashback Plugin — триггеры не были пересозданы', 'cashback-plugin'),
+            esc_html($msg),
+            esc_html__('Schema-level защита финансовых инвариантов (payout immutability, status transitions, fail_reason invariant) не активна. Деактивируйте и заново активируйте плагин для повторной попытки. Если проблема повторится — обратитесь к хостинг-провайдеру за SUPER privilege на БД.', 'cashback-plugin'),
+            'Plugins → Cashback → Deactivate → Activate'
+        );
+    }
+
+    /**
      * Сообщает админу, что нужно запустить tools/dedup-rows-*.php перед применением UNIQUE.
      */
     public static function schema_idempotency_blocked_notice(): void {

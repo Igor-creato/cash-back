@@ -89,27 +89,42 @@ final class LedgerCoverageStructuralTest extends TestCase
     // Шаг A-follow-up: antifraud/class-fraud-admin — bulk-ban ledger coverage
     // =========================================================================
 
-    public function test_fraud_admin_writes_ban_ledger_entry_after_freeze_fallback(): void
+    public function test_fraud_admin_writes_ban_ledger_entry_after_profile_update(): void
     {
+        // После удаления Cashback_Trigger_Fallbacks (2026-05-10, Codex round 5)
+        // заморозка баланса полностью обрабатывается триггером tr_freeze_balance_on_ban
+        // на UPDATE profile.status. Ledger-write должен идти ПОСЛЕ UPDATE
+        // (в этот момент триггер уже переместил available/pending → frozen_*_ban).
         $src = $this->source('antifraud/class-fraud-admin.php');
 
-        $freeze_pos = strpos($src, 'Cashback_Trigger_Fallbacks::freeze_balance_on_ban');
-        $ledger_pos = strpos($src, 'Cashback_Ban_Ledger::write_freeze_entry');
+        // Якорь: UPDATE profile со status='banned'
+        $update_pos = strpos($src, "'status'           => 'banned'");
+        $this->assertNotFalse(
+            $update_pos,
+            'fraud-admin должен делать UPDATE profile.status=banned (триггер заморозит баланс)'
+        );
 
-        $this->assertNotFalse($freeze_pos, 'fraud-admin должен вызывать freeze_balance_on_ban fallback');
+        $ledger_pos = strpos($src, 'Cashback_Ban_Ledger::write_freeze_entry');
         $this->assertNotFalse($ledger_pos, 'fraud-admin должен писать ban_freeze в ledger');
-        $this->assertGreaterThan($freeze_pos, $ledger_pos);
+        $this->assertGreaterThan(
+            $update_pos,
+            $ledger_pos,
+            'write_freeze_entry должен вызываться ПОСЛЕ UPDATE profile (когда триггер уже отработал)'
+        );
     }
 
-    public function test_fraud_admin_uses_single_banned_at_for_update_and_ledger(): void
+    public function test_fraud_admin_reads_banned_at_from_db_after_update(): void
     {
+        // Триггер tr_banned_user_update_banned_at перезаписывает NEW.banned_at
+        // на UTC_TIMESTAMP(), независимо от значения переданного из PHP.
+        // Чтобы ledger idempotency_key (ban_freeze_{user_id}_{banned_at_unix})
+        // соответствовал тому что в БД — fraud-admin должен SELECT'ить
+        // banned_at ПОСЛЕ UPDATE, а не использовать PHP-clock.
         $src = $this->source('antifraud/class-fraud-admin.php');
-        // Значение banned_at фиксируется в переменную один раз — иначе UPDATE и
-        // ledger-write могут дать разные timestamp'ы (разный idempotency_key).
         $this->assertMatchesRegularExpression(
-            '/\$banned_at_mysql\s*=\s*Cashback_Time::now_mysql\(\s*\)\s*;/',
+            "/SELECT\s+banned_at\s+FROM\s+%i\s+WHERE\s+user_id\s*=\s*%d/i",
             $src,
-            'fraud-admin должен запомнить banned_at один раз, не вызывать Cashback_Time::now_mysql() дважды'
+            'fraud-admin должен читать banned_at из БД ПОСЛЕ UPDATE для детерминированного ledger-key'
         );
     }
 

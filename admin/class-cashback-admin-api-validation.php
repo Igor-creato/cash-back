@@ -1343,31 +1343,22 @@ echo 'style="display:none"';}
             wp_send_json_error(array( 'message' => 'Транзакция не найдена' ));
         }
 
-        // PHP-фолбэк: валидация перехода статуса
-        $validation = Cashback_Trigger_Fallbacks::validate_status_transition($current->order_status, $order_status);
-        if ($validation !== true) {
-            $wpdb->query('ROLLBACK');
-            wp_send_json_error(array( 'message' => $validation ));
-        }
-
         // Money-поля пишем как canonical decimal-string (`%s`), чтобы избежать
         // locale-зависимого поведения `%f` (Группа 10 ADR, F-4-004): в локалях с `,`
         // как decimal separator `sprintf('%f', 5.5)` может выдать `"5,500000"`, что
         // MySQL не смог бы привести к DECIMAL.
+        //
+        // Поле `cashback` НЕ передаём — триггер calculate_cashback_before_update
+        // (mariadb.php) автоматически пересчитает его при изменении comission
+        // через NEW.cashback = ROUND(NEW.comission * NEW.applied_cashback_rate / 100).
+        // Status-transition валидируется триггером cashback_tr_validate_status_transition,
+        // который SIGNAL'ит SQLSTATE 45000 с локализованным MESSAGE_TEXT.
         $update_data    = array(
             'order_status' => $order_status,
             'comission'    => number_format($comission, 2, '.', ''),
             'sum_order'    => number_format($sum_order, 2, '.', ''),
         );
         $update_formats = array( '%s', '%s', '%s' );
-
-        // PHP-фолбэк: пересчёт кешбэка при изменении комиссии
-        Cashback_Trigger_Fallbacks::recalculate_cashback_on_update($update_data, $current, !$is_unregistered);
-        if (isset($update_data['cashback'])) {
-            // Trigger_Fallbacks пишет float — нормализуем на границе wpdb.
-            $update_data['cashback'] = number_format((float) $update_data['cashback'], 2, '.', '');
-            $update_formats[]        = '%s';
-        }
 
         $updated = $wpdb->update(
             $table,
@@ -1384,7 +1375,11 @@ echo 'style="display:none"';}
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging (debug only).
                 error_log('[cashback] api-validation edit_transaction: ' . $last_error);
             }
-            wp_send_json_error(array( 'message' => 'Ошибка обновления транзакции. Подробности записаны в журнал.' ));
+            // SIGNAL SQLSTATE '45000' от триггера status-валидации возвращает
+            // понятное русскоязычное сообщение в last_error — пробрасываем его
+            // пользователю; иначе generic-сообщение.
+            $signal_message = self::extract_trigger_signal_message($last_error);
+            wp_send_json_error(array( 'message' => $signal_message ?? 'Ошибка обновления транзакции. Подробности записаны в журнал.' ));
         }
 
         $wpdb->query('COMMIT');
@@ -1517,16 +1512,10 @@ echo 'style="display:none"';}
             '%s',  // idempotency_key
         );
 
-        // PHP-фолбэк расчёта кешбэка — пишет float в $data, нормализуем на границе wpdb.
-        Cashback_Trigger_Fallbacks::calculate_cashback($data, !$is_unregistered);
-        if (isset($data['applied_cashback_rate'])) {
-            $data['applied_cashback_rate'] = number_format((float) $data['applied_cashback_rate'], 2, '.', '');
-        }
-        if (isset($data['cashback'])) {
-            $data['cashback'] = number_format((float) $data['cashback'], 2, '.', '');
-        }
-        $formats[] = '%s'; // applied_cashback_rate (rate-как-string, контракт 2 знака)
-        $formats[] = '%s'; // cashback (money → decimal-string)
+        // applied_cashback_rate и cashback заполняются BEFORE INSERT-триггером
+        // calculate_cashback_before_insert (mariadb.php) — он читает rate из
+        // user_profile и считает cashback = ROUND(comission * rate / 100).
+        // Поля НЕ передаём в $data — БД проставит сама.
 
         // Удаляем NULL-значения и их форматы, чтобы $wpdb->insert корректно работал
         $clean_data    = array();
@@ -1615,14 +1604,9 @@ echo 'style="display:none"';}
         $status_map     = $network_config['status_map'] ?? array();
         $mapped_status  = $status_map[ strtolower($api_status) ] ?? 'waiting';
 
-        // PHP-фолбэк: валидация перехода статуса
-        $validation = Cashback_Trigger_Fallbacks::validate_status_transition($current->order_status, $mapped_status);
-        if ($validation !== true) {
-            $wpdb->query('ROLLBACK');
-            wp_send_json_error(array( 'message' => $validation ));
-        }
-
         // Money-поля (comission/sum_order) — canonical decimal-string + `%s` (F-4-004).
+        // Status-validation и пересчёт cashback выполняют MariaDB-триггеры
+        // (cashback_tr_validate_status_transition + calculate_cashback_before_update).
         $update_data    = array(
             'order_status' => $mapped_status,
             'comission'    => number_format($api_payment, 2, '.', ''),
@@ -1630,13 +1614,6 @@ echo 'style="display:none"';}
             'api_verified' => 1,
         );
         $update_formats = array( '%s', '%s', '%s', '%d' );
-
-        // PHP-фолбэк: пересчёт кешбэка при изменении комиссии
-        Cashback_Trigger_Fallbacks::recalculate_cashback_on_update($update_data, $current, !$is_unregistered);
-        if (isset($update_data['cashback'])) {
-            $update_data['cashback'] = number_format((float) $update_data['cashback'], 2, '.', '');
-            $update_formats[]        = '%s';
-        }
 
         $updated = $wpdb->update(
             $table,
@@ -1653,7 +1630,8 @@ echo 'style="display:none"';}
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging (debug only).
                 error_log('[cashback] api-validation overwrite_transaction: ' . $last_error);
             }
-            wp_send_json_error(array( 'message' => 'Ошибка обновления транзакции. Подробности записаны в журнал.' ));
+            $signal_message = self::extract_trigger_signal_message($last_error);
+            wp_send_json_error(array( 'message' => $signal_message ?? 'Ошибка обновления транзакции. Подробности записаны в журнал.' ));
         }
 
         $wpdb->query('COMMIT');
@@ -1702,6 +1680,41 @@ echo 'style="display:none"';}
     /**
      * Записать в аудит-лог
      */
+    /**
+     * Распознаёт SIGNAL SQLSTATE '45000' MESSAGE_TEXT от MariaDB-триггеров в
+     * тексте `$wpdb->last_error` и возвращает локализованную строку для UI.
+     *
+     * Триггеры в mariadb.php (cashback_tr_validate_status_transition,
+     * cashback_tr_prevent_delete_final_status, etc.) бросают `SIGNAL SQLSTATE
+     * '45000' SET MESSAGE_TEXT = '...'` с готовым русскоязычным текстом —
+     * пробрасываем его в JSON-ответ как user-facing сообщение.
+     *
+     * @param string $last_error Содержимое $wpdb->last_error
+     * @return string|null Извлечённое user-friendly сообщение либо null если
+     *                     ошибка не от status-validation триггера.
+     */
+    private static function extract_trigger_signal_message( string $last_error ): ?string {
+        // Список MESSAGE_TEXT'ов из mariadb.php — должен совпадать с текстами
+        // в cashback_tr_validate_status_transition[_unregistered] и
+        // cashback_tr_prevent_delete_final_status / _update.
+        $known_signals = array(
+            'Удаление запрещено: запись с финальным статусом не может быть удалена.',
+            'Изменение запрещено: запись с финальным статусом не может быть изменена.',
+            'Понижение статуса до waiting запрещено.',
+            'Перевод в balance возможен только из completed.',
+            'Перевод в hold возможен только из completed.',
+            'Из declined возможен переход только в completed.',
+        );
+
+        foreach ($known_signals as $signal_text) {
+            if (strpos($last_error, $signal_text) !== false) {
+                return $signal_text;
+            }
+        }
+
+        return null;
+    }
+
     private function log_audit( string $action, int $entity_id, $details ): void {
         global $wpdb;
 

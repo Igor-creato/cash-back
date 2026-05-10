@@ -217,10 +217,14 @@ final class ApiClientSyncAtomicityTest extends TestCase
             $body,
             "Guard 'completed → waiting' (защита от понижения) должен быть сохранён."
         );
+        // После удаления Cashback_Trigger_Fallbacks (Codex round 5, 2026-05-10)
+        // status-validation выполняется триггером cashback_tr_validate_status_transition
+        // через SIGNAL SQLSTATE '45000'. Распознавание SIGNAL'а в last_error
+        // конвертирует запрещённые переходы в `++$skipped` (preserve old behavior).
         $this->assertStringContainsString(
-            'validate_status_transition(',
+            'is_status_transition_signal(',
             $body,
-            'Вызов validate_status_transition() должен быть сохранён.'
+            'sync_update_local должен распознавать SIGNAL от validate_status_transition триггера и учитывать как skipped.'
         );
         // Группа 10 ADR (F-8-003): float-epsilon `abs($api_payment - ...) >= 0.001`
         // заменён на bit-exact Money::equals() — проверяем, что commission-сравнение
