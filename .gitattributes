@@ -19,3 +19,25 @@
 /phpstan.neon   export-ignore
 /phpcs-safe.xml export-ignore
 /phpcs.xml  export-ignore
+
+# Test files inside production code paths
+/includes/tests/    export-ignore
+
+# Defense-in-depth: пути gitignored сейчас, но страхуемся от случайного коммита
+/artefacts/         export-ignore
+/plans/             export-ignore
+/sonar-project.properties   export-ignore
+
+# Бинарные/временные артефакты по расширению
+*.png               export-ignore
+*.jpg               export-ignore
+*.jpeg              export-ignore
+*.gif               export-ignore
+*.zip               export-ignore
+*.zip.sha256        export-ignore
+*.log               export-ignore
+*.bak               export-ignore
+*.tmp               export-ignore
+*.swp               export-ignore
+*.swo               export-ignore
+*.cache             export-ignore
