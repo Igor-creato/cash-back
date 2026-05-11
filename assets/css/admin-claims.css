@@ -712,6 +712,23 @@ button.claim-btn[disabled] {
     cursor: pointer;
 }
 
+/* --- Frontend row hover (desktop only) ----------------------------- */
+/* Scope: только wrapper'ы frontend-вкладок (#tab-clicks / #tab-claims).
+ * Существующий .claim-row.has-events:hover (clickable-индикатор)
+ * ниже по файлу перекрывает универсальный hover для строк с событиями. */
+
+#tab-clicks .shop_table tbody tr,
+#tab-claims .shop_table tbody tr.claim-row {
+    transition: background-color 0.15s ease;
+}
+
+@media (hover: hover) and (min-width: 769px) {
+    #tab-clicks .shop_table tbody tr:hover,
+    #tab-claims .shop_table.claims-table-expandable tbody tr.claim-row:not(.has-events):hover {
+        background: var(--cb-bg-canvas, #f5f4f0);
+    }
+}
+
 /* --- Expandable claim rows ----------------------------------------- */
 
 .claim-row.has-events {

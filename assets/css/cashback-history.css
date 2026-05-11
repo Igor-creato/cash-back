@@ -149,6 +149,18 @@
     font-weight: 600;
 }
 
+/* --- Row hover (desktop only) -------------------------------------- */
+
+.wd-cashback-history #transactions-table tbody tr {
+    transition: background-color 0.15s ease;
+}
+
+@media (hover: hover) and (min-width: 769px) {
+    .wd-cashback-history #transactions-table tbody tr:hover {
+        background: var(--cb-bg-canvas, #f5f4f0);
+    }
+}
+
 @media (max-width: 768px) {
     .wd-cashback-history .clicks-filters-row {
         flex-direction: column;

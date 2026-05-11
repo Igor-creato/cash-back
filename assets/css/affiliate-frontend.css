@@ -176,18 +176,14 @@ button.cashback-affiliate-copy-btn.is-copied {
     text-transform: uppercase;
 }
 
-/* --- Accruals / referrals table ------------------------------------ */
+/* --- Accruals / referrals table — desktop flat (matches purchases) ---- */
 
 .cashback-affiliate-table {
     width: 100%;
-    border-collapse: separate;
+    border-collapse: collapse;
     border-spacing: 0;
     font-size: 14px;
-    background: var(--cb-bg-surface, #fff);
-    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
-    border-radius: var(--cb-radius-lg, 20px);
-    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
-    overflow: hidden;
+    background: transparent;
 }
 
 .cashback-affiliate-table th,
@@ -197,7 +193,7 @@ button.cashback-affiliate-copy-btn.is-copied {
     border-bottom: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
 }
 
-.cashback-affiliate-table th {
+.cashback-affiliate-table thead th {
     background: var(--cb-bg-sunken, #eceae3);
     font-weight: 600;
     font-size: 12px;
@@ -205,18 +201,21 @@ button.cashback-affiliate-copy-btn.is-copied {
     letter-spacing: 0.04em;
     text-transform: uppercase;
     white-space: nowrap;
-}
-
-.cashback-affiliate-table tbody tr:last-child td {
-    border-bottom: none;
+    border-bottom: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
 }
 
 .cashback-affiliate-table tbody tr {
     transition: background-color 0.15s ease;
 }
 
-.cashback-affiliate-table tbody tr:hover {
-    background: var(--cb-bg-canvas, #f5f4f0);
+.cashback-affiliate-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+@media (hover: hover) and (min-width: 769px) {
+    .cashback-affiliate-table tbody tr:hover {
+        background: var(--cb-bg-canvas, #f5f4f0);
+    }
 }
 
 .cashback-affiliate-empty {
@@ -226,40 +225,30 @@ button.cashback-affiliate-copy-btn.is-copied {
     text-align: center;
 }
 
-/* --- Status pills -------------------------------------------------- */
+/* --- Status text colors (matches purchase history palette) --------- */
 
 .cashback-affiliate-status {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: var(--cb-radius-pill, 999px);
-    font-size: 12px;
     font-weight: 600;
-    letter-spacing: 0;
 }
 
-.status-available {
-    background: var(--cb-success-soft, #dcf5eb);
-    color: #14724f;
+.cashback-affiliate-status.status-available {
+    color: var(--cb-success, #1fae7f);
 }
 
-.status-frozen {
-    background: var(--cb-warning-soft, #fcefcf);
-    color: #8c5c00;
+.cashback-affiliate-status.status-frozen {
+    color: var(--cb-warning, #e89b0a);
 }
 
-.status-paid {
-    background: var(--cb-info-soft, #dcebfb);
-    color: #1f5a98;
+.cashback-affiliate-status.status-paid {
+    color: var(--cb-info, #3e8ddd);
 }
 
-.status-pending {
-    background: var(--cb-bg-sunken, #eceae3);
+.cashback-affiliate-status.status-pending {
     color: var(--cb-text-secondary, #5b5c70);
 }
 
-.status-declined {
-    background: var(--cb-danger-soft, #fbe0e1);
-    color: #a32328;
+.cashback-affiliate-status.status-declined {
+    color: var(--cb-danger, #e5484d);
 }
 
 /* --- Responsive ---------------------------------------------------- */

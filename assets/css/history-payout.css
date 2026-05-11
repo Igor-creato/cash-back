@@ -150,6 +150,18 @@
     font-weight: 600;
 }
 
+/* --- Row hover (desktop only) -------------------------------------- */
+
+.wd-history-payout #payouts-table tbody tr {
+    transition: background-color 0.15s ease;
+}
+
+@media (hover: hover) and (min-width: 769px) {
+    .wd-history-payout #payouts-table tbody tr:hover {
+        background: var(--cb-bg-canvas, #f5f4f0);
+    }
+}
+
 @media (max-width: 768px) {
     .wd-history-payout .clicks-filters-row {
         flex-direction: column;
