@@ -436,3 +436,54 @@
         min-width: auto;
     }
 }
+
+/* Свёрнутые блоки массовых операций на странице «Пользователи» */
+.cashback-bulk-section {
+    margin: 0 0 20px;
+    padding: 0 16px;
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.cashback-bulk-section__summary {
+    cursor: pointer;
+    padding: 12px 0;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: #1d2327;
+    list-style: none;
+}
+
+.cashback-bulk-section__summary::-webkit-details-marker {
+    display: none;
+}
+
+.cashback-bulk-section__summary::before {
+    content: "\25B8";
+    display: inline-block;
+    width: 1em;
+    margin-right: 6px;
+    color: #2271b1;
+    transition: transform 0.15s ease;
+}
+
+.cashback-bulk-section[open] > .cashback-bulk-section__summary::before {
+    transform: rotate(90deg);
+}
+
+.cashback-bulk-section__summary:hover {
+    color: #2271b1;
+}
+
+.cashback-bulk-section__summary:focus-visible {
+    outline: 2px solid #2271b1;
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+.cashback-bulk-section__body {
+    padding: 4px 0 12px;
+}

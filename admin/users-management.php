@@ -73,7 +73,7 @@ class Cashback_Users_Management_Admin {
             'cashback-admin-users-css',
             plugins_url('../assets/css/admin.css', __FILE__),
             array(),
-            '1.2.0'
+            '1.3.0'
         );
 
         wp_enqueue_script(
@@ -309,44 +309,48 @@ class Cashback_Users_Management_Admin {
             </div>
 
             <!-- Массовое изменение ставки кэшбэка -->
-            <div class="postbox" style="padding: 12px 16px; margin-bottom: 20px;">
-                <h3 style="margin: 0 0 10px;">Массовое изменение ставки кэшбэка</h3>
-                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                    <label for="bulk-old-rate">Текущая ставка:</label>
-                    <input type="text" id="bulk-old-rate" placeholder="60 или all" style="width: 100px;" />
-                    <label for="bulk-new-rate">Новая ставка (%):</label>
-                    <input type="number" id="bulk-new-rate" step="0.01" min="0" max="100" placeholder="65" style="width: 100px;" />
-                    <button type="button" id="bulk-rate-preview" class="button">Предпросмотр</button>
-                    <button type="button" id="bulk-rate-apply" class="button button-primary" disabled>Применить</button>
-                    <span id="bulk-rate-info" style="color: #666;"></span>
+            <details class="cashback-bulk-section">
+                <summary class="cashback-bulk-section__summary">Массовое изменение ставки кэшбэка</summary>
+                <div class="cashback-bulk-section__body">
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <label for="bulk-old-rate">Текущая ставка:</label>
+                        <input type="text" id="bulk-old-rate" placeholder="60 или all" style="width: 100px;" />
+                        <label for="bulk-new-rate">Новая ставка (%):</label>
+                        <input type="number" id="bulk-new-rate" step="0.01" min="0" max="100" placeholder="65" style="width: 100px;" />
+                        <button type="button" id="bulk-rate-preview" class="button">Предпросмотр</button>
+                        <button type="button" id="bulk-rate-apply" class="button button-primary" disabled>Применить</button>
+                        <span id="bulk-rate-info" style="color: #666;"></span>
+                    </div>
+                    <p class="description" style="margin-top: 10px;">
+                        В поле <strong>«Текущая ставка»</strong> укажите процент, который нужно заменить (например, <code>60</code>),
+                        или введите <code>all</code>, чтобы изменить ставку у всех пользователей сразу.<br>
+                        В поле <strong>«Новая ставка»</strong> укажите новый процент кэшбэка (от 0 до 100).<br>
+                        Нажмите <strong>«Предпросмотр»</strong>, чтобы увидеть количество затронутых пользователей, затем <strong>«Применить»</strong> для подтверждения.
+                    </p>
                 </div>
-                <p class="description" style="margin-top: 10px;">
-                    В поле <strong>«Текущая ставка»</strong> укажите процент, который нужно заменить (например, <code>60</code>),
-                    или введите <code>all</code>, чтобы изменить ставку у всех пользователей сразу.<br>
-                    В поле <strong>«Новая ставка»</strong> укажите новый процент кэшбэка (от 0 до 100).<br>
-                    Нажмите <strong>«Предпросмотр»</strong>, чтобы увидеть количество затронутых пользователей, затем <strong>«Применить»</strong> для подтверждения.
-                </p>
-            </div>
+            </details>
 
             <!-- Массовое изменение минимальной суммы выплаты -->
-            <div class="postbox" style="padding: 12px 16px; margin-bottom: 20px;">
-                <h3 style="margin: 0 0 10px;">Массовое изменение минимальной суммы выплаты</h3>
-                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                    <label for="bulk-old-min-payout">Текущая сумма:</label>
-                    <input type="text" id="bulk-old-min-payout" placeholder="100 или all" style="width: 110px;" />
-                    <label for="bulk-new-min-payout">Новая сумма (₽):</label>
-                    <input type="number" id="bulk-new-min-payout" step="0.01" min="1" max="100000" placeholder="150" style="width: 110px;" />
-                    <button type="button" id="bulk-min-payout-preview" class="button">Предпросмотр</button>
-                    <button type="button" id="bulk-min-payout-apply" class="button button-primary" disabled>Применить</button>
-                    <span id="bulk-min-payout-info" style="color: #666;"></span>
+            <details class="cashback-bulk-section">
+                <summary class="cashback-bulk-section__summary">Массовое изменение минимальной суммы выплаты</summary>
+                <div class="cashback-bulk-section__body">
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <label for="bulk-old-min-payout">Текущая сумма:</label>
+                        <input type="text" id="bulk-old-min-payout" placeholder="100 или all" style="width: 110px;" />
+                        <label for="bulk-new-min-payout">Новая сумма (₽):</label>
+                        <input type="number" id="bulk-new-min-payout" step="0.01" min="1" max="100000" placeholder="150" style="width: 110px;" />
+                        <button type="button" id="bulk-min-payout-preview" class="button">Предпросмотр</button>
+                        <button type="button" id="bulk-min-payout-apply" class="button button-primary" disabled>Применить</button>
+                        <span id="bulk-min-payout-info" style="color: #666;"></span>
+                    </div>
+                    <p class="description" style="margin-top: 10px;">
+                        В поле <strong>«Текущая сумма»</strong> укажите значение, которое нужно заменить (например, <code>100</code>),
+                        или введите <code>all</code>, чтобы изменить минимальную сумму у всех пользователей сразу.<br>
+                        В поле <strong>«Новая сумма»</strong> укажите новый минимум (от 1 до 100&nbsp;000 ₽).<br>
+                        Нажмите <strong>«Предпросмотр»</strong>, чтобы увидеть количество затронутых пользователей, затем <strong>«Применить»</strong> для подтверждения.
+                    </p>
                 </div>
-                <p class="description" style="margin-top: 10px;">
-                    В поле <strong>«Текущая сумма»</strong> укажите значение, которое нужно заменить (например, <code>100</code>),
-                    или введите <code>all</code>, чтобы изменить минимальную сумму у всех пользователей сразу.<br>
-                    В поле <strong>«Новая сумма»</strong> укажите новый минимум (от 1 до 100&nbsp;000 ₽).<br>
-                    Нажмите <strong>«Предпросмотр»</strong>, чтобы увидеть количество затронутых пользователей, затем <strong>«Применить»</strong> для подтверждения.
-                </p>
-            </div>
+            </details>
 
             <!-- Таблица пользователей -->
             <div class="wp-list-table-wrap">
