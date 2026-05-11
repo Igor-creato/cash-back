@@ -298,8 +298,8 @@ class Cashback_Affiliate_Frontend {
         $offset      = ( $page - 1 ) * $per_page;
 
         $accruals = $wpdb->get_results($wpdb->prepare(
-            'SELECT a.id, a.reference_id, a.commission_amount, a.commission_rate,
-                    a.cashback_amount, a.status AS display_status, a.created_at,
+            'SELECT a.id, a.reference_id, a.commission_amount,
+                    a.status AS display_status, a.created_at,
                     u.display_name AS referred_name
              FROM %i a
              LEFT JOIN %i u ON u.ID = a.referred_user_id
@@ -330,8 +330,6 @@ class Cashback_Affiliate_Frontend {
         echo '<th>' . esc_html__('Дата', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('ID', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Реферал', 'cashback-plugin') . '</th>';
-        echo '<th>' . esc_html__('Кешбэк', 'cashback-plugin') . '</th>';
-        echo '<th>' . esc_html__('Ставка', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Комиссия', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Статус', 'cashback-plugin') . '</th>';
         if ($support_enabled) {
@@ -354,11 +352,9 @@ class Cashback_Affiliate_Frontend {
             $status_label    = $status_labels[ $status_key ] ?? $status_key;
 
             echo '<tr>';
-            echo '<td data-title="' . esc_attr__('Дата', 'cashback-plugin') . '">' . esc_html(wp_date('d.m.Y H:i', strtotime($row['created_at']))) . '</td>';
+            echo '<td data-title="' . esc_attr__('Дата', 'cashback-plugin') . '">' . esc_html(wp_date('d.m.Y', strtotime($row['created_at']))) . '</td>';
             echo '<td data-title="' . esc_attr__('ID', 'cashback-plugin') . '"><code>' . esc_html($row['reference_id']) . '</code></td>';
             echo '<td data-title="' . esc_attr__('Реферал', 'cashback-plugin') . '">' . esc_html($row['referred_name'] ?: '—') . '</td>';
-            echo '<td data-title="' . esc_attr__('Кешбэк', 'cashback-plugin') . '">' . esc_html(number_format_i18n((float) $row['cashback_amount'], 2)) . ' ₽</td>';
-            echo '<td data-title="' . esc_attr__('Ставка', 'cashback-plugin') . '">' . esc_html($row['commission_rate']) . '%</td>';
             echo '<td data-title="' . esc_attr__('Комиссия', 'cashback-plugin') . '"><strong>' . esc_html(number_format_i18n((float) $row['commission_amount'], 2)) . ' ₽</strong></td>';
             echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '"><span class="cashback-affiliate-status ' . esc_attr($status_class) . ' cashback-status--' . esc_attr($status_semantic) . '">'
                 . esc_html($status_label) . '</span></td>';
