@@ -100,8 +100,8 @@ class Cashback_User_Support {
         wp_enqueue_style(
             'cashback-user-support-css',
             plugins_url('assets/css/user-support.css', __FILE__),
-            array(),
-            '1.2.0'
+            array( 'cashback-account-base' ),
+            '1.3.0'
         );
 
         Cashback_Assets::enqueue_safe_html();

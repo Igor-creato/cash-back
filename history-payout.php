@@ -332,8 +332,8 @@ class HistoryPayout {
             wp_enqueue_style(
                 'history-payout-css',
                 plugin_dir_url(__FILE__) . 'assets/css/history-payout.css',
-                array(),
-                '1.5.0'
+                array( 'cashback-account-base' ),
+                '1.6.0'
             );
 
             Cashback_Assets::enqueue_safe_html();

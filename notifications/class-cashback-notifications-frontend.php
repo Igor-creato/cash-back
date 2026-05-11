@@ -75,7 +75,7 @@ class Cashback_Notifications_Frontend {
         wp_enqueue_style(
             'cashback-notifications',
             plugins_url('assets/css/cashback-notifications.css', __DIR__),
-            array(),
+            array( 'cashback-account-base' ),
             $ver
         );
 

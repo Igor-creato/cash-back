@@ -5,14 +5,8 @@
    us deterministic periwinkle regardless of theme presets).
    ============================================================================= */
 
-/* Cashback plugin — frontend token override (2026-05). */
-:root {
-    --cb-accent: rgb(69, 85, 232);
-    --cb-accent-hover: rgb(91, 108, 247);
-    --cb-warm: rgb(247, 107, 65);
-    --cb-warm-hover: rgb(255, 138, 101);
-    --cb-radius-pill: 10px;
-}
+/* Все --cb-* токены объявлены в cashback-account-base.css (подключается
+   первым). Этот файл использует их через var(--cb-*, fallback). */
 
 .cashback-notifications-settings {
     max-width: 720px;

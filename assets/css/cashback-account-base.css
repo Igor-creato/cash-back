@@ -1,0 +1,118 @@
+/* =============================================================================
+   Cashback plugin — единый базовый CSS для всех вкладок личного кабинета.
+   Подключается через Cashback_Account_Base_Assets на is_account_page().
+
+   Содержит:
+   1) Полную декларацию --cb-* дизайн-токенов (один источник истины).
+      До этого файла токены лежали только в fallback'ах внутри var(--cb-*, ...)
+      и зависели от woodmart-child темы. Теперь плагин самодостаточен.
+
+   2) Общий компонент .cashback-support-tabs (frontend-only), который
+      раньше дублировался в user-support.css и admin-claims.css.
+
+   Все остальные вкладки кабинета (history, payouts, affiliate, claims,
+   support, notifications, withdrawal) продолжают использовать те же
+   var(--cb-*, fallback) — поведение не меняется.
+   ============================================================================= */
+
+:root {
+    /* Brand */
+    --cb-accent: rgb(69, 85, 232);
+    --cb-accent-hover: rgb(91, 108, 247);
+    --cb-warm: rgb(247, 107, 65);
+    --cb-warm-hover: rgb(255, 138, 101);
+
+    /* Radii */
+    --cb-radius-sm: 10px;
+    --cb-radius-md: 16px;
+    --cb-radius-lg: 20px;
+    --cb-radius-pill: 10px;
+
+    /* Surfaces */
+    --cb-bg-surface: #fff;
+    --cb-bg-canvas: #f5f4f0;
+    --cb-bg-sunken: #eceae3;
+    --cb-warning-soft: #fcefcf;
+
+    /* Borders */
+    --cb-border: rgba(22, 21, 28, 0.06);
+    --cb-border-strong: rgba(22, 21, 28, 0.12);
+    --cb-border-focus: rgba(91, 108, 247, 0.45);
+
+    /* Text */
+    --cb-text-primary: #16151c;
+    --cb-text-secondary: #5b5c70;
+    --cb-text-muted: #8f8fa3;
+    --cb-text-on-accent: #fff;
+
+    /* Status palette */
+    --cb-success: #1fae7f;
+    --cb-info: #3e8ddd;
+    --cb-warning: #e89b0a;
+    --cb-danger: #e5484d;
+
+    /* Shadows */
+    --cb-shadow-soft: 0 8px 24px -12px rgba(15, 18, 34, 0.10);
+    --cb-shadow-raised: 0 18px 36px -16px rgba(15, 18, 34, 0.14);
+    --cb-shadow-floating: 0 32px 64px -24px rgba(15, 18, 34, 0.18);
+    --cb-shadow-focus: 0 0 0 3px rgba(91, 108, 247, 0.25);
+    --cb-shadow-inset: inset 0 1px 2px rgba(22, 21, 28, 0.05);
+
+    /* Typography */
+    --cb-fs-base: 16px;
+    --cb-font-display: inherit;
+}
+
+/* --- Shared component: pill-style tabs --------------------------------
+   Используется во вкладках Поддержка (НОВЫЙ ТИКЕТ / ИСТОРИЯ ТИКЕТОВ) и
+   Потерянный кэшбэк (МОИ ПЕРЕХОДЫ / МОИ ЗАЯВКИ). До base.css селектор
+   определялся дважды в user-support.css и admin-claims.css — потенциальный
+   источник десинхрона. Теперь единая декларация.
+   ------------------------------------------------------------------- */
+
+.cashback-support-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 0;
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+    border-bottom: none;
+}
+
+.cashback-support-tabs button.cashback-support-tab {
+    border: 1px solid var(--cb-accent, #5b6cf7) !important;
+    border-radius: var(--cb-radius-pill, 999px) !important;
+    padding: 10px 22px !important;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--cb-accent, #5b6cf7) !important;
+    background-color: var(--cb-bg-surface, #fff) !important;
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.2s ease, border-color 0.15s ease, transform 0.2s ease;
+    position: relative;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
+    font-family: inherit;
+}
+
+.cashback-support-tabs button.cashback-support-tab:hover {
+    background-color: var(--cb-bg-surface, #fff) !important;
+    color: var(--cb-accent, #5b6cf7) !important;
+    border-color: var(--cb-accent, #5b6cf7) !important;
+    box-shadow: var(--cb-shadow-raised, 0 18px 36px -16px rgba(15, 18, 34, 0.14)) !important;
+    transform: translateY(-1px);
+}
+
+.cashback-support-tabs button.cashback-support-tab.active {
+    background-color: var(--cb-accent, #5b6cf7) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    border-color: var(--cb-accent, #5b6cf7) !important;
+    box-shadow: var(--cb-shadow-raised, 0 18px 36px -16px rgba(15, 18, 34, 0.14)) !important;
+}
+
+.cashback-support-tabs button.cashback-support-tab.active:hover {
+    background-color: var(--cb-accent-hover, #4555e8) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    border-color: var(--cb-accent-hover, #4555e8) !important;
+}

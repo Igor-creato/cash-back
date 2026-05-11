@@ -114,6 +114,12 @@ require_once __DIR__ . '/includes/cashback-db-capability.php';
 // Загружаем рано — функция нужна в CashbackPlugin::init() ДО initialize_components.
 require_once __DIR__ . '/includes/cashback-triggers-inventory.php';
 
+// Account base assets: единый CSS с --cb-* дизайн-токенами и общим компонентом
+// .cashback-support-tabs. Подключается на is_account_page() как dependency для
+// всех per-tab CSS файлов кабинета. Снимает дублирование :root в 6 файлах.
+require_once __DIR__ . '/includes/class-cashback-account-base-assets.php';
+Cashback_Account_Base_Assets::register();
+
 /**
  * Проверка совместимости с текущими версиями PHP и WordPress
  *

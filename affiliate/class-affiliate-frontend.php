@@ -75,7 +75,7 @@ class Cashback_Affiliate_Frontend {
         wp_enqueue_style(
             'cashback-frontend',
             cashback_asset_url('assets/css/frontend.css'),
-            array(),
+            array( 'cashback-account-base' ),
             // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
             null
         );
@@ -83,7 +83,7 @@ class Cashback_Affiliate_Frontend {
         wp_enqueue_style(
             'cashback-affiliate-frontend',
             cashback_asset_url('assets/css/affiliate-frontend.css'),
-            array( 'cashback-frontend' ),
+            array( 'cashback-account-base', 'cashback-frontend' ),
             // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
             null
         );

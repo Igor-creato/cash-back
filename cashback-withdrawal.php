@@ -1349,7 +1349,7 @@ class CashbackWithdrawal {
             wp_enqueue_style(
                 'cashback-withdrawal-styles',
                 cashback_asset_url('assets/css/frontend.css'),
-                array(),
+                array( 'cashback-account-base' ),
                 // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
                 null
             );

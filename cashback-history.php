@@ -388,8 +388,8 @@ class CashbackHistory {
                 wp_enqueue_style(
                     'cashback-history-css',
                     plugin_dir_url(__FILE__) . 'assets/css/cashback-history.css',
-                    array(),
-                    '1.3.0'
+                    array( 'cashback-account-base' ),
+                    '1.4.0'
                 );
             }
 
