@@ -313,3 +313,77 @@
     color: var(--cb-text-secondary, #5b5c70) !important;
     font-weight: 600;
 }
+
+/* --- Shared component: support "?" button ------------------------------
+   Используется в колонке "Поддержка" в таблицах ЛК:
+   - История покупок (#transactions-table)
+   - История выплат (#payouts-table)
+   - Партнёрские начисления (.cashback-affiliate-table)
+
+   Outline-стиль зеркалит #history-filter-reset / #payout-filter-reset:
+   прозрачный фон, синий бордер --cb-accent, синий текст, hover —
+   заливка --cb-accent с белым символом. На десктопе — круг 28x28,
+   на мобильных (≤768px) — pill со словом "Вопрос в поддержку".
+   ------------------------------------------------------------------- */
+
+.col-support-action {
+    width: 44px;
+    text-align: center;
+}
+
+.support-ask-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--cb-accent, rgb(69, 85, 232));
+    border-radius: 50%;
+    background-color: transparent;
+    color: var(--cb-accent, rgb(69, 85, 232)) !important;
+    font-weight: 700;
+    text-decoration: none !important;
+    line-height: 1;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.support-ask-btn:hover {
+    background-color: var(--cb-accent, rgb(69, 85, 232));
+    border-color: var(--cb-accent, rgb(69, 85, 232));
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
+    transform: translateY(-1px);
+}
+
+.support-ask-btn__icon {
+    font-size: 14px;
+}
+
+.support-ask-btn__label {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    .col-support-action {
+        width: auto;
+        text-align: right;
+    }
+
+    .support-ask-btn {
+        width: auto;
+        height: auto;
+        padding: 9px 22px;
+        border-radius: var(--cb-radius-pill, 10px);
+    }
+
+    .support-ask-btn__icon {
+        display: none;
+    }
+
+    .support-ask-btn__label {
+        display: inline;
+        font-size: 13px;
+        font-weight: 600;
+    }
+}

@@ -101,7 +101,7 @@ class Cashback_User_Support {
             'cashback-user-support-css',
             plugins_url('assets/css/user-support.css', __FILE__),
             array( 'cashback-account-base' ),
-            '1.3.0'
+            '1.4.0'
         );
 
         Cashback_Assets::enqueue_safe_html();

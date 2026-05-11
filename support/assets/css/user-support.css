@@ -598,62 +598,6 @@ input[type="file"][id*="support"]::-webkit-file-upload-button:hover {
     color: #14724f;
 }
 
-/* --- "Ask support" icon button (in history/payouts/affiliate tables) - */
-
-.col-support-action {
-    width: 44px;
-    text-align: center;
-}
-
-.support-ask-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: var(--cb-bg-accent-soft, #e3eef7);
-    color: var(--cb-accent-soft-text, #2b5e86) !important;
-    font-weight: 700;
-    text-decoration: none !important;
-    line-height: 1;
-    transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
-}
-
-.support-ask-btn:hover {
-    background: var(--cb-accent, #2b5e86);
-    color: var(--cb-text-on-accent, #fff) !important;
-    transform: scale(1.05);
-}
-
-.support-ask-btn__icon {
-    font-size: 14px;
-}
-
-.support-ask-btn__label {
-    display: none;
-}
-
-@media (max-width: 768px) {
-    .col-support-action {
-        width: auto;
-        text-align: right;
-    }
-
-    .support-ask-btn {
-        width: auto;
-        height: auto;
-        padding: 7px 12px;
-        border-radius: var(--cb-radius-pill, 6px);
-    }
-
-    .support-ask-btn__icon {
-        display: none;
-    }
-
-    .support-ask-btn__label {
-        display: inline;
-        font-size: 13px;
-    }
-}
+/* Стили колонки "Поддержка" (.col-support-action + .support-ask-btn) перенесены
+   в assets/css/cashback-account-base.css как общий компонент outline-кнопки,
+   зеркалит #history-filter-reset для визуального единства. */
