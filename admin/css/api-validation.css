@@ -72,6 +72,18 @@
     vertical-align: middle;
 }
 
+/* Row with Save / Test connection / Export / Import buttons */
+.cashback-network-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.cashback-network-actions .cashback-save-status {
+    margin-left: 0;
+}
+
 /* Validation result */
 #cashback-validation-result {
     max-width: 1100px;

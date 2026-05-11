@@ -478,6 +478,291 @@
     });
 
     // =========================================================================
+    // Экспорт / Импорт настроек сети (полностью клиентский, без серверных endpoint-ов)
+    //
+    // Секреты (client_id, client_secret, api_key, scope) намеренно НЕ покидают
+    // сервер: они не попадают в файл и не подставляются при импорте — админ
+    // заводит их вручную, как при первичной настройке.
+    // =========================================================================
+
+    const NETWORK_SETTINGS_FILE_TYPE = 'cashback_network_settings';
+    const NETWORK_SETTINGS_FILE_VERSION = '1.0';
+    const NETWORK_SETTINGS_FILE_MAX_BYTES = 1024 * 1024;
+    const NETWORK_SETTINGS_AUTH_VALUES = ['oauth2', 'api_key'];
+    const NETWORK_SETTINGS_PAGINATION_VALUES = ['offset_limit', 'page', 'none'];
+
+    // Whitelist скалярных полей для импорта/экспорта (без секретов и без идентификаторов записи).
+    const NETWORK_SETTINGS_STRING_FIELDS = [
+        'api_base_url',
+        'api_token_endpoint',
+        'api_actions_endpoint',
+        'api_website_id',
+        'api_user_field',
+        'api_click_field',
+        'api_coupons_endpoint',
+    ];
+
+    function isPlainObject(x) {
+        return x !== null && typeof x === 'object' && !Array.isArray(x);
+    }
+
+    function escapeAttrSelector(s) {
+        return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    }
+
+    function tryParseJson(s) {
+        if (typeof s !== 'string' || s === '') return null;
+        try {
+            return JSON.parse(s);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function readMapEditor($card, rowSelector, keyClass, valueClass) {
+        const map = {};
+        $card.find(rowSelector).each(function () {
+            const key = String($(this).find(keyClass).val() || '').trim();
+            const val = $(this).find(valueClass).val();
+            if (key) {
+                map[key] = val;
+            }
+        });
+        return map;
+    }
+
+    function rebuildStatusMapEditor($card, map) {
+        const $editor = $card.find('.status-map-editor');
+        $editor.empty();
+        Object.keys(map).forEach(function (cpaKey) {
+            const $row = $(statusMapRowHtml());
+            $row.find('.status-map-cpa').val(cpaKey);
+            const localVal = String(map[cpaKey] != null ? map[cpaKey] : '');
+            const $select = $row.find('.status-map-local');
+            if ($select.find('option[value="' + escapeAttrSelector(localVal) + '"]').length) {
+                $select.val(localVal);
+            }
+            $editor.append($row);
+        });
+        serializeStatusMap($card);
+    }
+
+    function rebuildFieldMapEditor($card, map) {
+        const $editor = $card.find('.field-map-editor');
+        $editor.empty();
+        Object.keys(map).forEach(function (apiKey) {
+            const $row = $(fieldMapRowHtml());
+            $row.find('.field-map-api').val(apiKey);
+            const localCol = String(map[apiKey] != null ? map[apiKey] : '');
+            const $select = $row.find('.field-map-local');
+            if ($select.find('option[value="' + escapeAttrSelector(localCol) + '"]').length) {
+                $select.val(localCol);
+            }
+            $editor.append($row);
+        });
+        serializeFieldMap($card);
+    }
+
+    function showCardNotice($card, msg, kind) {
+        const isOk = kind === 'success';
+        const $status = $card.find('.cashback-save-status');
+        if ($status.length) {
+            $status.text((isOk ? '✅ ' : '❌ ') + msg).css('color', isOk ? 'green' : 'red');
+            setTimeout(function () { $status.text(''); }, isOk ? 10000 : 8000);
+        } else {
+            window.alert(msg);
+        }
+    }
+
+    function pad2(n) {
+        return n < 10 ? '0' + n : String(n);
+    }
+
+    function todayIsoDate() {
+        const d = new Date();
+        return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    }
+
+    $(document).on('click', '.cashback-export-network-btn', function () {
+        const $card = $(this).closest('.cashback-network-card');
+        if (!$card.length) return;
+
+        const slug = String($card.data('network-slug') || '');
+        const name = String($card.data('network-name') || slug);
+
+        const settings = {};
+        NETWORK_SETTINGS_STRING_FIELDS.forEach(function (field) {
+            const $el = $card.find('[name="' + field + '"]').first();
+            if ($el.length) {
+                settings[field] = String($el.val() != null ? $el.val() : '');
+            }
+        });
+
+        const authType = String($card.find('[name="api_auth_type"]').val() || '');
+        if (NETWORK_SETTINGS_AUTH_VALUES.indexOf(authType) !== -1) {
+            settings.api_auth_type = authType;
+        }
+        const pagination = String($card.find('[name="api_coupons_pagination"]').val() || '');
+        if (NETWORK_SETTINGS_PAGINATION_VALUES.indexOf(pagination) !== -1) {
+            settings.api_coupons_pagination = pagination;
+        }
+
+        // Маппинги — читаем актуальное состояние визуальных редакторов
+        settings.api_status_map = readMapEditor($card, '.status-map-row', '.status-map-cpa', '.status-map-local');
+        settings.api_field_map = readMapEditor($card, '.field-map-row', '.field-map-api', '.field-map-local');
+
+        // Coupons maps — из textarea; если валидный JSON-object, экспортируем как объект,
+        // иначе кладём raw-строку (плагин на импорте поднимет её обратно в textarea).
+        const couponsFieldRaw = String($card.find('textarea[name="api_coupons_field_map"]').val() || '');
+        const couponsSpeciesRaw = String($card.find('textarea[name="api_coupons_species_map"]').val() || '');
+        const couponsFieldParsed = tryParseJson(couponsFieldRaw);
+        const couponsSpeciesParsed = tryParseJson(couponsSpeciesRaw);
+        settings.api_coupons_field_map = isPlainObject(couponsFieldParsed) ? couponsFieldParsed : couponsFieldRaw;
+        settings.api_coupons_species_map = isPlainObject(couponsSpeciesParsed) ? couponsSpeciesParsed : couponsSpeciesRaw;
+
+        const obj = {
+            _type: NETWORK_SETTINGS_FILE_TYPE,
+            _version: NETWORK_SETTINGS_FILE_VERSION,
+            _exported_at: new Date().toISOString(),
+            _network_slug: slug,
+            _network_name: name,
+            settings: settings,
+        };
+
+        const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'cashback-network-' + (slug || 'export') + '-' + todayIsoDate() + '.json';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    });
+
+    $(document).on('click', '.cashback-import-network-btn', function () {
+        $('#cashback-import-network-file').trigger('click');
+    });
+
+    $(document).on('change', '#cashback-import-network-file', function () {
+        const $input = $(this);
+        const fileEl = $input.get(0);
+        const file = fileEl && fileEl.files && fileEl.files[0];
+        const $visibleCard = $('.cashback-network-card:visible').first();
+
+        const resetInput = function () {
+            try { $input.val(''); } catch (e) { /* IE quirk, ignore */ }
+        };
+
+        if (!file) {
+            resetInput();
+            return;
+        }
+
+        if (file.size > NETWORK_SETTINGS_FILE_MAX_BYTES) {
+            showCardNotice($visibleCard, i18n.import_file_too_large || 'Файл слишком большой.', 'error');
+            resetInput();
+            return;
+        }
+        if (!/\.json$/i.test(file.name)) {
+            showCardNotice($visibleCard, i18n.import_invalid_type || 'Неподдерживаемый тип файла.', 'error');
+            resetInput();
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            let data;
+            try {
+                data = JSON.parse(String(e.target.result || ''));
+            } catch (err) {
+                showCardNotice($visibleCard, i18n.import_invalid_json || 'Файл повреждён или это не JSON.', 'error');
+                resetInput();
+                return;
+            }
+
+            if (!data
+                || data._type !== NETWORK_SETTINGS_FILE_TYPE
+                || data._version !== NETWORK_SETTINGS_FILE_VERSION
+                || !isPlainObject(data.settings)) {
+                showCardNotice($visibleCard, i18n.import_invalid_signature || 'Файл не похож на экспорт настроек сети.', 'error');
+                resetInput();
+                return;
+            }
+
+            const slug = String(data._network_slug || '');
+            const $targetCard = $('#cashback-api-settings .cashback-network-card[data-network-slug="' + escapeAttrSelector(slug) + '"]').first();
+            if (!$targetCard.length) {
+                const tpl = i18n.import_network_not_found || 'Сеть «%s» не зарегистрирована в плагине, импорт невозможен.';
+                showCardNotice($visibleCard, tpl.replace('%s', slug), 'error');
+                resetInput();
+                return;
+            }
+
+            // Переключиться на целевую сеть (если открыта другая)
+            const targetId = $targetCard.data('network-id');
+            const $selector = $('#cashback-network-selector');
+            if (String($selector.val()) !== String(targetId)) {
+                $selector.val(String(targetId)).trigger('change');
+            }
+
+            applyImportedSettings($targetCard, data.settings);
+
+            resetInput();
+            showCardNotice($targetCard, i18n.import_success || 'Настройки загружены. Проверьте поля и нажмите «Сохранить».', 'success');
+        };
+        reader.onerror = function () {
+            showCardNotice($visibleCard, i18n.import_invalid_json || 'Не удалось прочитать файл.', 'error');
+            resetInput();
+        };
+        reader.readAsText(file);
+    });
+
+    function applyImportedSettings($card, settings) {
+        // Скалярные поля
+        NETWORK_SETTINGS_STRING_FIELDS.forEach(function (field) {
+            if (typeof settings[field] === 'string') {
+                const $el = $card.find('[name="' + field + '"]').first();
+                if ($el.length) {
+                    $el.val(settings[field]);
+                }
+            }
+        });
+
+        // Селекты с whitelist значений
+        if (typeof settings.api_auth_type === 'string'
+            && NETWORK_SETTINGS_AUTH_VALUES.indexOf(settings.api_auth_type) !== -1) {
+            $card.find('[name="api_auth_type"]').val(settings.api_auth_type).trigger('change');
+        }
+        if (typeof settings.api_coupons_pagination === 'string'
+            && NETWORK_SETTINGS_PAGINATION_VALUES.indexOf(settings.api_coupons_pagination) !== -1) {
+            $card.find('[name="api_coupons_pagination"]').val(settings.api_coupons_pagination);
+        }
+
+        // Маппинги — визуальные редакторы
+        if (isPlainObject(settings.api_status_map)) {
+            rebuildStatusMapEditor($card, settings.api_status_map);
+        }
+        if (isPlainObject(settings.api_field_map)) {
+            rebuildFieldMapEditor($card, settings.api_field_map);
+        }
+
+        // Coupons maps — textarea с JSON. Принимаем и объект, и raw-строку.
+        const $couponsField = $card.find('textarea[name="api_coupons_field_map"]');
+        if (isPlainObject(settings.api_coupons_field_map)) {
+            $couponsField.val(JSON.stringify(settings.api_coupons_field_map, null, 2));
+        } else if (typeof settings.api_coupons_field_map === 'string') {
+            $couponsField.val(settings.api_coupons_field_map);
+        }
+        const $couponsSpecies = $card.find('textarea[name="api_coupons_species_map"]');
+        if (isPlainObject(settings.api_coupons_species_map)) {
+            $couponsSpecies.val(JSON.stringify(settings.api_coupons_species_map, null, 2));
+        } else if (typeof settings.api_coupons_species_map === 'string') {
+            $couponsSpecies.val(settings.api_coupons_species_map);
+        }
+    }
+
+    // =========================================================================
     // Проверка соединения с API
     // =========================================================================
 

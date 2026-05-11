@@ -132,19 +132,25 @@ class Cashback_Admin_API_Validation {
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('cashback_api_validation'),
             'i18n'    => array(
-                'validating'        => 'Проверка...',
-                'validate'          => 'Проверить',
-                'match'             => '✅ Данные совпадают',
-                'mismatch'          => '⚠️ Обнаружены расхождения',
-                'error'             => '❌ Ошибка проверки',
-                'syncing'           => 'Синхронизация...',
-                'sync_complete'     => 'Синхронизация завершена',
-                'saving'            => 'Сохранение...',
-                'saved'             => 'Сохранено',
-                'confirm_sync'      => 'Запустить синхронизацию статусов?',
-                'adding'            => 'Добавление...',
-                'confirm_overwrite' => 'Перезаписать локальные данные данными из API?',
-                'confirm_delete'    => 'Удалить эту строку из результатов?',
+                'validating'              => 'Проверка...',
+                'validate'                => 'Проверить',
+                'match'                   => '✅ Данные совпадают',
+                'mismatch'                => '⚠️ Обнаружены расхождения',
+                'error'                   => '❌ Ошибка проверки',
+                'syncing'                 => 'Синхронизация...',
+                'sync_complete'           => 'Синхронизация завершена',
+                'saving'                  => 'Сохранение...',
+                'saved'                   => 'Сохранено',
+                'confirm_sync'            => 'Запустить синхронизацию статусов?',
+                'adding'                  => 'Добавление...',
+                'confirm_overwrite'       => 'Перезаписать локальные данные данными из API?',
+                'confirm_delete'          => 'Удалить эту строку из результатов?',
+                'import_invalid_type'     => 'Неподдерживаемый тип файла. Ожидается JSON-файл настроек сети.',
+                'import_invalid_signature' => 'Файл не похож на экспорт настроек сети.',
+                'import_invalid_json'     => 'Файл повреждён или это не JSON.',
+                'import_file_too_large'   => 'Файл больше 1 МБ. Это не похоже на экспорт настроек.',
+                'import_network_not_found' => 'Сеть «%s» не зарегистрирована в плагине, импорт невозможен.',
+                'import_success'          => 'Настройки загружены. Проверьте поля и нажмите «Сохранить настройки». Client ID и Client Secret введите заново.',
             ),
         ));
 
@@ -253,7 +259,11 @@ class Cashback_Admin_API_Validation {
                 $credentials_undecryptable = $api_client->has_undecryptable_credentials((int) $network['id']);
                 $saved_scope               = $saved_credentials['scope'] ?? '';
             ?>
-                <div class="cashback-network-card" data-network-id="<?php echo esc_attr($network['id']); ?>" style="display:none">
+                <div class="cashback-network-card"
+                    data-network-id="<?php echo esc_attr($network['id']); ?>"
+                    data-network-slug="<?php echo esc_attr($network['slug']); ?>"
+                    data-network-name="<?php echo esc_attr($network['name']); ?>"
+                    style="display:none">
                     <h2><?php echo esc_html($network['name']); ?>
                         <span class="slug">(<?php echo esc_html($network['slug']); ?>)</span>
                         <?php if ($network['is_active']) : ?>
@@ -573,7 +583,7 @@ echo 'style="display:none"';}
                         </tr>
                     </table>
 
-                    <p>
+                    <p class="cashback-network-actions">
                         <button type="button" class="button button-primary cashback-save-network-btn"
                             data-network-id="<?php echo esc_attr($network['id']); ?>">
                             Сохранить настройки
@@ -582,10 +592,22 @@ echo 'style="display:none"';}
                             data-network-id="<?php echo esc_attr($network['id']); ?>">
                             Проверить соединение
                         </button>
+                        <button type="button" class="button cashback-export-network-btn"
+                            data-network-id="<?php echo esc_attr($network['id']); ?>">
+                            Скачать настройки
+                        </button>
+                        <button type="button" class="button cashback-import-network-btn"
+                            data-network-id="<?php echo esc_attr($network['id']); ?>">
+                            Загрузить настройки
+                        </button>
                         <span class="cashback-save-status"></span>
                     </p>
                 </div>
             <?php endforeach; ?>
+
+            <?php if (!empty($networks)) : ?>
+                <input type="file" id="cashback-import-network-file" accept=".json,application/json" hidden>
+            <?php endif; ?>
 
             <?php if (empty($networks)) : ?>
                 <div class="notice notice-warning">
