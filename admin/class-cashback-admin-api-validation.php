@@ -124,7 +124,7 @@ class Cashback_Admin_API_Validation {
             'cashback-api-validation',
             plugin_dir_url(__DIR__) . 'admin/js/api-validation.js',
             array( 'jquery', 'cashback-pagination' ),
-            '5.1.0',
+            '5.2.0',
             true
         );
 
@@ -158,7 +158,7 @@ class Cashback_Admin_API_Validation {
             'cashback-api-validation',
             plugin_dir_url(__DIR__) . 'admin/css/api-validation.css',
             array(),
-            '5.1.0'
+            '5.2.0'
         );
     }
 
