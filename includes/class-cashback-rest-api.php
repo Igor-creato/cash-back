@@ -21,10 +21,18 @@ if (!defined('ABSPATH')) {
 class Cashback_REST_API {
 
     private const NAMESPACE             = 'cashback/v1';
-    private const STORES_CACHE_KEY      = 'cashback_ext_stores_cache';
-    private const STORES_CACHE_TTL      = 6 * HOUR_IN_SECONDS;
-    private const ACTIVATION_WINDOW     = 30 * MINUTE_IN_SECONDS;
-    private const TRANSACTIONS_PER_PAGE = 10;
+    // v2: формат cashback_value переключён с legacy _cashback_display_value на
+    // динамический Cashback_Cashback_Display_Calculator::compute() — теперь
+    // отдаём строку с префиксом «до » для multi-tariff магазинов (matches
+    // карточку товара). Bump ключа инвалидирует все старые transient'ы.
+    private const STORES_CACHE_KEY       = 'cashback_ext_stores_cache_v2';
+    private const STORES_CACHE_TTL       = 6 * HOUR_IN_SECONDS;
+    private const ACTIVATION_WINDOW      = 30 * MINUTE_IN_SECONDS;
+    private const TRANSACTIONS_PER_PAGE  = 10;
+    private const PROMOCODES_CACHE_PREFIX      = 'cashback_ext_promocodes_';
+    private const PROMOCODES_CACHE_TTL         = HOUR_IN_SECONDS;
+    private const PROMOCODES_CACHE_VERSION_OPT = 'cashback_ext_promocodes_cache_gen';
+    private const PROMOCODES_LIMIT             = 30;
 
     private static ?self $instance = null;
 
@@ -51,13 +59,31 @@ class Cashback_REST_API {
         add_action('save_post_product', array( $this, 'flush_stores_cache' ));
         add_action('delete_post', array( $this, 'flush_stores_cache' ));
         add_action('woocommerce_update_product', array( $this, 'flush_stores_cache' ));
+
+        // Сброс кеша промокодов после batch upsert'а из cron fetcher'а.
+        // Bump версии — O(1) инвалидация всех per-product transient'ов
+        // (старые orphan'ятся и подбираются WP transient GC).
+        add_action('cashback_promocodes_upserted_after_cron', array( $this, 'bump_promocodes_cache_version' ));
     }
 
     /**
      * Сброс transient-кеша списка магазинов.
+     * Также инвалидирует кеш промокодов всех продуктов, т.к. при изменении
+     * товара могла поменяться связка (_affiliate_network_id, _offer_id).
      */
     public function flush_stores_cache(): void {
         delete_transient(self::STORES_CACHE_KEY);
+        $this->bump_promocodes_cache_version();
+    }
+
+    /**
+     * Bump generation-counter промокодного кэша. Все ключи вида
+     * cashback_ext_promocodes_v{N}_<product_id> перестают читаться,
+     * следующий запрос пересчитает значение.
+     */
+    public function bump_promocodes_cache_version(): void {
+        $current = (int) get_option(self::PROMOCODES_CACHE_VERSION_OPT, 1);
+        update_option(self::PROMOCODES_CACHE_VERSION_OPT, $current + 1, false);
     }
 
     /**
@@ -146,6 +172,23 @@ class Cashback_REST_API {
             'methods'             => 'GET',
             'callback'            => array( $this, 'get_stores' ),
             'permission_callback' => '__return_true',
+        ));
+
+        // Публичный: активные промокоды конкретного магазина (по product_id).
+        // Используется браузерным расширением для отображения купонов в popup
+        // когда пользователь стоит на странице партнёрского магазина.
+        register_rest_route(self::NAMESPACE, '/promocodes', array(
+            'methods'             => 'GET',
+            'callback'            => array( $this, 'get_promocodes' ),
+            'permission_callback' => '__return_true',
+            'args'                => array(
+                'product_id' => array(
+                    'type'              => 'integer',
+                    'required'          => true,
+                    'minimum'           => 1,
+                    'sanitize_callback' => 'absint',
+                ),
+            ),
         ));
 
         // Профиль и баланс текущего пользователя
@@ -392,11 +435,27 @@ class Cashback_REST_API {
                 continue;
             }
 
+            // Динамический формат «до X%»/«X%» через тот же калькулятор, что
+            // рендерит карточку товара. user_id=0 — guest rate, идентичный
+            // тому, что видит неавторизованный посетитель карточки.
+            // Legacy fallback на _cashback_display_value для товаров без
+            // тарифов в cashback_shop_tariffs (не-импортированные/manual).
+            $cashback_value = '';
+            if ( class_exists( 'Cashback_Cashback_Display_Calculator' ) ) {
+                $compute = Cashback_Cashback_Display_Calculator::compute( (int) $product['ID'], 0 );
+                if ( ! empty( $compute['formatted'] ) ) {
+                    $cashback_value = (string) $compute['formatted'];
+                }
+            }
+            if ( $cashback_value === '' ) {
+                $cashback_value = (string) ( $product['cashback_value'] ?? '' );
+            }
+
             $stores[] = array(
                 'domain'         => $domain,
                 'store_name'     => $product['post_title'] ?: ( $product['network_name'] ?: $domain ),
                 'cashback_label' => $product['cashback_label'] ?: 'Кэшбэк',
-                'cashback_value' => $product['cashback_value'] ?: '',
+                'cashback_value' => $cashback_value,
                 'product_id'     => (int) $product['ID'],
                 'network_slug'   => $product['network_slug'] ?: '',
                 'popup_mode'     => $product['popup_mode'] ?: 'show',
@@ -451,9 +510,21 @@ class Cashback_REST_API {
         $pending   = Cashback_Money::from_db_value( (string) ( $balance['pending_balance'] ?? '0' ) );
         $paid      = Cashback_Money::from_db_value( (string) ( $balance['paid_balance'] ?? '0' ) );
 
+        // URL личного кабинета — для popup расширения (имя пользователя как
+        // кликабельная ссылка). Предпочитаем WooCommerce-настроенную страницу
+        // My Account, fallback на стандартный /my-account/.
+        $account_url = '';
+        if ( function_exists( 'wc_get_page_permalink' ) ) {
+            $account_url = (string) wc_get_page_permalink( 'myaccount' );
+        }
+        if ( $account_url === '' ) {
+            $account_url = home_url( '/my-account/' );
+        }
+
         return new \WP_REST_Response(array(
             'user_id'       => $user_id,
             'display_name'  => $user->display_name,
+            'account_url'   => $account_url,
             'balance'       => array(
                 'available' => (float) $available->to_string(),
                 'pending'   => (float) $pending->to_string(),
@@ -801,6 +872,75 @@ class Cashback_REST_API {
         ), 200);
     }
 
+    /**
+     * GET /promocodes — активные промокоды магазина для popup расширения.
+     *
+     * Резолвит product_id → (_affiliate_network_id, _offer_id) и забирает
+     * активные купоны через Cashback_Promocodes_Repository::get_active_for_campaign.
+     * Возвращает плоский DTO для рендеринга в popup без серверного HTML.
+     *
+     * Public endpoint (как /stores). Маркетинговая информация, дополнительно
+     * Origin-check в authenticate_extension_cookie ограничивает доступ.
+     *
+     * @param \WP_REST_Request $request Параметры: product_id (int, required).
+     * @return \WP_REST_Response 200 ok / 400 invalid / 404 product not found
+     *                            / 503 promocodes module unavailable.
+     */
+    public function get_promocodes( \WP_REST_Request $request ): \WP_REST_Response {
+        $product_id = (int) $request->get_param('product_id');
+        if ( $product_id <= 0 ) {
+            return new \WP_REST_Response(array(
+                'code'    => 'invalid_product_id',
+                'message' => 'Параметр product_id обязателен.',
+            ), 400);
+        }
+
+        $network_id     = (int) get_post_meta( $product_id, '_affiliate_network_id', true );
+        $advcampaign_id = (string) get_post_meta( $product_id, '_offer_id', true );
+
+        if ( $network_id <= 0 || $advcampaign_id === '' ) {
+            return new \WP_REST_Response(array(
+                'code'    => 'product_not_indexed',
+                'message' => 'Магазин не привязан к CPA-сети.',
+            ), 404);
+        }
+
+        if ( ! class_exists( 'Cashback_Promocodes_Repository' ) ) {
+            return new \WP_REST_Response(array(
+                'code'    => 'promocodes_unavailable',
+                'message' => 'Модуль промокодов недоступен.',
+            ), 503);
+        }
+
+        $cache_key = $this->promocodes_cache_key( $product_id );
+        $cached    = get_transient( $cache_key );
+        if ( is_array( $cached ) ) {
+            return new \WP_REST_Response( $cached, 200 );
+        }
+
+        $repository = new Cashback_Promocodes_Repository();
+        $rows       = $repository->get_active_for_campaign(
+            $network_id,
+            $advcampaign_id,
+            array( 'limit' => self::PROMOCODES_LIMIT )
+        );
+
+        $items = array();
+        foreach ( $rows as $row ) {
+            $items[] = $this->format_promocode_row( $row );
+        }
+
+        $response = array(
+            'product_id' => $product_id,
+            'items'      => $items,
+            'total'      => count( $items ),
+        );
+
+        set_transient( $cache_key, $response, self::PROMOCODES_CACHE_TTL );
+
+        return new \WP_REST_Response( $response, 200 );
+    }
+
     // ─── Private helpers ───
 
     /**
@@ -839,5 +979,51 @@ class Cashback_REST_API {
     private function get_store_domain( int $product_id ): string {
         $raw = (string) get_post_meta($product_id, '_store_domain', true);
         return $this->normalize_store_domain($raw);
+    }
+
+    /**
+     * Ключ transient'а промокодов с глобальной генерацией для O(1) инвалидации.
+     */
+    private function promocodes_cache_key( int $product_id ): string {
+        $version = (int) get_option(self::PROMOCODES_CACHE_VERSION_OPT, 1);
+        return self::PROMOCODES_CACHE_PREFIX . 'v' . $version . '_' . $product_id;
+    }
+
+    /**
+     * Маппинг строки из cashback_promocodes в плоский ответ для popup'а.
+     * Поле date_end → 'YYYY-MM-DD' (без времени), redirect_url ведёт на
+     * server-side handler Cashback_Promocodes_Redirect: создаёт click_log
+     * + click_session и делает 302 на CPA-URL — полная аналогия с обычной
+     * cashback-активацией.
+     *
+     * @param array<string,mixed> $row
+     * @return array<string,mixed>
+     */
+    private function format_promocode_row( array $row ): array {
+        $promo_id = (int) ( $row['id'] ?? 0 );
+        $species  = (string) ( $row['species'] ?? 'other' );
+
+        $date_end_raw = (string) ( $row['date_end'] ?? '' );
+        $date_end     = '';
+        if ( $date_end_raw !== '' ) {
+            // Repository хранит UTC datetime; для popup достаточно даты.
+            $date_end = substr( $date_end_raw, 0, 10 );
+        }
+
+        $redirect_url = add_query_arg(
+            array( 'cashback_promo_click' => $promo_id ),
+            home_url( '/' )
+        );
+
+        return array(
+            'id'           => $promo_id,
+            'species'      => $species,
+            'name'         => (string) ( $row['name'] ?? '' ),
+            'promocode'    => $species === 'promocode' ? (string) ( $row['promocode'] ?? '' ) : '',
+            'discount'     => (string) ( $row['discount'] ?? '' ),
+            'date_end'     => $date_end,
+            'is_exclusive' => ! empty( $row['is_exclusive'] ),
+            'redirect_url' => $redirect_url,
+        );
     }
 }

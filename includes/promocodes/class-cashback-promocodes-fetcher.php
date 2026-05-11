@@ -91,6 +91,7 @@ final class Cashback_Promocodes_Fetcher {
                     $network_id = (int) $network->id;
                     $pairs      = $this->load_product_pairs( $network_id );
 
+                    $pair_upserted_any = false;
                     foreach ( $pairs as $pair ) {
                         try {
                             $advcampaign_id = (string) $pair->advcampaign_id;
@@ -99,11 +100,20 @@ final class Cashback_Promocodes_Fetcher {
                             }
                             $coupons = $adapter->fetch_coupons( $advcampaign_id );
                             $result  = $this->repository->upsert_for_campaign( $network_id, $advcampaign_id, $coupons );
-                            $summary['total_upserted'] += (int) ( $result['upserted'] ?? 0 );
+                            $pair_upserted = (int) ( $result['upserted'] ?? 0 );
+                            $summary['total_upserted'] += $pair_upserted;
+                            if ( $pair_upserted > 0 || ( (int) ( $result['deactivated'] ?? 0 ) ) > 0 ) {
+                                $pair_upserted_any = true;
+                            }
                         } catch ( \Throwable $e ) {
                             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                             error_log( '[Cashback Promocodes] fetch_for_pair failed: ' . $e->getMessage() );
                         }
+                    }
+                    // Сигналим REST API инвалидировать кэш промокодов в popup
+                    // расширения — bump общей версии транзиентов.
+                    if ( $pair_upserted_any && function_exists( 'do_action' ) ) {
+                        do_action( 'cashback_promocodes_upserted_after_cron', $network_id );
                     }
                     ++$summary['networks_processed'];
                 } catch ( \Throwable $e ) {
@@ -140,7 +150,13 @@ final class Cashback_Promocodes_Fetcher {
 
         try {
             $coupons = $adapter->fetch_coupons( $advcampaign_id );
-            return $this->repository->upsert_for_campaign( $network_id, $advcampaign_id, $coupons );
+            $result  = $this->repository->upsert_for_campaign( $network_id, $advcampaign_id, $coupons );
+            $changed = ( (int) ( $result['upserted'] ?? 0 ) ) > 0
+                || ( (int) ( $result['deactivated'] ?? 0 ) ) > 0;
+            if ( $changed && function_exists( 'do_action' ) ) {
+                do_action( 'cashback_promocodes_upserted_after_cron', $network_id );
+            }
+            return $result;
         } catch ( \Throwable $e ) {
             return array( 'upserted' => 0, 'deactivated' => 0, 'error' => $e->getMessage() );
         }
