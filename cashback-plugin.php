@@ -102,6 +102,19 @@ function cashback_asset_url( string $relative_path ): string {
     return add_query_arg('cv', $version, $url);
 }
 
+// REST per_page shield: снимаем $_GET['per_page'] на REST-запросах ДО любого
+// потенциального хука темы. Тема WoodMart на любом запросе с $_GET['per_page']
+// шлёт Set-Cookie: shop_per_page=<value>; path=/, не разделяя REST и frontend —
+// фоновые fetch из браузерного расширения утекали в storefront, форсируя
+// рендер «5 карточек на странице каталога магазинов» у пользователей.
+// Подключаем самым первым (раньше WoodMart functions.php / любого хука).
+require_once __DIR__ . '/includes/cashback-rest-per-page-shield.php';
+cashback_apply_rest_per_page_shield(
+    // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- $request_uri используется только в strpos('/wp-json/'); никакой XSS-инъекции, sanitize_text_field изменил бы UTF-8 в нелатинских slug'ах.
+    isset($_SERVER['REQUEST_URI']) ? (string) wp_unslash($_SERVER['REQUEST_URI']) : null,
+    $_GET // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- защитное снятие GET-параметра, не чтение пользовательского ввода.
+);
+
 // DB capability gate: проверка совместимости БД (MariaDB 10.1.4+, не MySQL).
 // Вынесено в отдельный файл для unit-тестируемости парсера версии в изоляции
 // (см. development/test/tests/DbCapabilityGateTest.php). Загружаем рано —
@@ -119,6 +132,19 @@ require_once __DIR__ . '/includes/cashback-triggers-inventory.php';
 // всех per-tab CSS файлов кабинета. Снимает дублирование :root в 6 файлах.
 require_once __DIR__ . '/includes/class-cashback-account-base-assets.php';
 Cashback_Account_Base_Assets::register();
+
+// WoodMart per-page floor: defense-in-depth поверх REST-shield. Поднимает
+// minimum для woodmart_get_min_per_page до 9 (нижняя граница admin-списка
+// 9/12/18/24), что отбрасывает любые legacy-cookie shop_per_page < 9.
+require_once __DIR__ . '/includes/class-cashback-woodmart-per-page-floor.php';
+Cashback_Woodmart_Per_Page_Floor::init();
+
+// Sanitize stale `shop_per_page` cookie у пользователей, которым раннее
+// расширение уже успело прописать значение вне набора 9/12/18/24. Скрипт
+// загружается на любой frontend-странице (priority=5, in_footer=false),
+// стирает cookie и при следующей перезагрузке WoodMart берёт Theme Option.
+require_once __DIR__ . '/includes/class-cashback-shop-per-page-sanitize-assets.php';
+Cashback_Shop_Per_Page_Sanitize_Assets::register();
 
 /**
  * Проверка совместимости с текущими версиями PHP и WordPress

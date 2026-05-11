@@ -198,7 +198,21 @@ class Cashback_REST_API {
             'permission_callback' => array( $this, 'check_user_logged_in' ),
         ));
 
-        // Транзакции текущего пользователя
+        // Транзакции текущего пользователя.
+        //
+        // Параметр пагинации: предпочтительный `limit`, legacy `per_page`
+        // оставлен для backward-compat со старыми версиями расширения (до
+        // bump'а utils/api.js). Имя `limit` выбрано взамен `per_page`, чтобы
+        // не триггерить WoodMart-хук `setcookie('shop_per_page', $_GET['per_page'])`
+        // в functions.php темы, который иначе утекал значение из фонового
+        // REST-fetch в storefront-страницу каталога магазинов и форсил
+        // рендер «5 карточек».
+        //
+        // Дополнительная защита — серверный shield в cashback-plugin.php снимает
+        // $_GET['per_page'] для всех `/wp-json/*` запросов до загрузки темы.
+        // REST_Server передаёт значения через распарсенные args, не через $_GET,
+        // поэтому наш контракт не ломается. См. development/test/tests/
+        // RestApiTransactionsLimitParamTest.php.
         register_rest_route(self::NAMESPACE, '/me/transactions', array(
             'methods'             => 'GET',
             'callback'            => array( $this, 'get_transactions' ),
@@ -210,9 +224,14 @@ class Cashback_REST_API {
                     'minimum'           => 1,
                     'sanitize_callback' => 'absint',
                 ),
+                'limit'    => array(
+                    'type'              => 'integer',
+                    'minimum'           => 1,
+                    'maximum'           => 50,
+                    'sanitize_callback' => 'absint',
+                ),
                 'per_page' => array(
                     'type'              => 'integer',
-                    'default'           => self::TRANSACTIONS_PER_PAGE,
                     'minimum'           => 1,
                     'maximum'           => 50,
                     'sanitize_callback' => 'absint',
@@ -549,7 +568,10 @@ class Cashback_REST_API {
 
         $user_id  = get_current_user_id();
         $page     = $request->get_param('page');
-        $per_page = $request->get_param('per_page');
+        // limit имеет приоритет над per_page; per_page оставлен для backward-compat
+        // со старыми версиями расширения (до bump'а api.js). Если ни один не передан —
+        // используем константу плагина (= 10).
+        $per_page = (int) ( $request->get_param('limit') ?? $request->get_param('per_page') ?? self::TRANSACTIONS_PER_PAGE );
         $offset   = ( $page - 1 ) * $per_page;
 
         $table = $wpdb->prefix . 'cashback_transactions';
