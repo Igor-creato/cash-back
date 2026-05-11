@@ -120,6 +120,111 @@ jQuery(document).ready(function($) {
         $('#bulk-rate-info').text('');
     });
 
+    // Массовое изменение минимальной суммы выплаты — предпросмотр
+    $('#bulk-min-payout-preview').on('click', function() {
+        var oldAmount = $('#bulk-old-min-payout').val().trim();
+        var newAmount = $('#bulk-new-min-payout').val().trim();
+
+        if (!oldAmount || !newAmount) {
+            alert('Заполните оба поля.');
+            return;
+        }
+
+        if (oldAmount.toLowerCase() !== 'all') {
+            var parsedOld = parseFloat(oldAmount);
+            if (isNaN(parsedOld) || parsedOld < 1 || parsedOld > 100000) {
+                alert('Текущая сумма должна быть числом от 1 до 100 000 ₽ или "all".');
+                return;
+            }
+        }
+
+        var parsedNew = parseFloat(newAmount);
+        if (isNaN(parsedNew) || parsedNew < 1 || parsedNew > 100000) {
+            alert('Новая сумма должна быть числом от 1 до 100 000 ₽.');
+            return;
+        }
+
+        var $info = $('#bulk-min-payout-info');
+        var $applyBtn = $('#bulk-min-payout-apply');
+        $info.text('Загрузка...');
+        $applyBtn.prop('disabled', true);
+
+        $.post(ajaxurl, {
+            action: 'bulk_update_min_payout',
+            nonce: cashbackUsersData.bulkMinPayoutNonce,
+            old_amount: oldAmount,
+            new_amount: newAmount,
+            preview: 1
+        }, function(response) {
+            if (response.success) {
+                var count = response.data.count;
+                if (count === 0) {
+                    $info.text('Не найдено пользователей для обновления.');
+                    $applyBtn.prop('disabled', true);
+                } else {
+                    var label = oldAmount.toLowerCase() === 'all'
+                        ? 'Будет обновлено пользователей: ' + count + ' (все → ' + newAmount + ' ₽)'
+                        : 'Будет обновлено пользователей: ' + count + ' (' + oldAmount + ' ₽ → ' + newAmount + ' ₽)';
+                    $info.text(label);
+                    $applyBtn.prop('disabled', false);
+                }
+            } else {
+                $info.text('Ошибка: ' + response.data.message);
+                $applyBtn.prop('disabled', true);
+            }
+        }).fail(function() {
+            $info.text('Ошибка соединения.');
+            $applyBtn.prop('disabled', true);
+        });
+    });
+
+    // Массовое изменение минимальной суммы выплаты — применение
+    $('#bulk-min-payout-apply').on('click', function() {
+        var oldAmount = $('#bulk-old-min-payout').val().trim();
+        var newAmount = $('#bulk-new-min-payout').val().trim();
+        var infoText = $('#bulk-min-payout-info').text();
+
+        if (!confirm('Подтвердите массовое изменение минимальной суммы выплаты.\n\n' + infoText)) {
+            return;
+        }
+
+        var $info = $('#bulk-min-payout-info');
+        var $applyBtn = $('#bulk-min-payout-apply');
+        $applyBtn.prop('disabled', true);
+        $info.text('Обновление...');
+
+        $.post(ajaxurl, {
+            action: 'bulk_update_min_payout',
+            nonce: cashbackUsersData.bulkMinPayoutNonce,
+            request_id: makeRequestId(),
+            old_amount: oldAmount,
+            new_amount: newAmount,
+            preview: 0
+        }, function(response) {
+            if (response.success) {
+                $info.html('<span style="color: green;">Обновлено пользователей: ' + response.data.updated + '</span>');
+                $applyBtn.prop('disabled', true);
+                $('#users-tbody tr').each(function() {
+                    var $cell = $(this).find('.edit-field[data-field="min_payout_amount"]');
+                    var currentValue = $cell.text().trim();
+                    if (oldAmount.toLowerCase() === 'all' || currentValue === parseFloat(oldAmount).toFixed(2)) {
+                        $cell.text(parseFloat(newAmount).toFixed(2));
+                    }
+                });
+            } else {
+                $info.html('<span style="color: red;">Ошибка: ' + escapeHtml(response.data.message) + '</span>');
+            }
+        }).fail(function() {
+            $info.html('<span style="color: red;">Ошибка соединения.</span>');
+        });
+    });
+
+    // Сброс кнопки "Применить" при изменении полей
+    $('#bulk-old-min-payout, #bulk-new-min-payout').on('input', function() {
+        $('#bulk-min-payout-apply').prop('disabled', true);
+        $('#bulk-min-payout-info').text('');
+    });
+
     // Обработка фильтра по статусу
     $('#filter-submit').on('click', function() {
         var status = $('#filter-status').val();

@@ -40,6 +40,7 @@ class Cashback_Users_Management_Admin {
         add_action('wp_ajax_update_user_profile', array( $this, 'handle_update_user_profile' ));
         add_action('wp_ajax_get_user_profile', array( $this, 'handle_get_user_profile' ));
         add_action('wp_ajax_bulk_update_cashback_rate', array( $this, 'handle_bulk_update_cashback_rate' ));
+        add_action('wp_ajax_bulk_update_min_payout', array( $this, 'handle_bulk_update_min_payout' ));
 
         // Группа 15, S2: ручная корректировка баланса через ledger (type=adjustment).
         add_action('wp_ajax_cashback_adjust_balance', array( $this, 'handle_adjust_balance' ));
@@ -79,17 +80,18 @@ class Cashback_Users_Management_Admin {
             'cashback-admin-users',
             plugins_url('../assets/js/admin-users-management.js', __FILE__),
             array( 'jquery' ),
-            '1.0.0',
+            '1.1.0',
             true
         );
 
         wp_localize_script('cashback-admin-users', 'cashbackUsersData', array(
-            'updateNonce'    => wp_create_nonce('update_user_profile_nonce'),
-            'getNonce'       => wp_create_nonce('get_user_profile_nonce'),
-            'bulkRateNonce'  => wp_create_nonce('bulk_update_cashback_rate_nonce'),
-            'anonymizeNonce' => wp_create_nonce('cashback_anonymize_user_nonce'),
-            'ajaxUrl'        => admin_url('admin-ajax.php'),
-            'i18nAnonymize'  => array(
+            'updateNonce'        => wp_create_nonce('update_user_profile_nonce'),
+            'getNonce'           => wp_create_nonce('get_user_profile_nonce'),
+            'bulkRateNonce'      => wp_create_nonce('bulk_update_cashback_rate_nonce'),
+            'bulkMinPayoutNonce' => wp_create_nonce('bulk_update_min_payout_nonce'),
+            'anonymizeNonce'     => wp_create_nonce('cashback_anonymize_user_nonce'),
+            'ajaxUrl'            => admin_url('admin-ajax.php'),
+            'i18nAnonymize'      => array(
                 'confirmTitle'   => __('Анонимизировать пользователя?', 'cashback-plugin'),
                 'confirmBody'    => __('PII (логин, email, имя, реквизиты) будет стёрт. Финансовая история (транзакции, выплаты, ledger) сохраняется ≥ 5 лет согласно 115-ФЗ / НК ст. 23. Действие необратимо.', 'cashback-plugin'),
                 'reasonLabel'    => __('Причина (для журнала аудита, минимум 10 символов)', 'cashback-plugin'),
@@ -322,6 +324,26 @@ class Cashback_Users_Management_Admin {
                     В поле <strong>«Текущая ставка»</strong> укажите процент, который нужно заменить (например, <code>60</code>),
                     или введите <code>all</code>, чтобы изменить ставку у всех пользователей сразу.<br>
                     В поле <strong>«Новая ставка»</strong> укажите новый процент кэшбэка (от 0 до 100).<br>
+                    Нажмите <strong>«Предпросмотр»</strong>, чтобы увидеть количество затронутых пользователей, затем <strong>«Применить»</strong> для подтверждения.
+                </p>
+            </div>
+
+            <!-- Массовое изменение минимальной суммы выплаты -->
+            <div class="postbox" style="padding: 12px 16px; margin-bottom: 20px;">
+                <h3 style="margin: 0 0 10px;">Массовое изменение минимальной суммы выплаты</h3>
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    <label for="bulk-old-min-payout">Текущая сумма:</label>
+                    <input type="text" id="bulk-old-min-payout" placeholder="100 или all" style="width: 110px;" />
+                    <label for="bulk-new-min-payout">Новая сумма (₽):</label>
+                    <input type="number" id="bulk-new-min-payout" step="0.01" min="1" max="100000" placeholder="150" style="width: 110px;" />
+                    <button type="button" id="bulk-min-payout-preview" class="button">Предпросмотр</button>
+                    <button type="button" id="bulk-min-payout-apply" class="button button-primary" disabled>Применить</button>
+                    <span id="bulk-min-payout-info" style="color: #666;"></span>
+                </div>
+                <p class="description" style="margin-top: 10px;">
+                    В поле <strong>«Текущая сумма»</strong> укажите значение, которое нужно заменить (например, <code>100</code>),
+                    или введите <code>all</code>, чтобы изменить минимальную сумму у всех пользователей сразу.<br>
+                    В поле <strong>«Новая сумма»</strong> укажите новый минимум (от 1 до 100&nbsp;000 ₽).<br>
                     Нажмите <strong>«Предпросмотр»</strong>, чтобы увидеть количество затронутых пользователей, затем <strong>«Применить»</strong> для подтверждения.
                 </p>
             </div>
@@ -1016,6 +1038,194 @@ class Cashback_Users_Management_Admin {
             'updated'  => (int) $result,
             'old_rate' => $old_rate_raw,
             'new_rate' => $new_rate,
+        );
+
+        if ($idem_request_id !== '') {
+            Cashback_Idempotency::store_result($idem_scope, $idem_user_id, $idem_request_id, $response_data);
+        }
+
+        wp_send_json_success($response_data);
+    }
+
+    /**
+     * Обработка AJAX запроса на массовое обновление минимальной суммы выплаты.
+     *
+     * Полный аналог handle_bulk_update_cashback_rate: preview/apply, COUNT перед UPDATE,
+     * server-side дедуп request_id (Группа 5 ADR, F-34-005), audit-log.
+     * Журнал в Cashback_Rate_History_Admin не используется (его whitelist — только проценты).
+     */
+    public function handle_bulk_update_min_payout(): void {
+        if (!isset($_POST['nonce'])) {
+            wp_send_json_error(array( 'message' => 'Отсутствует nonce.' ));
+            return;
+        }
+
+        if (!wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'bulk_update_min_payout_nonce')) {
+            wp_send_json_error(array( 'message' => 'Неверный nonce.' ));
+            return;
+        }
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array( 'message' => 'Недостаточно прав для выполнения этого действия.' ));
+            return;
+        }
+
+        // Server-side дедуп request_id. Preview — read-only, без claim; apply — full guard.
+        $preview_raw     = !empty($_POST['preview']);
+        $idem_scope      = 'admin_users_bulk_min_payout';
+        $idem_user_id    = get_current_user_id();
+        $idem_request_id = '';
+        if (!$preview_raw && isset($_POST['request_id']) && is_string($_POST['request_id'])) {
+            $idem_request_id = Cashback_Idempotency::normalize_request_id(
+                sanitize_text_field(wp_unslash($_POST['request_id']))
+            );
+        }
+        if ($idem_request_id !== '') {
+            $idem_stored = Cashback_Idempotency::get_stored_result($idem_scope, $idem_user_id, $idem_request_id);
+            if ($idem_stored !== null) {
+                wp_send_json_success($idem_stored);
+                return;
+            }
+            if (!Cashback_Idempotency::claim($idem_scope, $idem_user_id, $idem_request_id)) {
+                wp_send_json_error(array(
+                    'code'    => 'in_progress',
+                    'message' => 'Запрос уже обрабатывается. Повторите через несколько секунд.',
+                ), 409);
+                return;
+            }
+        }
+
+        if (!isset($_POST['old_amount'], $_POST['new_amount'])) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
+            wp_send_json_error(array( 'message' => 'Не указаны параметры.' ));
+            return;
+        }
+
+        $old_amount_raw = trim(sanitize_text_field(wp_unslash($_POST['old_amount'])));
+        $new_amount     = sanitize_text_field(wp_unslash($_POST['new_amount']));
+        $preview        = !empty($_POST['preview']);
+
+        if (
+            !preg_match('/^\d+(\.\d{1,2})?$/', $new_amount)
+            || bccomp($new_amount, '1', 2) < 0
+            || bccomp($new_amount, '100000', 2) > 0
+        ) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
+            wp_send_json_error(array( 'message' => 'Новая сумма должна быть числом от 1 до 100 000 ₽.' ));
+            return;
+        }
+
+        global $wpdb;
+
+        $is_all = ( strtolower($old_amount_raw) === 'all' );
+
+        if (!$is_all) {
+            if (
+                !preg_match('/^\d+(\.\d{1,2})?$/', $old_amount_raw)
+                || bccomp($old_amount_raw, '1', 2) < 0
+                || bccomp($old_amount_raw, '100000', 2) > 0
+            ) {
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                }
+                wp_send_json_error(array( 'message' => 'Текущая сумма должна быть числом от 1 до 100 000 ₽ или "all".' ));
+                return;
+            }
+        }
+
+        if ($is_all) {
+            $count = (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*) FROM %i WHERE min_payout_amount != %s',
+                $this->profile_table_name,
+                $new_amount
+            ));
+        } else {
+            $count = (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*) FROM %i WHERE min_payout_amount = %s',
+                $this->profile_table_name,
+                $old_amount_raw
+            ));
+        }
+
+        if ($preview) {
+            wp_send_json_success(array(
+                'count'      => $count,
+                'old_amount' => $old_amount_raw,
+                'new_amount' => $new_amount,
+            ));
+            return;
+        }
+
+        if ($count === 0) {
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
+            wp_send_json_error(array( 'message' => 'Не найдено пользователей для обновления.' ));
+            return;
+        }
+
+        $wpdb->query('START TRANSACTION');
+
+        try {
+            if ($is_all) {
+                $result = $wpdb->query($wpdb->prepare(
+                    'UPDATE %i SET min_payout_amount = %s, updated_at = %s WHERE min_payout_amount != %s',
+                    $this->profile_table_name,
+                    $new_amount,
+                    Cashback_Time::now_mysql(),
+                    $new_amount
+                ));
+            } else {
+                $result = $wpdb->query($wpdb->prepare(
+                    'UPDATE %i SET min_payout_amount = %s, updated_at = %s WHERE min_payout_amount = %s',
+                    $this->profile_table_name,
+                    $new_amount,
+                    Cashback_Time::now_mysql(),
+                    $old_amount_raw
+                ));
+            }
+
+            if ($result === false) {
+                $wpdb->query('ROLLBACK');
+                if ($idem_request_id !== '') {
+                    Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+                }
+                wp_send_json_error(array( 'message' => 'Ошибка при обновлении базы данных.' ));
+                return;
+            }
+
+            if (class_exists('Cashback_Encryption')) {
+                Cashback_Encryption::write_audit_log(
+                    'bulk_min_payout_update',
+                    get_current_user_id(),
+                    'cashback_user_profile',
+                    null,
+                    array(
+                        'old_amount'     => $old_amount_raw,
+                        'new_amount'     => $new_amount,
+                        'affected_users' => $result,
+                    )
+                );
+            }
+
+            $wpdb->query('COMMIT');
+        } catch (Exception $e) {
+            $wpdb->query('ROLLBACK');
+            if ($idem_request_id !== '') {
+                Cashback_Idempotency::forget($idem_scope, $idem_user_id, $idem_request_id);
+            }
+            wp_send_json_error(array( 'message' => 'Ошибка при обновлении базы данных.' ));
+            return;
+        }
+
+        $response_data = array(
+            'updated'    => (int) $result,
+            'old_amount' => $old_amount_raw,
+            'new_amount' => $new_amount,
         );
 
         if ($idem_request_id !== '') {

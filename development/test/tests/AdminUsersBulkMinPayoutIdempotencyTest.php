@@ -6,26 +6,27 @@ use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Контрактные тесты для `admin/users-management.php::handle_bulk_update_cashback_rate` —
- * server-side дедуп request_id (Группа 5 ADR, F-34-005).
+ * Контрактные тесты для `admin/users-management.php::handle_bulk_update_min_payout` —
+ * server-side дедуп request_id (по образцу bulk_update_cashback_rate, Группа 5 ADR, F-34-005).
  *
- * Preview-запросы (read-only счёт пользователей) пропускают guard; apply —
- * full cycle защиты от дубля audit-лога и rate_history.
+ * Preview-запросы (read-only COUNT) пропускают guard; apply — full cycle защиты от
+ * дубля audit-лога. Журнал rate_history здесь не используется (его whitelist — проценты).
  */
 #[Group('idempotency')]
 #[Group('group-5')]
-final class AdminUsersBulkCashbackRateIdempotencyTest extends TestCase
+final class AdminUsersBulkMinPayoutIdempotencyTest extends TestCase
 {
     private const HANDLER_FILE = __DIR__ . '/../../../admin/users-management.php';
     private const JS_FILE      = __DIR__ . '/../../../assets/js/admin-users-management.js';
 
+    /**
+     * Tokenizer-based brace-balance extractor — feedback_structural_test_body_extraction.
+     */
     private function method_body(): string
     {
         $src = file_get_contents(self::HANDLER_FILE);
         $this->assertIsString($src);
 
-        // Tokenizer-based brace-balance extractor — устойчив к вставке новых методов рядом
-        // (память: feedback_structural_test_body_extraction).
         $tokens = token_get_all($src);
         $count  = count($tokens);
 
@@ -46,7 +47,7 @@ final class AdminUsersBulkCashbackRateIdempotencyTest extends TestCase
                     break;
                 }
             }
-            if ($name !== 'handle_bulk_update_cashback_rate') {
+            if ($name !== 'handle_bulk_update_min_payout') {
                 continue;
             }
 
@@ -74,9 +75,9 @@ final class AdminUsersBulkCashbackRateIdempotencyTest extends TestCase
                     }
                 }
             }
-            $this->fail('Closing brace of handle_bulk_update_cashback_rate() not found');
+            $this->fail('Closing brace of handle_bulk_update_min_payout() not found');
         }
-        $this->fail('handle_bulk_update_cashback_rate() not found');
+        $this->fail('handle_bulk_update_min_payout() not found');
     }
 
     public function test_handler_extracts_request_id_via_helper(): void
@@ -113,7 +114,7 @@ final class AdminUsersBulkCashbackRateIdempotencyTest extends TestCase
 
     public function test_handler_uses_dedicated_scope(): void
     {
-        $this->assertStringContainsString("'admin_users_bulk_cashback_rate'", $this->method_body());
+        $this->assertStringContainsString("'admin_users_bulk_min_payout'", $this->method_body());
     }
 
     public function test_handler_stores_result_before_success(): void
@@ -131,7 +132,7 @@ final class AdminUsersBulkCashbackRateIdempotencyTest extends TestCase
     {
         $body = $this->method_body();
 
-        // Bad params, invalid new_rate, invalid old_rate, count=0, DB error, catch → 6+.
+        // Bad params, invalid new_amount, invalid old_amount, count=0, DB error, catch → 6+.
         $forget_count = substr_count($body, 'Cashback_Idempotency::forget');
         $this->assertGreaterThanOrEqual(6, $forget_count);
     }
@@ -144,6 +145,53 @@ final class AdminUsersBulkCashbackRateIdempotencyTest extends TestCase
         );
     }
 
+    public function test_handler_targets_min_payout_amount_column(): void
+    {
+        $body = $this->method_body();
+
+        // SELECT COUNT и UPDATE — оба должны бить по колонке min_payout_amount.
+        $this->assertMatchesRegularExpression(
+            "/SELECT COUNT\(\*\) FROM %i WHERE min_payout_amount/",
+            $body
+        );
+        $this->assertMatchesRegularExpression(
+            "/UPDATE %i SET min_payout_amount\s*=\s*%s/",
+            $body
+        );
+    }
+
+    public function test_handler_validates_lower_bound_one(): void
+    {
+        // Нижняя граница: < 1 должно отбиваться (bccomp(...,'1', 2) < 0).
+        $this->assertMatchesRegularExpression(
+            "/bccomp\s*\(\s*\\\$new_amount\s*,\s*['\"]1['\"]\s*,\s*2\s*\)\s*<\s*0/",
+            $this->method_body()
+        );
+    }
+
+    public function test_handler_validates_upper_bound_100000(): void
+    {
+        // Верхняя граница: > 100000 должно отбиваться.
+        $this->assertMatchesRegularExpression(
+            "/bccomp\s*\(\s*\\\$new_amount\s*,\s*['\"]100000['\"]\s*,\s*2\s*\)\s*>\s*0/",
+            $this->method_body()
+        );
+    }
+
+    public function test_handler_writes_audit_log_with_dedicated_action(): void
+    {
+        $body = $this->method_body();
+
+        $this->assertStringContainsString('Cashback_Encryption::write_audit_log', $body);
+        $this->assertStringContainsString("'bulk_min_payout_update'", $body);
+    }
+
+    public function test_handler_does_not_log_to_rate_history(): void
+    {
+        // Журнал процентных ставок не должен трогаться для min_payout (рубли, не %).
+        $this->assertStringNotContainsString('Cashback_Rate_History_Admin', $this->method_body());
+    }
+
     public function test_js_sends_request_id_for_apply_branch(): void
     {
         $js = file_get_contents(self::JS_FILE);
@@ -152,8 +200,23 @@ final class AdminUsersBulkCashbackRateIdempotencyTest extends TestCase
         // В файле два call'а с этим action: первый — preview (без request_id),
         // второй — apply (с request_id). Проверяем наличие apply-ветки с request_id.
         $this->assertMatchesRegularExpression(
-            "/action:\s*'bulk_update_cashback_rate'[\s\S]{0,300}request_id:\s*makeRequestId\(\)/",
+            "/action:\s*'bulk_update_min_payout'[\s\S]{0,400}request_id:\s*makeRequestId\(\)/",
             $js
         );
+    }
+
+    public function test_handler_registers_ajax_action(): void
+    {
+        $src = file_get_contents(self::HANDLER_FILE);
+        $this->assertIsString($src);
+        $this->assertMatchesRegularExpression(
+            "/add_action\(\s*'wp_ajax_bulk_update_min_payout'\s*,/",
+            $src
+        );
+    }
+
+    public function test_handler_uses_dedicated_nonce_action(): void
+    {
+        $this->assertStringContainsString("'bulk_update_min_payout_nonce'", $this->method_body());
     }
 }
