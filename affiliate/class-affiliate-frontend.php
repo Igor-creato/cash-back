@@ -102,7 +102,7 @@ class Cashback_Affiliate_Frontend {
             'cashback-affiliate-frontend-js',
             plugins_url('../assets/js/affiliate-frontend.js', __FILE__),
             array( 'jquery', 'cashback-pagination', 'cashback-safe-html' ),
-            '1.0.0',
+            '1.1.0',
             true
         );
 
@@ -236,14 +236,32 @@ class Cashback_Affiliate_Frontend {
         // Вкладка: История начислений
         echo '<div class="cashback-tab-content active" id="affiliate-tab-accruals">';
         echo '<div id="affiliate-accruals-container">';
-        $this->render_accruals_table($user_id, 1);
+        $accruals_meta = $this->render_accruals_table($user_id, 1);
+        echo '</div>';
+        echo '<div id="affiliate-accruals-pagination">';
+        if ($accruals_meta['total_pages'] > 1) {
+            Cashback_Pagination::render(array(
+                'mode'         => 'ajax',
+                'current_page' => $accruals_meta['current_page'],
+                'total_pages'  => $accruals_meta['total_pages'],
+            ));
+        }
         echo '</div>';
         echo '</div>';
 
         // Вкладка: Список приглашённых
         echo '<div class="cashback-tab-content" id="affiliate-tab-referrals">';
         echo '<div id="affiliate-referrals-container">';
-        $this->render_referrals_table($user_id, 1);
+        $referrals_meta = $this->render_referrals_table($user_id, 1);
+        echo '</div>';
+        echo '<div id="affiliate-referrals-pagination">';
+        if ($referrals_meta['total_pages'] > 1) {
+            Cashback_Pagination::render(array(
+                'mode'         => 'ajax',
+                'current_page' => $referrals_meta['current_page'],
+                'total_pages'  => $referrals_meta['total_pages'],
+            ));
+        }
         echo '</div>';
         echo '</div>';
 
@@ -254,8 +272,10 @@ class Cashback_Affiliate_Frontend {
 
     /**
      * Рендер таблицы начислений.
+     *
+     * @return array{current_page:int,total_pages:int} Meta для отдельного рендера пагинации.
      */
-    private function render_accruals_table( int $user_id, int $page ): void {
+    private function render_accruals_table( int $user_id, int $page ): array {
         global $wpdb;
         $prefix   = $wpdb->prefix;
         $per_page = self::PER_PAGE;
@@ -296,7 +316,10 @@ class Cashback_Affiliate_Frontend {
         if (empty($accruals)) {
             echo '<p class="cashback-affiliate-empty">'
                 . esc_html__('Начислений пока нет.', 'cashback-plugin') . '</p>';
-            return;
+            return array(
+                'current_page' => 1,
+                'total_pages'  => 0,
+            );
         }
 
         $support_enabled = class_exists('Cashback_Support_DB') && Cashback_Support_DB::is_module_enabled();
@@ -359,11 +382,10 @@ class Cashback_Affiliate_Frontend {
 
         echo '</tbody></table>';
 
-        Cashback_Pagination::render(array(
-            'mode'         => 'ajax',
+        return array(
             'current_page' => $page,
             'total_pages'  => $total_pages,
-        ));
+        );
     }
 
     /**
@@ -384,20 +406,25 @@ class Cashback_Affiliate_Frontend {
         $page    = max(1, absint($_POST['page'] ?? 1));
 
         ob_start();
-        $this->render_accruals_table($user_id, $page);
+        $meta = $this->render_accruals_table($user_id, $page);
         $html = ob_get_clean();
 
-        wp_send_json_success(array( 'html' => $html ));
+        wp_send_json_success(array(
+            'html'         => $html,
+            'current_page' => $meta['current_page'],
+            'total_pages'  => $meta['total_pages'],
+        ));
     }
 
     /**
      * Рендер таблицы приглашённых пользователей.
+     *
+     * @return array{current_page:int,total_pages:int} Meta для отдельного рендера пагинации.
      */
-    private function render_referrals_table( int $user_id, int $page ): void {
+    private function render_referrals_table( int $user_id, int $page ): array {
         global $wpdb;
         $prefix   = $wpdb->prefix;
         $per_page = self::PER_PAGE;
-        $offset   = ( $page - 1 ) * $per_page;
 
         $profiles_table = $prefix . 'cashback_affiliate_profiles';
         $accruals_table = $prefix . 'cashback_affiliate_accruals';
@@ -410,6 +437,7 @@ class Cashback_Affiliate_Frontend {
 
         $total_pages = max(1, (int) ceil($total / $per_page));
         $page        = min($page, $total_pages);
+        $offset      = ( $page - 1 ) * $per_page;
 
         $referrals = $wpdb->get_results($wpdb->prepare(
             'SELECT ap.user_id, ap.referred_at, ap.affiliate_status,
@@ -436,7 +464,10 @@ class Cashback_Affiliate_Frontend {
         if (empty($referrals)) {
             echo '<p class="cashback-affiliate-empty">'
                 . esc_html__('Приглашённых пользователей пока нет.', 'cashback-plugin') . '</p>';
-            return;
+            return array(
+                'current_page' => 1,
+                'total_pages'  => 0,
+            );
         }
 
         echo '<table class="cashback-affiliate-table cashback-data-table cashback-data-table--mobile-cards">';
@@ -465,11 +496,10 @@ class Cashback_Affiliate_Frontend {
 
         echo '</tbody></table>';
 
-        Cashback_Pagination::render(array(
-            'mode'         => 'ajax',
+        return array(
             'current_page' => $page,
             'total_pages'  => $total_pages,
-        ));
+        );
     }
 
     /**
@@ -521,9 +551,13 @@ class Cashback_Affiliate_Frontend {
         $page    = max(1, absint($_POST['page'] ?? 1));
 
         ob_start();
-        $this->render_referrals_table($user_id, $page);
+        $meta = $this->render_referrals_table($user_id, $page);
         $html = ob_get_clean();
 
-        wp_send_json_success(array( 'html' => $html ));
+        wp_send_json_success(array(
+            'html'         => $html,
+            'current_page' => $meta['current_page'],
+            'total_pages'  => $meta['total_pages'],
+        ));
     }
 }

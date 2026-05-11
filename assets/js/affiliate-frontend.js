@@ -42,10 +42,15 @@
     });
 
     /* ── Accruals pagination ── */
-    $(document).on('click', '#affiliate-accruals-container .page-numbers[data-page]', function (e) {
+    $(document).on('click', '#affiliate-accruals-pagination .page-numbers[data-page]', function (e) {
         e.preventDefault();
-        var page = $(this).data('page');
-        var $container = $('#affiliate-accruals-container');
+        if ($(this).hasClass('current')) return;
+
+        var page = parseInt($(this).data('page'), 10);
+        if (!page) return;
+
+        var $container  = $('#affiliate-accruals-container');
+        var $pagination = $('#affiliate-accruals-pagination');
 
         $container.css('opacity', '0.5');
 
@@ -55,8 +60,17 @@
             page:   page
         }, function (resp) {
             $container.css('opacity', '1');
-            if (resp.success && resp.data.html) {
-                $container.html(safeHtml(resp.data.html));
+            if (resp.success && resp.data) {
+                if (typeof resp.data.html === 'string') {
+                    $container.html(safeHtml(resp.data.html));
+                }
+                if (typeof window.CashbackPagination !== 'undefined' &&
+                    typeof window.CashbackPagination.build === 'function') {
+                    $pagination.html(safeHtml(window.CashbackPagination.build(
+                        resp.data.current_page,
+                        resp.data.total_pages
+                    )));
+                }
             }
         }).fail(function () {
             $container.css('opacity', '1');
@@ -64,10 +78,15 @@
     });
 
     /* ── Referrals pagination ── */
-    $(document).on('click', '#affiliate-referrals-container .page-numbers[data-page]', function (e) {
+    $(document).on('click', '#affiliate-referrals-pagination .page-numbers[data-page]', function (e) {
         e.preventDefault();
-        var page = $(this).data('page');
-        var $container = $('#affiliate-referrals-container');
+        if ($(this).hasClass('current')) return;
+
+        var page = parseInt($(this).data('page'), 10);
+        if (!page) return;
+
+        var $container  = $('#affiliate-referrals-container');
+        var $pagination = $('#affiliate-referrals-pagination');
 
         $container.css('opacity', '0.5');
 
@@ -77,8 +96,17 @@
             page:   page
         }, function (resp) {
             $container.css('opacity', '1');
-            if (resp.success && resp.data.html) {
-                $container.html(safeHtml(resp.data.html));
+            if (resp.success && resp.data) {
+                if (typeof resp.data.html === 'string') {
+                    $container.html(safeHtml(resp.data.html));
+                }
+                if (typeof window.CashbackPagination !== 'undefined' &&
+                    typeof window.CashbackPagination.build === 'function') {
+                    $pagination.html(safeHtml(window.CashbackPagination.build(
+                        resp.data.current_page,
+                        resp.data.total_pages
+                    )));
+                }
             }
         }).fail(function () {
             $container.css('opacity', '1');
