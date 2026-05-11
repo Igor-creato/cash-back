@@ -180,7 +180,7 @@ class CashbackHistory {
         $support_enabled = class_exists('Cashback_Support_DB') && Cashback_Support_DB::is_module_enabled();
         $support_base    = $support_enabled ? wc_get_account_endpoint_url('cashback-support') : '';
 
-        echo '<table id="transactions-table" class="wd-table shop_table_responsive">';
+        echo '<table id="transactions-table" class="wd-table shop_table_responsive cashback-data-table cashback-data-table--mobile-cards">';
         echo '<thead>';
         echo '<tr>';
         echo '<th>' . esc_html__('ID', 'cashback-plugin') . '</th>';
@@ -203,7 +203,9 @@ class CashbackHistory {
             echo '<td data-title="' . esc_attr__('Магазин', 'cashback-plugin') . '">' . esc_html($transaction->offer_name ?? __('Н/Д', 'cashback-plugin')) . '</td>';
             echo '<td data-title="' . esc_attr__('Номер заказа', 'cashback-plugin') . '">' . esc_html($transaction->order_number ?? __('Н/Д', 'cashback-plugin')) . '</td>';
             echo '<td data-title="' . esc_attr__('Кэшбэк', 'cashback-plugin') . '">' . esc_html($transaction->cashback ?? '0.00') . '</td>';
-            echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '" class="status-' . esc_attr($transaction->order_status) . '">' . esc_html($this->get_status_label($transaction->order_status)) . '</td>';
+            $status_key      = (string) ($transaction->order_status ?? '');
+            $status_semantic = $this->map_status_semantic($status_key);
+            echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '" class="status-' . esc_attr($status_key) . ' cashback-status--' . esc_attr($status_semantic) . '">' . esc_html($this->get_status_label($status_key)) . '</td>';
             if ($support_enabled) {
                 $support_url = add_query_arg(
                     array(
@@ -226,6 +228,28 @@ class CashbackHistory {
         echo '</table>';
     }
 
+
+    /**
+     * Map order status key → semantic palette name for .cashback-status--{semantic}.
+     *
+     * Используется в render_transactions_table() для применения единых
+     * цветов через base.css (.cashback-status--success/info/warning/danger/neutral).
+     * Старый класс status-X сохраняется параллельно как data-маркер для JS.
+     *
+     * @param string $status Raw order_status value (DB column).
+     * @return string semantic palette name (success|info|warning|danger|neutral).
+     */
+    private function map_status_semantic( string $status ): string {
+        static $map = array(
+            'completed' => 'success',
+            'balance'   => 'success',
+            'waiting'   => 'info',
+            'hold'      => 'warning',
+            'declined'  => 'danger',
+        );
+
+        return $map[ $status ] ?? 'neutral';
+    }
 
     /**
      * Get transactions for a user with pagination.

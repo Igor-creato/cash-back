@@ -116,45 +116,10 @@
     transform: translateY(-1px);
 }
 
-/* --- Status colors (desktop table) --------------------------------- */
-
-.wd-history-payout #payouts-table tbody tr td.status-paid {
-    color: var(--cb-success, #1fae7f) !important;
-    background: transparent !important;
-    font-weight: 600;
-}
-
-.wd-history-payout #payouts-table tbody tr td.status-processing,
-.wd-history-payout #payouts-table tbody tr td.status-needs_retry {
-    color: var(--cb-warning, #e89b0a) !important;
-    background: transparent !important;
-    font-weight: 600;
-}
-
-.wd-history-payout #payouts-table tbody tr td.status-waiting {
-    color: var(--cb-info, #3e8ddd) !important;
-    background: transparent !important;
-    font-weight: 600;
-}
-
-.wd-history-payout #payouts-table tbody tr td.status-failed,
-.wd-history-payout #payouts-table tbody tr td.status-declined {
-    color: var(--cb-danger, #e5484d) !important;
-    background: transparent !important;
-    font-weight: 600;
-}
-
-/* --- Row hover (desktop only) -------------------------------------- */
-
-.wd-history-payout #payouts-table tbody tr {
-    transition: background-color 0.15s ease;
-}
-
-@media (hover: hover) and (min-width: 769px) {
-    .wd-history-payout #payouts-table tbody tr:hover {
-        background: var(--cb-bg-canvas, #f5f4f0);
-    }
-}
+/* Все табличные стили (status-цвета, row hover, mobile card-layout)
+   перенесены в cashback-account-base.css — компонент cashback-data-table
+   и семантические status-классы (success/info/warning/danger/neutral).
+   PHP добавляет семантический класс к статусной ячейке. */
 
 @media (max-width: 768px) {
     .wd-history-payout .clicks-filters-row {
@@ -173,101 +138,5 @@
         max-width: none;
         min-width: auto;
         width: 100%;
-    }
-
-    .wd-history-payout #payouts-table thead {
-        display: none !important;
-    }
-
-    .wd-history-payout #payouts-table {
-        border: none !important;
-        border-collapse: collapse !important;
-    }
-
-    .wd-history-payout #payouts-table tbody {
-        display: flex !important;
-        flex-direction: column !important;
-        gap: 12px !important;
-        border: none !important;
-    }
-
-    .wd-history-payout #payouts-table tbody tr {
-        display: flex !important;
-        flex-direction: column !important;
-        background: var(--cb-bg-surface, #fff) !important;
-        border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06)) !important;
-        border-radius: var(--cb-radius-lg, 20px) !important;
-        padding: 16px 18px !important;
-        box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
-        margin-bottom: 0 !important;
-        position: static !important;
-        gap: 0 !important;
-        border-bottom: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06)) !important;
-        padding-bottom: 16px !important;
-    }
-
-    .wd-history-payout #payouts-table tbody tr td {
-        display: flex !important;
-        justify-content: space-between !important;
-        align-items: center !important;
-        padding: 8px 0 !important;
-        border: none !important;
-        border-bottom: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06)) !important;
-        font-size: 14px !important;
-        background: transparent !important;
-        position: static !important;
-        color: var(--cb-text-primary, #16151c);
-    }
-
-    .wd-history-payout #payouts-table tbody tr td:last-child {
-        border-bottom: none !important;
-        padding-bottom: 0 !important;
-    }
-
-    .wd-history-payout #payouts-table tbody tr td:first-child {
-        padding-top: 0 !important;
-    }
-
-    .wd-history-payout #payouts-table tbody tr td::before {
-        content: attr(data-title) !important;
-        font-weight: 600 !important;
-        color: var(--cb-text-secondary, #5b5c70) !important;
-        font-size: 12px !important;
-        flex-shrink: 0 !important;
-        margin-right: 12px !important;
-        display: inline-block !important;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-    }
-
-    /* Reference ID — header of the card */
-    .wd-history-payout #payouts-table tbody tr td:first-child {
-        font-weight: 700 !important;
-        font-size: 15px !important;
-        padding-bottom: 10px !important;
-        margin-bottom: 4px !important;
-        border-bottom: 2px solid var(--cb-accent, #5b6cf7) !important;
-    }
-
-    .wd-history-payout #payouts-table tbody tr td:last-child {
-        font-weight: 600 !important;
-    }
-
-    .wd-history-payout #payouts-table tbody tr td.status-paid {
-        color: var(--cb-success, #1fae7f) !important;
-    }
-
-    .wd-history-payout #payouts-table tbody tr td.status-processing,
-    .wd-history-payout #payouts-table tbody tr td.status-needs_retry {
-        color: var(--cb-warning, #e89b0a) !important;
-    }
-
-    .wd-history-payout #payouts-table tbody tr td.status-waiting {
-        color: var(--cb-info, #3e8ddd) !important;
-    }
-
-    .wd-history-payout #payouts-table tbody tr td.status-failed,
-    .wd-history-payout #payouts-table tbody tr td.status-declined {
-        color: var(--cb-danger, #e5484d) !important;
     }
 }

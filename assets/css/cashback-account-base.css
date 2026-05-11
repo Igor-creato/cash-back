@@ -116,3 +116,200 @@
     color: var(--cb-text-on-accent, #fff) !important;
     border-color: var(--cb-accent-hover, #4555e8) !important;
 }
+
+/* --- Shared component: data table -------------------------------------
+   Единый компонент для всех табличных представлений личного кабинета:
+   - История покупок (#transactions-table)
+   - История выплат (#payouts-table)
+   - Партнёрская: Начисления + Рефералы (.cashback-affiliate-table)
+   - Уведомления (.cashback-notifications-table) — через модификатор --boxed
+   - Потерянный кэшбэк: Переходы + Заявки (claims tables)
+
+   Базовый класс .cashback-data-table даёт flat-table с border-collapse,
+   hover на десктопе, единым header bg и paddings.
+   Модификаторы:
+   - .cashback-data-table--mobile-cards — на mobile (≤768px) превращает
+     таблицу в карточки через flex+data-title (нужно у history/payouts/
+     affiliate/claims).
+   - .cashback-data-table--boxed — desktop таблица в карточной обёртке
+     с border-radius + shadow (нужно у notifications).
+
+   Status-цвета НЕ привязаны к ключу `status-X` (т.к. status-paid имеет
+   разную семантику между модулями: payouts=success, affiliate=info).
+   Используются 5 семантических классов .cashback-status--{success|info|
+   warning|danger|neutral}, которые ставятся параллельно со старым
+   status-X в HTML (PHP-маппинг локально в каждом render-методе).
+   ------------------------------------------------------------------- */
+
+.cashback-data-table {
+    width: 100%;
+    border-collapse: collapse;
+    border-spacing: 0;
+    font-size: 14px;
+    background: transparent;
+}
+
+.cashback-data-table th,
+.cashback-data-table td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+}
+
+.cashback-data-table thead th {
+    background: var(--cb-bg-sunken, #eceae3);
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--cb-text-secondary, #5b5c70);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+}
+
+.cashback-data-table tbody tr {
+    transition: background-color 0.15s ease;
+}
+
+.cashback-data-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.cashback-data-table-empty {
+    color: var(--cb-text-muted, #8f8fa3);
+    font-style: italic;
+    padding: 24px 0;
+    text-align: center;
+}
+
+@media (hover: hover) and (min-width: 769px) {
+    .cashback-data-table tbody tr:hover {
+        background: var(--cb-bg-canvas, #f5f4f0);
+    }
+}
+
+/* Modifier: --boxed (card-wrapped table, used by notifications) */
+.cashback-data-table--boxed {
+    border-collapse: separate;
+    background: var(--cb-bg-surface, #fff);
+    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
+    border-radius: var(--cb-radius-lg, 20px);
+    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
+    overflow: hidden;
+}
+
+.cashback-data-table--boxed thead th {
+    padding: 12px 18px;
+}
+
+.cashback-data-table--boxed tbody td {
+    padding: 14px 18px;
+}
+
+/* Modifier: --mobile-cards (≤768px collapses to card-layout via data-title) */
+@media (max-width: 768px) {
+    .cashback-data-table--mobile-cards thead {
+        display: none !important;
+    }
+
+    .cashback-data-table--mobile-cards {
+        border: none !important;
+        border-collapse: collapse !important;
+        background: transparent !important;
+        box-shadow: none !important;
+    }
+
+    .cashback-data-table--mobile-cards tbody {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 12px !important;
+        border: none !important;
+    }
+
+    .cashback-data-table--mobile-cards tbody tr {
+        display: flex !important;
+        flex-direction: column !important;
+        background: var(--cb-bg-surface, #fff) !important;
+        border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06)) !important;
+        border-radius: var(--cb-radius-lg, 20px) !important;
+        padding: 16px 18px !important;
+        box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10)) !important;
+        margin-bottom: 0 !important;
+        position: static !important;
+        gap: 0 !important;
+    }
+
+    .cashback-data-table--mobile-cards tbody tr td {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        padding: 8px 0 !important;
+        border: none !important;
+        border-bottom: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06)) !important;
+        font-size: 14px !important;
+        background: transparent !important;
+        position: static !important;
+        text-align: right !important;
+        color: var(--cb-text-primary, #16151c);
+    }
+
+    .cashback-data-table--mobile-cards tbody tr td:last-child {
+        border-bottom: none !important;
+        padding-bottom: 0 !important;
+        font-weight: 600 !important;
+    }
+
+    .cashback-data-table--mobile-cards tbody tr td:first-child {
+        padding-top: 0 !important;
+        font-weight: 700 !important;
+        font-size: 15px !important;
+        padding-bottom: 10px !important;
+        margin-bottom: 4px !important;
+        border-bottom: 2px solid var(--cb-accent, #5b6cf7) !important;
+    }
+
+    .cashback-data-table--mobile-cards tbody tr td::before {
+        content: attr(data-title);
+        font-weight: 600;
+        color: var(--cb-text-secondary, #5b5c70);
+        font-size: 12px;
+        flex-shrink: 0;
+        margin-right: 12px;
+        display: inline-block;
+        text-align: left;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+}
+
+/* --- Shared component: semantic status colors -----------------------
+   Параллельны со старыми status-X классами (status-X сохраняется для
+   обратной совместимости и для нужд JS, который может цепляться к
+   конкретному статусу). Семантический класс управляет ЦВЕТОМ; status-X
+   остаётся как data-маркер.
+   ------------------------------------------------------------------- */
+
+.cashback-status--success {
+    color: var(--cb-success, #1fae7f) !important;
+    font-weight: 600;
+}
+
+.cashback-status--info {
+    color: var(--cb-info, #3e8ddd) !important;
+    font-weight: 600;
+}
+
+.cashback-status--warning {
+    color: var(--cb-warning, #e89b0a) !important;
+    font-weight: 600;
+}
+
+.cashback-status--danger {
+    color: var(--cb-danger, #e5484d) !important;
+    font-weight: 600;
+}
+
+.cashback-status--neutral {
+    color: var(--cb-text-secondary, #5b5c70) !important;
+    font-weight: 600;
+}

@@ -302,7 +302,7 @@ class Cashback_Affiliate_Frontend {
         $support_enabled = class_exists('Cashback_Support_DB') && Cashback_Support_DB::is_module_enabled();
         $support_base    = $support_enabled ? wc_get_account_endpoint_url('cashback-support') : '';
 
-        echo '<table class="cashback-affiliate-table">';
+        echo '<table class="cashback-affiliate-table cashback-data-table cashback-data-table--mobile-cards">';
         echo '<thead><tr>';
         echo '<th>' . esc_html__('Дата', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('ID', 'cashback-plugin') . '</th>';
@@ -325,8 +325,10 @@ class Cashback_Affiliate_Frontend {
         );
 
         foreach ($accruals as $row) {
-            $status_class = 'status-' . esc_attr($row['display_status']);
-            $status_label = $status_labels[ $row['display_status'] ] ?? $row['display_status'];
+            $status_key      = (string) $row['display_status'];
+            $status_class    = 'status-' . $status_key;
+            $status_semantic = $this->map_status_semantic($status_key);
+            $status_label    = $status_labels[ $status_key ] ?? $status_key;
 
             echo '<tr>';
             echo '<td data-title="' . esc_attr__('Дата', 'cashback-plugin') . '">' . esc_html(wp_date('d.m.Y H:i', strtotime($row['created_at']))) . '</td>';
@@ -335,7 +337,7 @@ class Cashback_Affiliate_Frontend {
             echo '<td data-title="' . esc_attr__('Кешбэк', 'cashback-plugin') . '">' . esc_html(number_format_i18n((float) $row['cashback_amount'], 2)) . ' ₽</td>';
             echo '<td data-title="' . esc_attr__('Ставка', 'cashback-plugin') . '">' . esc_html($row['commission_rate']) . '%</td>';
             echo '<td data-title="' . esc_attr__('Комиссия', 'cashback-plugin') . '"><strong>' . esc_html(number_format_i18n((float) $row['commission_amount'], 2)) . ' ₽</strong></td>';
-            echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '"><span class="cashback-affiliate-status ' . esc_attr($status_class) . '">'
+            echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '"><span class="cashback-affiliate-status ' . esc_attr($status_class) . ' cashback-status--' . esc_attr($status_semantic) . '">'
                 . esc_html($status_label) . '</span></td>';
             if ($support_enabled) {
                 $support_url = add_query_arg(
@@ -437,7 +439,7 @@ class Cashback_Affiliate_Frontend {
             return;
         }
 
-        echo '<table class="cashback-affiliate-table">';
+        echo '<table class="cashback-affiliate-table cashback-data-table cashback-data-table--mobile-cards">';
         echo '<thead><tr>';
         echo '<th>' . esc_html__('Имя', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Дата регистрации', 'cashback-plugin') . '</th>';
@@ -468,6 +470,37 @@ class Cashback_Affiliate_Frontend {
             'current_page' => $page,
             'total_pages'  => $total_pages,
         ));
+    }
+
+    /**
+     * Map affiliate accrual status key → semantic palette name for
+     * .cashback-status--{semantic}.
+     *
+     * Используется в render_accruals_table() для применения единых
+     * цветов через base.css. Старый класс status-X сохраняется
+     * параллельно как data-маркер.
+     *
+     * Семантика affiliate (отличается от payouts: тут `paid`=info,
+     * т.к. означает «выплачено реферал», а не «зачислено клиенту»):
+     *  - available → success
+     *  - frozen → warning
+     *  - paid → info
+     *  - pending → neutral
+     *  - declined → danger
+     *
+     * @param string $status Raw display_status from accrual row.
+     * @return string semantic palette name (success|info|warning|danger|neutral).
+     */
+    private function map_status_semantic( string $status ): string {
+        static $map = array(
+            'available' => 'success',
+            'frozen'    => 'warning',
+            'paid'      => 'info',
+            'pending'   => 'neutral',
+            'declined'  => 'danger',
+        );
+
+        return $map[ $status ] ?? 'neutral';
     }
 
     /**

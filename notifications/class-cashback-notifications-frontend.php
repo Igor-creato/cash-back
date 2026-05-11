@@ -125,7 +125,7 @@ class Cashback_Notifications_Frontend {
             </p>
 
             <form id="cashback-notification-prefs-form">
-                <table class="cashback-notifications-table">
+                <table class="cashback-notifications-table cashback-data-table cashback-data-table--boxed">
                     <thead>
                         <tr>
                             <th><?php esc_html_e('Тип уведомления', 'cashback-plugin'); ?></th>

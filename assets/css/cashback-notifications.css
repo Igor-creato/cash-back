@@ -30,60 +30,18 @@
 
 /* --- Table ---------------------------------------------------------- */
 
-.cashback-notifications-table {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-    background: var(--cb-bg-surface, #fff);
-    border: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
-    border-radius: var(--cb-radius-lg, 20px);
-    box-shadow: var(--cb-shadow-soft, 0 8px 24px -12px rgba(15, 18, 34, 0.10));
-    overflow: hidden;
-}
+/* Базовые табличные стили вынесены в cashback-account-base.css →
+   .cashback-data-table + .cashback-data-table--boxed. Класс
+   .cashback-notifications-table сохраняется в HTML как data-маркер
+   для специфичных override'ов ниже (выравнивание последней колонки). */
 
-.cashback-notifications-table thead th {
-    text-align: left;
-    padding: 12px 18px;
-    background: var(--cb-bg-sunken, #eceae3);
-    border-bottom: 1px solid var(--cb-border, #ddd);
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--cb-text-secondary, #555);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+.cashback-notifications-table tbody td:last-child,
+.cashback-notifications-table thead th:last-child {
+    text-align: center;
 }
 
 .cashback-notifications-table thead th:last-child {
-    text-align: center;
     width: 90px;
-}
-
-.cashback-notifications-table tbody tr {
-    border-bottom: 1px solid var(--cb-border, #eee);
-    transition: background-color 0.15s ease;
-}
-
-.cashback-notifications-table tbody tr:last-child {
-    border-bottom: none;
-}
-
-.cashback-notifications-table tbody tr:hover {
-    background: var(--cb-bg-canvas, #f9f9f9);
-}
-
-.cashback-notifications-table tbody td {
-    padding: 14px 18px;
-    font-size: 14px;
-    color: var(--cb-text-primary, #16151c);
-    border-bottom: 1px solid var(--cb-border, rgba(22, 21, 28, 0.06));
-}
-
-.cashback-notifications-table tbody tr:last-child td {
-    border-bottom: none;
-}
-
-.cashback-notifications-table tbody td:last-child {
-    text-align: center;
 }
 
 .cashback-notifications-disabled-hint {

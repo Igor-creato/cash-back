@@ -153,7 +153,7 @@ class HistoryPayout {
         $support_enabled = class_exists('Cashback_Support_DB') && Cashback_Support_DB::is_module_enabled();
         $support_base    = $support_enabled ? wc_get_account_endpoint_url('cashback-support') : '';
 
-        echo '<table id="payouts-table" class="wd-table shop_table_responsive">';
+        echo '<table id="payouts-table" class="wd-table shop_table_responsive cashback-data-table cashback-data-table--mobile-cards">';
         echo '<thead>';
         echo '<tr>';
         echo '<th>' . esc_html__('Номер заявки', 'cashback-plugin') . '</th>';
@@ -178,7 +178,9 @@ class HistoryPayout {
             echo '<td data-title="' . esc_attr__('Способ вывода', 'cashback-plugin') . '">' . esc_html($this->get_payout_method_label($payout->payout_method) ?: __('Не указан', 'cashback-plugin')) . '</td>';
             echo '<td data-title="' . esc_attr__('Счет', 'cashback-plugin') . '">' . esc_html($this->get_display_account($payout) ?: __('Не указан', 'cashback-plugin')) . '</td>';
             echo '<td data-title="' . esc_attr__('Банк', 'cashback-plugin') . '">' . esc_html($this->get_bank_name_by_code($payout->provider ?? '') ?: __('Не указан', 'cashback-plugin')) . '</td>';
-            echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '" class="status-' . esc_attr($payout->status) . '">' . esc_html($this->get_status_label($payout->status)) . '</td>';
+            $status_key      = (string) ($payout->status ?? '');
+            $status_semantic = $this->map_status_semantic($status_key);
+            echo '<td data-title="' . esc_attr__('Статус', 'cashback-plugin') . '" class="status-' . esc_attr($status_key) . ' cashback-status--' . esc_attr($status_semantic) . '">' . esc_html($this->get_status_label($status_key)) . '</td>';
             if ($support_enabled) {
                 $support_url = add_query_arg(
                     array(
@@ -199,6 +201,36 @@ class HistoryPayout {
 
         echo '</tbody>';
         echo '</table>';
+    }
+
+
+    /**
+     * Map payout status key → semantic palette name for .cashback-status--{semantic}.
+     *
+     * Используется в render_payouts_table() для применения единых цветов
+     * через base.css. Старый класс status-X остаётся параллельно как
+     * data-маркер.
+     *
+     * Семантика выплат:
+     *  - paid → success (зачислено клиенту)
+     *  - processing/needs_retry → warning (требует внимания/повторной попытки)
+     *  - waiting → info (поставлено в очередь)
+     *  - failed/declined → danger (отказ/возврат в баланс)
+     *
+     * @param string $status Raw payout status (DB column).
+     * @return string semantic palette name (success|info|warning|danger|neutral).
+     */
+    private function map_status_semantic( string $status ): string {
+        static $map = array(
+            'paid'        => 'success',
+            'processing'  => 'warning',
+            'needs_retry' => 'warning',
+            'waiting'     => 'info',
+            'failed'      => 'danger',
+            'declined'    => 'danger',
+        );
+
+        return $map[ $status ] ?? 'neutral';
     }
 
 

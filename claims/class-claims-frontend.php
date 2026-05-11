@@ -318,7 +318,7 @@ class Cashback_Claims_Frontend {
      */
     private function render_clicks_table( array $clicks ): void {
         ?>
-        <table class="shop_table shop_table_responsive my_account_orders">
+        <table class="shop_table shop_table_responsive my_account_orders cashback-data-table cashback-data-table--mobile-cards">
             <thead>
                 <tr>
                     <th><?php esc_html_e('Магазин', 'cashback-plugin'); ?></th>
@@ -373,7 +373,7 @@ class Cashback_Claims_Frontend {
      */
     private function render_claims_table( array $claims ): void {
         ?>
-        <table class="shop_table shop_table_responsive my_account_orders claims-table-expandable">
+        <table class="shop_table shop_table_responsive my_account_orders claims-table-expandable cashback-data-table cashback-data-table--mobile-cards">
             <thead>
                 <tr>
                     <th><?php esc_html_e('ID', 'cashback-plugin'); ?></th>
