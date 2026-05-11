@@ -320,21 +320,30 @@ body:not(.wp-admin) .clicks-filter-buttons {
 }
 
 @media (max-width: 768px) {
-    .clicks-filters-row {
+    body:not(.wp-admin) .clicks-filters-row {
         flex-direction: column;
         align-items: stretch;
     }
 
-    .clicks-filter-buttons {
+    body:not(.wp-admin) .clicks-filter-group {
+        width: 100%;
+    }
+
+    body:not(.wp-admin) .clicks-filter-buttons {
         flex-direction: row;
         padding-top: 4px;
     }
 
-    input#clicks-search,
-    input#clicks-date-from,
-    input#clicks-date-to {
+    body:not(.wp-admin) input#clicks-search,
+    body:not(.wp-admin) input#clicks-date-from,
+    body:not(.wp-admin) input#clicks-date-to,
+    body:not(.wp-admin) input#claims-search,
+    body:not(.wp-admin) input#claims-date-from,
+    body:not(.wp-admin) input#claims-date-to,
+    body:not(.wp-admin) select#clicks-can-claim,
+    body:not(.wp-admin) select#claims-status-filter {
         max-width: none;
-        min-width: auto;
+        min-width: 0;
         width: 100%;
     }
 }

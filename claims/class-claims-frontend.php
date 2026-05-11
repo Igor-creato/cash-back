@@ -620,7 +620,7 @@ class Cashback_Claims_Frontend {
             'cashback-claims-css',
             $plugin_dir_url . 'assets/css/admin-claims.css',
             array(),
-            '1.4.0'
+            '1.5.0'
         );
 
         Cashback_Assets::enqueue_safe_html();
