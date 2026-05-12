@@ -31,6 +31,7 @@ class Cashback_Social_Auth_Router {
      * @var array<int, string>
      */
     private const HTML_ROUTES = array(
+        '/cashback/v1/social/email-prompt',
         '/cashback/v1/social/email-prompt-form',
         '/cashback/v1/social/register-consent-form',
         '/cashback/v1/social/register-consent',
