@@ -35,9 +35,10 @@ return <<<'HTML'
 <ul>
     <li>Полное наименование: {{operator_full_name}}</li>
     <li>Организационно-правовая форма: {{operator_org_form}}</li>
-    <li>ОГРН/ОГРНИП: {{operator_ogrn}}</li>
-    <li>ИНН: {{operator_inn}}</li>
-    <li>КПП: {{operator_kpp}}</li>
+{{#if_ogrn}}    <li>ОГРН/ОГРНИП: {{operator_ogrn}}</li>
+{{/if_ogrn}}    <li>ИНН: {{operator_inn}}</li>
+{{#if_kpp}}    <li>КПП: {{operator_kpp}}</li>
+{{/if_kpp}}
     <li>Юридический адрес: {{operator_legal_address}}</li>
     <li>Почтовый адрес: {{operator_postal_address}}</li>
     <li>Контактный e-mail: {{operator_contact_email}}</li>

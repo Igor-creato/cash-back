@@ -136,6 +136,19 @@ class Cashback_Legal_Operator {
 
         $data = self::get_all();
 
+        // Условные блоки `{{#if_ogrn}}…{{/if_ogrn}}` / `{{#if_kpp}}…{{/if_kpp}}`:
+        // если соответствующее поле пустое (Самозанятый — нет ОГРН/КПП; ИП — нет КПП),
+        // блок удаляется целиком. Иначе раскрывается без обёрток, плейсхолдеры внутри
+        // подставляются обычным strtr ниже.
+        $content = (string) preg_replace_callback(
+            '/\{\{#if_(ogrn|kpp)\}\}(.*?)\{\{\/if_\1\}\}/s',
+            static function ( array $m ) use ( $data ): string {
+                $value = isset($data[ $m[1] ]) ? trim((string) $data[ $m[1] ]) : '';
+                return $value !== '' ? $m[2] : '';
+            },
+            $content
+        );
+
         $replacements = array(
             '{{operator_full_name}}'           => $data['full_name'],
             '{{operator_short_name}}'          => $data['short_name'] !== '' ? $data['short_name'] : $data['full_name'],

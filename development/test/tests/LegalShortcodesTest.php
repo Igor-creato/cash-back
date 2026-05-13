@@ -121,6 +121,7 @@ final class LegalShortcodesTest extends TestCase
             'inn'           => '1234567890',
             'legal_address' => '123456, Москва',
             'contact_email' => 'admin@example.com',
+            'website_url'   => 'https://example.com',
         ));
         $output = Cashback_Legal_Shortcodes::render_operator();
         $this->assertStringContainsString('ООО «Тест»', $output);
@@ -145,6 +146,7 @@ final class LegalShortcodesTest extends TestCase
             'inn'           => '1234567890',
             'legal_address' => '123456, Москва',
             'contact_email' => 'admin@example.com',
+            'website_url'   => 'https://example.com',
         ));
         // Эмулируем наличие WP-pages с post_status='publish'.
         $GLOBALS['_cb_test_options'][ Cashback_Legal_Pages_Installer::PAGES_MAP_OPTION ] = array(

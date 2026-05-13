@@ -34,7 +34,7 @@ return <<<'HTML'
 <h2>1. Реквизиты Оператора</h2>
 <ul>
     <li>{{operator_full_name}}, {{operator_org_form}}</li>
-    <li>ОГРН/ОГРНИП: {{operator_ogrn}}, ИНН: {{operator_inn}}</li>
+    <li>{{#if_ogrn}}ОГРН/ОГРНИП: {{operator_ogrn}}, {{/if_ogrn}}ИНН: {{operator_inn}}</li>
     <li>Юридический адрес: {{operator_legal_address}}</li>
     <li>Контактный e-mail: {{operator_contact_email}}</li>
 </ul>

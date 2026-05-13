@@ -40,10 +40,10 @@ final class LegalOperatorTest extends TestCase
         Cashback_Legal_Operator::set_all(array(
             'full_name'     => 'ООО «Кэшбэк-Тест»',
             'org_form'      => 'ЮЛ',
-            'ogrn'          => '1234567890123',
             'inn'           => '1234567890',
             'legal_address' => '123456, Москва, ул. Тестовая, д. 1',
             'contact_email' => 'support@example.com',
+            'website_url'   => 'https://example.com',
         ));
         $this->assertTrue(Cashback_Legal_Operator::is_configured());
     }
@@ -53,10 +53,10 @@ final class LegalOperatorTest extends TestCase
         Cashback_Legal_Operator::set_all(array(
             'full_name'     => 'ООО «Кэшбэк-Тест»',
             'org_form'      => 'ЮЛ',
-            'ogrn'          => '1234567890123',
             'inn'           => '1234567890',
             'legal_address' => '', // пусто
             'contact_email' => 'support@example.com',
+            'website_url'   => 'https://example.com',
         ));
         $this->assertFalse(Cashback_Legal_Operator::is_configured());
     }
@@ -65,15 +65,17 @@ final class LegalOperatorTest extends TestCase
     {
         Cashback_Legal_Operator::set_all(array(
             'full_name' => 'X',
-            // org_form / ogrn / inn / legal_address / contact_email — пусто
+            // org_form / inn / legal_address / contact_email / website_url — пусто
         ));
         $missing = Cashback_Legal_Operator::get_missing_required_fields();
         $this->assertContains('org_form', $missing);
-        $this->assertContains('ogrn', $missing);
         $this->assertContains('inn', $missing);
         $this->assertContains('legal_address', $missing);
         $this->assertContains('contact_email', $missing);
+        $this->assertContains('website_url', $missing);
         $this->assertNotContains('full_name', $missing);
+        // ogrn опциональный (отсутствует у самозанятых) — НЕ в required_fields.
+        $this->assertNotContains('ogrn', $missing);
     }
 
     public function test_set_all_round_trip(): void
@@ -186,5 +188,121 @@ final class LegalOperatorTest extends TestCase
             'dpo_email'     => 'invalid space@example.com',
         ));
         $this->assertSame('', Cashback_Legal_Operator::get('contact_email'));
+    }
+
+    /**
+     * Самозанятый: ОГРН и КПП пустые → блоки {{#if_ogrn}}…{{/if_ogrn}} и
+     * {{#if_kpp}}…{{/if_kpp}} удаляются целиком вместе с обрамлением.
+     */
+    public function test_render_placeholders_removes_ogrn_block_when_empty(): void
+    {
+        Cashback_Legal_Operator::set_all(array(
+            'full_name'     => 'Самозанятый Иванов И.И.',
+            'org_form'      => 'Самозанятый',
+            'inn'           => '770100000001',
+            'legal_address' => '123456, Москва',
+            'contact_email' => 'support@example.com',
+            // ogrn, kpp оставлены пустыми
+        ));
+
+        $template = '<li>{{#if_ogrn}}ОГРН/ОГРНИП: {{operator_ogrn}}, {{/if_ogrn}}ИНН: {{operator_inn}}{{#if_kpp}}, КПП: {{operator_kpp}}{{/if_kpp}}</li>';
+        $rendered = Cashback_Legal_Operator::render_placeholders($template);
+
+        $this->assertStringNotContainsString('ОГРН/ОГРНИП', $rendered);
+        $this->assertStringNotContainsString('КПП', $rendered);
+        $this->assertStringNotContainsString('{{operator_ogrn}}', $rendered);
+        $this->assertStringNotContainsString('{{operator_kpp}}', $rendered);
+        $this->assertStringNotContainsString('{{#if_', $rendered);
+        $this->assertSame('<li>ИНН: 770100000001</li>', $rendered);
+    }
+
+    /**
+     * ЮЛ: ОГРН и КПП заполнены → блоки раскрываются без обёрток, значения подставлены.
+     */
+    public function test_render_placeholders_keeps_ogrn_and_kpp_blocks_when_filled(): void
+    {
+        Cashback_Legal_Operator::set_all(array(
+            'full_name'     => 'ООО «Кэшбэк»',
+            'org_form'      => 'ЮЛ',
+            'ogrn'          => '1234567890123',
+            'kpp'           => '770101001',
+            'inn'           => '7701000001',
+            'legal_address' => '123456, Москва',
+            'contact_email' => 'support@example.com',
+        ));
+
+        $template = '<li>{{#if_ogrn}}ОГРН/ОГРНИП: {{operator_ogrn}}, {{/if_ogrn}}ИНН: {{operator_inn}}{{#if_kpp}}, КПП: {{operator_kpp}}{{/if_kpp}}</li>';
+        $rendered = Cashback_Legal_Operator::render_placeholders($template);
+
+        $this->assertSame('<li>ОГРН/ОГРНИП: 1234567890123, ИНН: 7701000001, КПП: 770101001</li>', $rendered);
+        $this->assertStringNotContainsString('{{#if_', $rendered);
+        $this->assertStringNotContainsString('{{/if_', $rendered);
+    }
+
+    /**
+     * ИП: ОГРН заполнен (ОГРНИП), КПП пустой → ОГРН раскрывается, КПП-блок удаляется.
+     */
+    public function test_render_placeholders_keeps_ogrn_drops_kpp_for_ip(): void
+    {
+        Cashback_Legal_Operator::set_all(array(
+            'full_name'     => 'ИП Иванов И.И.',
+            'org_form'      => 'ИП',
+            'ogrn'          => '321770000000001',
+            'inn'           => '770100000001',
+            'legal_address' => '123456, Москва',
+            'contact_email' => 'support@example.com',
+            // kpp пуст
+        ));
+
+        $template = '<li>{{#if_ogrn}}ОГРН/ОГРНИП: {{operator_ogrn}}, {{/if_ogrn}}ИНН: {{operator_inn}}{{#if_kpp}}, КПП: {{operator_kpp}}{{/if_kpp}}</li>';
+        $rendered = Cashback_Legal_Operator::render_placeholders($template);
+
+        $this->assertSame('<li>ОГРН/ОГРНИП: 321770000000001, ИНН: 770100000001</li>', $rendered);
+        $this->assertStringNotContainsString('КПП', $rendered);
+    }
+
+    /**
+     * Блочный паттерн на отдельных строках (pd-policy/tech-data): пустые поля
+     * удаляют целые `<li>`, оставляя только заполненные.
+     */
+    public function test_render_placeholders_removes_standalone_li_blocks_when_empty(): void
+    {
+        Cashback_Legal_Operator::set_all(array(
+            'full_name'     => 'Самозанятый Иванов И.И.',
+            'org_form'      => 'Самозанятый',
+            'inn'           => '770100000001',
+            'legal_address' => '123456, Москва',
+            'contact_email' => 'support@example.com',
+        ));
+
+        $template = "<ul>\n"
+            . "{{#if_ogrn}}    <li>ОГРН/ОГРНИП: {{operator_ogrn}}</li>\n{{/if_ogrn}}"
+            . "    <li>ИНН: {{operator_inn}}</li>\n"
+            . "{{#if_kpp}}    <li>КПП: {{operator_kpp}}</li>\n{{/if_kpp}}"
+            . "</ul>";
+        $rendered = Cashback_Legal_Operator::render_placeholders($template);
+
+        $this->assertStringNotContainsString('ОГРН/ОГРНИП', $rendered);
+        $this->assertStringNotContainsString('КПП', $rendered);
+        $this->assertStringContainsString('<li>ИНН: 770100000001</li>', $rendered);
+    }
+
+    /**
+     * Multi-line блок с переносами строк (флаг `s` в regex) — корректно удаляется.
+     */
+    public function test_render_placeholders_handles_multiline_conditional_blocks(): void
+    {
+        Cashback_Legal_Operator::set_all(array(
+            'full_name'     => 'Самозанятый',
+            'org_form'      => 'Самозанятый',
+            'inn'           => '770100000001',
+            'legal_address' => '123456, Москва',
+            'contact_email' => 'support@example.com',
+        ));
+
+        $template = "before\n{{#if_ogrn}}line A\nline B with {{operator_ogrn}}\nline C{{/if_ogrn}}\nafter";
+        $rendered = Cashback_Legal_Operator::render_placeholders($template);
+
+        $this->assertSame("before\n\nafter", $rendered);
     }
 }
