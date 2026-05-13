@@ -10,8 +10,9 @@ if (!defined('ABSPATH')) {
  * Cashback_Legal_Operator
  *
  * Wrapper над опцией cashback_legal_operator_data: реквизиты оператора ПД
- * (ст. 18.1 152-ФЗ — наименование, ОГРН, ИНН, юр. адрес, контакты), DPO,
- * номер регистрации в реестре операторов РКН.
+ * (ст. 18.1 152-ФЗ — наименование, ИНН, юр. адрес, контакты, URL сайта), DPO,
+ * номер регистрации в реестре операторов РКН. ОГРН/ОГРНИП — опционально
+ * (отсутствует у самозанятых).
  *
  * Эти данные подставляются в шаблоны 6 документов через render_placeholders().
  * До заполнения — шаблоны содержат видимые `{{operator_*}}` маркеры, и
@@ -33,10 +34,10 @@ class Cashback_Legal_Operator {
         return array(
             'full_name',
             'org_form',
-            'ogrn',
             'inn',
             'legal_address',
             'contact_email',
+            'website_url',
         );
     }
 
@@ -57,6 +58,7 @@ class Cashback_Legal_Operator {
             'postal_address',
             'contact_email',
             'contact_phone',
+            'website_url',       // URL сайта оператора (подставляется в шаблоны вместо home_url())
             'dpo_name',          // ответственный за обработку ПД
             'dpo_email',
             'rkn_registration_id', // регистрационный номер в реестре операторов РКН
@@ -148,7 +150,9 @@ class Cashback_Legal_Operator {
             '{{operator_dpo_name}}'            => $data['dpo_name'] !== '' ? $data['dpo_name'] : $data['full_name'],
             '{{operator_dpo_email}}'           => $data['dpo_email'] !== '' ? $data['dpo_email'] : $data['contact_email'],
             '{{operator_rkn_registration_id}}' => $data['rkn_registration_id'],
-            '{{site_url}}'                     => function_exists('home_url') ? (string) home_url('/') : '',
+            '{{site_url}}'                     => $data['website_url'] !== ''
+                ? $data['website_url']
+                : (function_exists('home_url') ? (string) home_url('/') : ''),
             '{{site_name}}'                    => function_exists('get_bloginfo') ? (string) get_bloginfo('name') : '',
             '{{current_year}}'                 => (string) gmdate('Y'),
         );
@@ -199,6 +203,9 @@ class Cashback_Legal_Operator {
             case 'legal_address':
             case 'postal_address':
                 $value = function_exists('sanitize_textarea_field') ? sanitize_textarea_field($value) : $value;
+                break;
+            case 'website_url':
+                $value = function_exists('esc_url_raw') ? esc_url_raw($value) : $value;
                 break;
             default:
                 $value = function_exists('sanitize_text_field') ? sanitize_text_field($value) : $value;

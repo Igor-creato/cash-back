@@ -327,6 +327,7 @@ class Cashback_Legal_Admin {
             ),
             'ogrn'                => array(
                 'label' => __('ОГРН/ОГРНИП', 'cashback-plugin'),
+                'help'  => __('Для ЮЛ — ОГРН (13 цифр), для ИП — ОГРНИП (15 цифр). У самозанятых отсутствует — оставьте пустым.', 'cashback-plugin'),
             ),
             'inn'                 => array(
                 'label' => __('ИНН', 'cashback-plugin'),
@@ -349,6 +350,10 @@ class Cashback_Legal_Admin {
             ),
             'contact_phone'       => array(
                 'label' => __('Контактный телефон', 'cashback-plugin'),
+            ),
+            'website_url'         => array(
+                'label' => __('URL сайта', 'cashback-plugin'),
+                'help'  => __('Например: https://example.com. Подставляется в юридические документы вместо адреса WordPress-сайта.', 'cashback-plugin'),
             ),
             'dpo_name'            => array(
                 'label' => __('Ответственный за обработку ПД (ФИО)', 'cashback-plugin'),
