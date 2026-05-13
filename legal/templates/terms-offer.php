@@ -132,7 +132,7 @@ return <<<'HTML'
     <li>{{operator_full_name}}</li>
     <li>{{#if_ogrn}}ОГРН/ОГРНИП: {{operator_ogrn}}, {{/if_ogrn}}ИНН: {{operator_inn}}{{#if_kpp}}, КПП: {{operator_kpp}}{{/if_kpp}}</li>
     <li>Юридический адрес: {{operator_legal_address}}</li>
-    <li>E-mail: {{operator_contact_email}}, телефон: {{operator_contact_phone}}</li>
+    <li>E-mail: {{operator_contact_email}}{{#if_contact_phone}}, телефон: {{operator_contact_phone}}{{/if_contact_phone}}</li>
 </ul>
 
 </div>

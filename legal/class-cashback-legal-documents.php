@@ -265,7 +265,14 @@ class Cashback_Legal_Documents {
     }
 
     /**
-     * Полный отрендеренный документ: шаблон + подстановка реквизитов оператора.
+     * Полный отрендеренный документ: заголовок + шаблон + подстановка
+     * реквизитов оператора.
+     *
+     * Заголовок (`<h1 class="cashback-legal-document__title">`) подставляется
+     * из get_meta($type)['title'] — текст-метаданные, не редактируется в
+     * админ-CodeMirror (тот правит только тело). Это даёт единое название
+     * на всех публичных страницах документа независимо от темы (некоторые
+     * темы не выводят `the_title()`).
      *
      * При renderer'е плейсхолдеров missing-fields оставляются как `{{...}}` —
      * Cashback_Legal_Operator::is_configured() это контролирует на admin-side.
@@ -275,6 +282,16 @@ class Cashback_Legal_Documents {
         if ($raw === '') {
             return '';
         }
+
+        $meta  = self::get_meta($type);
+        $title = isset($meta['title']) ? (string) $meta['title'] : '';
+        if ($title !== '') {
+            $escaped_title = function_exists('esc_html')
+                ? esc_html($title)
+                : htmlspecialchars($title, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $raw = '<h1 class="cashback-legal-document__title">' . $escaped_title . "</h1>\n" . $raw;
+        }
+
         if (class_exists('Cashback_Legal_Operator')) {
             return Cashback_Legal_Operator::render_placeholders($raw);
         }

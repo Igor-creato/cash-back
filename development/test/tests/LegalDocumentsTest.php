@@ -146,4 +146,52 @@ final class LegalDocumentsTest extends TestCase
         $new = Cashback_Legal_Documents::bump_major('terms_offer');
         $this->assertSame('2.0.0', $new);
     }
+
+    /**
+     * get_rendered() должен prepend'ить `<h1 class="cashback-legal-document__title">`
+     * с заголовком из get_meta()['title'] для каждого из 9 типов. Это нужно
+     * чтобы на публичных страницах документ имел название независимо от того,
+     * выводит ли тема `the_title()` (некоторые темы прячут page-title в Custom
+     * Loop / шаблонах без `wp_head()`-блока).
+     */
+    public function test_get_rendered_prepends_h1_title_for_each_type(): void
+    {
+        foreach (Cashback_Legal_Documents::all_types() as $type) {
+            $meta     = Cashback_Legal_Documents::get_meta($type);
+            $title    = (string) $meta['title'];
+            $rendered = Cashback_Legal_Documents::get_rendered($type);
+
+            $this->assertNotSame('', $rendered, "Type {$type}: rendered must not be empty");
+            $this->assertStringStartsWith(
+                '<h1 class="cashback-legal-document__title">',
+                $rendered,
+                "Type {$type}: rendered output must start with the document title <h1>"
+            );
+            $this->assertStringContainsString(
+                $title,
+                $rendered,
+                "Type {$type}: rendered output must contain the title text from get_meta()"
+            );
+        }
+    }
+
+    /**
+     * Заголовок должен идти РОВНО ПЕРЕД телом документа (включая обёртку
+     * `<div class="cashback-legal-document">`), не дублироваться и не
+     * вмешиваться внутрь `<h2>`-разделов тела.
+     */
+    public function test_get_rendered_title_appears_once_and_before_body(): void
+    {
+        $rendered = Cashback_Legal_Documents::get_rendered('pd_policy');
+
+        // Только один <h1> — заголовок документа. Внутри тела только <h2>+.
+        $this->assertSame(1, substr_count($rendered, '<h1 '), 'Title <h1> must appear exactly once');
+
+        // Заголовок должен идти ДО открытия `<div class="cashback-legal-document"`.
+        $title_pos = strpos($rendered, '<h1 class="cashback-legal-document__title">');
+        $body_pos  = strpos($rendered, '<div class="cashback-legal-document ');
+        $this->assertNotFalse($title_pos);
+        $this->assertNotFalse($body_pos);
+        $this->assertLessThan($body_pos, $title_pos, 'Title must come before body div');
+    }
 }

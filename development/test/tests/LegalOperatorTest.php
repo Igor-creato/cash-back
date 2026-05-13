@@ -305,4 +305,96 @@ final class LegalOperatorTest extends TestCase
 
         $this->assertSame("before\n\nafter", $rendered);
     }
+
+    /**
+     * Телефон оператора опционален (защита от спама — конкуренты телефон в юр.
+     * документах не публикуют). При пустом значении блок {{#if_contact_phone}}…
+     * {{/if_contact_phone}} удаляется целиком — и standalone `<li>`, и inline
+     * сегмент ", телефон: …" из реквизитов в футере terms-offer / affiliate-program.
+     */
+    public function test_render_placeholders_removes_contact_phone_block_when_empty(): void
+    {
+        Cashback_Legal_Operator::set_all(array(
+            'full_name'     => 'ООО «Кэшбэк»',
+            'org_form'      => 'ЮЛ',
+            'inn'           => '7701000001',
+            'legal_address' => '123456, Москва',
+            'contact_email' => 'support@example.com',
+            // contact_phone оставлен пустым
+        ));
+
+        // Standalone <li> (pd-policy.php pattern).
+        $standalone = "    <li>Контактный e-mail: {{operator_contact_email}}</li>\n"
+            . "{{#if_contact_phone}}    <li>Контактный телефон: {{operator_contact_phone}}</li>\n{{/if_contact_phone}}"
+            . "    <li>Адрес сайта: {{site_url}}</li>";
+        $rendered_standalone = Cashback_Legal_Operator::render_placeholders($standalone);
+
+        $this->assertStringNotContainsString('Контактный телефон', $rendered_standalone);
+        $this->assertStringNotContainsString('{{operator_contact_phone}}', $rendered_standalone);
+        $this->assertStringNotContainsString('{{#if_', $rendered_standalone);
+        $this->assertStringContainsString('<li>Контактный e-mail: support@example.com</li>', $rendered_standalone);
+
+        // Inline сегмент (terms-offer.php / affiliate-program.php pattern).
+        $inline   = '<li>E-mail: {{operator_contact_email}}{{#if_contact_phone}}, телефон: {{operator_contact_phone}}{{/if_contact_phone}}</li>';
+        $rendered = Cashback_Legal_Operator::render_placeholders($inline);
+
+        $this->assertSame('<li>E-mail: support@example.com</li>', $rendered);
+        $this->assertStringNotContainsString('телефон', $rendered);
+    }
+
+    /**
+     * Телефон заполнен → блок раскрывается без обёртки, значение подставлено.
+     */
+    public function test_render_placeholders_keeps_contact_phone_block_when_filled(): void
+    {
+        Cashback_Legal_Operator::set_all(array(
+            'full_name'     => 'ООО «Кэшбэк»',
+            'org_form'      => 'ЮЛ',
+            'inn'           => '7701000001',
+            'legal_address' => '123456, Москва',
+            'contact_email' => 'support@example.com',
+            'contact_phone' => '+7 (495) 000-00-00',
+        ));
+
+        // Standalone.
+        $standalone = "{{#if_contact_phone}}    <li>Контактный телефон: {{operator_contact_phone}}</li>\n{{/if_contact_phone}}";
+        $this->assertSame(
+            "    <li>Контактный телефон: +7 (495) 000-00-00</li>\n",
+            Cashback_Legal_Operator::render_placeholders($standalone)
+        );
+
+        // Inline.
+        $inline = '<li>E-mail: {{operator_contact_email}}{{#if_contact_phone}}, телефон: {{operator_contact_phone}}{{/if_contact_phone}}</li>';
+        $this->assertSame(
+            '<li>E-mail: support@example.com, телефон: +7 (495) 000-00-00</li>',
+            Cashback_Legal_Operator::render_placeholders($inline)
+        );
+    }
+
+    /**
+     * Inline-вариант (terms-offer / affiliate-program) при пустом телефоне:
+     * запятая и слово "телефон:" не должны болтаться. E-mail закрывается тегом
+     * `</li>` без артефактов.
+     */
+    public function test_render_placeholders_handles_inline_contact_phone_block(): void
+    {
+        Cashback_Legal_Operator::set_all(array(
+            'full_name'     => 'ИП Иванов И.И.',
+            'org_form'      => 'ИП',
+            'ogrn'          => '321770000000001',
+            'inn'           => '770100000001',
+            'legal_address' => '123456, Москва',
+            'contact_email' => 'support@example.com',
+            // contact_phone пустой
+        ));
+
+        // Фрагмент из terms-offer.php / affiliate-program.php "Реквизиты Оператора".
+        $fragment = '<li>E-mail: {{operator_contact_email}}{{#if_contact_phone}}, телефон: {{operator_contact_phone}}{{/if_contact_phone}}</li>';
+        $rendered = Cashback_Legal_Operator::render_placeholders($fragment);
+
+        $this->assertSame('<li>E-mail: support@example.com</li>', $rendered);
+        $this->assertStringNotContainsString(',', $rendered, 'Нет висящей запятой после email');
+        $this->assertStringNotContainsString('телефон', $rendered, 'Нет литерала "телефон" без значения');
+        $this->assertStringNotContainsString('{{', $rendered, 'Нет остаточных плейсхолдеров');
+    }
 }

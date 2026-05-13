@@ -42,8 +42,8 @@ return <<<'HTML'
     <li>Юридический адрес: {{operator_legal_address}}</li>
     <li>Почтовый адрес: {{operator_postal_address}}</li>
     <li>Контактный e-mail: {{operator_contact_email}}</li>
-    <li>Контактный телефон: {{operator_contact_phone}}</li>
-    <li>Адрес сайта: {{site_url}}</li>
+{{#if_contact_phone}}    <li>Контактный телефон: {{operator_contact_phone}}</li>
+{{/if_contact_phone}}    <li>Адрес сайта: {{site_url}}</li>
     <li>Регистрационный номер в реестре операторов персональных данных Роскомнадзора (далее — «Роскомнадзор», «РКН»): {{operator_rkn_registration_id}}</li>
 </ul>
 
