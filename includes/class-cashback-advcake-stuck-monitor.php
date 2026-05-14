@@ -50,7 +50,7 @@ final class Cashback_Advcake_Stuck_Monitor {
      * Идемпотентна: повторный вызов не плодит дубли.
      */
     public static function register(): void {
-        add_action(self::HOOK_NAME, array( self::class, 'check' ));
+        add_action(self::HOOK_NAME, array( self::class, 'run_hook' ));
 
         if (!function_exists('as_schedule_recurring_action') || !function_exists('as_has_scheduled_action')) {
             return;
@@ -58,6 +58,14 @@ final class Cashback_Advcake_Stuck_Monitor {
         if (!as_has_scheduled_action(self::HOOK_NAME, array(), self::CRON_GROUP)) {
             as_schedule_recurring_action(time() + 600, self::PERIOD_SECONDS, self::HOOK_NAME, array(), self::CRON_GROUP);
         }
+    }
+
+    /**
+     * Action Scheduler callback (void). Wrapper над {@see check()} для соблюдения
+     * контракта «Action callback returns nothing» (PHPStan rule в плагине).
+     */
+    public static function run_hook(): void {
+        self::check();
     }
 
     /**

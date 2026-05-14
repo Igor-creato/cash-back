@@ -40,7 +40,7 @@ final class Cashback_Webhooks_Retention {
     public const SAFETY_LOOPS   = 100;  // максимум 500K rows за прогон
 
     public static function register(): void {
-        add_action(self::HOOK_NAME, array( self::class, 'run' ));
+        add_action(self::HOOK_NAME, array( self::class, 'run_hook' ));
 
         if (!function_exists('as_schedule_recurring_action') || !function_exists('as_has_scheduled_action')) {
             return;
@@ -54,6 +54,14 @@ final class Cashback_Webhooks_Retention {
             }
             as_schedule_recurring_action($next_run, DAY_IN_SECONDS, self::HOOK_NAME, array(), self::CRON_GROUP);
         }
+    }
+
+    /**
+     * Action Scheduler callback (void). Wrapper над {@see run()} для соблюдения
+     * контракта «Action callback returns nothing» (PHPStan rule).
+     */
+    public static function run_hook(): void {
+        self::run();
     }
 
     /**
