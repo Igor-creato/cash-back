@@ -633,50 +633,48 @@ class Cashback_API_Client {
         $network_config = $network;
 
         if ($auth_type === 'api_key') {
-            // Для API Key: пробуем GET-запрос к actions endpoint с limit=1
-            $auth_headers = $this->build_auth_headers($credentials, $network_config);
-            if (!$auth_headers) {
+            // Для api_key-сетей делегируем проверку в адаптер: он сам знает,
+            // как подставить токен (в header / URL path / query — пример: Advcake
+            // принимает токен в `/export/webmaster/{token}`). Generic-подход
+            // через build_auth_headers + build_api_url не умеет path-placeholder'ы
+            // и формирует невалидный URL → CPA возвращает 404.
+            //
+            // Для пустого окна `fetch_all_actions` отдаёт success=true с total=0,
+            // т.е. это и тест credentials, и smoke-test endpoint'а одновременно.
+            $slug    = $network['slug'] ?? '';
+            $adapter = $this->get_adapter($slug);
+
+            if (!$adapter) {
                 return array(
-					'success' => false,
-					'message' => 'Не удалось сформировать заголовки авторизации.',
-				);
+                    'success' => false,
+                    'message' => 'Нет зарегистрированного адаптера для сети: ' . $slug,
+                );
             }
 
-            $actions_url = $this->build_api_url($network_config, 'api_actions_endpoint', '');
-            if (empty($actions_url)) {
+            $today = gmdate('Y-m-d');
+            $params = array(
+                'date_from' => $today,
+                'date_to'   => $today,
+            );
+
+            $result = $adapter->fetch_all_actions($credentials, $params, 1, $network_config);
+
+            if (!empty($result['success'])) {
+                $total = (int) ( $result['total'] ?? 0 );
                 return array(
-					'success' => false,
-					'message' => 'Actions Endpoint не настроен.',
-				);
+                    'success' => true,
+                    'message' => 'Соединение успешно. Получено действий: ' . $total . '.',
+                );
             }
 
-            $url = $actions_url . '?' . http_build_query(array( 'limit' => 1 ));
-
-            $response = wp_remote_get($url, array(
-                // phpcs:ignore WordPressVIPMinimum.Performance.RemoteRequestTimeout.timeout_timeout -- Admin connectivity test endpoint; synchronous check from admin UI, not user-facing request path.
-                'timeout' => 30,
-                'headers' => $auth_headers,
-            ));
-
-            if (is_wp_error($response)) {
-                return array(
-					'success' => false,
-					'message' => 'Ошибка запроса: ' . $response->get_error_message(),
-				);
-            }
-
-            $code = wp_remote_retrieve_response_code($response);
-            if ($code >= 200 && $code < 300) {
-                return array(
-					'success' => true,
-					'message' => 'Соединение успешно. API ответил HTTP ' . $code . '.',
-				);
-            }
+            $error = isset($result['error']) && is_string($result['error']) && $result['error'] !== ''
+                ? $result['error']
+                : 'unknown error';
 
             return array(
-				'success' => false,
-				'message' => 'API вернул HTTP ' . $code . '. Проверьте API Key и URL.',
-			);
+                'success' => false,
+                'message' => 'API недоступен: ' . $error . '. Проверьте API Key и URL.',
+            );
         }
 
         // OAuth2: делегация адаптеру
