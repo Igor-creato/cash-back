@@ -122,12 +122,29 @@ final class Cashback_Tab_Conditions_Renderer {
                 if ( ! preg_match( '/^[A-Z]{3}$/', $currency ) ) {
                     $currency = 'RUB';
                 }
-                $size_fmt = number_format( round( (float) $size_raw, 2 ), 2, ',', '' );
+                // v4.3.4 (U-1): применяем guest_rate как для percent — пользователь
+                // получает только долю от полной CPA-ставки (например, 351.52 × 60% =
+                // 210.91 RUB). До v4.3.4 показывали полную сумму CPA, что вводило
+                // юзера в заблуждение (он не получит весь fix-bid от Advcake).
+                $size_with_rate = (float) $size_raw * $guest_rate / 100.0;
+                $size_with_rate = round( $size_with_rate, 2 );
+                if ( $size_with_rate > 0 && $size_with_rate < 0.01 ) {
+                    $size_fmt = '&lt;0,01';
+                } else {
+                    $size_fmt = number_format( $size_with_rate, 2, ',', '' );
+                }
 
                 $extra = '';
-                if ( isset( $tariff['payment_max'] ) && is_numeric( $tariff['payment_max'] ) && (float) $tariff['payment_max'] > 0 ) {
-                    $max_fmt = number_format( round( (float) $tariff['payment_max'], 2 ), 2, ',', '' );
-                    $extra   = sprintf(
+                if ( isset( $tariff['payment_max'] ) && is_numeric( $tariff['payment_max'] )
+                    && (float) $tariff['payment_max'] > 0
+                    // v4.3.4 (U-2): скрываем «не более X RUB» если X == самой ставке
+                    // (тавтология). Advcake часто возвращает max_commission = value
+                    // для fix-bid'ов — для пользователя это не информативная подсказка.
+                    && abs( (float) $tariff['payment_max'] - (float) $size_raw ) > 0.0001
+                ) {
+                    $max_with_rate = round( (float) $tariff['payment_max'] * $guest_rate / 100.0, 2 );
+                    $max_fmt       = number_format( $max_with_rate, 2, ',', '' );
+                    $extra         = sprintf(
                         ' (не более <strong>%s %s</strong>)',
                         $max_fmt,
                         esc_html( $currency )
@@ -135,7 +152,7 @@ final class Cashback_Tab_Conditions_Renderer {
                 }
 
                 $fix_lines[] = sprintf(
-                    '<p>%s: фиксированная ставка <strong>%s %s</strong> за заказ%s</p>',
+                    '<p>%s: <strong>%s %s</strong> за заказ%s</p>',
                     esc_html( $name ),
                     $size_fmt,
                     esc_html( $currency ),

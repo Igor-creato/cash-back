@@ -115,6 +115,8 @@ final class TabConditionsRendererTest extends TestCase
 
     public function test_render_includes_fix_tariffs_with_currency(): void
     {
+        // v4.3.4: fix-ветка применяет guest_rate (как percent).
+        // 100 × 65 / 100 = 65,00 RUB
         update_option('cashback_guest_display_rate', 65.0);
         $this->set_active_tariffs(array(
             $this->tariff('percent', 5.18, 'Оплаченный заказ'),
@@ -125,12 +127,12 @@ final class TabConditionsRendererTest extends TestCase
 
         $this->assertStringContainsString('Оплаченный заказ', $html);
         $this->assertStringContainsString('Регистрация юр.лица', $html);
-        $this->assertStringContainsString('фиксированная ставка', $html);
-        $this->assertStringContainsString('<strong>100,00 RUB</strong>', $html);
+        $this->assertStringContainsString('<strong>65,00 RUB</strong>', $html, '100 × 65% = 65,00');
     }
 
     public function test_render_fix_tariff_with_payment_max_includes_cap(): void
     {
+        // 1000.45 × 65 / 100 = 650,29 ; 5000 × 65 / 100 = 3250,00
         update_option('cashback_guest_display_rate', 65.0);
         $row = $this->tariff('fix', 1000.45, 'Регистрация ИП', 'RUB');
         $row['payment_max'] = 5000.0;
@@ -138,9 +140,9 @@ final class TabConditionsRendererTest extends TestCase
 
         $html = Cashback_Tab_Conditions_Renderer::render(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
 
-        $this->assertStringContainsString('<strong>1000,45 RUB</strong>', $html);
+        $this->assertStringContainsString('<strong>650,29 RUB</strong>', $html, 'guest_rate применён к size');
         $this->assertStringContainsString('не более', $html);
-        $this->assertStringContainsString('<strong>5000,00 RUB</strong>', $html);
+        $this->assertStringContainsString('<strong>3250,00 RUB</strong>', $html, 'guest_rate применён и к max');
     }
 
     public function test_render_orders_percent_lines_before_fix_lines(): void
@@ -181,7 +183,68 @@ final class TabConditionsRendererTest extends TestCase
 
         $html = Cashback_Tab_Conditions_Renderer::render(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
 
+        $this->assertStringContainsString('<strong>65,00 RUB</strong>', $html);
+    }
+
+    public function test_render_fix_tariff_hides_max_when_equal_to_size(): void
+    {
+        // Citilink/magnit real case: Advcake возвращает max_commission == value
+        // (тавтология «не более X RUB» где X = сама ставка). Должно скрываться.
+        update_option('cashback_guest_display_rate', 60.0);
+        $row = $this->tariff('fix', 351.52, 'Citilink-юр.лица', 'RUB');
+        $row['payment_max'] = 351.52;
+        $this->set_active_tariffs(array($row));
+
+        $html = Cashback_Tab_Conditions_Renderer::render(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
+
+        $this->assertStringContainsString('<strong>210,91 RUB</strong>', $html, '351.52 × 60% = 210,91');
+        $this->assertStringNotContainsString('не более', $html, 'tautological max скрыт');
+    }
+
+    public function test_render_fix_tariff_shows_max_when_strictly_greater(): void
+    {
+        update_option('cashback_guest_display_rate', 65.0);
+        $row = $this->tariff('fix', 100.0, 'Бонус', 'RUB');
+        $row['payment_max'] = 500.0;
+        $this->set_active_tariffs(array($row));
+
+        $html = Cashback_Tab_Conditions_Renderer::render(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
+
+        $this->assertStringContainsString('не более', $html);
+        $this->assertStringContainsString('<strong>325,00 RUB</strong>', $html, '500 × 65% = 325,00');
+    }
+
+    public function test_render_fix_tariff_default_guest_rate_60_when_option_missing(): void
+    {
+        // option не выставлена — fallback 60%
+        $this->set_active_tariffs(array($this->tariff('fix', 100.0, 'Тест', 'RUB')));
+
+        $html = Cashback_Tab_Conditions_Renderer::render(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
+
+        $this->assertStringContainsString('<strong>60,00 RUB</strong>', $html);
+    }
+
+    public function test_render_fix_tariff_clamps_guest_rate_above_100(): void
+    {
+        update_option('cashback_guest_display_rate', 200.0);
+        $this->set_active_tariffs(array($this->tariff('fix', 100.0, 'Тест', 'RUB')));
+
+        $html = Cashback_Tab_Conditions_Renderer::render(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
+
+        // clamped до 100 → 100 × 100 / 100 = 100,00
         $this->assertStringContainsString('<strong>100,00 RUB</strong>', $html);
+    }
+
+    public function test_render_fix_tariff_micro_value_rounds_to_zero(): void
+    {
+        // 0.5 × 0.5 / 100 = 0.0025 → round(2) = 0.00 — попадает в default-ветку 0,00.
+        // (Симметрично percent-сценарию `test_render_micro_value_rounds_to_zero`.)
+        update_option('cashback_guest_display_rate', 0.5);
+        $this->set_active_tariffs(array($this->tariff('fix', 0.5, 'Микро', 'RUB')));
+
+        $html = Cashback_Tab_Conditions_Renderer::render(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
+
+        $this->assertStringContainsString('<strong>0,00 RUB</strong>', $html);
     }
 
     public function test_render_omits_conditions_section_when_no_active_tariffs(): void
