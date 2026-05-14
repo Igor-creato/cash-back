@@ -164,7 +164,9 @@ class Cashback_Legal_Operator {
             '{{operator_contact_phone}}'       => $data['contact_phone'],
             '{{operator_dpo_name}}'            => $data['dpo_name'] !== '' ? $data['dpo_name'] : $data['full_name'],
             '{{operator_dpo_email}}'           => $data['dpo_email'] !== '' ? $data['dpo_email'] : $data['contact_email'],
-            '{{operator_rkn_registration_id}}' => $data['rkn_registration_id'],
+            '{{operator_rkn_registration_id}}' => $data['rkn_registration_id'] !== ''
+                ? $data['rkn_registration_id']
+                : 'будет указан после внесения Оператора в реестр операторов персональных данных Роскомнадзора',
             '{{site_url}}'                     => $data['website_url'] !== ''
                 ? $data['website_url']
                 : (function_exists('home_url') ? (string) home_url('/') : ''),

@@ -6,7 +6,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Cashback Plugin
  * Description: Объединенный плагин для системы кэшбэка и аффилиат-партнерства
- * Version: 4.1.1
+ * Version: 4.2.0
  * Author: Cashback
  * Author URI: https://example.com
  * Text Domain: cashback-plugin
@@ -1365,6 +1365,39 @@ class CashbackPlugin {
             } catch (\Throwable $e) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback Legal] bump_major migration 2026-05-09 failed: ' . $e->getMessage());
+            }
+        }
+
+        // 2026-05-14 (plan immutable-pondering-harbor): bump major только для
+        // pd_policy после переработки текста под рекомендации РКН-аудита.
+        // pd_policy не триггерит re-consent модал (re-consent работает только
+        // для consent-типов), поэтому пользователей повторно не дёргает —
+        // нужен только для consistent audit-trail и обновления
+        // document_version в рендере шапки документа.
+        if (class_exists('Cashback_Legal_Documents')
+            && get_option('cashback_legal_pd_policy_rewrite_2026_05_14_done', '') !== '1') {
+            try {
+                $old = Cashback_Legal_Documents::get_active_version('pd_policy');
+                $new = Cashback_Legal_Documents::bump_major('pd_policy');
+                update_option('cashback_legal_pd_policy_rewrite_2026_05_14_done', '1', false);
+
+                if (class_exists('Cashback_Encryption')
+                    && method_exists('Cashback_Encryption', 'write_audit_log')) {
+                    try {
+                        Cashback_Encryption::write_audit_log(
+                            'legal_pd_policy_bump_2026_05_14',
+                            0,
+                            'legal',
+                            0,
+                            array( 'old' => $old, 'new' => $new )
+                        );
+                    } catch (\Throwable $audit_error) {
+                        unset($audit_error);
+                    }
+                }
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Legal] bump_major migration 2026-05-14 (pd_policy) failed: ' . $e->getMessage());
             }
         }
 

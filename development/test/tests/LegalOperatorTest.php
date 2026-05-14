@@ -372,6 +372,65 @@ final class LegalOperatorTest extends TestCase
     }
 
     /**
+     * 2026-05-14 (plan immutable-pondering-harbor): пустой `rkn_registration_id`
+     * НЕ остаётся видимым плейсхолдером (как было до правки) — подменяется
+     * информативной строкой «будет указан после внесения в реестр операторов
+     * ПД Роскомнадзора». Это закрывает рекомендацию РКН-аудита: литерал
+     * `{{operator_rkn_registration_id}}` нельзя оставлять на опубликованной
+     * странице Политики. `is_configured()` НЕ затрагивается — поле уже
+     * отсутствует в required_fields() ([line 33–42](legal/class-cashback-legal-operator.php#L33)),
+     * чтобы admin-плашка «реквизиты не настроены» не сломалась.
+     */
+    public function test_render_placeholders_falls_back_rkn_registration_id_when_empty(): void
+    {
+        Cashback_Legal_Operator::set_all(array(
+            'full_name'     => 'Иванов Иван Иванович',
+            'org_form'      => 'физическое лицо, применяющее специальный налоговый режим «Налог на профессиональный доход»',
+            'inn'           => '770100000001',
+            'legal_address' => '123456, Москва',
+            'contact_email' => 'support@example.com',
+            'website_url'   => 'https://example.com',
+            // rkn_registration_id оставлен пустым — оператор ещё не подал уведомление.
+        ));
+
+        $rendered = Cashback_Legal_Operator::render_placeholders('РКН: {{operator_rkn_registration_id}}');
+
+        $this->assertStringContainsString(
+            'будет указан после внесения Оператора в реестр операторов персональных данных Роскомнадзора',
+            $rendered,
+            'Пустой rkn_registration_id должен подменяться информативной строкой, а не оставаться видимым плейсхолдером'
+        );
+        $this->assertStringNotContainsString(
+            '{{operator_rkn_registration_id}}',
+            $rendered,
+            'Литерал плейсхолдера не должен попадать в опубликованный текст'
+        );
+    }
+
+    /**
+     * При заполненном `rkn_registration_id` подстановка идёт штатно — fallback
+     * не активируется.
+     */
+    public function test_render_placeholders_uses_rkn_registration_id_value_when_filled(): void
+    {
+        Cashback_Legal_Operator::set_all(array(
+            'full_name'           => 'Иванов Иван Иванович',
+            'org_form'            => 'НПД',
+            'inn'                 => '770100000001',
+            'legal_address'       => '123456, Москва',
+            'contact_email'       => 'support@example.com',
+            'website_url'         => 'https://example.com',
+            'rkn_registration_id' => '77-25/000000',
+        ));
+
+        $rendered = Cashback_Legal_Operator::render_placeholders('РКН: {{operator_rkn_registration_id}}');
+
+        $this->assertStringContainsString('77-25/000000', $rendered);
+        $this->assertStringNotContainsString('будет указан после внесения', $rendered);
+        $this->assertStringNotContainsString('{{operator_rkn_registration_id}}', $rendered);
+    }
+
+    /**
      * Inline-вариант (terms-offer / affiliate-program) при пустом телефоне:
      * запятая и слово "телефон:" не должны болтаться. E-mail закрывается тегом
      * `</li>` без артефактов.
