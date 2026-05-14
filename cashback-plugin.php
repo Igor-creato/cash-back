@@ -1314,6 +1314,20 @@ class CashbackPlugin {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback] Cleanup ghost members v13 auto-migration failed: ' . $e->getMessage());
             }
+
+            // v14: seed-row Advcake в cashback_affiliate_networks (slug=advcake,
+            // api_key пустой — admin заполняет через UI) + ADD COLUMN event_type
+            // в cashback_webhooks (нужно для routing'а partner_status постбэков
+            // от Advcake). Идемпотентно через cashback_db_version >= 14 fast-path.
+            // Без auto-fire миграция требовала бы ручной deactivate/activate
+            // плагина после деплоя — auto-fire даёт zero-downtime upgrade
+            // через простой git pull + opcache reload.
+            try {
+                Mariadb_Plugin::get_instance()->migrate_advcake_seed_v14();
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] Advcake seed v14 auto-migration failed: ' . $e->getMessage());
+            }
         }
 
         // Legal module (Phase 1): создание таблицы wp_cashback_consent_log и
