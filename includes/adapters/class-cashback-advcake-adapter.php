@@ -837,12 +837,21 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
     /**
      * Выбрать URL для goto_link из списка landings оффера.
      *
-     * Приоритет: первый landing с `type='main_page'` среди активных → fallback
-     * первый активный landing → пустая строка если активных нет.
+     * Особенность Advcake API: формат landing в `/offers` (batch) и в
+     * `/offers/{id}` (single) / `/landings` (отдельный endpoint) отличается:
+     *   - batch: только `id, name, promotional, start_date, available_deep_link, link`;
+     *   - single/landings: расширенный — `url, active, status, type, ...`.
      *
-     * Активный = `active=true` AND (status пустой ИЛИ status='active').
-     * Для совместимости с легаси-payload'ами Advcake, где status может
-     * отсутствовать, отсутствие поля трактуем как active.
+     * Поэтому:
+     *   - URL берём из `url` или `link` (whichever present).
+     *   - `active` / `status` отсутствуют в batch → отсутствие поля трактуем
+     *     как «активен» (defensive, симметрично behaviour'у Advcake UI:
+     *     batch возвращает только видимые/работающие landings).
+     *   - `type='main_page'` тоже отсутствует в batch → если ни у одного
+     *     landing'а type не задан, выбираем первый по списку с непустым URL.
+     *
+     * Приоритет: первый landing с `type='main_page'` среди active → fallback
+     * первый landing с непустым URL → пустая строка.
      *
      * @param array<int, array<string, mixed>> $landings
      */
@@ -852,16 +861,25 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             if (!is_array($landing)) {
                 continue;
             }
-            $active = !empty($landing['active']);
-            $status = isset($landing['status']) ? strtolower(trim((string) $landing['status'])) : '';
+
+            // Отсутствие 'active' / 'status' в batch /offers → considered active.
+            $active            = !array_key_exists('active', $landing) || !empty($landing['active']);
+            $status            = isset($landing['status']) ? strtolower(trim((string) $landing['status'])) : '';
             $is_active_landing = $active && ( $status === '' || $status === 'active' );
             if (!$is_active_landing) {
                 continue;
             }
-            $url = isset($landing['url']) && is_scalar($landing['url']) ? trim((string) $landing['url']) : '';
+
+            $url = '';
+            if (isset($landing['url']) && is_scalar($landing['url'])) {
+                $url = trim((string) $landing['url']);
+            } elseif (isset($landing['link']) && is_scalar($landing['link'])) {
+                $url = trim((string) $landing['link']);
+            }
             if ($url === '') {
                 continue;
             }
+
             $type = isset($landing['type']) ? strtolower(trim((string) $landing['type'])) : '';
             if ($type === 'main_page') {
                 return $url;

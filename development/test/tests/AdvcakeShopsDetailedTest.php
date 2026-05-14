@@ -301,6 +301,34 @@ final class AdvcakeShopsDetailedTest extends TestCase
         $this->assertSame('https://active/', $result['campaigns'][0]['goto_link']);
     }
 
+    public function test_goto_link_works_with_batch_offers_landings_format(): void
+    {
+        // В batch /offers Advcake landings приходят в коротком формате:
+        // `id, name, promotional, start_date, available_deep_link, link` —
+        // без `url`, `active`, `status`, `type`. Адаптер должен взять `link`.
+        $offer = $this->sample_offer(array(
+            'landings' => array(
+                array(
+                    'id' => 'ln35232',
+                    'name' => 'gb.ru',
+                    'promotional' => false,
+                    'start_date' => '2025-04-14',
+                    'available_deep_link' => true,
+                    'link' => 'https://go.avred.online/short-link?erid=2VfnxxQa3a9&m=31',
+                ),
+            ),
+        ));
+        $this->queue_responses(array( $this->http_response(200, $this->offers_body(array( $offer ))) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config());
+
+        $this->assertSame(
+            'https://go.avred.online/short-link?erid=2VfnxxQa3a9&m=31',
+            $result['campaigns'][0]['goto_link']
+        );
+    }
+
     public function test_goto_link_empty_string_when_no_landings(): void
     {
         $offer = $this->sample_offer(array( 'landings' => array() ));
