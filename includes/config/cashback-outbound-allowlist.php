@@ -32,6 +32,9 @@ return array(
         // Admitad (CPA-сеть)
         'api.admitad.com',
 
+        // Advcake (CPA-сеть)
+        'api.advcake.ru',
+
         // Yandex SmartCaptcha (антифрод)
         'smartcaptcha.yandexcloud.net',
     ),

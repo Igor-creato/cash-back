@@ -6,7 +6,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Cashback Plugin
  * Description: Объединенный плагин для системы кэшбэка и аффилиат-партнерства
- * Version: 4.2.0
+ * Version: 4.3.0
  * Author: Cashback
  * Author URI: https://example.com
  * Text Domain: cashback-plugin
@@ -874,6 +874,7 @@ class CashbackPlugin {
         $this->require_file('includes/adapters/class-cashback-shop-tariff-dto.php');
         $this->require_file('includes/adapters/class-admitad-adapter.php');
         $this->require_file('includes/adapters/class-epn-adapter.php');
+        $this->require_file('includes/adapters/class-cashback-advcake-adapter.php');
 
         // Промокоды: контракты, DTO, generic-движок (используется fetcher'ом + admin UI).
         $this->require_file('includes/promocodes/contracts/interface-coupons-adapter.php');
@@ -941,6 +942,7 @@ class CashbackPlugin {
         // API клиент и cron (синхронизация работает через WP Cron)
         $this->require_file('includes/class-cashback-api-client.php');
         $this->require_file('includes/class-cashback-api-cron.php');
+        $this->require_file('includes/class-cashback-advcake-partner-status-sync.php');
 
         // Группа 14: ежедневная сверка ledger vs кэш баланса.
         $this->require_file('includes/class-cashback-balance-reconciliation.php');
@@ -1588,6 +1590,11 @@ class CashbackPlugin {
         // --- API Валидация: cron фоновой синхронизации (фронт + админка) ---
         if (class_exists('Cashback_API_Cron')) {
             Cashback_API_Cron::init();
+        }
+
+        // --- Advcake: фоновая обработка partner-status постбэков ---
+        if (class_exists('Cashback_Advcake_Partner_Status_Sync')) {
+            Cashback_Advcake_Partner_Status_Sync::init();
         }
 
         // --- Промокоды CPA-сетей: AS-cron 6ч + manual refresh ---

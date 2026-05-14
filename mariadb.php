@@ -98,6 +98,8 @@ class Mariadb_Plugin {
             $instance->migrate_click_log_promocode_id_v10();
             $instance->migrate_promocodes_v11_session_promocode_id();
             $instance->migrate_shop_import_v12();
+            $instance->migrate_cleanup_ghost_members_v13();
+            $instance->migrate_advcake_seed_v14();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -4306,6 +4308,147 @@ class Mariadb_Plugin {
         // batched wp-cron с resumable cursor.
 
         update_option('cashback_db_version', 13, false);
+    }
+
+    /**
+     * Seed-row сети Advcake + ALTER cashback_webhooks.event_type (v14).
+     *
+     * Делает две вещи, и обе идемпотентны:
+     *
+     * 1. INSERT ... ON DUPLICATE KEY UPDATE в `cashback_affiliate_networks`
+     *    seed-row для slug='advcake'. Без токена (admin вводит через UI),
+     *    с предзаполненными status_map / field_map / endpoint placeholder'ом.
+     *    Не перезаписывает существующие значения, если админ уже настроил.
+     *
+     * 2. ALTER TABLE cashback_webhooks ADD COLUMN `event_type` VARCHAR(32)
+     *    NOT NULL DEFAULT 'transaction'. Нужно чтобы webhook-receiver мог
+     *    различать обычные order-постбэки от партнёрских status-update'ов
+     *    (Advcake шлёт ?event_type=partner_status). Существующие rows
+     *    автоматически получают default 'transaction' — поведение не меняется.
+     *
+     * Идемпотентность: cashback_db_version >= 14 fast-path + INFORMATION_SCHEMA
+     * для ALTER (column existence check) + ON DUPLICATE KEY для INSERT.
+     */
+    public function migrate_advcake_seed_v14(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        if ($current_version >= 14) {
+            return;
+        }
+
+        $safe_prefix    = $this->validate_table_prefix($wpdb->prefix);
+        $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
+        $webhooks_table = $wpdb->prefix . 'cashback_webhooks';
+
+        // ------------------------------------------------------------------
+        // 1. ALTER cashback_webhooks.event_type (если ещё нет колонки).
+        // ------------------------------------------------------------------
+        $has_event_type = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = %s
+                AND COLUMN_NAME  = %s',
+            $webhooks_table,
+            'event_type'
+        ));
+
+        if ($has_event_type === 0) {
+            // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL, $safe_prefix validated via validate_table_prefix().
+            $r_alter = $wpdb->query(
+                "ALTER TABLE `{$safe_prefix}cashback_webhooks`
+                  ADD COLUMN `event_type` VARCHAR(32) NOT NULL DEFAULT 'transaction'
+                    COMMENT 'Тип webhook-события: transaction (default) | partner_status (Advcake)'
+                  AFTER `network_slug`,
+                  ADD KEY `idx_event_type_status` (`event_type`,`processing_status`)"
+            );
+            // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+            if ($r_alter === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v14] ALTER cashback_webhooks ADD event_type failed: ' . $wpdb->last_error);
+                return;
+            }
+
+            $verify_col = (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME   = %s
+                    AND COLUMN_NAME  = %s',
+                $webhooks_table,
+                'event_type'
+            ));
+            if ($verify_col === 0) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v14] post-verify failed: cashback_webhooks.event_type missing after ALTER');
+                return;
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // 2. Seed-row Advcake в cashback_affiliate_networks. INSERT с ON
+        //    DUPLICATE KEY: на повторных запусках обновляем ТОЛЬКО publicные
+        //    дефолты (endpoint/status_map/field_map), credentials и
+        //    включённость не трогаем, чтобы не сломать настроенную сеть.
+        // ------------------------------------------------------------------
+        $status_map_json = (string) wp_json_encode(array(
+            '1' => 'waiting',
+            '2' => 'completed',
+            '3' => 'declined',
+        ));
+
+        // api_field_map читается через Cashback_API_Client::api_field_for($local_column).
+        // Ключи — internal cashback_transactions колонки; значения — имена полей
+        // в normalized action-массиве (см. Cashback_Advcake_Adapter::normalize_xml_item).
+        $field_map_json = (string) wp_json_encode(array(
+            'comission'   => 'commission',
+            'sum_order'   => 'price',
+            'uniq_id'     => 'id',
+            'order_number' => 'order_id',
+            'offer_id'    => 'offer_id',
+            'offer_name'  => 'offer',
+            'currency'    => 'currency',
+            'action_date' => 'date',
+            'click_time'  => 'clicked_at',
+            'action_type' => '',
+            'website_id'  => '',
+        ));
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot migration insert.
+        $existing = $wpdb->get_row($wpdb->prepare(
+            'SELECT id FROM %i WHERE slug = %s LIMIT 1',
+            $networks_table,
+            'advcake'
+        ));
+
+        if ($existing === null) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot migration insert.
+            $insert_result = $wpdb->insert(
+                $networks_table,
+                array(
+                    'name'                 => 'Advcake',
+                    'slug'                 => 'advcake',
+                    'notes'                => 'CPA-сеть Advcake (api.advcake.ru). Auth: api_key в URL. Постбэки — через Webhook Receiver.',
+                    'api_base_url'         => 'https://api.advcake.ru',
+                    'api_auth_type'        => 'api_key',
+                    'api_user_field'       => 'sub2',
+                    'api_click_field'      => 'sub1',
+                    'api_status_map'       => $status_map_json,
+                    'api_field_map'        => $field_map_json,
+                    'api_actions_endpoint' => '/export/webmaster/{token}',
+                    'api_token_endpoint'   => '',
+                    'is_active'            => 0,
+                    'sort_order'           => 30,
+                ),
+                array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d' )
+            );
+            if ($insert_result === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v14] INSERT advcake seed-row failed: ' . $wpdb->last_error);
+                return;
+            }
+        }
+
+        update_option('cashback_db_version', 14, false);
     }
 
     /**

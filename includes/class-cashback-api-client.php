@@ -67,6 +67,7 @@ class Cashback_API_Client {
         // Регистрация встроенных адаптеров CPA-сетей
         $this->register_adapter(new Cashback_Admitad_Adapter());
         $this->register_adapter(new Cashback_Epn_Adapter());
+        $this->register_adapter(new Cashback_Advcake_Adapter());
 
         /**
          * Позволяет внешним плагинам регистрировать свои адаптеры CPA-сетей.
