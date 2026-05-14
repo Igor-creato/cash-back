@@ -945,6 +945,8 @@ class CashbackPlugin {
         $this->require_file('includes/class-cashback-api-client.php');
         $this->require_file('includes/class-cashback-api-cron.php');
         $this->require_file('includes/class-cashback-advcake-partner-status-sync.php');
+        $this->require_file('includes/class-cashback-advcake-stuck-monitor.php');
+        $this->require_file('includes/class-cashback-webhooks-retention.php');
 
         // Группа 14: ежедневная сверка ledger vs кэш баланса.
         $this->require_file('includes/class-cashback-balance-reconciliation.php');
@@ -1324,11 +1326,22 @@ class CashbackPlugin {
             // Без auto-fire миграция требовала бы ручной deactivate/activate
             // плагина после деплоя — auto-fire даёт zero-downtime upgrade
             // через простой git pull + opcache reload.
-            try {
-                Mariadb_Plugin::get_instance()->migrate_advcake_seed_v14();
-            } catch (\Throwable $e) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                error_log('[Cashback] Advcake seed v14 auto-migration failed: ' . $e->getMessage());
+            // Auto-fire guard (audit P-1/P-4): не запускаем миграцию с frontend-request'а
+            // (риск hot-path ALTER mid-pageload) и rate-limit'им retry'и на failure.
+            $should_run_migration = wp_doing_cron()
+                || ( is_admin() && current_user_can('manage_options') )
+                || ( defined('WP_CLI') && WP_CLI );
+            $retry_throttle = get_transient('cashback_migration_v14_throttle');
+            if ($should_run_migration && !$retry_throttle) {
+                try {
+                    Mariadb_Plugin::get_instance()->migrate_advcake_seed_v14();
+                    Mariadb_Plugin::get_instance()->migrate_v15_uniqueness();
+                } catch (\Throwable $e) {
+                    set_transient('cashback_migration_v14_throttle', 1, 15 * MINUTE_IN_SECONDS);
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                    error_log('[Cashback] Advcake migration v14/v15 auto-fire failed: ' . $e->getMessage());
+                    set_transient('cashback_migration_failure_notice', $e->getMessage(), DAY_IN_SECONDS);
+                }
             }
         }
 
@@ -1611,6 +1624,19 @@ class CashbackPlugin {
         // --- Advcake: фоновая обработка partner-status постбэков ---
         if (class_exists('Cashback_Advcake_Partner_Status_Sync')) {
             Cashback_Advcake_Partner_Status_Sync::init();
+        }
+
+        // --- Advcake: мониторинг застрявших транзакций (F-1/F-2) ---
+        if (class_exists('Cashback_Advcake_Stuck_Monitor')) {
+            Cashback_Advcake_Stuck_Monitor::register();
+            if (is_admin() && get_transient(Cashback_Advcake_Stuck_Monitor::NOTICE_KEY)) {
+                add_action('admin_notices', array( 'Cashback_Advcake_Stuck_Monitor', 'notice' ));
+            }
+        }
+
+        // --- cashback_webhooks retention (P-3): ежедневная очистка >90d ---
+        if (class_exists('Cashback_Webhooks_Retention')) {
+            Cashback_Webhooks_Retention::register();
         }
 
         // --- Промокоды CPA-сетей: AS-cron 6ч + manual refresh ---

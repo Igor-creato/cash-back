@@ -241,6 +241,7 @@ class Mariadb_Plugin {
             `param_type` varchar(100) DEFAULT NULL COMMENT 'Значение параметра',
             `default_value` varchar(255) DEFAULT NULL COMMENT 'Значение по умолчанию',
             PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_network_param` (`network_id`,`param_name`),
             KEY `idx_network_id` (`network_id`)
         ) ENGINE=InnoDB {$charset_collate} COMMENT='Параметры партнерских сетей';";
 
@@ -4354,14 +4355,23 @@ class Mariadb_Plugin {
         ));
 
         if ($has_event_type === 0) {
+            // ALGORITHM=INSTANT (MariaDB 10.3.7+ / MySQL 8.0.12+) превращает ADD COLUMN
+            // в metadata-only operation — для prod-таблицы на млн+ rows это разница
+            // между секундами и десятками минут lock'а. Если СУБД старее или операция
+            // не поддерживается → fallback на дефолтный COPY-режим.
             // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL, $safe_prefix validated via validate_table_prefix().
-            $r_alter = $wpdb->query(
+            $alter_base =
                 "ALTER TABLE `{$safe_prefix}cashback_webhooks`
                   ADD COLUMN `event_type` VARCHAR(32) NOT NULL DEFAULT 'transaction'
                     COMMENT 'Тип webhook-события: transaction (default) | partner_status (Advcake)'
                   AFTER `network_slug`,
-                  ADD KEY `idx_event_type_status` (`event_type`,`processing_status`)"
-            );
+                  ADD KEY `idx_event_type_status` (`event_type`,`processing_status`)";
+            $r_alter = $wpdb->query($alter_base . ', ALGORITHM=INSTANT');
+            if ($r_alter === false && self::error_indicates_algorithm_unsupported($wpdb->last_error)) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+                error_log('[Cashback Migration v14] ALGORITHM=INSTANT not supported, fallback to default: ' . $wpdb->last_error);
+                $r_alter = $wpdb->query($alter_base);
+            }
             // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
             if ($r_alter === false) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
@@ -4475,7 +4485,30 @@ class Mariadb_Plugin {
                 array( 'param_name' => 'sub2', 'param_type' => 'user', 'default_value' => '' ),
             );
 
+            // Если UNIQUE (network_id, param_name) уже есть (v15+ или fresh install)
+            // — используем INSERT ... ON DUPLICATE KEY UPDATE (atomic, concurrent-safe).
+            // Иначе fallback на SELECT-COUNT-THEN-INSERT (миграция v15 потом добавит
+            // UNIQUE и dedup).
+            $has_unique = self::has_unique_network_param_index($wpdb, $params_table);
+
             foreach ($default_params as $param) {
+                if ($has_unique) {
+                    // %i placeholder для table-name (WP 6.2+) — закрывает phpcs NotPrepared
+                    // без необходимости interpolation.
+                    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+                    $wpdb->query($wpdb->prepare(
+                        'INSERT INTO %i (network_id, param_name, param_type, default_value)
+                         VALUES (%d, %s, %s, %s)
+                         ON DUPLICATE KEY UPDATE id = id',
+                        $params_table,
+                        $advcake_id,
+                        $param['param_name'],
+                        $param['param_type'],
+                        $param['default_value']
+                    ));
+                    continue;
+                }
+
                 $exists = (int) $wpdb->get_var($wpdb->prepare(
                     'SELECT COUNT(*) FROM %i WHERE network_id = %d AND param_name = %s',
                     $params_table,
@@ -4499,6 +4532,104 @@ class Mariadb_Plugin {
         }
 
         update_option('cashback_db_version', 14, false);
+    }
+
+    /**
+     * v15: добавление UNIQUE (network_id, param_name) в cashback_affiliate_network_params.
+     * Закрывает audit-finding C-2 (race на seed sub1/sub2 при concurrent init).
+     *
+     * 1. Дедуплицирует существующие rows (оставляет min(id) для каждой пары).
+     * 2. ALTER ADD UNIQUE KEY с ALGORITHM=INPLACE → fallback на default.
+     * 3. Bumps cashback_db_version=15.
+     *
+     * Идемпотентно через fast-path по db_version.
+     */
+    public function migrate_v15_uniqueness(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        if ($current_version >= 15) {
+            return;
+        }
+
+        $safe_prefix  = $this->validate_table_prefix($wpdb->prefix);
+        $params_table = $wpdb->prefix . 'cashback_affiliate_network_params';
+
+        // Если UNIQUE уже есть (свежая установка через CREATE TABLE с обновлённым
+        // schema) — только bump version.
+        if (self::has_unique_network_param_index($wpdb, $params_table)) {
+            update_option('cashback_db_version', 15, false);
+            return;
+        }
+
+        // Шаг 1: dedupe — оставляем строку с min(id) для каждой пары (network_id, param_name).
+        // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+        $r_dedup = $wpdb->query(
+            "DELETE p1 FROM `{$safe_prefix}cashback_affiliate_network_params` p1
+              INNER JOIN `{$safe_prefix}cashback_affiliate_network_params` p2
+                ON p1.network_id = p2.network_id
+               AND p1.param_name = p2.param_name
+               AND p1.id > p2.id"
+        );
+        if ($r_dedup === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+            error_log('[Cashback Migration v15] dedupe failed: ' . $wpdb->last_error);
+            return;
+        }
+
+        // Шаг 2: ADD UNIQUE с INSTANT-попыткой → fallback.
+        $alter_base =
+            "ALTER TABLE `{$safe_prefix}cashback_affiliate_network_params`
+              ADD UNIQUE KEY `uk_network_param` (`network_id`,`param_name`)";
+        $r_alter = $wpdb->query($alter_base . ', ALGORITHM=INPLACE, LOCK=NONE');
+        if ($r_alter === false && self::error_indicates_algorithm_unsupported($wpdb->last_error)) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+            error_log('[Cashback Migration v15] ALGORITHM=INPLACE not supported, fallback: ' . $wpdb->last_error);
+            $r_alter = $wpdb->query($alter_base);
+        }
+        // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+        if ($r_alter === false) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+            error_log('[Cashback Migration v15] ALTER ADD UNIQUE failed: ' . $wpdb->last_error);
+            return;
+        }
+
+        update_option('cashback_db_version', 15, false);
+    }
+
+    /**
+     * Проверяет наличие UNIQUE (network_id, param_name) индекса.
+     *
+     * @param object $wpdb_instance
+     * @param string $table
+     */
+    private static function has_unique_network_param_index( $wpdb_instance, string $table ): bool {
+        $rows = $wpdb_instance->get_results($wpdb_instance->prepare(
+            'SELECT INDEX_NAME FROM information_schema.STATISTICS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = %s
+                AND NON_UNIQUE   = 0
+                AND INDEX_NAME   = %s',
+            $table,
+            'uk_network_param'
+        ));
+        return is_array($rows) && count($rows) > 0;
+    }
+
+    /**
+     * Эвристика: содержит ли ошибка MariaDB/MySQL сигнатуру «ALGORITHM не поддерживается»?
+     */
+    private static function error_indicates_algorithm_unsupported( string $err ): bool {
+        if ($err === '') {
+            return false;
+        }
+        $needles = array( '1845', 'ALGORITHM=', 'Algorithm not supported', 'LOCK=NONE is not supported' );
+        foreach ($needles as $n) {
+            if (stripos($err, $n) !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

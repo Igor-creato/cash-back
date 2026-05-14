@@ -770,6 +770,20 @@ if (!function_exists('as_has_scheduled_action')) {
     }
 }
 
+if (!function_exists('as_schedule_recurring_action')) {
+    function as_schedule_recurring_action(int $timestamp, int $interval_in_seconds, string $hook, array $args = array(), string $group = ''): int
+    {
+        $GLOBALS['_cb_test_as_scheduled'] = array(
+            'hook'                => $hook,
+            'args'                => $args,
+            'group'               => $group,
+            'timestamp'           => $timestamp,
+            'interval_in_seconds' => $interval_in_seconds,
+        );
+        return 1;
+    }
+}
+
 if (!function_exists('as_schedule_single_action')) {
     function as_schedule_single_action(int $timestamp, string $hook, array $args = array(), string $group = ''): int
     {

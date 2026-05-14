@@ -90,6 +90,16 @@ final class AdvcakeNetworkSeedTest extends TestCase
                 return null;
             }
 
+            /**
+             * v4.3.4: migrate_advcake_seed_v14 теперь проверяет наличие UNIQUE-индекса
+             * для перехода на INSERT…ODKU. На свежем install (до v15) UNIQUE ещё нет —
+             * возвращаем пустой массив, миграция останется на legacy SELECT-COUNT-INSERT.
+             */
+            public function get_results(string $query): array
+            {
+                return array();
+            }
+
             public function query(string $query): int
             {
                 $this->query_calls[] = $query;
