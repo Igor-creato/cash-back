@@ -47,8 +47,17 @@ class Cashback_Advcake_Partner_Status_Sync {
      * Регистрация хуков. Вызывается из bootstrap'а плагина.
      */
     public static function init(): void {
-        add_action(self::HOOK_NAME, array( self::class, 'process_batch' ));
+        add_action(self::HOOK_NAME, array( self::class, 'run' ));
         add_action('init', array( self::class, 'maybe_schedule' ));
+    }
+
+    /**
+     * Action Scheduler callback (void). Хуковый wrapper над {@see process_batch()},
+     * чтобы фрейморк-сигнатура `Action callback returns nothing` была соблюдена,
+     * а батч-метод сохранил return-значение для тестов и admin diag-tools.
+     */
+    public static function run(): void {
+        self::process_batch();
     }
 
     /**

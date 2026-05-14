@@ -135,7 +135,11 @@ interface Cashback_Network_Adapter_Interface {
     /**
      * Маппинг статусов API → локальные по умолчанию
      *
-     * @return array<string, string> API status => local status (waiting/completed/declined)
+     * Ключи — статусы из API CPA-сети (Admitad шлёт string'и 'pending'/'approved',
+     * Advcake — числовые '1'/'2'/'3', которые PHP автоматически кастит в int).
+     * Значения — внутренние статусы (waiting/completed/declined).
+     *
+     * @return array<int|string, string> API status => local status (waiting/completed/declined)
      */
     public function get_default_status_map(): array;
 
