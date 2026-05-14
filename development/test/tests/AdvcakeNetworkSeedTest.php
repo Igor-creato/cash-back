@@ -70,6 +70,14 @@ final class AdvcakeNetworkSeedTest extends TestCase
                 if (strpos($query, 'COLUMNS') !== false) {
                     return $this->event_type_exists ? 1 : 0;
                 }
+                // SELECT id FROM cashback_affiliate_networks WHERE slug='advcake' — для seed params lookup
+                if (strpos($query, 'affiliate_networks') !== false && strpos($query, 'slug') !== false) {
+                    return $this->row_exists ? 42 : 9; // 9 = just-inserted from migration, 42 = pre-existing
+                }
+                // COUNT(*) для idempotency-check seed params (по умолчанию — не существуют)
+                if (strpos($query, 'affiliate_network_params') !== false) {
+                    return 0;
+                }
                 return null;
             }
 
@@ -137,9 +145,13 @@ final class AdvcakeNetworkSeedTest extends TestCase
         );
         $this->assertNotEmpty($alter_calls, 'ALTER TABLE должен быть вызван для добавления event_type');
 
-        // INSERT для advcake row должен быть вызван.
-        $this->assertCount(1, $wpdb->insert_calls);
-        $insert = $wpdb->insert_calls[0];
+        // INSERT для advcake row в networks-таблицу должен быть вызван.
+        $networks_inserts = array_values(array_filter(
+            $wpdb->insert_calls,
+            static fn(array $call): bool => $call['table'] === 'wp_cashback_affiliate_networks'
+        ));
+        $this->assertCount(1, $networks_inserts);
+        $insert = $networks_inserts[0];
         $this->assertSame('wp_cashback_affiliate_networks', $insert['table']);
         $this->assertSame('advcake', $insert['data']['slug']);
         $this->assertSame('Advcake', $insert['data']['name']);
@@ -165,6 +177,52 @@ final class AdvcakeNetworkSeedTest extends TestCase
         $this->assertSame('waiting', $status_map['1']);
         $this->assertSame('completed', $status_map['2']);
         $this->assertSame('declined', $status_map['3']);
+    }
+
+    public function test_fresh_install_seeds_sub1_and_sub2_url_params(): void
+    {
+        $wpdb = $this->call_migration($this->make_wpdb_mock(row_exists: false, event_type_exists: false));
+
+        // Из insert_calls фильтруем те что в cashback_affiliate_network_params.
+        $param_inserts = array_filter(
+            $wpdb->insert_calls,
+            static fn(array $call): bool => $call['table'] === 'wp_cashback_affiliate_network_params'
+        );
+
+        $this->assertCount(2, $param_inserts, 'должно быть 2 INSERT в network_params (sub1 + sub2)');
+
+        $param_inserts = array_values($param_inserts);
+        $by_name       = array();
+        foreach ($param_inserts as $call) {
+            $by_name[ $call['data']['param_name'] ] = $call['data'];
+        }
+
+        $this->assertArrayHasKey('sub1', $by_name, 'должен быть seed sub1');
+        $this->assertSame('uuid', $by_name['sub1']['param_type'], 'sub1 → uuid (click_id UUIDv7)');
+
+        $this->assertArrayHasKey('sub2', $by_name, 'должен быть seed sub2');
+        $this->assertSame('user', $by_name['sub2']['param_type'], 'sub2 → user (partner_token через Cashback_Click_Session_Service)');
+    }
+
+    public function test_existing_row_does_not_create_duplicate_url_params_when_already_seeded(): void
+    {
+        // make_wpdb_mock(row_exists=true): seed-row уже есть.
+        // get_var для affiliate_network_params возвращает 0 → INSERT всё равно будет.
+        // Это тест что seed работает даже если networks-row уже была (re-run scenario).
+        $wpdb = $this->call_migration($this->make_wpdb_mock(row_exists: true, event_type_exists: true));
+
+        // INSERT в networks НЕ должен быть (row exists), но INSERT в params — должен (idempotent re-seed).
+        $networks_inserts = array_filter(
+            $wpdb->insert_calls,
+            static fn(array $call): bool => $call['table'] === 'wp_cashback_affiliate_networks'
+        );
+        $this->assertCount(0, $networks_inserts, 'существующая seed-row не дублируется');
+
+        $param_inserts = array_filter(
+            $wpdb->insert_calls,
+            static fn(array $call): bool => $call['table'] === 'wp_cashback_affiliate_network_params'
+        );
+        $this->assertCount(2, $param_inserts, 'params seed работает независимо (re-run safety)');
     }
 
     public function test_field_map_includes_commission_and_click_fields(): void
@@ -205,7 +263,12 @@ final class AdvcakeNetworkSeedTest extends TestCase
     public function test_skips_insert_when_advcake_row_exists(): void
     {
         $wpdb = $this->call_migration($this->make_wpdb_mock(row_exists: true, event_type_exists: true));
-        $this->assertEmpty($wpdb->insert_calls, 'Существующая advcake-row не должна перезаписываться');
+
+        $networks_inserts = array_filter(
+            $wpdb->insert_calls,
+            static fn(array $call): bool => $call['table'] === 'wp_cashback_affiliate_networks'
+        );
+        $this->assertEmpty($networks_inserts, 'Существующая advcake-row в networks не должна перезаписываться');
         $this->assertSame(14, get_option('cashback_db_version'));
     }
 

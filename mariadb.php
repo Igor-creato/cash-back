@@ -4448,6 +4448,56 @@ class Mariadb_Plugin {
             }
         }
 
+        // ------------------------------------------------------------------
+        // 3. Seed cashback_affiliate_network_params для Advcake.
+        //    sub1 → click_id (uuidv7), sub2 → partner_token (user)
+        //
+        //    Без этих row'ов плагин при генерации affiliate-URL НЕ вставит
+        //    наш click_id/partner_token в `sub1`/`sub2` query-параметры,
+        //    Advcake пришлёт постбэк с пустыми sub1/sub2 → worker не
+        //    привяжет транзакцию к user_id (click_not_found). Это equivalent
+        //    admitad-настройке subid1=uuid + subid2=user.
+        //
+        //    Берём id seed-row (existing или just-inserted) и для каждого
+        //    param'а делаем idempotent INSERT (если уже есть в БД с тем же
+        //    network_id+param_name — пропускаем).
+        // ------------------------------------------------------------------
+        $params_table = $wpdb->prefix . 'cashback_affiliate_network_params';
+        $advcake_id   = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT id FROM %i WHERE slug = %s LIMIT 1',
+            $networks_table,
+            'advcake'
+        ));
+
+        if ($advcake_id > 0) {
+            $default_params = array(
+                array( 'param_name' => 'sub1', 'param_type' => 'uuid', 'default_value' => '' ),
+                array( 'param_name' => 'sub2', 'param_type' => 'user', 'default_value' => '' ),
+            );
+
+            foreach ($default_params as $param) {
+                $exists = (int) $wpdb->get_var($wpdb->prepare(
+                    'SELECT COUNT(*) FROM %i WHERE network_id = %d AND param_name = %s',
+                    $params_table,
+                    $advcake_id,
+                    $param['param_name']
+                ));
+                if ($exists > 0) {
+                    continue;
+                }
+                $wpdb->insert(
+                    $params_table,
+                    array(
+                        'network_id'    => $advcake_id,
+                        'param_name'    => $param['param_name'],
+                        'param_type'    => $param['param_type'],
+                        'default_value' => $param['default_value'],
+                    ),
+                    array( '%d', '%s', '%s', '%s' )
+                );
+            }
+        }
+
         update_option('cashback_db_version', 14, false);
     }
 
