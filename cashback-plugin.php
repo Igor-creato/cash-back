@@ -883,6 +883,7 @@ class CashbackPlugin {
         $this->require_file('includes/promocodes/class-network-http-client.php');
         $this->require_file('includes/promocodes/class-coupons-adapter-registry.php');
         $this->require_file('includes/promocodes/adapters/class-generic-json-coupons-adapter.php');
+        $this->require_file('includes/promocodes/adapters/class-cashback-advcake-coupons-adapter.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-repository.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-fetcher.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-shortcode.php');
@@ -894,6 +895,7 @@ class CashbackPlugin {
         $this->require_file('includes/promocodes/class-cashback-promocodes-click-backfill.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-admin.php');
         $this->require_file('includes/promocodes/class-cashback-promocodes-bootstrap.php');
+        $this->require_file('includes/promocodes/bootstrap-advcake-coupons.php');
 
         // Глобальный lock для атомарной синхронизации + начисления
         $this->require_file('includes/class-cashback-lock.php');
