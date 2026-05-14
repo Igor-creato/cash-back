@@ -122,6 +122,16 @@ class Cashback_Social_Auth_Router {
             )
         );
 
+        // Registration Gate (опция users_can_register) НЕ ставится в
+        // permission_callback — это вызвало бы голый REST 403 JSON у юзера,
+        // который уже прошёл OAuth. Вместо этого:
+        //  - GET HTML-handlers (email-prompt-form, register-consent-form) сами
+        //    делают gate-check и возвращают user-facing redirect на /login/ с
+        //    flash-сообщением через cashback_social_error=registration_disabled.
+        //  - POST mutation-handlers полагаются на gate внутри Account_Manager,
+        //    который возвращает error_code; POST callback re-render'ит форму с
+        //    понятным сообщением вместо JSON 403.
+
         register_rest_route(
             self::NAMESPACE,
             '/social/email-prompt',
@@ -470,12 +480,20 @@ class Cashback_Social_Auth_Router {
 
         // action=error
         $msg = isset($result['message']) ? (string) $result['message'] : __('Ошибка авторизации.', 'cashback-plugin');
+        // Account_Manager может вернуть error_code чтобы router сохранил специфику
+        // ошибки до пользователя (вместо generic 'account_error'). Например при
+        // выключенной регистрации — 'registration_disabled' маппится в понятное
+        // сообщение в resolve_flash_message().
+        $error_code = isset($result['error_code']) && is_string($result['error_code']) && $result['error_code'] !== ''
+            ? sanitize_key($result['error_code'])
+            : 'account_error';
         Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
             'provider' => $provider_id,
             'stage'    => 'account_manager_result',
             'error'    => $msg,
+            'code'     => $error_code,
         ));
-        $this->redirect_to_login_with_error('account_error');
+        $this->redirect_to_login_with_error($error_code);
         return null;
     }
 
@@ -532,6 +550,17 @@ class Cashback_Social_Auth_Router {
      */
     public function handle_email_prompt_form( \WP_REST_Request $request ) {
         $token = sanitize_text_field((string) $request->get_param('token'));
+        // Registration Gate: если регистрация отключена пока юзер был на OAuth,
+        // ведём его на /login/ с понятным flash-сообщением, а не голым REST 403.
+        // Burn token чтобы старая ссылка не сработала после re-enable админом
+        // (emergency-stop semantics).
+        if (class_exists('Cashback_Registration_Gate') && !Cashback_Registration_Gate::is_allowed()) {
+            if ($token !== '') {
+                Cashback_Social_Auth_DB::consume_pending($token);
+            }
+            $this->redirect_to_login_with_error('registration_disabled');
+            return null;
+        }
         return $this->render_email_prompt_form($token, '');
     }
 
@@ -541,6 +570,17 @@ class Cashback_Social_Auth_Router {
      */
     public function handle_register_consent_form( \WP_REST_Request $request ) {
         $token = sanitize_text_field((string) $request->get_param('token'));
+        // Registration Gate: то же что и в handle_email_prompt_form — friendly
+        // redirect вместо голого REST 403, если регистрацию выключили между
+        // OAuth-flow и кликом по ссылке/возвратом юзера. Burn token чтобы старая
+        // ссылка не сработала после re-enable админом.
+        if (class_exists('Cashback_Registration_Gate') && !Cashback_Registration_Gate::is_allowed()) {
+            if ($token !== '') {
+                Cashback_Social_Auth_DB::consume_pending($token);
+            }
+            $this->redirect_to_login_with_error('registration_disabled');
+            return null;
+        }
         return $this->render_register_consent_form($token, '');
     }
 
@@ -793,8 +833,7 @@ class Cashback_Social_Auth_Router {
      * Редирект на страницу входа с сообщением (login_message / WC login).
      */
     private function redirect_to_login_with_message( string $code ): void {
-        $base   = class_exists('WooCommerce') ? wc_get_page_permalink('myaccount') : wp_login_url();
-        $target = add_query_arg('cashback_social_msg', rawurlencode($code), (string) $base);
+        $target = add_query_arg('cashback_social_msg', rawurlencode($code), self::resolve_login_base_url());
         wp_safe_redirect($target);
         exit;
     }
@@ -803,17 +842,39 @@ class Cashback_Social_Auth_Router {
      * Редирект на login с кодом ошибки (error-параметр).
      */
     private function redirect_to_login_with_error( string $code ): void {
-        $base   = class_exists('WooCommerce') ? wc_get_page_permalink('myaccount') : wp_login_url();
-        $target = add_query_arg('cashback_social_error', rawurlencode($code), (string) $base);
+        $target = add_query_arg('cashback_social_error', rawurlencode($code), self::resolve_login_base_url());
         wp_safe_redirect($target);
         exit;
+    }
+
+    /**
+     * Базовый URL для flash-сообщений после социального flow.
+     *
+     * Приоритет: sc-auth-pages /login/ (наш шорткод) → WC /my-account/ → wp-login.php.
+     * Если редиректить на /my-account/ как гость, sc-auth-pages Redirector
+     * (template_redirect prio 1) перебрасывает на /login/ с `redirect_to=<URL>`,
+     * упаковывая query-параметры в encoded `redirect_to` — и cashback_social_*
+     * теряется как top-level GET. Шлём сразу на /login/ чтобы шорткод увидел
+     * `$_GET['cashback_social_*']` и вывел понятный notice.
+     */
+    private static function resolve_login_base_url(): string {
+        if (class_exists('Cashback_SC_Auth_Pages_Login')) {
+            $url = (string) Cashback_SC_Auth_Pages_Login::get_login_url();
+            if ($url !== '') {
+                return $url;
+            }
+        }
+        if (class_exists('WooCommerce')) {
+            return (string) wc_get_page_permalink('myaccount');
+        }
+        return (string) wp_login_url();
     }
 
     /**
      * Добавить сообщение на wp-login.php (фильтр login_message).
      */
     public function filter_login_message( $message ) {
-        $msg = $this->resolve_flash_message();
+        $msg = self::resolve_flash_message();
         if ($msg !== '') {
             $message .= '<p class="message">' . esc_html($msg) . '</p>';
         }
@@ -824,7 +885,7 @@ class Cashback_Social_Auth_Router {
      * Вывести сообщение на странице WooCommerce my-account (login form).
      */
     public function render_wc_login_message(): void {
-        $msg = $this->resolve_flash_message();
+        $msg = self::resolve_flash_message();
         if ($msg !== '') {
             echo '<div class="woocommerce-info">' . esc_html($msg) . '</div>';
         }
@@ -832,8 +893,12 @@ class Cashback_Social_Auth_Router {
 
     /**
      * Подобрать текст флеш-сообщения по query-параметрам.
+     *
+     * Public static — переиспользуется из шорткода [sc_login], чтобы пользователь,
+     * редиректнутый на /login/ из social-auth flow (registration_disabled,
+     * already_linked и т.д.), увидел понятный notice вместо чистой формы.
      */
-    private function resolve_flash_message(): string {
+    public static function resolve_flash_message(): string {
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only flash from query.
         if (isset($_GET['cashback_social_msg'])) {
             // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only flash from query.
@@ -860,6 +925,11 @@ class Cashback_Social_Auth_Router {
                     return __('Не удалось завершить авторизацию. Попробуйте ещё раз или обратитесь в поддержку.', 'cashback-plugin');
                 case 'start_failed':
                     return __('Не удалось начать авторизацию через соцсеть. Проверьте настройки модуля в админ-панели.', 'cashback-plugin');
+                case 'registration_disabled':
+                    if (class_exists('Cashback_Registration_Gate')) {
+                        return Cashback_Registration_Gate::denial_message();
+                    }
+                    return __('Регистрация новых пользователей временно недоступна.', 'cashback-plugin');
                 default:
                     return __('Ошибка авторизации через соцсеть.', 'cashback-plugin');
             }

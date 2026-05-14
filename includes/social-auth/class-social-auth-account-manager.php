@@ -255,6 +255,28 @@ class Cashback_Social_Auth_Account_Manager {
         }
 
         // -----------------------------------------------------------------
+        // Registration Gate: после ветки A (existing link → login) и ветки B
+        // (email совпал с существующим WP-юзером → confirm-link mail). Ниже —
+        // только пути создания НОВОГО юзера (ветка C: prompt email → новый,
+        // ветка D: register-via-social consent → новый). Уважаем опцию
+        // users_can_register. Existing-пути выше работают независимо.
+        // -----------------------------------------------------------------
+        if (class_exists('Cashback_Registration_Gate') && !Cashback_Registration_Gate::is_allowed()) {
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'provider' => $provider_id,
+                'stage'    => 'callback_dispatch',
+                'error'    => 'registration_disabled',
+                'ip'       => $ip,
+            ));
+            Cashback_Social_Auth_Session::clear($provider_id);
+            return array(
+                'action'     => 'error',
+                'message'    => Cashback_Registration_Gate::denial_message(),
+                'error_code' => 'registration_disabled',
+            );
+        }
+
+        // -----------------------------------------------------------------
         // Ветка C: email отсутствует — просим у пользователя.
         // -----------------------------------------------------------------
         if ($email === '') {
@@ -351,6 +373,24 @@ class Cashback_Social_Auth_Account_Manager {
      * @return array{action:string, redirect_url?:string, message?:string}
      */
     public function handle_email_prompt_submission( \WP_REST_Request $request ): array {
+        // Gate: защита от прямого POST со старым (но ещё валидным) токеном —
+        // например, юзер сохранил вкладку с прошлого OAuth-flow.
+        // Emergency-stop semantics: при gate-trigger мы СЖИГАЕМ pending-токен
+        // через consume_pending, иначе он останется валидным до своего TTL и
+        // юзер/бот сможет завершить регистрацию после re-enable. Без burn это
+        // была бы «emergency pause», а не настоящий kill switch.
+        if (class_exists('Cashback_Registration_Gate') && !Cashback_Registration_Gate::is_allowed()) {
+            $token = sanitize_text_field((string) $request->get_param('token'));
+            if ($token !== '') {
+                Cashback_Social_Auth_DB::consume_pending($token);
+            }
+            return array(
+                'action'     => 'error',
+                'message'    => Cashback_Registration_Gate::denial_message(),
+                'error_code' => 'registration_disabled',
+            );
+        }
+
         $token   = sanitize_text_field((string) $request->get_param('token'));
         $email   = sanitize_email((string) $request->get_param('email'));
         $consent = (int) $request->get_param('consent');
@@ -621,6 +661,14 @@ class Cashback_Social_Auth_Account_Manager {
         array $session_data,
         string $email
     ): array {
+        // Defense-in-depth gate: caller'ы (handle_callback / handle_email_prompt_submission)
+        // уже проверили Cashback_Registration_Gate::is_allowed(). Дублируем здесь как
+        // последний рубеж от будущих регрессий — это единственная точка где
+        // вызывается wp_insert_user в social-auth flow.
+        if (class_exists('Cashback_Registration_Gate') && !Cashback_Registration_Gate::is_allowed()) {
+            return array( 'error' => Cashback_Registration_Gate::denial_message() );
+        }
+
         $provider_id    = $provider->get_id();
         $ip             = isset($session_data['ip']) ? (string) $session_data['ip'] : '';
         $user_agent     = isset($session_data['user_agent']) ? (string) $session_data['user_agent'] : '';
@@ -816,6 +864,21 @@ class Cashback_Social_Auth_Account_Manager {
      * @return array{action:string, redirect_url?:string, message?:string}
      */
     public function handle_register_consent_submission( \WP_REST_Request $request ): array {
+        // Gate: блокируем POST даже если у юзера есть валидный токен — между
+        // moment'ом редиректа и submit'ом админ мог отключить регистрацию.
+        // Emergency-stop: сжигаем pending-токен (см. handle_email_prompt_submission).
+        if (class_exists('Cashback_Registration_Gate') && !Cashback_Registration_Gate::is_allowed()) {
+            $token = sanitize_text_field((string) $request->get_param('token'));
+            if ($token !== '') {
+                Cashback_Social_Auth_DB::consume_pending($token);
+            }
+            return array(
+                'action'     => 'error',
+                'message'    => Cashback_Registration_Gate::denial_message(),
+                'error_code' => 'registration_disabled',
+            );
+        }
+
         $token         = sanitize_text_field((string) $request->get_param('token'));
         $consent_fraud = (string) $request->get_param('consent_fraud');
         $consent_pd    = (string) $request->get_param('consent_pd');
@@ -1192,6 +1255,38 @@ class Cashback_Social_Auth_Account_Manager {
             );
         }
 
+        $link_id = isset($payload['link_id']) ? (int) $payload['link_id'] : 0;
+
+        // Registration Gate (emergency-stop): если регистрацию выключили после
+        // того как verify-email уже было отправлено, отказываем активацию и
+        // удаляем pending user + link, чтобы flow не возобновился после re-enable.
+        // Pending-токен уже потреблён в handle_confirm (consume_pending) выше по
+        // стеку — повторить flow с тем же токеном невозможно.
+        $is_pending = (int) get_user_meta($user_id, self::META_PENDING, true) === 1;
+        if ($is_pending && class_exists('Cashback_Registration_Gate') && !Cashback_Registration_Gate::is_allowed()) {
+            if ($link_id > 0) {
+                Cashback_Social_Auth_DB::delete_link($link_id);
+            }
+            if (!function_exists('wp_delete_user')) {
+                require_once ABSPATH . 'wp-admin/includes/user.php';
+            }
+            wp_delete_user($user_id);
+
+            Cashback_Social_Auth_Audit::log(Cashback_Social_Auth_Audit::EVENT_CALLBACK_ERROR, array(
+                'stage'    => 'email_verify_finish',
+                'error'    => 'registration_disabled',
+                'user_id'  => $user_id,
+                'link_id'  => $link_id,
+                'cleanup'  => 'user_and_link_deleted',
+            ));
+
+            return array(
+                'action'     => 'error',
+                'message'    => Cashback_Registration_Gate::denial_message(),
+                'error_code' => 'registration_disabled',
+            );
+        }
+
         $redirect_after = isset($payload['redirect_after']) ? (string) $payload['redirect_after'] : home_url('/');
         $redirect_after = wp_validate_redirect($redirect_after, home_url('/'));
 
@@ -1199,7 +1294,6 @@ class Cashback_Social_Auth_Account_Manager {
         delete_user_meta($user_id, self::META_PENDING);
 
         // touch_last_login по связке (если известен link_id).
-        $link_id = isset($payload['link_id']) ? (int) $payload['link_id'] : 0;
         if ($link_id > 0) {
             Cashback_Social_Auth_DB::touch_last_login($link_id, '', '');
         }

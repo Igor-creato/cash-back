@@ -47,6 +47,17 @@ class Cashback_SC_Auth_Pages_Register {
             return;
         }
 
+        // Gate: уважаем стандартную WP-опцию users_can_register.
+        // НЕ пишем notice здесь — wc_add_notice инициализирует WC session
+        // (запись в wp_woocommerce_sessions). Без silent-reject бот может
+        // amplification-атаковать сервер через unauthenticated POST'ы. Юзер при
+        // редиректе попадёт на GET /register/, где shortcode сам отрендерит
+        // disabled-страницу с понятным сообщением.
+        if (class_exists('Cashback_Registration_Gate') && !Cashback_Registration_Gate::is_allowed()) {
+            self::redirect_back();
+            return;
+        }
+
         if (!self::verify_nonce()) {
             self::add_error_notice(__('Сессия истекла. Заполните форму заново.', 'cashback-plugin'));
             self::redirect_back();

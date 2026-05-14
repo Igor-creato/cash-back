@@ -147,6 +147,10 @@ final class SCAuthPagesShortcodesTest extends TestCase
 
         update_option(Cashback_SC_Auth_Pages_Activator::OPTION_LOGIN_PAGE_ID, 100);
         update_option(Cashback_SC_Auth_Pages_Activator::OPTION_REGISTER_PAGE_ID, 200);
+        // Гарантируем, что регистрация разрешена (Cashback_Registration_Gate).
+        // Этот suite тестирует happy-path формы; gate-логика покрыта в
+        // SCAuthPagesShortcodeRegisterDisabledTest.
+        update_option('users_can_register', 1);
     }
 
     protected function tearDown(): void

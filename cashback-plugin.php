@@ -6,7 +6,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Cashback Plugin
  * Description: Объединенный плагин для системы кэшбэка и аффилиат-партнерства
- * Version: 4.0.5
+ * Version: 4.1.0
  * Author: Cashback
  * Author URI: https://example.com
  * Text Domain: cashback-plugin
@@ -974,6 +974,11 @@ class CashbackPlugin {
 
         // Шорткоды (доступны на фронтенде и в превью редактора)
         $this->require_file('includes/class-cashback-shortcodes.php');
+
+        // Registration Gate: единый guard для всех путей регистрации (читает
+        // стандартную WP-опцию users_can_register). Должен загружаться ДО
+        // sc-auth-pages и social-auth, которые его используют.
+        $this->require_file('includes/auth/class-cashback-registration-gate.php');
 
         // SC Auth Pages: отдельные страницы /login/ и /register/ (шорткоды [sc_login]/[sc_register]).
         // Заменяет стандартную объединённую WC-форму на /my-account/ для гостей.

@@ -82,6 +82,19 @@ class Cashback_Settings_Admin {
             )
         );
 
+        // Регистрация: тоггл «Разрешить регистрацию новых пользователей». Источник
+        // правды — стандартная WP-опция users_can_register (двусторонняя
+        // синхронизация с Settings → General → Членство).
+        register_setting(
+            self::OPTION_GROUP,
+            'users_can_register',
+            array(
+                'type'              => 'integer',
+                'default'           => 0,
+                'sanitize_callback' => array( self::class, 'sanitize_bool_to_int' ),
+            )
+        );
+
         add_settings_section('cashback_settings_display', 'Отображение кэшбэка', '__return_false', self::PAGE_SLUG);
         add_settings_field(
             Cashback_Shop_Options::OPT_GUEST_DISPLAY_RATE,
@@ -113,6 +126,15 @@ class Cashback_Settings_Admin {
             self::PAGE_SLUG,
             'cashback_settings_import'
         );
+
+        add_settings_section('cashback_settings_registration', 'Регистрация', '__return_false', self::PAGE_SLUG);
+        add_settings_field(
+            'users_can_register',
+            'Разрешить регистрацию новых пользователей',
+            array( self::class, 'render_field_registration' ),
+            self::PAGE_SLUG,
+            'cashback_settings_registration'
+        );
     }
 
     public static function sanitize_guest_rate( $value ): float {
@@ -133,6 +155,10 @@ class Cashback_Settings_Admin {
     public static function sanitize_int_range_0_5000( $value ): int {
         $i = is_numeric($value) ? (int) $value : Cashback_Shop_Options::DEFAULT_THROTTLE_MS;
         return max(0, min(5000, $i));
+    }
+
+    public static function sanitize_bool_to_int( $value ): int {
+        return (int) (bool) $value;
     }
 
     /**
@@ -207,6 +233,18 @@ class Cashback_Settings_Admin {
             . '" value="' . esc_attr((string) $value) . '" class="small-text" /> мс';
         echo '<p class="description">'
             . esc_html__('Задержка между HTTP-запросами при многостраничном импорте. Default: 200.', 'cashback')
+            . '</p>';
+    }
+
+    public static function render_field_registration(): void {
+        $value = (int) get_option('users_can_register', 0);
+        echo '<label>';
+        echo '<input type="hidden" name="users_can_register" value="0" />';
+        echo '<input type="checkbox" name="users_can_register" value="1" ' . checked(1, $value, false) . ' /> ';
+        echo esc_html__('Включено — гости могут регистрироваться через /register/, /my-account/ и социальную авторизацию.', 'cashback');
+        echo '</label>';
+        echo '<p class="description">'
+            . esc_html__('Эта же опция управляется стандартным WordPress-чекбоксом Settings → Общие → Членство → «Любой может зарегистрироваться». При выключении: /register/ показывает уведомление, social-логин для новых аккаунтов возвращает ошибку, уже зарегистрированные через соцсети входят как обычно.', 'cashback')
             . '</p>';
     }
 }

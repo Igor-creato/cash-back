@@ -17,6 +17,9 @@ if (!defined('ABSPATH')) {
 
 /** @var string $redirect_to */
 /** @var string $register_url */
+
+$sc_login_show_register = !class_exists('Cashback_Registration_Gate')
+    || Cashback_Registration_Gate::is_allowed();
 ?>
 <form class="woocommerce-form woocommerce-form-login sc-auth-pages-form sc-auth-pages-form--login" method="post" novalidate aria-label="<?php esc_attr_e('Форма входа', 'cashback-plugin'); ?>">
     <?php
@@ -25,9 +28,11 @@ if (!defined('ABSPATH')) {
         ?>
         <div class="sc-auth-pages-form__header">
             <h2 class="sc-auth-pages-form__title"><?php echo esc_html($sc_login_title); ?></h2>
+            <?php if ($sc_login_show_register) : ?>
             <a class="sc-auth-pages-form__nav-link" href="<?php echo esc_url($register_url); ?>">
                 <?php esc_html_e('Регистрация', 'cashback-plugin'); ?>
             </a>
+            <?php endif; ?>
         </div>
         <?php
     endif;
@@ -101,10 +106,12 @@ if (!defined('ABSPATH')) {
         <a class="sc-auth-pages-links__lost" href="<?php echo esc_url(function_exists('wc_lostpassword_url') ? wc_lostpassword_url() : wp_lostpassword_url()); ?>">
             <?php esc_html_e('Забыли пароль?', 'cashback-plugin'); ?>
         </a>
+        <?php if ($sc_login_show_register) : ?>
         <span class="sc-auth-pages-links__sep" aria-hidden="true">·</span>
         <a class="sc-auth-pages-links__register" href="<?php echo esc_url($register_url); ?>">
             <?php esc_html_e('Создать аккаунт', 'cashback-plugin'); ?>
         </a>
+        <?php endif; ?>
     </p>
 
     <?php do_action('woocommerce_login_form_end'); ?>

@@ -53,6 +53,13 @@ class Cashback_SC_Auth_Pages_Shortcodes {
 
         ob_start();
 
+        // Social-auth flash: выводим прямо в HTML, БЕЗ wc_add_notice() —
+        // wc_add_notice инициализирует WC session (запись в
+        // wp_woocommerce_sessions) на каждом анонимном GET-запросе с
+        // ?cashback_social_error=... → amplification-vector для ботов.
+        // Stateless HTML render не имеет side-effects.
+        self::print_social_auth_flash_html();
+
         if (function_exists('wc_print_notices')) {
             wc_print_notices();
         }
@@ -63,6 +70,34 @@ class Cashback_SC_Auth_Pages_Shortcodes {
         include __DIR__ . '/templates/form-login.php';
 
         return (string) ob_get_clean();
+    }
+
+    /**
+     * Вывести social-auth flash-сообщение прямо в HTML (stateless).
+     *
+     * Социальный flow редиректит на /login/?cashback_social_msg=... или
+     * /login/?cashback_social_error=... — router маппит код в человекочитаемое
+     * сообщение через Cashback_Social_Auth_Router::resolve_flash_message().
+     *
+     * НЕ использует wc_add_notice() — это создавало бы WC session на каждом
+     * анонимном GET (DoS-amplification через wp_woocommerce_sessions).
+     */
+    private static function print_social_auth_flash_html(): void {
+        if (!class_exists('Cashback_Social_Auth_Router')) {
+            return;
+        }
+        $msg = Cashback_Social_Auth_Router::resolve_flash_message();
+        if ($msg === '') {
+            return;
+        }
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only flash from GET.
+        $is_error  = isset($_GET['cashback_social_error']);
+        $css_class = $is_error ? 'woocommerce-error' : 'woocommerce-info';
+        printf(
+            '<div class="%s sc-auth-pages-flash" role="status">%s</div>',
+            esc_attr($css_class),
+            esc_html($msg)
+        );
     }
 
     /**
@@ -78,13 +113,25 @@ class Cashback_SC_Auth_Pages_Shortcodes {
             return '';
         }
 
+        $login_url = self::resolve_login_url();
+
+        // Gate: если регистрация выключена в Settings → General → Membership,
+        // рендерим notice + кнопку «Войти» вместо формы.
+        if (class_exists('Cashback_Registration_Gate') && !Cashback_Registration_Gate::is_allowed()) {
+            ob_start();
+            if (function_exists('wc_print_notices')) {
+                wc_print_notices();
+            }
+            $denial_message = Cashback_Registration_Gate::denial_message();
+            include __DIR__ . '/templates/form-register-disabled.php';
+            return (string) ob_get_clean();
+        }
+
         ob_start();
 
         if (function_exists('wc_print_notices')) {
             wc_print_notices();
         }
-
-        $login_url = self::resolve_login_url();
 
         include __DIR__ . '/templates/form-register.php';
 

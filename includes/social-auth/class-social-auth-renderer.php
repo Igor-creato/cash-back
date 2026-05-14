@@ -124,6 +124,15 @@ class Cashback_Social_Auth_Renderer {
             return '';
         }
 
+        // Gate: на /register/ скрываем кнопки если регистрация выключена. На
+        // /login/, /checkout/, /wp-login.php/ и /account_link/ кнопки остаются —
+        // существующие linked-юзеры должны иметь возможность войти.
+        if ($context === 'register'
+            && class_exists('Cashback_Registration_Gate')
+            && !Cashback_Registration_Gate::is_allowed()) {
+            return '';
+        }
+
         if (!class_exists('Cashback_Social_Auth_Providers')) {
             return '';
         }

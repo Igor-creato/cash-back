@@ -151,6 +151,9 @@ final class SCAuthPagesRegisterTest extends TestCase
         );
 
         update_option(Cashback_SC_Auth_Pages_Activator::OPTION_REGISTER_PAGE_ID, 200);
+        // Гарантируем, что регистрация разрешена (Cashback_Registration_Gate).
+        // Этот suite тестирует happy-path, gate-логика покрыта в SCAuthPagesRegisterDisabledTest.
+        update_option('users_can_register', 1);
 
         Cashback_SC_Auth_Pages_Redirect_Helper::$test_capture = static function ( string $url ): void {
             $GLOBALS['_cb_test_redirects'][] = array( 'url' => $url );
