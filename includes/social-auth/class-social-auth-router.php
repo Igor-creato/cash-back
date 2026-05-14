@@ -546,7 +546,11 @@ class Cashback_Social_Auth_Router {
     /**
      * GET /social/email-prompt-form — отрисовать форму (HTML).
      *
-     * @return \WP_REST_Response
+     * Возвращает null если сработал Registration Gate — handler делает
+     * `wp_safe_redirect + exit` через `redirect_to_login_with_error`,
+     * PHPStan не видит `exit;` как terminator.
+     *
+     * @return \WP_REST_Response|null
      */
     public function handle_email_prompt_form( \WP_REST_Request $request ) {
         $token = sanitize_text_field((string) $request->get_param('token'));
@@ -567,6 +571,10 @@ class Cashback_Social_Auth_Router {
     /**
      * GET /social/register-consent-form — выделенная страница согласий
      * (post-OAuth conditional consent для НОВОГО юзера, Branch D).
+     *
+     * Возвращает null если сработал Registration Gate (см. handle_email_prompt_form).
+     *
+     * @return \WP_REST_Response|null
      */
     public function handle_register_consent_form( \WP_REST_Request $request ) {
         $token = sanitize_text_field((string) $request->get_param('token'));
