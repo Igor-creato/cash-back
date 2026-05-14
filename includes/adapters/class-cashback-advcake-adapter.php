@@ -297,15 +297,55 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
     /**
      * {@inheritdoc}
      *
-     * См. {@see fetch_campaigns()}. В v1 stub — импорт магазинов Advcake
-     * выполняется админом вручную; reuse того же пустого ответа.
+     * Auto-import магазинов Advcake через `Cashback_Shop_Importer` (v12).
+     * Один HTTP-вызов на страницу offset/limit, симметрично Admitad/EPN.
+     * Пагинацию управляет shop-importer: получает `has_next` + `next_offset`,
+     * сам re-enqueues async-action для следующей страницы.
+     *
+     * Маппинг полей Advcake offer → DTO-shape см. {@see normalize_offer_to_detailed()}.
+     * Все новые WC-продукты создаются importer'ом со статусом `draft`
+     * (источник правды — Cashback_Shop_Importer); админ ручным review
+     * решает публиковать или нет. Это автоматически закрывает edge-case
+     * «источник отклонён для оффера» (Publisher API не возвращает этот
+     * признак — оффер с отклонённым нашим источником импортируется как
+     * draft и не вылетает в каталог).
      */
     public function fetch_campaigns_detailed( array $credentials, array $network_config, int $offset = 0, int $limit = 100 ): array {
+        $token = $this->get_token($credentials, $network_config);
+        if ($token === null) {
+            return $this->detailed_error(
+                $this->last_token_error !== ''
+                    ? $this->last_token_error
+                    : 'Не удалось получить токен Advcake'
+            );
+        }
+
+        $offset = max(0, $offset);
+        $limit  = max(1, min(self::OFFERS_PAGE_LIMIT, $limit));
+
+        $base_url    = rtrim((string) ( $network_config['api_base_url'] ?? 'https://api.advcake.ru' ), '/');
+        $page_result = $this->fetch_offers_page($base_url, $token, $offset, $limit, 0);
+
+        if (!$page_result['success']) {
+            return $this->detailed_error($page_result['error']);
+        }
+
+        $campaigns = array();
+        foreach ($page_result['offers'] as $offer) {
+            if (!is_array($offer)) {
+                continue;
+            }
+            $detailed = $this->normalize_offer_to_detailed($offer);
+            if ($detailed !== null) {
+                $campaigns[] = $detailed;
+            }
+        }
+
         return array(
             'success'     => true,
-            'campaigns'   => array(),
-            'has_next'    => false,
-            'next_offset' => 0,
+            'campaigns'   => $campaigns,
+            'has_next'    => count($page_result['offers']) === $limit,
+            'next_offset' => $offset + $limit,
             'error'       => null,
         );
     }
@@ -689,6 +729,148 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             'offers'  => $data,
             'error'   => '',
         );
+    }
+
+    /**
+     * Стандартный error-format для fetch_campaigns_detailed().
+     *
+     * @param string $error
+     * @return array{success: bool, campaigns: array, has_next: bool, next_offset: int, error: string}
+     */
+    private function detailed_error( string $error ): array {
+        return array(
+            'success'     => false,
+            'campaigns'   => array(),
+            'has_next'    => false,
+            'next_offset' => 0,
+            'error'       => $error,
+        );
+    }
+
+    /**
+     * Нормализовать один offer-объект Advcake в DTO-array shape для
+     * `Cashback_Shop_Importer` (контракт см. {@see Cashback_Campaign_Detail_DTO::from_array()}).
+     *
+     * Маппинг:
+     *   - `id`                — (string) offer.id
+     *   - `name`              — offer.name
+     *   - `site_url`          — offer.website_url
+     *   - `image_url`         — offer.thumbnail (raster/SVG обслуживаются Shop_Importer'ом)
+     *   - `description`       — offer.description
+     *   - `status_raw`        — 'active' | 'stopped' (по offer.active)
+     *   - `is_active`         — offer.active && offer.available
+     *   - `connection_status` — 'available' | 'unavailable' (по offer.available)
+     *   - `regions`           — [strtoupper(offer.geos[].name), ...]
+     *   - `categories`        — [offer.category.name]
+     *   - `currency`          — offer.currency
+     *   - `goto_link`         — URL первого main_page-landing, fallback на первый active landing
+     *   - `payment_time_days` — (int) offer.hold (Advcake hold семантически близок к
+     *                           Admitad avg_money_transfer_time для UI Tab[1] «Условия»)
+     *   - `inline_tariffs`    — [] (Advcake bids shape не совместим с Admitad inline; out of scope v1)
+     *   - `raw`               — весь offer (для отладки + _cashback_campaign_raw_payload)
+     *
+     * @param array<string, mixed> $offer
+     * @return array<string, mixed>|null null если у оффера нет валидного id
+     */
+    private function normalize_offer_to_detailed( array $offer ): ?array {
+        $raw_id = $offer['id'] ?? null;
+        $id     = is_scalar($raw_id) ? trim((string) $raw_id) : '';
+        if ($id === '' || $id === '0') {
+            return null;
+        }
+
+        $active    = !empty($offer['active']);
+        $available = !empty($offer['available']);
+
+        $regions = array();
+        if (isset($offer['geos']) && is_array($offer['geos'])) {
+            foreach ($offer['geos'] as $geo) {
+                if (is_array($geo) && isset($geo['name']) && is_scalar($geo['name'])) {
+                    $name = trim((string) $geo['name']);
+                    if ($name !== '') {
+                        $regions[] = strtoupper($name);
+                    }
+                }
+            }
+        }
+
+        $categories = array();
+        if (isset($offer['category']) && is_array($offer['category'])) {
+            if (isset($offer['category']['name']) && is_scalar($offer['category']['name'])) {
+                $cat = trim((string) $offer['category']['name']);
+                if ($cat !== '') {
+                    $categories[] = $cat;
+                }
+            }
+        }
+
+        $payment_time_days = null;
+        if (isset($offer['hold']) && is_numeric($offer['hold'])) {
+            $hold = (int) $offer['hold'];
+            if ($hold >= 0 && $hold <= 365) {
+                $payment_time_days = $hold;
+            }
+        }
+
+        $landings = ( isset($offer['landings']) && is_array($offer['landings']) ) ? $offer['landings'] : array();
+        $goto_link = $this->select_landing_url($landings);
+
+        return array(
+            'id'                => $id,
+            'name'              => isset($offer['name']) && is_scalar($offer['name']) ? trim((string) $offer['name']) : '',
+            'site_url'          => isset($offer['website_url']) && is_scalar($offer['website_url']) ? trim((string) $offer['website_url']) : '',
+            'image_url'         => isset($offer['thumbnail']) && is_scalar($offer['thumbnail']) ? trim((string) $offer['thumbnail']) : '',
+            'description'       => isset($offer['description']) && is_scalar($offer['description']) ? (string) $offer['description'] : '',
+            'status_raw'        => $active ? 'active' : 'stopped',
+            'is_active'         => ( $active && $available ),
+            'connection_status' => $available ? 'available' : 'unavailable',
+            'regions'           => $regions,
+            'categories'        => $categories,
+            'currency'          => isset($offer['currency']) && is_scalar($offer['currency']) ? strtoupper(trim((string) $offer['currency'])) : 'RUB',
+            'goto_link'         => $goto_link,
+            'payment_time_days' => $payment_time_days,
+            'inline_tariffs'    => array(),
+            'raw'               => $offer,
+        );
+    }
+
+    /**
+     * Выбрать URL для goto_link из списка landings оффера.
+     *
+     * Приоритет: первый landing с `type='main_page'` среди активных → fallback
+     * первый активный landing → пустая строка если активных нет.
+     *
+     * Активный = `active=true` AND (status пустой ИЛИ status='active').
+     * Для совместимости с легаси-payload'ами Advcake, где status может
+     * отсутствовать, отсутствие поля трактуем как active.
+     *
+     * @param array<int, array<string, mixed>> $landings
+     */
+    private function select_landing_url( array $landings ): string {
+        $first_active_url = '';
+        foreach ($landings as $landing) {
+            if (!is_array($landing)) {
+                continue;
+            }
+            $active = !empty($landing['active']);
+            $status = isset($landing['status']) ? strtolower(trim((string) $landing['status'])) : '';
+            $is_active_landing = $active && ( $status === '' || $status === 'active' );
+            if (!$is_active_landing) {
+                continue;
+            }
+            $url = isset($landing['url']) && is_scalar($landing['url']) ? trim((string) $landing['url']) : '';
+            if ($url === '') {
+                continue;
+            }
+            $type = isset($landing['type']) ? strtolower(trim((string) $landing['type'])) : '';
+            if ($type === 'main_page') {
+                return $url;
+            }
+            if ($first_active_url === '') {
+                $first_active_url = $url;
+            }
+        }
+        return $first_active_url;
     }
 
     /**

@@ -797,23 +797,10 @@ XML;
     }
 
     // ------------------------------------------------------------------
-    // fetch_campaigns_detailed — оставлен stub'ом
-    //
-    // Автоматический shop-import (v12) для Advcake out-of-scope в v1
-    // интеграции: магазины Advcake создаются админом вручную через WC
-    // (postmeta `_affiliate_network_id=9, _offer_id=<numeric>`).
+    // fetch_campaigns_detailed — реализован поверх /offers, см.
+    // AdvcakeShopsDetailedTest для покрытия маппинга DTO-полей,
+    // пагинации, обработки 401/5xx.
     // ------------------------------------------------------------------
-
-    public function test_fetch_campaigns_detailed_returns_success_stub_no_next(): void
-    {
-        $adapter = new Cashback_Advcake_Adapter();
-        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
-        $this->assertTrue($result['success']);
-        $this->assertFalse($result['has_next']);
-        $this->assertSame(array(), $result['campaigns']);
-        // Шурующий guard: stub не должен выполнять HTTP-вызов.
-        $this->assertCount(0, $GLOBALS['_cb_test_http_calls']);
-    }
 
     // ------------------------------------------------------------------
     // funds_ready (контракт Cashback_API_Client::resolve_funds_ready)
