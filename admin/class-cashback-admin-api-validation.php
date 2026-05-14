@@ -1886,16 +1886,36 @@ echo 'style="display:none"';}
                 <span id="cashback-check-campaigns-status" style="margin-left: 10px;"></span>
             </p>
 
-            <?php // Последняя проверка ?>
-            <?php $last_sync = get_option('cashback_last_sync_result', array()); ?>
-            <?php if (!empty($last_sync['campaign_check'])) : ?>
+            <?php
+            // Последняя проверка. Используем campaign_check_timestamp (пишет
+            // ручной запуск), если он есть — иначе fallback на общий
+            // timestamp полного cron-прогона. И фильтруем blob по списку
+            // slug'ов активных в БД сетей, чтобы stale-записи отключённых
+            // сетей (например «tes — No adapter found») не зависали в плашке.
+            $last_sync       = get_option('cashback_last_sync_result', array());
+            $known_slugs     = array();
+            foreach ($networks as $known_net) {
+                if (!empty($known_net['slug'])) {
+                    $known_slugs[] = (string) $known_net['slug'];
+                }
+            }
+            $campaign_check_blob = (isset($last_sync['campaign_check']) && is_array($last_sync['campaign_check']))
+                ? $last_sync['campaign_check']
+                : array();
+            $campaign_check_blob = array_intersect_key(
+                $campaign_check_blob,
+                array_flip($known_slugs)
+            );
+            $last_check_ts = (string) ( $last_sync['campaign_check_timestamp'] ?? $last_sync['timestamp'] ?? '' );
+            ?>
+            <?php if (!empty($campaign_check_blob)) : ?>
                 <div class="notice notice-info inline" style="margin: 10px 0;">
-                    <p><strong>Последняя проверка:</strong> <?php echo esc_html($last_sync['timestamp'] ?? '—'); ?></p>
-                    <?php foreach ($last_sync['campaign_check'] as $net => $cr) : ?>
+                    <p><strong>Последняя проверка:</strong> <?php echo esc_html($last_check_ts !== '' ? $last_check_ts : '—'); ?></p>
+                    <?php foreach ($campaign_check_blob as $net => $cr) : ?>
                         <p>
-                            <strong><?php echo esc_html(strtoupper($net)); ?>:</strong>
+                            <strong><?php echo esc_html(strtoupper((string) $net)); ?>:</strong>
                             <?php if ($cr['success'] ?? false) : ?>
-                                кампаний: <?php echo (int) $cr['total_campaigns']; ?>,
+                                кампаний: <?php echo (int) ( $cr['total_campaigns'] ?? 0 ); ?>,
                                 деактивировано: <?php echo (int) ( $cr['deactivated'] ?? 0 ); ?>,
                                 реактивировано: <?php echo (int) ( $cr['reactivated'] ?? 0 ); ?>,
                                 пропущено: <?php echo (int) ( $cr['skipped'] ?? 0 ); ?>
@@ -2087,6 +2107,11 @@ echo 'style="display:none"';}
         try {
             $client  = Cashback_API_Client::get_instance();
             $results = $client->check_campaign_statuses($only_slug);
+
+            // Обновляем плашку «Последняя проверка» в админ-UI без ожидания
+            // следующего cron-прогона (cashback_api_sync_statuses раз в 2 ч).
+            self::persist_campaign_check_results($results, $only_slug);
+
             wp_send_json_success($results);
         } catch (Exception $e) {
             if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
@@ -2095,6 +2120,51 @@ echo 'style="display:none"';}
             }
             wp_send_json_error('Ошибка проверки кампаний. Подробности записаны в журнал.');
         }
+    }
+
+    /**
+     * Merge'ит per-slug результат `check_campaign_statuses()` в опцию
+     * `cashback_last_sync_result['campaign_check']`, чтобы верхняя плашка
+     * «Последняя проверка» отображала актуальное состояние сразу после
+     * ручного запуска, не дожидаясь следующего cron-прогона.
+     *
+     * Контракт (см. CampaignCheckResultPersistenceTest):
+     *  - `$only_slug !== null` — per-slug merge: чужие сети в blob сохраняются.
+     *    Если для $only_slug в $results нет записи (например, сеть отключена
+     *    в БД), stale-запись по этому slug в blob удаляется.
+     *  - `$only_slug === null` — full replace: весь `campaign_check` заменяется.
+     *  - Пишем отдельный `campaign_check_timestamp`. Общий `timestamp` blob'а
+     *    принадлежит cron'у полной синхронизации — НЕ перезаписываем.
+     *  - Defensive: если опция malformed (скаляр, объект, null) — нормализуем
+     *    к пустому массиву.
+     *
+     * @param array<string, array<string, mixed>> $results   `[slug => result]` из check_campaign_statuses()
+     * @param string|null                         $only_slug Slug сети, если запуск точечный; null для full sync
+     */
+    public static function persist_campaign_check_results( array $results, ?string $only_slug ): void {
+        $blob = get_option('cashback_last_sync_result', array());
+        if (!is_array($blob)) {
+            $blob = array();
+        }
+
+        $campaign_check = isset($blob['campaign_check']) && is_array($blob['campaign_check'])
+            ? $blob['campaign_check']
+            : array();
+
+        if ($only_slug === null) {
+            // Full replace — все сети, по которым прошёл cron-прогон.
+            $campaign_check = $results;
+        } elseif (array_key_exists($only_slug, $results)) {
+            $campaign_check[ $only_slug ] = $results[ $only_slug ];
+        } else {
+            // Сеть отключена/удалена → удаляем stale запись из плашки.
+            unset($campaign_check[ $only_slug ]);
+        }
+
+        $blob['campaign_check']           = $campaign_check;
+        $blob['campaign_check_timestamp'] = Cashback_Time::now_mysql();
+
+        update_option('cashback_last_sync_result', $blob, false);
     }
 
     /**
