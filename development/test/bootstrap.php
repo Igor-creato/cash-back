@@ -770,6 +770,52 @@ if (!function_exists('as_has_scheduled_action')) {
     }
 }
 
+// Stub WP_Post / get_post / wp_update_post — нужны для тестов, манипулирующих
+// post_status (например, partner_status_sync). Идентичны существующим stub'ам
+// в AdvcakePartnerStatusSyncTest.php, но вынесены в bootstrap для глобальной
+// доступности при --filter-запусках.
+if (!class_exists('WP_Post')) {
+    class WP_Post
+    {
+        public int $ID = 0;
+        public string $post_status = '';
+        public string $post_type = '';
+    }
+}
+
+if (!function_exists('get_post')) {
+    function get_post(int $post_id): ?WP_Post
+    {
+        $store = $GLOBALS['_cb_test_posts'] ?? array();
+        if (!isset($store[ $post_id ])) {
+            return null;
+        }
+        $row              = $store[ $post_id ];
+        $post             = new WP_Post();
+        $post->ID         = (int) ( $row->ID ?? $post_id );
+        $post->post_status = (string) ( $row->post_status ?? '' );
+        $post->post_type   = (string) ( $row->post_type ?? 'product' );
+        return $post;
+    }
+}
+
+if (!function_exists('wp_update_post')) {
+    function wp_update_post(array $postarr, bool $wp_error = false)
+    {
+        $id = (int) ( $postarr['ID'] ?? 0 );
+        if ($id <= 0) {
+            return 0;
+        }
+        if (!isset($GLOBALS['_cb_test_posts'][ $id ])) {
+            return 0;
+        }
+        if (isset($postarr['post_status'])) {
+            $GLOBALS['_cb_test_posts'][ $id ]->post_status = (string) $postarr['post_status'];
+        }
+        return $id;
+    }
+}
+
 if (!function_exists('as_schedule_recurring_action')) {
     function as_schedule_recurring_action(int $timestamp, int $interval_in_seconds, string $hook, array $args = array(), string $group = ''): int
     {

@@ -144,6 +144,13 @@ final class AdvcakePartnerStatusSyncTest extends TestCase
 
             public function get_var(string $query): mixed
             {
+                // v4.3.4: advisory lock around process_batch — stub default возвращает
+                // 1 (lock acquired), это пропускает критическую секцию. Чтобы протестировать
+                // lock_busy сценарий — конкретный тест может переопределить через
+                // $wpdb_mock->force_lock_acquired = 0.
+                if (stripos($query, 'GET_LOCK(') !== false || stripos($query, 'RELEASE_LOCK(') !== false) {
+                    return property_exists($this, 'force_lock_acquired') ? $this->force_lock_acquired : 1;
+                }
                 if (strpos($query, 'cashback_affiliate_networks') !== false
                     && strpos($query, 'SELECT id') !== false) {
                     return $this->advcake_network_id;

@@ -46,6 +46,26 @@ class Cashback_Shop_Tariff_Sync {
         global $wpdb;
         $table = $wpdb->prefix . self::TABLE;
 
+        // C-3 (concurrency): per-(network_id, offer_id) advisory lock — защита от
+        // interleaved soft-delete'ов когда два потока (importer + admin AJAX) делают
+        // sync() для одной и той же пары. Без lock'а worker-A может пометить
+        // tariff_id=4 как deleted, worker-B одновременно помечает tariff_id=3 как
+        // deleted с другим active_ids — итог: оба пометили "лишних".
+        $lock_key = sprintf('cashback_tariff_%d_%s', $network_id, substr(md5($offer_id), 0, 20));
+        $lock_acquired = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT GET_LOCK(%s, %d)',
+            $lock_key,
+            5
+        ));
+        if ($lock_acquired !== 1) {
+            return array(
+                'success'      => false,
+                'upserted'     => 0,
+                'soft_deleted' => 0,
+                'error'        => 'lock_busy',
+            );
+        }
+
         // Собираем активные tariff_id из payload — для NOT IN при soft-delete.
         $active_ids = array();
         foreach ($tariffs as $dto) {
@@ -146,6 +166,8 @@ class Cashback_Shop_Tariff_Sync {
                 'soft_deleted' => 0,
                 'error'        => $e->getMessage(),
             );
+        } finally {
+            $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $lock_key));
         }
     }
 

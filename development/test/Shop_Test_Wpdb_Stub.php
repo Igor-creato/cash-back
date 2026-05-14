@@ -136,6 +136,16 @@ class Shop_Test_Wpdb_Stub
 
     public function get_var(mixed $sql): mixed
     {
+        // Advisory lock helper: production-код использует
+        //   SELECT GET_LOCK('name', timeout)  / SELECT RELEASE_LOCK('name')
+        // через $wpdb->get_var(). По умолчанию stub возвращает 1 (lock acquired)
+        // чтобы тесты, не моделирующие конкуренцию, проходили обычный flow.
+        // Чтобы протестировать lock_busy — тест задаёт next_get_var=0 явно.
+        if ($this->next_get_var === null && is_string($sql)) {
+            if (stripos($sql, 'GET_LOCK(') !== false || stripos($sql, 'RELEASE_LOCK(') !== false) {
+                return 1;
+            }
+        }
         return $this->next_get_var;
     }
 

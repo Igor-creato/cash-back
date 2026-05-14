@@ -70,6 +70,19 @@ final class PromocodesRepositoryTest extends TestCase
                 return 1;
             }
 
+            /**
+             * v4.3.4: upsert_for_campaign теперь использует SELECT GET_LOCK/RELEASE_LOCK
+             * через get_var. По умолчанию stub возвращает 1 (lock acquired) — тесты,
+             * не моделирующие конкуренцию, проходят обычным flow.
+             */
+            public function get_var( string $query ): mixed
+            {
+                if (stripos($query, 'GET_LOCK(') !== false || stripos($query, 'RELEASE_LOCK(') !== false) {
+                    return 1;
+                }
+                return null;
+            }
+
             public function insert( string $table, array $data, mixed $format = null ): int|false
             {
                 $this->inserts[] = array( 'table' => $table, 'data' => $data, 'format' => $format );

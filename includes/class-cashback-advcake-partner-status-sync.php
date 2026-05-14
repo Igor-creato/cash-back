@@ -88,13 +88,46 @@ class Cashback_Advcake_Partner_Status_Sync {
 
         $stats = array( 'processed' => 0, 'ok' => 0, 'not_found' => 0, 'error' => 0 );
 
+        // C-1 (concurrency): advisory lock защищает от двух параллельных
+        // process_batch'ей, которые могли бы взять одни и те же rows и
+        // дважды флипнуть post_status. GET_LOCK(name, 0) = no-wait; если
+        // другой worker держит lock — тихо выходим, на следующем 5-min тике
+        // отработаем.
+        $lock_acquired = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT GET_LOCK(%s, %d)',
+            'cashback_advcake_partner_status_sync',
+            0
+        ));
+        if ($lock_acquired !== 1) {
+            return $stats;
+        }
+
+        try {
+            return self::process_batch_locked($stats);
+        } finally {
+            $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', 'cashback_advcake_partner_status_sync'));
+        }
+    }
+
+    /**
+     * Тело batch-обработки внутри advisory lock'а (см. {@see process_batch()}).
+     *
+     * @param array{processed:int,ok:int,not_found:int,error:int} $stats
+     * @return array{processed:int,ok:int,not_found:int,error:int}
+     */
+    private static function process_batch_locked( array $stats ): array {
+        global $wpdb;
+
         $webhooks_table = $wpdb->prefix . 'cashback_webhooks';
         $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
 
-        // Resolve Advcake network_id один раз на batch. Если seed-row нет —
-        // нечего обрабатывать.
+        // P-2 (kill-switch): resolve Advcake network_id ТОЛЬКО среди активных
+        // сетей (is_active=1). Если admin выключил Advcake — webhook'и продолжат
+        // прилетать на receiver, но мы их не процессим (post_status не флипается).
+        // На следующих cron-тиках с is_active=1 — process_batch снова возьмёт
+        // pending rows (processing_status IS NULL не меняется).
         $network_id = (int) $wpdb->get_var($wpdb->prepare(
-            'SELECT id FROM %i WHERE slug IN (%s, %s) ORDER BY id LIMIT 1',
+            'SELECT id FROM %i WHERE slug IN (%s, %s) AND is_active = 1 ORDER BY id LIMIT 1',
             $networks_table,
             'advcake',
             'adv'
@@ -182,6 +215,23 @@ class Cashback_Advcake_Partner_Status_Sync {
                     self::mark_row($row_id, 'error');
                     ++$stats['error'];
                     continue;
+                }
+
+                // C-1 sub (meta-coordination): синхронизируем флаг
+                // `_cashback_auto_deactivated` с реальным `post_status` после
+                // успешного flip'а. Это закрывает 3-writer race на post_status
+                // (partner_status_sync + check_campaign_statuses + shop_importer):
+                // любой источник, который двигает status, должен поддерживать
+                // ту же meta-семантику, чтобы reactivate-cron не оставался в
+                // confusing-state «published но auto-deactivated».
+                if ($new_status === 'publish') {
+                    delete_post_meta($product_id, '_cashback_auto_deactivated');
+                    delete_post_meta($product_id, '_cashback_auto_deactivated_at');
+                    delete_post_meta($product_id, '_cashback_auto_deactivated_source');
+                } else {
+                    update_post_meta($product_id, '_cashback_auto_deactivated', '1');
+                    update_post_meta($product_id, '_cashback_auto_deactivated_at', current_time('mysql', true));
+                    update_post_meta($product_id, '_cashback_auto_deactivated_source', 'advcake_partner_status');
                 }
             }
 

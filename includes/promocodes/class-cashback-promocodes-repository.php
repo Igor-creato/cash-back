@@ -41,8 +41,31 @@ class Cashback_Promocodes_Repository {
         global $wpdb;
         $table = $this->table_name();
 
+        // C-3 (concurrency): per-(network_id, advcampaign_id) advisory lock + TX wrap.
+        // Без них admin AJAX «Refresh promocodes» одного campaign-id мог race'иться
+        // с фоновым cron'ом, давая interleaved deactivate_missing → промокоды
+        // визуально пропадают для гостя на N-секунд между двумя upsert'ами.
+        $lock_key      = sprintf('cashback_promo_%d_%s', $network_id, substr(md5($advcampaign_id), 0, 20));
+        $lock_acquired = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT GET_LOCK(%s, %d)',
+            $lock_key,
+            5
+        ));
+        if ($lock_acquired !== 1) {
+            return array(
+                'upserted'    => 0,
+                'deactivated' => 0,
+                'error'       => 'lock_busy',
+            );
+        }
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- TX wraps upsert loop + deactivate_missing.
+        $wpdb->query('START TRANSACTION');
+
         $upserted = 0;
         $seen_ids = array();
+
+        try {
 
         foreach ( $coupons as $coupon ) {
             if ( ! $coupon instanceof Cashback_Coupon_DTO ) {
@@ -87,10 +110,26 @@ class Cashback_Promocodes_Repository {
 
         $deactivated = $this->deactivate_missing( $network_id, $advcampaign_id, $seen_ids );
 
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- TX commit.
+        $wpdb->query('COMMIT');
+
         return array(
             'upserted'    => $upserted,
             'deactivated' => $deactivated,
         );
+        } catch ( \Throwable $e ) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- TX rollback.
+            $wpdb->query('ROLLBACK');
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
+            error_log('[Cashback Promocodes Repository] upsert_for_campaign failed: ' . $e->getMessage());
+            return array(
+                'upserted'    => 0,
+                'deactivated' => 0,
+                'error'       => $e->getMessage(),
+            );
+        } finally {
+            $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $lock_key));
+        }
     }
 
     /**
