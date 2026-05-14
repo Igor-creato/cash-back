@@ -133,6 +133,12 @@ require_once __DIR__ . '/includes/cashback-triggers-inventory.php';
 require_once __DIR__ . '/includes/class-cashback-account-base-assets.php';
 Cashback_Account_Base_Assets::register();
 
+// Wishlist UX: на WoodMart-странице wishlist (опция темы `wishlist_page`)
+// скрывает сайдбар «Мой аккаунт» на мобильном (<=768.98px), где он стекается
+// над контентом и съедает первый экран. На desktop сайдбар остаётся.
+require_once __DIR__ . '/includes/class-cashback-wishlist-ux.php';
+Cashback_Wishlist_Ux::register();
+
 // WoodMart per-page floor: defense-in-depth поверх REST-shield. Поднимает
 // minimum для woodmart_get_min_per_page до 9 (нижняя граница admin-списка
 // 9/12/18/24), что отбрасывает любые legacy-cookie shop_per_page < 9.

@@ -1,0 +1,16 @@
+/*
+ * Скрывает сайдбар «Мой аккаунт» (заголовок + nav) на WoodMart-странице
+ * wishlist на мобильном (<=768.98px), где он стекается над контентом
+ * wishlist и съедает первый экран. Подключается только на странице
+ * wishlist через Cashback_Wishlist_Ux::enqueue_css(), привязка к
+ * body-классу гарантирует, что правило не задевает /my-account/ и
+ * cashback-эндпоинты.
+ *
+ * !important нужен, потому что WoodMart выставляет сайдбару display через
+ * grid-правила с высокой специфичностью.
+ */
+@media (max-width: 768.98px) {
+    body.cashback-wishlist-page .wd-my-account-sidebar {
+        display: none !important;
+    }
+}
