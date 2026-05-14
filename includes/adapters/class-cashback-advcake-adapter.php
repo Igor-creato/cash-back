@@ -324,7 +324,8 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
         $limit  = max(1, min(self::OFFERS_PAGE_LIMIT, $limit));
 
         $base_url    = rtrim((string) ( $network_config['api_base_url'] ?? 'https://api.advcake.ru' ), '/');
-        $page_result = $this->fetch_offers_page($base_url, $token, $offset, $limit, 0);
+        // with_bids=1 — Advcake возвращает в payload offer.bids[], откуда строим inline_tariffs.
+        $page_result = $this->fetch_offers_page($base_url, $token, $offset, $limit, 0, true);
 
         if (!$page_result['success']) {
             return $this->detailed_error($page_result['error']);
@@ -642,16 +643,21 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
      * @param int    $offset        Смещение в каталоге
      * @param int    $limit         Размер страницы
      * @param int    $retry_attempt Внутренний счётчик 5xx-retry (0..2)
+     * @param bool   $with_bids     Прикрепить `with_bids=1` к URL — Advcake вернёт `bids[]` инлайн в каждом offer'е. Используется detailed-веткой для построения inline_tariffs; для campaigns-fetch (только статусы) не нужно.
      * @return array{success: bool, offers: array, error: string}
      */
-    private function fetch_offers_page( string $base_url, string $token, int $offset, int $limit, int $retry_attempt ): array {
-        $query = http_build_query(array(
+    private function fetch_offers_page( string $base_url, string $token, int $offset, int $limit, int $retry_attempt, bool $with_bids = false ): array {
+        $params = array(
             'pass'   => $token,
             'type'   => 'json',
             'limit'  => $limit,
             'offset' => $offset,
-        ));
-        $url = $base_url . '/offers?' . $query;
+        );
+        if ($with_bids) {
+            $params['with_bids'] = 1;
+        }
+        $query = http_build_query($params);
+        $url   = $base_url . '/offers?' . $query;
 
         $response = $this->http_get($url, array());
         if (is_wp_error($response)) {
@@ -688,7 +694,7 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log("Cashback Advcake: HTTP {$code} on /offers, retry attempt {$next_attempt} of 2");
 
-            return $this->fetch_offers_page($base_url, $token, $offset, $limit, $next_attempt);
+            return $this->fetch_offers_page($base_url, $token, $offset, $limit, $next_attempt, $with_bids);
         }
 
         if ($code !== 200) {
@@ -766,7 +772,9 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
      *   - `goto_link`         — URL первого main_page-landing, fallback на первый active landing
      *   - `payment_time_days` — (int) offer.hold (Advcake hold семантически близок к
      *                           Admitad avg_money_transfer_time для UI Tab[1] «Условия»)
-     *   - `inline_tariffs`    — [] (Advcake bids shape не совместим с Admitad inline; out of scope v1)
+     *   - `inline_tariffs`    — собираются из `offer.bids[]` через {@see normalize_offer_bids_to_tariffs()}
+     *                           (фильтр по `condition.traffic_type` содержит "17" cashback;
+     *                           bid'ы без condition — applies-all)
      *   - `raw`               — весь offer (для отладки + _cashback_campaign_raw_payload)
      *
      * @param array<string, mixed> $offer
@@ -829,9 +837,111 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             'currency'          => isset($offer['currency']) && is_scalar($offer['currency']) ? strtoupper(trim((string) $offer['currency'])) : 'RUB',
             'goto_link'         => $goto_link,
             'payment_time_days' => $payment_time_days,
-            'inline_tariffs'    => array(),
+            'inline_tariffs'    => $this->normalize_offer_bids_to_tariffs(
+                isset($offer['bids']) && is_array($offer['bids']) ? $offer['bids'] : array()
+            ),
             'raw'               => $offer,
         );
+    }
+
+    /**
+     * Преобразовать Advcake `offer.bids[]` (из `/offers?with_bids=1`) в массив
+     * tariff-arrays для `Cashback_Shop_Tariff_DTO::from_array()`.
+     *
+     * Фильтрация:
+     *  - bid должен иметь scalar `id` (без id → skip);
+     *  - bid должен иметь известный `type` ∈ {percent, fix} (case-insensitive);
+     *    `mixed`/прочие — skip, чтобы не плодить DTO-exception'ы на каждом import'е;
+     *  - если bid имеет `condition.traffic_type` (массив идентификаторов traffic-type'ов),
+     *    оставляем только bids где есть `"17"` (cashback). Отсутствие condition.traffic_type
+     *    или пустой массив — applies-all default, принимаем.
+     *
+     * Маппинг:
+     *  - bid.id              → tariff_id (string)
+     *  - bid.text            → name (trim, fallback пусто → DTO подставит '')
+     *  - bid.type            → tariff_type (lowercased)
+     *  - bid.value           → payment_size (numeric)
+     *  - bid.max_commission  → payment_max (только для type=fix; для percent — null)
+     *  - bid.currency        → currency (3-letter uppercase; для percent опционально)
+     *  - is_default = count(filtered) === 1
+     *  - raw = весь bid (для отладки и raw_payload)
+     *
+     * @param array<int, mixed> $bids
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalize_offer_bids_to_tariffs( array $bids ): array {
+        $filtered = array();
+        foreach ($bids as $bid) {
+            if (!is_array($bid)) {
+                continue;
+            }
+            $raw_id = $bid['id'] ?? null;
+            if (!is_scalar($raw_id)) {
+                continue;
+            }
+            $tariff_id = trim((string) $raw_id);
+            if ($tariff_id === '' || $tariff_id === '0') {
+                continue;
+            }
+            $type = isset($bid['type']) && is_scalar($bid['type'])
+                ? strtolower(trim((string) $bid['type']))
+                : '';
+            if ($type !== 'percent' && $type !== 'fix') {
+                continue;
+            }
+
+            // Фильтр по traffic_type — если есть, должен содержать "17".
+            if (isset($bid['condition']) && is_array($bid['condition'])
+                && isset($bid['condition']['traffic_type'])
+                && is_array($bid['condition']['traffic_type'])
+                && $bid['condition']['traffic_type'] !== array()
+            ) {
+                $tt_strings = array();
+                foreach ($bid['condition']['traffic_type'] as $tt) {
+                    if (is_scalar($tt)) {
+                        $tt_strings[] = (string) $tt;
+                    }
+                }
+                if (!in_array('17', $tt_strings, true)) {
+                    continue;
+                }
+            }
+
+            $filtered[] = array(
+                'tariff_id'  => $tariff_id,
+                'name'       => isset($bid['text']) && is_scalar($bid['text']) ? trim((string) $bid['text']) : '',
+                'type'       => $type,
+                'value'      => $bid['value'] ?? null,
+                'max'        => $bid['max_commission'] ?? null,
+                'currency'   => $bid['currency'] ?? null,
+                'raw'        => $bid,
+            );
+        }
+
+        $is_default = ( count($filtered) === 1 );
+
+        $tariffs = array();
+        foreach ($filtered as $row) {
+            $currency = is_scalar($row['currency']) ? strtoupper(trim((string) $row['currency'])) : '';
+            if (!preg_match('/^[A-Z]{3}$/', $currency)) {
+                $currency = 'RUB';
+            }
+            $tariffs[] = array(
+                'tariff_id'    => $row['tariff_id'],
+                'name'         => $row['name'],
+                'tariff_type'  => $row['type'],
+                'payment_size' => is_numeric($row['value']) ? (float) $row['value'] : 0.0,
+                'payment_min'  => null,
+                'payment_max'  => ( $row['type'] === 'fix' && is_numeric($row['max']) )
+                    ? (float) $row['max']
+                    : null,
+                'currency'     => $currency,
+                'is_default'   => $is_default,
+                'raw'          => $row['raw'],
+            );
+        }
+
+        return $tariffs;
     }
 
     /**

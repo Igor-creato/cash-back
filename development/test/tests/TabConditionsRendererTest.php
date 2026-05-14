@@ -113,19 +113,75 @@ final class TabConditionsRendererTest extends TestCase
         $this->assertStringContainsString('<strong>0,67%</strong>', $html);
     }
 
-    public function test_render_skips_fix_tariffs(): void
+    public function test_render_includes_fix_tariffs_with_currency(): void
     {
         update_option('cashback_guest_display_rate', 65.0);
         $this->set_active_tariffs(array(
             $this->tariff('percent', 5.18, 'Оплаченный заказ'),
-            $this->tariff('fix', 100.0, 'Бонус 100 ₽'),
+            $this->tariff('fix', 100.0, 'Регистрация юр.лица', 'RUB'),
         ));
 
         $html = Cashback_Tab_Conditions_Renderer::render(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
 
         $this->assertStringContainsString('Оплаченный заказ', $html);
-        $this->assertStringNotContainsString('Бонус 100', $html);
-        $this->assertStringNotContainsString('₽', $html);
+        $this->assertStringContainsString('Регистрация юр.лица', $html);
+        $this->assertStringContainsString('фиксированная ставка', $html);
+        $this->assertStringContainsString('<strong>100,00 RUB</strong>', $html);
+    }
+
+    public function test_render_fix_tariff_with_payment_max_includes_cap(): void
+    {
+        update_option('cashback_guest_display_rate', 65.0);
+        $row = $this->tariff('fix', 1000.45, 'Регистрация ИП', 'RUB');
+        $row['payment_max'] = 5000.0;
+        $this->set_active_tariffs(array($row));
+
+        $html = Cashback_Tab_Conditions_Renderer::render(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
+
+        $this->assertStringContainsString('<strong>1000,45 RUB</strong>', $html);
+        $this->assertStringContainsString('не более', $html);
+        $this->assertStringContainsString('<strong>5000,00 RUB</strong>', $html);
+    }
+
+    public function test_render_orders_percent_lines_before_fix_lines(): void
+    {
+        update_option('cashback_guest_display_rate', 65.0);
+        $this->set_active_tariffs(array(
+            $this->tariff('fix', 100.0, 'Фикс-А', 'RUB'),
+            $this->tariff('percent', 5.0, 'Перцент-Б'),
+        ));
+
+        $html = Cashback_Tab_Conditions_Renderer::render(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
+
+        $percent_pos = strpos($html, 'Перцент-Б');
+        $fix_pos     = strpos($html, 'Фикс-А');
+        $this->assertNotFalse($percent_pos);
+        $this->assertNotFalse($fix_pos);
+        $this->assertLessThan($fix_pos, $percent_pos, 'percent-тарифы должны идти перед fix');
+    }
+
+    public function test_render_escapes_html_in_fix_tariff_name_and_currency(): void
+    {
+        update_option('cashback_guest_display_rate', 65.0);
+        $row = $this->tariff('fix', 100.0, '<b>Hack</b>', '<i>x</i>');
+        $this->set_active_tariffs(array($row));
+
+        $html = Cashback_Tab_Conditions_Renderer::render(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
+
+        $this->assertStringNotContainsString('<b>Hack</b>', $html);
+        $this->assertStringNotContainsString('<i>x</i>', $html);
+        $this->assertStringContainsString('&lt;b&gt;Hack&lt;/b&gt;', $html);
+    }
+
+    public function test_render_fix_tariff_falls_back_to_RUB_when_currency_missing(): void
+    {
+        update_option('cashback_guest_display_rate', 65.0);
+        $row = $this->tariff('fix', 100.0, 'Без валюты', '');
+        $this->set_active_tariffs(array($row));
+
+        $html = Cashback_Tab_Conditions_Renderer::render(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
+
+        $this->assertStringContainsString('<strong>100,00 RUB</strong>', $html);
     }
 
     public function test_render_omits_conditions_section_when_no_active_tariffs(): void

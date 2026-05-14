@@ -555,4 +555,227 @@ final class AdvcakeShopsDetailedTest extends TestCase
         $ids = array_map(static fn(array $c): string => $c['id'], $result['campaigns']);
         $this->assertSame(array( '1', '2' ), $ids);
     }
+
+    // ----------------------------------------------------------------------
+    // inline_tariffs из bids[] (v4.3.3)
+    // ----------------------------------------------------------------------
+
+    /** @return array<string, mixed> */
+    private function sample_bid(array $overrides = array()): array
+    {
+        $defaults = array(
+            'id'         => 25531,
+            'value'      => 12,
+            'type'       => 'percent',
+            'final'      => false,
+            'text'       => 'Ставка 12% на cashback',
+            'created_at' => '2026-04-01 17:40:49',
+            'condition'  => array(
+                'traffic_type' => array( '17', '26', '16' ),
+                'start_date'   => '2026-04-10',
+            ),
+        );
+        return array_replace($defaults, $overrides);
+    }
+
+    public function test_url_includes_with_bids_in_detailed_fetch(): void
+    {
+        $this->queue_responses(array( $this->http_response(200, $this->offers_body(array())) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config());
+
+        $q = $this->url_query();
+        $this->assertSame('1', $q['with_bids']);
+    }
+
+    public function test_url_omits_with_bids_in_campaigns_fetch(): void
+    {
+        $this->queue_responses(array( $this->http_response(200, $this->offers_body(array())) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $q = $this->url_query();
+        $this->assertArrayNotHasKey('with_bids', $q, '/offers для check_campaign_statuses() bids не нужны');
+    }
+
+    public function test_inline_tariffs_maps_percent_bid_from_advcake_real_shape(): void
+    {
+        $offer = $this->sample_offer(array(
+            'bids' => array( $this->sample_bid() ),
+        ));
+        $this->queue_responses(array( $this->http_response(200, $this->offers_body(array( $offer ))) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config());
+
+        $tariffs = $result['campaigns'][0]['inline_tariffs'];
+        $this->assertCount(1, $tariffs);
+        $this->assertSame('25531', $tariffs[0]['tariff_id']);
+        $this->assertSame('percent', $tariffs[0]['tariff_type']);
+        $this->assertEqualsWithDelta(12.0, (float) $tariffs[0]['payment_size'], 0.0001);
+        $this->assertTrue($tariffs[0]['is_default'], 'один прошедший фильтр bid → is_default=true');
+        $this->assertSame('Ставка 12% на cashback', $tariffs[0]['name']);
+        $this->assertSame('RUB', $tariffs[0]['currency']);
+        $this->assertNull($tariffs[0]['payment_max']);
+    }
+
+    public function test_inline_tariffs_maps_fix_bid_with_currency_and_max_commission(): void
+    {
+        $offer = $this->sample_offer(array(
+            'bids' => array( $this->sample_bid(array(
+                'id'             => 99001,
+                'type'           => 'fix',
+                'value'          => 1000.45,
+                'text'           => 'Фикс за регистрацию юр.лица',
+                'currency'       => 'RUB',
+                'max_commission' => 5000.0,
+            )) ),
+        ));
+        $this->queue_responses(array( $this->http_response(200, $this->offers_body(array( $offer ))) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config());
+
+        $tariffs = $result['campaigns'][0]['inline_tariffs'];
+        $this->assertCount(1, $tariffs);
+        $this->assertSame('fix', $tariffs[0]['tariff_type']);
+        $this->assertEqualsWithDelta(1000.45, (float) $tariffs[0]['payment_size'], 0.0001);
+        $this->assertEqualsWithDelta(5000.0, (float) $tariffs[0]['payment_max'], 0.0001);
+        $this->assertSame('RUB', $tariffs[0]['currency']);
+    }
+
+    public function test_inline_tariffs_filters_out_bids_without_cashback_traffic_type(): void
+    {
+        $bid_context  = $this->sample_bid(array(
+            'id' => 11,
+            'condition' => array( 'traffic_type' => array( '9' ) ), // 9 = context, не cashback
+        ));
+        $bid_cashback = $this->sample_bid(array(
+            'id' => 12,
+            'condition' => array( 'traffic_type' => array( '17' ) ),
+        ));
+        $offer = $this->sample_offer(array( 'bids' => array( $bid_context, $bid_cashback ) ));
+        $this->queue_responses(array( $this->http_response(200, $this->offers_body(array( $offer ))) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config());
+
+        $tariffs = $result['campaigns'][0]['inline_tariffs'];
+        $this->assertCount(1, $tariffs);
+        $this->assertSame('12', $tariffs[0]['tariff_id']);
+    }
+
+    public function test_inline_tariffs_accepts_bid_without_condition_as_applies_all(): void
+    {
+        $bid = $this->sample_bid();
+        unset($bid['condition']);
+        $offer = $this->sample_offer(array( 'bids' => array( $bid ) ));
+        $this->queue_responses(array( $this->http_response(200, $this->offers_body(array( $offer ))) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config());
+
+        $tariffs = $result['campaigns'][0]['inline_tariffs'];
+        $this->assertCount(1, $tariffs, 'bid без condition.traffic_type принимается как default applies-all');
+    }
+
+    public function test_inline_tariffs_accepts_bid_with_empty_traffic_type_array(): void
+    {
+        $bid = $this->sample_bid(array( 'condition' => array( 'traffic_type' => array() ) ));
+        $offer = $this->sample_offer(array( 'bids' => array( $bid ) ));
+        $this->queue_responses(array( $this->http_response(200, $this->offers_body(array( $offer ))) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config());
+
+        $this->assertCount(1, $result['campaigns'][0]['inline_tariffs']);
+    }
+
+    public function test_inline_tariffs_marks_is_default_false_when_multiple_bids(): void
+    {
+        $offer = $this->sample_offer(array(
+            'bids' => array(
+                $this->sample_bid(array( 'id' => 1, 'value' => 12 )),
+                $this->sample_bid(array( 'id' => 2, 'value' => 8 )),
+            ),
+        ));
+        $this->queue_responses(array( $this->http_response(200, $this->offers_body(array( $offer ))) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config());
+
+        $tariffs = $result['campaigns'][0]['inline_tariffs'];
+        $this->assertCount(2, $tariffs);
+        $this->assertFalse($tariffs[0]['is_default']);
+        $this->assertFalse($tariffs[1]['is_default']);
+    }
+
+    public function test_inline_tariffs_empty_when_offer_has_no_bids_key(): void
+    {
+        $offer = $this->sample_offer();
+        $this->assertArrayNotHasKey('bids', $offer, 'sample_offer defaults без bids — sanity');
+        $this->queue_responses(array( $this->http_response(200, $this->offers_body(array( $offer ))) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config());
+
+        $this->assertSame(array(), $result['campaigns'][0]['inline_tariffs']);
+    }
+
+    public function test_inline_tariffs_empty_when_all_bids_filtered(): void
+    {
+        $offer = $this->sample_offer(array(
+            'bids' => array(
+                $this->sample_bid(array( 'condition' => array( 'traffic_type' => array( '9' ) ) )),
+                $this->sample_bid(array( 'condition' => array( 'traffic_type' => array( '8', '11' ) ) )),
+            ),
+        ));
+        $this->queue_responses(array( $this->http_response(200, $this->offers_body(array( $offer ))) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config());
+
+        $this->assertSame(array(), $result['campaigns'][0]['inline_tariffs']);
+    }
+
+    public function test_inline_tariffs_skips_bid_without_id(): void
+    {
+        $bid = $this->sample_bid();
+        unset($bid['id']);
+        $offer = $this->sample_offer(array( 'bids' => array( $bid ) ));
+        $this->queue_responses(array( $this->http_response(200, $this->offers_body(array( $offer ))) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config());
+
+        $this->assertSame(array(), $result['campaigns'][0]['inline_tariffs']);
+    }
+
+    public function test_inline_tariffs_skips_bid_with_unknown_type(): void
+    {
+        $bid = $this->sample_bid(array( 'type' => 'mixed' ));
+        $offer = $this->sample_offer(array( 'bids' => array( $bid ) ));
+        $this->queue_responses(array( $this->http_response(200, $this->offers_body(array( $offer ))) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config());
+
+        $this->assertSame(array(), $result['campaigns'][0]['inline_tariffs']);
+    }
+
+    public function test_inline_tariffs_percent_bid_does_not_populate_payment_max(): void
+    {
+        // percent-bid не должен подхватывать max_commission в payment_max —
+        // это поле семантично только для fix-bid'ов (как cap на абсолютную сумму).
+        $bid = $this->sample_bid(array( 'max_commission' => 999.0 ));
+        $offer = $this->sample_offer(array( 'bids' => array( $bid ) ));
+        $this->queue_responses(array( $this->http_response(200, $this->offers_body(array( $offer ))) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config());
+
+        $this->assertNull($result['campaigns'][0]['inline_tariffs'][0]['payment_max']);
+    }
 }

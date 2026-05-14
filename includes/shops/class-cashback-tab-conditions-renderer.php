@@ -83,15 +83,13 @@ final class Cashback_Tab_Conditions_Renderer {
      * @return array<int, string>
      */
     private static function format_tariff_lines( array $tariffs, float $guest_rate ): array {
-        $lines = array();
+        $percent_lines = array();
+        $fix_lines     = array();
         foreach ( $tariffs as $tariff ) {
             if ( ! is_array( $tariff ) ) {
                 continue;
             }
-            $type = isset( $tariff['tariff_type'] ) ? (string) $tariff['tariff_type'] : '';
-            if ( $type !== 'percent' ) {
-                continue;
-            }
+            $type     = isset( $tariff['tariff_type'] ) ? (string) $tariff['tariff_type'] : '';
             $size_raw = $tariff['payment_size'] ?? 0;
             if ( ! is_numeric( $size_raw ) ) {
                 continue;
@@ -101,22 +99,52 @@ final class Cashback_Tab_Conditions_Renderer {
                 $name = 'Тариф';
             }
 
-            $value = (float) $size_raw * $guest_rate / 100.0;
-            $value = round( $value, 2 );
+            if ( $type === 'percent' ) {
+                $value = (float) $size_raw * $guest_rate / 100.0;
+                $value = round( $value, 2 );
 
-            if ( $value > 0 && $value < 0.01 ) {
-                $formatted = '<0,01';
-            } else {
-                $formatted = number_format( $value, 2, ',', '' );
+                if ( $value > 0 && $value < 0.01 ) {
+                    $formatted = '<0,01';
+                } else {
+                    $formatted = number_format( $value, 2, ',', '' );
+                }
+
+                $percent_lines[] = sprintf(
+                    '<p>%s: <strong>%s%%</strong></p>',
+                    esc_html( $name ),
+                    $formatted
+                );
+                continue;
             }
 
-            $lines[] = sprintf(
-                '<p>%s: <strong>%s%%</strong></p>',
-                esc_html( $name ),
-                $formatted
-            );
+            if ( $type === 'fix' ) {
+                $currency = isset( $tariff['currency'] ) ? strtoupper( trim( (string) $tariff['currency'] ) ) : '';
+                if ( ! preg_match( '/^[A-Z]{3}$/', $currency ) ) {
+                    $currency = 'RUB';
+                }
+                $size_fmt = number_format( round( (float) $size_raw, 2 ), 2, ',', '' );
+
+                $extra = '';
+                if ( isset( $tariff['payment_max'] ) && is_numeric( $tariff['payment_max'] ) && (float) $tariff['payment_max'] > 0 ) {
+                    $max_fmt = number_format( round( (float) $tariff['payment_max'], 2 ), 2, ',', '' );
+                    $extra   = sprintf(
+                        ' (не более <strong>%s %s</strong>)',
+                        $max_fmt,
+                        esc_html( $currency )
+                    );
+                }
+
+                $fix_lines[] = sprintf(
+                    '<p>%s: фиксированная ставка <strong>%s %s</strong> за заказ%s</p>',
+                    esc_html( $name ),
+                    $size_fmt,
+                    esc_html( $currency ),
+                    $extra
+                );
+                continue;
+            }
         }
-        return $lines;
+        return array_merge( $percent_lines, $fix_lines );
     }
 
     private static function resolve_guest_rate(): float {
