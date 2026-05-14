@@ -528,6 +528,53 @@ XML;
         $this->assertSame(array(), $result['campaigns']);
     }
 
+    // ------------------------------------------------------------------
+    // funds_ready (контракт Cashback_API_Client::resolve_funds_ready)
+    // ------------------------------------------------------------------
+
+    /**
+     * @dataProvider provide_payment_status_funds_ready
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('provide_payment_status_funds_ready')]
+    public function test_funds_ready_derived_from_payment_status(string $payment_status, int $expected_funds_ready): void
+    {
+        $xml = '<?xml version="1.0"?><items><item>'
+            . '<id>X</id><order_id>Y</order_id><status>2</status>'
+            . '<payment_status>' . $payment_status . '</payment_status>'
+            . '<commission>10</commission><price>100</price>'
+            . '</item></items>';
+        $this->queue_responses(array( $this->http_response(200, $xml) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_actions(
+            $this->default_credentials(),
+            array(),
+            $this->default_network_config()
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(1, $result['actions']);
+        $this->assertSame(
+            $expected_funds_ready,
+            $result['actions'][0]['funds_ready'],
+            "payment_status={$payment_status} должен дать funds_ready={$expected_funds_ready}"
+        );
+    }
+
+    public static function provide_payment_status_funds_ready(): array
+    {
+        return array(
+            'balance — согласованная'         => array( 'balance', 1 ),
+            'processing — ожидает оплаты'     => array( 'processing', 1 ),
+            'withdrawal — выведена'           => array( 'withdrawal', 1 ),
+            'BALANCE — case-insensitive'      => array( 'BALANCE', 1 ),
+            'open — неподтверждённая'         => array( 'open', 0 ),
+            'on_hold — на холде'              => array( 'on_hold', 0 ),
+            'not_apply — не подлежит выплате' => array( 'not_apply', 0 ),
+            'empty — не задан'                => array( '', 0 ),
+        );
+    }
+
     public function test_fetch_shop_tariffs_returns_success_stub(): void
     {
         $adapter = new Cashback_Advcake_Adapter();

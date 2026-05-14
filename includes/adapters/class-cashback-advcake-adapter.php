@@ -498,6 +498,24 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
         $action['payment'] = $action['commission'];
         $action['cart']    = $action['price'];
 
+        // funds_ready: CPA-сеть подтвердила готовность средств к выплате
+        // (контракт `Cashback_API_Client::resolve_funds_ready()`). Без этого
+        // флага process_ready_transactions() не начислит cashback в баланс
+        // юзера, даже если order_status='completed' и api_verified=1.
+        //
+        // У Advcake источник истины — `<payment_status>`:
+        //   open           — неподтверждённая, ещё может быть отказ
+        //   on_hold        — на холде у рекламодателя
+        //   balance        — согласованная (мы получим) ← READY
+        //   processing     — ожидает оплаты рекламодателем ← READY
+        //   withdrawal     — комиссия уже выведена нам ← READY
+        //   not_apply      — не подлежит выплате
+        $action['funds_ready'] = in_array(
+            strtolower((string) $action['payment_status']),
+            array( 'balance', 'processing', 'withdrawal' ),
+            true
+        ) ? 1 : 0;
+
         return $action;
     }
 
