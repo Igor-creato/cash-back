@@ -508,16 +508,301 @@ XML;
     }
 
     // ------------------------------------------------------------------
-    // Stub'ы для v12 импортёра
+    // fetch_campaigns — GET /offers?pass={token}&type=json (Publisher API)
+    //
+    // См. https://support.advcake.com/docs/api/publisher-api.html
+    // Ответ:
+    //   {"success":true,"dt":"…","total":N,
+    //    "data":[{"id":1,"name":"…","active":true,"available":true,...}]}
+    //
+    // is_active = active && available
+    // connection_status = 'available' | 'unavailable' (по полю available)
+    // status            = 'active'    | 'stopped'     (по полю active)
     // ------------------------------------------------------------------
 
-    public function test_fetch_campaigns_returns_success_stub(): void
+    private function offers_response_body(array $data, ?int $total = null): string
     {
+        return (string) wp_json_encode(array(
+            'success' => true,
+            'dt'      => '2026-05-14 12:00:00',
+            'total'   => $total ?? count($data),
+            'data'    => $data,
+        ));
+    }
+
+    /** @return array<string, mixed> */
+    private function sample_offer(array $overrides = array()): array
+    {
+        return array_merge(array(
+            'id'          => 1,
+            'alias'       => 'tutu',
+            'name'        => 'tutu.ru',
+            'description' => 'Партнёрская программа tutu.ru',
+            'country'     => 'RU',
+            'currency'    => 'RUB',
+            'website_url' => 'https://www.tutu.travel',
+            'thumbnail'   => 'https://static.advcake.com/upload/offers/tutu.png',
+            'category'    => 'travel',
+            'type'        => 'CPA',
+            'active'      => true,
+            'available'   => true,
+        ), $overrides);
+    }
+
+    public function test_fetch_campaigns_url_uses_offers_endpoint_with_pass_and_type_json(): void
+    {
+        $this->queue_responses(array( $this->http_response(200, $this->offers_response_body(array())) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertCount(1, $GLOBALS['_cb_test_http_calls']);
+        $url = $GLOBALS['_cb_test_http_calls'][0]['url'];
+
+        $this->assertStringStartsWith('https://api.advcake.ru/offers?', $url);
+        $this->assertStringContainsString('pass=REDACTED_ADVCAKE_TEST_KEY', $url);
+        $this->assertStringContainsString('type=json', $url);
+        // Не должен попасть actions-endpoint path.
+        $this->assertStringNotContainsString('/export/webmaster/', $url);
+        // Не должен утечь {token} placeholder.
+        $this->assertStringNotContainsString('{token}', $url);
+    }
+
+    public function test_fetch_campaigns_returns_normalized_campaign_fields(): void
+    {
+        $body = $this->offers_response_body(array(
+            $this->sample_offer(array( 'id' => 6, 'name' => 'demo', 'active' => true, 'available' => true )),
+        ));
+        $this->queue_responses(array( $this->http_response(200, $body) ));
+
         $adapter = new Cashback_Advcake_Adapter();
         $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertTrue($result['success']);
+        $this->assertNull($result['error']);
+        $this->assertCount(1, $result['campaigns']);
+
+        $campaign = $result['campaigns'][0];
+        $this->assertSame('6', $campaign['id'], 'id должен быть string (offer_id может быть int в JSON)');
+        $this->assertSame('demo', $campaign['name']);
+        $this->assertTrue($campaign['is_active']);
+        $this->assertSame('active', $campaign['status']);
+        $this->assertSame('available', $campaign['connection_status']);
+    }
+
+    /**
+     * @dataProvider provide_active_available_combinations
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('provide_active_available_combinations')]
+    public function test_is_active_requires_both_active_and_available(
+        bool $active,
+        bool $available,
+        bool $expected_is_active,
+        string $expected_status,
+        string $expected_connection_status
+    ): void {
+        $body = $this->offers_response_body(array(
+            $this->sample_offer(array( 'id' => 42, 'active' => $active, 'available' => $available )),
+        ));
+        $this->queue_responses(array( $this->http_response(200, $body) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertTrue($result['success']);
+        $campaign = $result['campaigns'][0];
+        $this->assertSame($expected_is_active, $campaign['is_active']);
+        $this->assertSame($expected_status, $campaign['status']);
+        $this->assertSame($expected_connection_status, $campaign['connection_status']);
+    }
+
+    public static function provide_active_available_combinations(): array
+    {
+        return array(
+            'active+available → is_active=true' => array( true, true, true, 'active', 'available' ),
+            'active+!available → is_active=false (вебмастер не подключён)' => array( true, false, false, 'active', 'unavailable' ),
+            '!active+available → is_active=false (программа остановлена)' => array( false, true, false, 'stopped', 'available' ),
+            '!active+!available → is_active=false' => array( false, false, false, 'stopped', 'unavailable' ),
+        );
+    }
+
+    public function test_fetch_campaigns_paginates_via_offset_until_data_less_than_limit(): void
+    {
+        // limit по умолчанию = 500. Симулируем 2 страницы: первая полная, вторая короткая → стоп.
+        $page1 = array();
+        for ($i = 1; $i <= 500; $i++) {
+            $page1[] = $this->sample_offer(array( 'id' => $i, 'name' => 'shop-' . $i ));
+        }
+        $page2 = array(
+            $this->sample_offer(array( 'id' => 501, 'name' => 'shop-501' )),
+        );
+
+        $this->queue_responses(array(
+            $this->http_response(200, $this->offers_response_body($page1, 501)),
+            $this->http_response(200, $this->offers_response_body($page2, 501)),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertTrue($result['success']);
+        $this->assertSame(501, count($result['campaigns']));
+        $this->assertCount(2, $GLOBALS['_cb_test_http_calls']);
+
+        $this->assertStringContainsString('offset=0', $GLOBALS['_cb_test_http_calls'][0]['url']);
+        $this->assertStringContainsString('limit=500', $GLOBALS['_cb_test_http_calls'][0]['url']);
+        $this->assertStringContainsString('offset=500', $GLOBALS['_cb_test_http_calls'][1]['url']);
+    }
+
+    public function test_fetch_campaigns_stops_at_max_pages_safety_cap(): void
+    {
+        // Безопасная остановка: имитируем «бесконечный» поток full-pages, адаптер
+        // не должен сделать больше 20 запросов (max_pages по образцу Admitad).
+        $full_page = array();
+        for ($i = 1; $i <= 500; $i++) {
+            $full_page[] = $this->sample_offer(array( 'id' => $i ));
+        }
+        $forever_full = $this->offers_response_body($full_page, 999999);
+        $responses = array();
+        for ($i = 0; $i < 30; $i++) {
+            $responses[] = $this->http_response(200, $forever_full);
+        }
+        $this->queue_responses($responses);
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertLessThanOrEqual(20, count($GLOBALS['_cb_test_http_calls']), 'максимум 20 страниц');
+    }
+
+    public function test_fetch_campaigns_401_returns_error_no_retry(): void
+    {
+        $this->queue_responses(array( $this->http_response(401, '{"error":"Unauthorized"}') ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('401', $result['error']);
+        $this->assertCount(1, $GLOBALS['_cb_test_http_calls']);
+    }
+
+    public function test_fetch_campaigns_403_returns_error_no_retry(): void
+    {
+        $this->queue_responses(array( $this->http_response(403, '{"error":"Forbidden"}') ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('403', $result['error']);
+        $this->assertCount(1, $GLOBALS['_cb_test_http_calls']);
+    }
+
+    public function test_fetch_campaigns_5xx_retries_then_succeeds(): void
+    {
+        $this->queue_responses(array(
+            $this->http_response(500, 'gateway timeout'),
+            $this->http_response(200, $this->offers_response_body(array(
+                $this->sample_offer(array( 'id' => 7 )),
+            ))),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(1, $result['campaigns']);
+        $this->assertCount(2, $GLOBALS['_cb_test_http_calls']);
+    }
+
+    public function test_fetch_campaigns_5xx_gives_up_after_two_retries(): void
+    {
+        $this->queue_responses(array(
+            $this->http_response(503),
+            $this->http_response(503),
+            $this->http_response(502),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertFalse($result['success']);
+        $this->assertCount(3, $GLOBALS['_cb_test_http_calls'], '1 initial + 2 retries');
+    }
+
+    public function test_fetch_campaigns_malformed_json_returns_error(): void
+    {
+        $this->queue_responses(array( $this->http_response(200, '<<<not-json>>>') ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertFalse($result['success']);
+        $this->assertNotNull($result['error']);
+    }
+
+    public function test_fetch_campaigns_api_success_false_returns_error(): void
+    {
+        $body = (string) wp_json_encode(array(
+            'success' => false,
+            'error'   => 'invalid token',
+        ));
+        $this->queue_responses(array( $this->http_response(200, $body) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertFalse($result['success']);
+    }
+
+    public function test_fetch_campaigns_empty_data_array_returns_success_empty_campaigns(): void
+    {
+        $this->queue_responses(array( $this->http_response(200, $this->offers_response_body(array(), 0)) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
         $this->assertTrue($result['success']);
         $this->assertSame(array(), $result['campaigns']);
+        $this->assertNull($result['error']);
     }
+
+    public function test_fetch_campaigns_empty_token_returns_error_no_http_call(): void
+    {
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns(array( 'api_key' => '' ), $this->default_network_config());
+
+        $this->assertFalse($result['success']);
+        $this->assertSame(array(), $result['campaigns']);
+        $this->assertCount(0, $GLOBALS['_cb_test_http_calls']);
+    }
+
+    public function test_fetch_campaigns_skips_entries_without_id(): void
+    {
+        $body = $this->offers_response_body(array(
+            $this->sample_offer(array( 'id' => 1, 'name' => 'ok' )),
+            array( 'name' => 'broken — нет id', 'active' => true, 'available' => true ),
+            $this->sample_offer(array( 'id' => 0, 'name' => 'zero-id-skip' )),
+            $this->sample_offer(array( 'id' => 2, 'name' => 'ok2' )),
+        ));
+        $this->queue_responses(array( $this->http_response(200, $body) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertTrue($result['success']);
+        $ids = array_map(static fn(array $c): string => $c['id'], $result['campaigns']);
+        $this->assertSame(array( '1', '2' ), $ids);
+    }
+
+    // ------------------------------------------------------------------
+    // fetch_campaigns_detailed — оставлен stub'ом
+    //
+    // Автоматический shop-import (v12) для Advcake out-of-scope в v1
+    // интеграции: магазины Advcake создаются админом вручную через WC
+    // (postmeta `_affiliate_network_id=9, _offer_id=<numeric>`).
+    // ------------------------------------------------------------------
 
     public function test_fetch_campaigns_detailed_returns_success_stub_no_next(): void
     {
@@ -526,6 +811,8 @@ XML;
         $this->assertTrue($result['success']);
         $this->assertFalse($result['has_next']);
         $this->assertSame(array(), $result['campaigns']);
+        // Шурующий guard: stub не должен выполнять HTTP-вызов.
+        $this->assertCount(0, $GLOBALS['_cb_test_http_calls']);
     }
 
     // ------------------------------------------------------------------

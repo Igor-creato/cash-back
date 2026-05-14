@@ -44,6 +44,16 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
     private const DEFAULT_ACTIONS_ENDPOINT = '/export/webmaster/{token}';
 
     /**
+     * Размер страницы и safety-cap для пагинации /offers.
+     *
+     * limit=500 на странице, до 20 страниц = до 10 000 офферов — на пару
+     * порядков выше реального каталога одного вебмастера. Cap нужен только
+     * как защита от runaway-loop'а при поломке API (бесконечно полные страницы).
+     */
+    private const OFFERS_PAGE_LIMIT = 500;
+    private const OFFERS_MAX_PAGES  = 20;
+
+    /**
      * {@inheritdoc}
      */
     public function get_slug(): string {
@@ -224,16 +234,62 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
     /**
      * {@inheritdoc}
      *
-     * Advcake `/stat` API возвращает агрегированную статистику по офферам,
-     * но не список «подключённых программ» в формате, подходящем для shop
-     * importer'а v12. В v1 интеграции магазины Advcake создаются админом
-     * вручную через WC, поэтому возвращаем success-stub с пустым списком —
-     * импортёр естественным образом пропустит сеть.
+     * Publisher API: GET {api_base_url}/offers?pass={token}&type=json&limit&offset.
+     * Возвращает список офферов вебмастера; каждый оффер имеет поля
+     * `active` (true/false — программа запущена у рекламодателя) и `available`
+     * (true/false — оффер открыт нашему вебмастеру). Считаем кампанию активной
+     * только когда оба true — иначе либо программа остановлена, либо мы не
+     * подключены к ней.
+     *
+     * Используется `Cashback_API_Client::check_campaign_statuses()` для:
+     *   - catch-up по статусу партнёрской программы (если postback `partner_status`
+     *     потерялся), без этого ранее активные WC-продукты могли остаться
+     *     `publish` после остановки оффера в Advcake;
+     *   - закрытия false-positive «API вернул 0 кампаний», который раньше
+     *     срабатывал при ручном Validate-API из-за пустого stub'а.
      */
     public function fetch_campaigns( array $credentials, array $network_config ): array {
+        $token = $this->get_token($credentials, $network_config);
+        if ($token === null) {
+            return $this->campaigns_error(
+                $this->last_token_error !== ''
+                    ? $this->last_token_error
+                    : 'Не удалось получить токен Advcake'
+            );
+        }
+
+        $base_url = rtrim((string) ( $network_config['api_base_url'] ?? 'https://api.advcake.ru' ), '/');
+
+        $all_campaigns = array();
+        $page          = 0;
+        $offset        = 0;
+
+        while ($page < self::OFFERS_MAX_PAGES) {
+            $page_result = $this->fetch_offers_page($base_url, $token, $offset, self::OFFERS_PAGE_LIMIT, 0);
+            if (!$page_result['success']) {
+                return $this->campaigns_error($page_result['error']);
+            }
+
+            foreach ($page_result['offers'] as $offer) {
+                $campaign = $this->normalize_offer_to_campaign($offer);
+                if ($campaign !== null) {
+                    $all_campaigns[] = $campaign;
+                }
+            }
+
+            ++$page;
+
+            // Останов: страница неполная — больше офферов нет.
+            if (count($page_result['offers']) < self::OFFERS_PAGE_LIMIT) {
+                break;
+            }
+
+            $offset += self::OFFERS_PAGE_LIMIT;
+        }
+
         return array(
             'success'   => true,
-            'campaigns' => array(),
+            'campaigns' => $all_campaigns,
             'error'     => null,
         );
     }
@@ -517,6 +573,154 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
         ) ? 1 : 0;
 
         return $action;
+    }
+
+    /**
+     * Стандартный error-format для fetch_campaigns().
+     *
+     * @param string $error
+     * @return array{success: bool, campaigns: array, error: string}
+     */
+    private function campaigns_error( string $error ): array {
+        return array(
+            'success'   => false,
+            'campaigns' => array(),
+            'error'     => $error,
+        );
+    }
+
+    /**
+     * Получить одну страницу /offers с обработкой 5xx-retry и 4xx-terminal.
+     *
+     * Контракт идентичен fetch_actions(): возвращает либо успешный массив с
+     * `offers`, либо `success=false` с человекочитаемой строкой ошибки.
+     * Возврат токена в URL — не PII, но содержит секрет: для error-сообщений
+     * `body` отдаётся через safe_error_summary(), который усекает до 200 симв.
+     *
+     * @param string $base_url      Без хвостового слэша
+     * @param string $token         Расшифрованный api_key
+     * @param int    $offset        Смещение в каталоге
+     * @param int    $limit         Размер страницы
+     * @param int    $retry_attempt Внутренний счётчик 5xx-retry (0..2)
+     * @return array{success: bool, offers: array, error: string}
+     */
+    private function fetch_offers_page( string $base_url, string $token, int $offset, int $limit, int $retry_attempt ): array {
+        $query = http_build_query(array(
+            'pass'   => $token,
+            'type'   => 'json',
+            'limit'  => $limit,
+            'offset' => $offset,
+        ));
+        $url = $base_url . '/offers?' . $query;
+
+        $response = $this->http_get($url, array());
+        if (is_wp_error($response)) {
+            return array(
+                'success' => false,
+                'offers'  => array(),
+                'error'   => 'HTTP error: ' . $response->get_error_message(),
+            );
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+
+        if ($code === 401 || $code === 403) {
+            return array(
+                'success' => false,
+                'offers'  => array(),
+                'error'   => "HTTP {$code}: токен Advcake отвергнут на /offers — обновите api_key в Настройках API.",
+            );
+        }
+
+        if ($code >= 500 && $code < 600 && $retry_attempt < 2) {
+            $next_attempt = $retry_attempt + 1;
+            $delay        = (int) apply_filters(
+                'cashback_advcake_5xx_retry_delay_seconds',
+                $next_attempt,
+                $next_attempt,
+                $code
+            );
+            if ($delay > 0) {
+                sleep($delay);
+            }
+
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log("Cashback Advcake: HTTP {$code} on /offers, retry attempt {$next_attempt} of 2");
+
+            return $this->fetch_offers_page($base_url, $token, $offset, $limit, $next_attempt);
+        }
+
+        if ($code !== 200) {
+            return array(
+                'success' => false,
+                'offers'  => array(),
+                'error'   => "HTTP {$code} /offers: " . $this->safe_error_summary($body),
+            );
+        }
+
+        $decoded = json_decode((string) $body, true);
+        if (!is_array($decoded)) {
+            return array(
+                'success' => false,
+                'offers'  => array(),
+                'error'   => 'Malformed JSON in /offers response',
+            );
+        }
+
+        // Документация Publisher API: успешный ответ — `success: true`,
+        // ошибка — `success: false` с полем `error`. Защищаемся от обоих случаев.
+        if (array_key_exists('success', $decoded) && $decoded['success'] === false) {
+            $api_error = isset($decoded['error']) ? (string) $decoded['error'] : 'неизвестная ошибка';
+            return array(
+                'success' => false,
+                'offers'  => array(),
+                'error'   => '/offers API success=false: ' . $api_error,
+            );
+        }
+
+        $data = $decoded['data'] ?? array();
+        if (!is_array($data)) {
+            $data = array();
+        }
+
+        return array(
+            'success' => true,
+            'offers'  => $data,
+            'error'   => '',
+        );
+    }
+
+    /**
+     * Нормализовать один offer-объект Advcake в campaign-формат интерфейса.
+     *
+     * Совместимость с {@see Cashback_Network_Adapter_Interface::fetch_campaigns()}:
+     *   - 'id'                — string (offer.id, кастится из int)
+     *   - 'name'              — string
+     *   - 'is_active'         — bool (active && available)
+     *   - 'status'            — 'active' | 'stopped' (по offer.active)
+     *   - 'connection_status' — 'available' | 'unavailable' (по offer.available)
+     *
+     * @param array<string, mixed> $offer
+     * @return array<string, mixed>|null null если у оффера нет валидного id
+     */
+    private function normalize_offer_to_campaign( array $offer ): ?array {
+        $raw_id = $offer['id'] ?? null;
+        $id     = is_scalar($raw_id) ? trim((string) $raw_id) : '';
+        if ($id === '' || $id === '0') {
+            return null;
+        }
+
+        $active    = !empty($offer['active']);
+        $available = !empty($offer['available']);
+
+        return array(
+            'id'                => $id,
+            'name'              => isset($offer['name']) && is_scalar($offer['name']) ? trim((string) $offer['name']) : '',
+            'is_active'         => ( $active && $available ),
+            'status'            => $active ? 'active' : 'stopped',
+            'connection_status' => $available ? 'available' : 'unavailable',
+        );
     }
 
     /**
