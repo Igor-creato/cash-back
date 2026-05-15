@@ -218,7 +218,7 @@ class Cashback_Claims_Eligibility {
             $where_extra   .= ' AND cl.created_at >= %s AND cl.created_at <= %s';
             $prepare_args[] = $cutoff_min;
             $prepare_args[] = $cutoff_max;
-            $where_extra   .= ' AND t.id IS NULL';
+            $where_extra   .= ' AND t.click_id IS NULL';
             $where_extra   .= ' AND c_active.claim_id IS NULL';
         }
 
@@ -228,14 +228,18 @@ class Cashback_Claims_Eligibility {
 
         $select_query = "SELECT cl.click_id, cl.product_id, cl.created_at, cl.cpa_network, cl.offer_id,
                     cl.ip_address, cl.user_agent, cl.spam_click,
-                    CASE WHEN t.id IS NOT NULL THEN 1 ELSE 0 END AS has_cashback,
-                    t.order_status AS cashback_status,
+                    CASE WHEN t.click_id IS NOT NULL THEN 1 ELSE 0 END AS has_cashback,
+                    t.cashback_status AS cashback_status,
                     CASE WHEN c_active.claim_id IS NOT NULL THEN 1 ELSE 0 END AS has_active_claim,
                     c_active.status AS claim_status
              FROM %i cl
-             LEFT JOIN %i t
+             LEFT JOIN (
+                 SELECT click_id, user_id, MAX(order_status) AS cashback_status
+                 FROM %i
+                 WHERE order_status IN ('waiting', 'completed', 'balance', 'hold')
+                 GROUP BY click_id, user_id
+             ) t
                  ON t.click_id = cl.click_id AND t.user_id = cl.user_id
-                 AND t.order_status IN ('waiting', 'completed', 'balance', 'hold')
              LEFT JOIN %i c_active
                  ON c_active.click_id = cl.click_id AND c_active.user_id = cl.user_id
                  AND c_active.status IN ('draft', 'submitted', 'sent_to_network', 'approved', 'declined')
@@ -249,9 +253,13 @@ class Cashback_Claims_Eligibility {
 
         $count_query = "SELECT COUNT(*)
              FROM %i cl
-             LEFT JOIN %i t
+             LEFT JOIN (
+                 SELECT click_id, user_id, MAX(order_status) AS cashback_status
+                 FROM %i
+                 WHERE order_status IN ('waiting', 'completed', 'balance', 'hold')
+                 GROUP BY click_id, user_id
+             ) t
                  ON t.click_id = cl.click_id AND t.user_id = cl.user_id
-                 AND t.order_status IN ('waiting', 'completed', 'balance', 'hold')
              LEFT JOIN %i c_active
                  ON c_active.click_id = cl.click_id AND c_active.user_id = cl.user_id
                  AND c_active.status IN ('draft', 'submitted', 'sent_to_network', 'approved', 'declined')

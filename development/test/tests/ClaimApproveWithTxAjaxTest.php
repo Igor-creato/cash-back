@@ -260,10 +260,13 @@ final class ClaimApproveWithTxAjaxTest extends TestCase
     public function test_handler_locks_existing_tx_for_update(): void
     {
         $body = $this->method_body('ajax_approve_with_tx', 'private function');
+        // Split-order: один click_id → много транзакций. Pre-flight check
+        // должен оставаться FOR UPDATE (race-safe) и фильтровать по активным
+        // статусам (declined-sibling не должен ложно блокировать начисление).
         $this->assertMatchesRegularExpression(
-            '/SELECT id FROM %i WHERE user_id = %d AND click_id = %s LIMIT 1 FOR UPDATE/i',
+            "/SELECT id FROM %i\s+WHERE user_id = %d AND click_id = %s\s+AND order_status IN \([^)]*\)\s+LIMIT 1 FOR UPDATE/i",
             $body,
-            'pre-flight check существующей tx должен использовать FOR UPDATE (race-safe)'
+            'pre-flight check существующей tx: FOR UPDATE + фильтр active-статусов (split-order safe)'
         );
     }
 

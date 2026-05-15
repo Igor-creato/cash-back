@@ -319,17 +319,23 @@ class Cashback_Balance_Reconciliation {
         // сумма заказа — order_value (не amount). См. claims/class-claims-db.php.
         // Баг из Группы 14: раньше здесь были c.id/c.amount → AS-job валился
         // на этом запросе и никогда не писал claim_approved_no_transaction.
+        // NOT EXISTS вместо LEFT JOIN ... t.id IS NULL: split-order даёт
+        // несколько транзакций на один click_id — LEFT JOIN размножал бы
+        // строки claim'а и искажал LIMIT 500. Anti-semi-join по существованию
+        // ЛЮБОЙ транзакции (user_id, click_id) корректен при N siblings.
         $rows = $wpdb->get_results( $wpdb->prepare(
             'SELECT c.claim_id, c.user_id, c.click_id, c.merchant_name, c.order_value, c.updated_at
              FROM %i c
-             LEFT JOIN %i t ON t.user_id = c.user_id AND t.click_id = c.click_id
              WHERE c.status = %s
                AND c.updated_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)
-               AND t.id IS NULL
+               AND NOT EXISTS (
+                   SELECT 1 FROM %i t
+                   WHERE t.user_id = c.user_id AND t.click_id = c.click_id
+               )
              LIMIT 500',
             $claims_table,
-            $tx_table,
-            'approved'
+            'approved',
+            $tx_table
         ), ARRAY_A );
 
         if ( empty( $rows ) ) {

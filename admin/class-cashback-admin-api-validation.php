@@ -48,6 +48,8 @@ class Cashback_Admin_API_Validation {
         add_action('wp_ajax_cashback_get_sync_log', array( $this, 'ajax_get_sync_log' ));
         add_action('wp_ajax_cashback_get_validation_status', array( $this, 'ajax_get_validation_status' ));
         add_action('wp_ajax_cashback_save_sync_window', array( $this, 'ajax_save_sync_window' ));
+        // P5: push/pull dedup-identity консистентность (универсальный дедуп).
+        add_action('wp_ajax_cashback_validate_dedup_config', array( $this, 'ajax_validate_dedup_config' ));
 
         // Тест подключения к API
         add_action('wp_ajax_cashback_test_connection', array( $this, 'ajax_test_connection' ));
@@ -629,6 +631,8 @@ echo 'style="display:none"';}
                 Сравнивает транзакции пользователя в локальной БД с данными CPA-сети.
                 Инкрементальная проверка — запрашиваются только новые данные с последнего чекпоинта.
             </p>
+
+            <?php $this->render_dedup_config_panel(); ?>
 
             <table class="form-table">
                 <tr>
@@ -1312,6 +1316,151 @@ echo 'style="display:none"';}
     }
 
     // =========================================================================
+    // P5: Push/pull dedup-identity консистентность
+    // =========================================================================
+
+    /**
+     * Отчёт по контракту дедупликации для всех активных сетей.
+     *
+     * Surfaces misconfig вместо тихого дубля: для КАЖДОЙ сети проверяем что
+     * (a) контракт идентичности well-formed (native ⇒ есть API-поле → uniq_id;
+     * synthetic ⇒ непустой synthetic_fields) и (b) receiver_uniq_source
+     * задан оператором (push-источник). Кросс-именная авто-сверка
+     * (api_field vs postback-macro) невозможна без receiver-introspection
+     * (D-5b отклонён) — поэтому показываем ОБА источника для глазной сверки.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function compute_dedup_config_report(): array {
+        $client = Cashback_API_Client::get_instance();
+        $report = array();
+
+        foreach ($client->get_all_active_networks() as $net) {
+            $slug = (string) ( $net['slug'] ?? '' );
+            if ($slug === '') {
+                continue;
+            }
+            $cfg = $client->get_network_config($slug);
+            if (!is_array($cfg)) {
+                continue;
+            }
+
+            $field_map = is_array($cfg['field_map'] ?? null) ? $cfg['field_map'] : array();
+            $flip      = array_flip($field_map);
+            $uniq_src  = (string) ( $flip['uniq_id'] ?? '' );
+
+            $raw_di  = $cfg['dedup_identity'] ?? null;
+            $decoded = ( is_string($raw_di) && $raw_di !== '' ) ? json_decode($raw_di, true) : null;
+            $decoded = is_array($decoded) ? $decoded : null;
+
+            $has_native = ($decoded === null)
+                ? true
+                : ( ($decoded['has_native_action_id'] ?? true) !== false );
+            $synthetic_fields = ( $decoded !== null && is_array($decoded['synthetic_fields'] ?? null) )
+                ? $decoded['synthetic_fields']
+                : array();
+            $receiver_src = ($decoded !== null) ? (string) ( $decoded['receiver_uniq_source'] ?? '' ) : '';
+
+            $issues = array();
+            if ($has_native && $uniq_src === '') {
+                $issues[] = 'native-режим, но ни одно API-поле не замаплено в uniq_id';
+            }
+            if (!$has_native && $synthetic_fields === array()) {
+                $issues[] = 'synthetic-режим, но synthetic_fields пуст';
+            }
+            if ($receiver_src === '') {
+                $issues[] = 'receiver_uniq_source не задан — push/pull консистентность не подтверждается';
+            }
+
+            $report[] = array(
+                'slug'             => $slug,
+                'name'             => (string) ( $cfg['name'] ?? $slug ),
+                'mode'             => $has_native ? 'native' : 'synthetic',
+                'api_uniq_source'  => $uniq_src,
+                'receiver_source'  => $receiver_src,
+                'synthetic_fields' => $synthetic_fields,
+                'status'           => $issues === array() ? 'ok' : 'warn',
+                'issues'           => $issues,
+            );
+        }
+
+        return $report;
+    }
+
+    /**
+     * AJAX: вернуть dedup-config отчёт (read-only диагностика).
+     */
+    public function ajax_validate_dedup_config(): void {
+        check_ajax_referer('cashback_api_validation', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array( 'message' => 'Недостаточно прав' ));
+        }
+
+        $report = $this->compute_dedup_config_report();
+        $all_ok = true;
+        foreach ($report as $row) {
+            if ($row['status'] !== 'ok') {
+                $all_ok = false;
+                break;
+            }
+        }
+
+        wp_send_json_success(array(
+            'all_ok' => $all_ok,
+            'report' => $report,
+        ));
+    }
+
+    /**
+     * Серверный рендер панели dedup-config в таб «API Валидация»
+     * (без JS — виден сразу при загрузке таба).
+     */
+    private function render_dedup_config_panel(): void {
+        $report = $this->compute_dedup_config_report();
+        if ($report === array()) {
+            return;
+        }
+        ?>
+        <h3>Дедупликация: контракт идентичности (push/pull)</h3>
+        <p class="description">
+            Универсальный exactly-once резолвер. <code>native</code> = у сети
+            есть собственный per-action id; <code>synthetic</code> = id
+            вычисляется детерминированно из стабильных полей. Сверьте, что
+            «API uniq source» и «Receiver uniq source» обозначают ОДИН
+            логический идентификатор действия.
+        </p>
+        <table class="widefat striped" style="max-width:960px">
+            <thead>
+                <tr>
+                    <th>Сеть</th><th>Режим</th><th>API uniq source</th>
+                    <th>Receiver uniq source</th><th>synthetic_fields</th><th>Статус</th>
+                </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($report as $row) : ?>
+                <tr>
+                    <td><?php echo esc_html($row['name']); ?> <code><?php echo esc_html($row['slug']); ?></code></td>
+                    <td><?php echo esc_html($row['mode']); ?></td>
+                    <td><code><?php echo esc_html($row['api_uniq_source'] !== '' ? $row['api_uniq_source'] : '—'); ?></code></td>
+                    <td><code><?php echo esc_html($row['receiver_source'] !== '' ? $row['receiver_source'] : '—'); ?></code></td>
+                    <td><code><?php echo esc_html(implode(', ', array_map('strval', $row['synthetic_fields'])) ?: '—'); ?></code></td>
+                    <td>
+                        <?php if ($row['status'] === 'ok') : ?>
+                            <span style="color:#1a7f37;font-weight:600">OK</span>
+                        <?php else : ?>
+                            <span style="color:#b32d2e;font-weight:600">⚠ <?php echo esc_html(implode('; ', $row['issues'])); ?></span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        <hr>
+        <?php
+    }
+
+    // =========================================================================
     // AJAX: Действия из таблиц валидации
     // =========================================================================
 
@@ -1476,8 +1625,13 @@ echo 'style="display:none"';}
             $currency = 'RUB';
         }
 
-        // Генерация idempotency_key (детерминистический — один action_id+network = один ключ)
-        $idempotency_key = hash('sha256', 'api_add_' . $action_id . '_' . $network);
+        // Канонический cross-path ключ: sha256( lower(slug) | uniq_id ) —
+        // та же формула, что в Cashback_API_Client::insert_missing_transaction
+        // и webhook-receiver (app/db.py). idx_idempotency_key → настоящий
+        // cross-path exactly-once backstop (webhook / cron / manual коллизируют
+        // на одном логическом действии). Для встроенных (native-id) сетей
+        // $action_id == native uniq_id == выход универсального резолвера.
+        $idempotency_key = hash('sha256', strtolower($network) . '|' . $action_id);
 
         // Разрешение partner_token → user_id (subid может содержать токен вместо числового ID)
         if ($user_id !== 'unregistered' && !is_numeric($user_id) && preg_match('/^[0-9a-f]{32}$/', $user_id)) {
@@ -1496,7 +1650,7 @@ echo 'style="display:none"';}
             'user_id'         => $is_unregistered ? $user_id : (int) $user_id,
             'uniq_id'         => $action_id,
             'order_number'    => $order_id,
-            'partner'         => $network_config['name'] ?? $network,
+            'partner'         => strtolower($network),
             'comission'       => number_format($payment, 2, '.', ''),
             'sum_order'       => number_format($cart, 2, '.', ''),
             'order_status'    => $mapped_status,

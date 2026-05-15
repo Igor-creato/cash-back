@@ -100,6 +100,12 @@ class Mariadb_Plugin {
             $instance->migrate_shop_import_v12();
             $instance->migrate_cleanup_ghost_members_v13();
             $instance->migrate_advcake_seed_v14();
+            // v15 ранее не был подключён к runner'у (chain обрывался на v14) —
+            // идемпотентен (db_version fast-path + INFORMATION_SCHEMA guard),
+            // подключаем перед v16: иначе bump до 16 навсегда застрелил бы его
+            // `>= 15` fast-path и UNIQUE(network_id,param_name) не появился бы.
+            $instance->migrate_v15_uniqueness();
+            $instance->migrate_dedup_identity_v16();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -4597,6 +4603,113 @@ class Mariadb_Plugin {
         }
 
         update_option('cashback_db_version', 15, false);
+    }
+
+    /**
+     * Миграция v16: универсальный контракт дедупликации `dedup_identity`.
+     *
+     * Добавляет JSON-колонку `cashback_affiliate_networks.dedup_identity` и
+     * сидит её для Admitad/EPN/Advcake. Контракт читается универсальным
+     * резолвером `Cashback_API_Client::resolve_uniq_id()` (PHP) и его
+     * byte-identical Python-зеркалом `app/identity.py` в webhook-receiver:
+     *
+     *   {"has_native_action_id": bool,
+     *    "synthetic_fields": ["order_number","offer_id","action_type"],
+     *    "synthetic_include_click_id": bool,
+     *    "receiver_uniq_source": "<имя поля в постбэке>"}
+     *
+     * NULL dedup_identity == legacy has_native_action_id:true (резолвер
+     * деградирует к текущему поведению) — поэтому миграция additive и
+     * безопасна при любом порядке деплоя relative к receiver-cutover.
+     *
+     * Идемпотентность: cashback_db_version >= 16 fast-path + INFORMATION_SCHEMA
+     * для ALTER + seed ТОЛЬКО где dedup_identity IS NULL (admin-кастомизация и
+     * повторные запуски не перезатираются).
+     */
+    public function migrate_dedup_identity_v16(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        if ($current_version >= 16) {
+            return;
+        }
+
+        $safe_prefix    = $this->validate_table_prefix($wpdb->prefix);
+        $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
+
+        // 1. ALTER ADD COLUMN dedup_identity (если ещё нет). LONGTEXT (не
+        //    нативный JSON) — консистентно с api_field_map/api_coupons_field_map
+        //    в этой же таблице, без CHECK json_valid сюрпризов на старых MariaDB.
+        $has_col = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = %s
+                AND COLUMN_NAME  = %s',
+            $networks_table,
+            'dedup_identity'
+        ));
+
+        if ($has_col === 0) {
+            // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL, $safe_prefix validated via validate_table_prefix().
+            $alter_base =
+                "ALTER TABLE `{$safe_prefix}cashback_affiliate_networks`
+                  ADD COLUMN `dedup_identity` LONGTEXT DEFAULT NULL
+                    COMMENT 'JSON контракт идентичности транзакции (v16): has_native_action_id, synthetic_fields, synthetic_include_click_id, receiver_uniq_source. NULL == legacy native-id'
+                  AFTER `api_field_map`";
+            $r_alter = $wpdb->query($alter_base . ', ALGORITHM=INSTANT');
+            if ($r_alter === false && self::error_indicates_algorithm_unsupported($wpdb->last_error)) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+                error_log('[Cashback Migration v16] ALGORITHM=INSTANT not supported, fallback to default: ' . $wpdb->last_error);
+                $r_alter = $wpdb->query($alter_base);
+            }
+            // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+            if ($r_alter === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v16] ALTER cashback_affiliate_networks ADD dedup_identity failed: ' . $wpdb->last_error);
+                return;
+            }
+
+            $verify_col = (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*) FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME   = %s
+                    AND COLUMN_NAME  = %s',
+                $networks_table,
+                'dedup_identity'
+            ));
+            if ($verify_col === 0) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v16] post-verify failed: dedup_identity missing after ALTER');
+                return;
+            }
+        }
+
+        // 2. Seed контракта для встроенных сетей. Все три имеют native
+        //    per-action id; receiver_uniq_source — имя поля в ИХ постбэке
+        //    (для push/pull валидации P5). Seed только где IS NULL.
+        $base = array(
+            'has_native_action_id'       => true,
+            'synthetic_fields'           => array( 'order_number', 'offer_id', 'action_type' ),
+            'synthetic_include_click_id' => false,
+        );
+        $seeds = array(
+            'admitad' => array( 'receiver_uniq_source' => 'admitad_id' ),
+            'epn'     => array( 'receiver_uniq_source' => 'transactionId' ),
+            'advcake' => array( 'receiver_uniq_source' => 'id' ),
+        );
+
+        foreach ($seeds as $slug => $extra) {
+            $contract = (string) wp_json_encode(array_merge($base, $extra));
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot idempotent migration seed.
+            $wpdb->query($wpdb->prepare(
+                'UPDATE %i SET dedup_identity = %s WHERE slug = %s AND dedup_identity IS NULL',
+                $networks_table,
+                $contract,
+                $slug
+            ));
+        }
+
+        update_option('cashback_db_version', 16, false);
     }
 
     /**

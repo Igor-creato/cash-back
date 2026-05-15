@@ -797,8 +797,13 @@ class Cashback_Claims_Admin {
 
             // Pre-flight FOR UPDATE на existing tx по (user_id, click_id) —
             // защита от race с api-sync cron / handle_create_stuck_claim_tx.
+            // Split-order: один click_id → много транзакций. Блокируем только
+            // при АКТИВНОМ кэшбэке по click_id (declined-sibling не мешает).
             $existing_tx_id = (int) $wpdb->get_var($wpdb->prepare(
-                'SELECT id FROM %i WHERE user_id = %d AND click_id = %s LIMIT 1 FOR UPDATE',
+                "SELECT id FROM %i
+                 WHERE user_id = %d AND click_id = %s
+                   AND order_status IN ('waiting','hold','completed','balance')
+                 LIMIT 1 FOR UPDATE",
                 $tx_table,
                 $user_id,
                 $click_id
@@ -806,7 +811,7 @@ class Cashback_Claims_Admin {
             if ($existing_tx_id > 0) {
                 throw new \RuntimeException(sprintf(
                     /* translators: %d: id транзакции. */
-                    __('Транзакция для этого click_id уже существует (ID %d).', 'cashback-plugin'),
+                    __('Активный кэшбэк для этого click_id уже существует (ID %d).', 'cashback-plugin'),
                     $existing_tx_id
                 ));
             }

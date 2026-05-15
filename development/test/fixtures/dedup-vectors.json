@@ -1,0 +1,131 @@
+{
+  "_comment": "Shared parity fixture for the universal dedup resolver. Replayed byte-identically by DedupResolverParityTest.php (PHP Cashback_Api_Client::resolve_uniq_id) and F:/cash-back/webhook-resiver/tests/replay_dedup_vectors.py (Python app.identity.resolve_uniq_id). expected_id/expected_reason are the frozen contract — any drift between PHP and Python fails one side.",
+  "vectors": [
+    {
+      "name": "admitad native passthrough",
+      "slug": "admitad",
+      "native_uniq_id": "987654321",
+      "fields": {"order_number": "ORD-1", "offer_id": "10", "action_type": "sale", "click_id": "abc"},
+      "dedup_identity": {"has_native_action_id": true, "synthetic_fields": ["order_number", "offer_id", "action_type"], "synthetic_include_click_id": false},
+      "expected_id": "987654321",
+      "expected_reason": null
+    },
+    {
+      "name": "admitad split sibling A",
+      "slug": "admitad",
+      "native_uniq_id": "1271805605",
+      "fields": {"order_number": "7788478038776720", "offer_id": "10", "action_type": "sale", "click_id": "019e2b85cf5178f58376a52d9f873ac4"},
+      "dedup_identity": {"has_native_action_id": true},
+      "expected_id": "1271805605",
+      "expected_reason": null
+    },
+    {
+      "name": "admitad split sibling B (same click, different action)",
+      "slug": "admitad",
+      "native_uniq_id": "1271805604",
+      "fields": {"order_number": "7788478038776721", "offer_id": "10", "action_type": "sale", "click_id": "019e2b85cf5178f58376a52d9f873ac4"},
+      "dedup_identity": {"has_native_action_id": true},
+      "expected_id": "1271805604",
+      "expected_reason": null
+    },
+    {
+      "name": "advcake native id",
+      "slug": "advcake",
+      "native_uniq_id": "adv-77123",
+      "fields": {"order_number": "adv-77123", "offer_id": "200", "action_type": "sale", "click_id": "cid1"},
+      "dedup_identity": {"has_native_action_id": true, "receiver_uniq_source": "id"},
+      "expected_id": "adv-77123",
+      "expected_reason": null
+    },
+    {
+      "name": "advcake status-change re-postback resolves to SAME id",
+      "slug": "advcake",
+      "native_uniq_id": "  adv-77123  ",
+      "fields": {"order_number": "adv-77123", "offer_id": "200", "action_type": "sale", "click_id": "cid1"},
+      "dedup_identity": {"has_native_action_id": true},
+      "expected_id": "adv-77123",
+      "expected_reason": null
+    },
+    {
+      "name": "epn native transactionId",
+      "slug": "epn",
+      "native_uniq_id": "TXN-55",
+      "fields": {"order_number": "OO-1", "offer_id": "9", "action_type": "sale", "click_id": "ec1"},
+      "dedup_identity": {"has_native_action_id": true},
+      "expected_id": "TXN-55",
+      "expected_reason": null
+    },
+    {
+      "name": "legacy null contract + native present => passthrough",
+      "slug": "admitad",
+      "native_uniq_id": "L-1",
+      "fields": {"order_number": "x", "offer_id": "y", "action_type": "sale", "click_id": "z"},
+      "dedup_identity": null,
+      "expected_id": "L-1",
+      "expected_reason": null
+    },
+    {
+      "name": "legacy null contract + native empty => no_dedup_inputs",
+      "slug": "admitad",
+      "native_uniq_id": "   ",
+      "fields": {"order_number": "x", "offer_id": "y", "action_type": "sale", "click_id": "z"},
+      "dedup_identity": null,
+      "expected_id": "",
+      "expected_reason": "no_dedup_inputs"
+    },
+    {
+      "name": "native expected (has_native true) but empty => no_dedup_inputs",
+      "slug": "advcake",
+      "native_uniq_id": "",
+      "fields": {"order_number": "ORD", "offer_id": "1", "action_type": "sale", "click_id": "c"},
+      "dedup_identity": {"has_native_action_id": true},
+      "expected_id": "",
+      "expected_reason": "no_dedup_inputs"
+    },
+    {
+      "name": "synthetic order-only direct partner (default fields)",
+      "slug": "partnerx",
+      "native_uniq_id": "",
+      "fields": {"order_number": "ORD-9", "offer_id": "42", "action_type": "sale", "click_id": "ignored-by-default"},
+      "dedup_identity": {"has_native_action_id": false},
+      "expected_id": "syn_2c3722250044df34fcdde3402162f527fc0609db",
+      "expected_reason": null
+    },
+    {
+      "name": "synthetic stable across status/amount (same inputs => same id as above)",
+      "slug": "partnerx",
+      "native_uniq_id": "",
+      "fields": {"order_number": "ORD-9", "offer_id": "42", "action_type": "sale", "click_id": "different-now"},
+      "dedup_identity": {"has_native_action_id": false, "synthetic_include_click_id": false},
+      "expected_id": "syn_2c3722250044df34fcdde3402162f527fc0609db",
+      "expected_reason": null
+    },
+    {
+      "name": "synthetic with include_click_id true",
+      "slug": "partnerx",
+      "native_uniq_id": "",
+      "fields": {"order_number": "ORD-9", "offer_id": "42", "action_type": "sale", "click_id": "C1"},
+      "dedup_identity": {"has_native_action_id": false, "synthetic_include_click_id": true},
+      "expected_id": "syn_41c61a8aa20d88e11fc4d4f3b4fe3050b5c99828",
+      "expected_reason": null
+    },
+    {
+      "name": "synthetic custom synthetic_fields list",
+      "slug": "px",
+      "native_uniq_id": "",
+      "fields": {"order_number": "A", "offer_id": "B", "action_type": "C", "click_id": "D"},
+      "dedup_identity": {"has_native_action_id": false, "synthetic_fields": ["order_number"]},
+      "expected_id": "syn_8e0ea444cb88643c20fe67c47cdbf14ea689a436",
+      "expected_reason": null
+    },
+    {
+      "name": "synthetic but all inputs empty => no_dedup_inputs",
+      "slug": "partnerx",
+      "native_uniq_id": "  ",
+      "fields": {"order_number": "", "offer_id": "  ", "action_type": "", "click_id": "x"},
+      "dedup_identity": {"has_native_action_id": false, "synthetic_include_click_id": false},
+      "expected_id": "",
+      "expected_reason": "no_dedup_inputs"
+    }
+  ]
+}
