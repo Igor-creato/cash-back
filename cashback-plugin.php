@@ -940,6 +940,12 @@ class CashbackPlugin {
         // INNER JOIN в SQL реактивации Cashback_API_Client::check_campaign_statuses,
         // очистка маркеров деактивации при ручной публикации.
         $this->require_file('includes/shops/class-cashback-product-autopublish.php');
+        // Draft-модель дедупа: enforcement post_status (preferred=publish,
+        // остальные=draft) на cashback_group_preferred_changed + маркеры
+        // _cashback_dup_* + only-demote backfill.
+        $this->require_file('includes/shops/class-cashback-shop-dup-status-sync.php');
+        // Admin-баннер «N магазинов-дублей с менее выгодной ставкой».
+        $this->require_file('includes/admin/class-cashback-shop-dup-admin-notice.php');
 
         // API клиент и cron (синхронизация работает через WP Cron)
         $this->require_file('includes/class-cashback-api-client.php');
@@ -1508,6 +1514,20 @@ class CashbackPlugin {
         if (class_exists('Cashback_Product_Autopublish')) {
             Cashback_Product_Autopublish::register();
             Cashback_Product_Autopublish::ensure_backfilled();
+        }
+
+        // Draft-модель дедупа: post_status enforcement (preferred → publish,
+        // не-preferred → draft) на cashback_group_preferred_changed (priority
+        // 15, после Catalog_Visibility). Self-healing only-demote backfill
+        // (опция cashback_shop_dup_status_backfill_v1).
+        if (class_exists('Cashback_Shop_Dup_Status_Sync')) {
+            Cashback_Shop_Dup_Status_Sync::register();
+            Cashback_Shop_Dup_Status_Sync::ensure_backfilled();
+        }
+
+        // Admin-баннер о дублях с менее выгодной ставкой.
+        if (class_exists('Cashback_Shop_Dup_Admin_Notice')) {
+            Cashback_Shop_Dup_Admin_Notice::register();
         }
 
         // Shop Group Resolver: cleanup member-record ТОЛЬКО при permanent

@@ -778,4 +778,263 @@ final class ShopGroupResolverTest extends TestCase
         $this->assertSame('manual', Cashback_Shop_Group_Resolver::STATUS_MANUAL);
         $this->assertSame('split', Cashback_Shop_Group_Resolver::STATUS_SPLIT);
     }
+
+    // ============================================================
+    // rank_product + is_better — percent ≻ fix (Этап 1 dedup best-rate).
+    //
+    // Корневой баг: score_product() сравнивал payment_size percent и fix
+    // как голые числа (16% против 27000₽ → fix «побеждал»). rank_product
+    // разделяет типы; percent-товар всегда бьёт fix-only, зеркаля логику
+    // калькулятора отображения (mixed → берётся percent, fix отбрасывается).
+    // ============================================================
+
+    /**
+     * Подменяет $wpdb на stub, маршрутизирующий get_row/get_results по SQL:
+     *  - cashback_shop_groups        → группа из $GLOBALS['_rank_group'];
+     *  - cashback_shop_group_members → members из $GLOBALS['_rank_members'];
+     *  - cashback_shop_tariffs       → тарифы из $GLOBALS['_rank_tariffs'][offer_id].
+     */
+    private function installRankStub(): void
+    {
+        $stub = new class extends Shop_Test_Wpdb_Stub {
+            public function get_row(mixed $sql, mixed $output = ARRAY_A): mixed
+            {
+                if (str_contains((string) $sql, 'cashback_shop_groups')) {
+                    return $GLOBALS['_rank_group'] ?? null;
+                }
+                return null;
+            }
+
+            public function get_results(mixed $sql, mixed $output = ARRAY_A): mixed
+            {
+                $s = (string) $sql;
+                if (str_contains($s, 'cashback_shop_group_members')) {
+                    return $GLOBALS['_rank_members'] ?? array();
+                }
+                if (str_contains($s, 'cashback_shop_tariffs')) {
+                    foreach (($GLOBALS['_rank_tariffs'] ?? array()) as $oid => $rows) {
+                        if (str_contains($s, "offer_id = '" . $oid . "'")) {
+                            return $rows;
+                        }
+                    }
+                    return array();
+                }
+                return array();
+            }
+        };
+        $GLOBALS['wpdb'] = $stub;
+    }
+
+    private function tearDownRankStub(): void
+    {
+        $GLOBALS['wpdb'] = new Shop_Test_Wpdb_Stub();
+        unset($GLOBALS['_rank_group'], $GLOBALS['_rank_members'], $GLOBALS['_rank_tariffs']);
+    }
+
+    public function test_rank_product_returns_null_when_no_tariffs(): void
+    {
+        $this->installRankStub();
+        update_post_meta(4175, '_affiliate_network_id', '1');
+        update_post_meta(4175, '_offer_id', '22367');
+        $GLOBALS['_rank_tariffs'] = array(); // get_active → []
+
+        $this->assertNull(Cashback_Shop_Group_Resolver::rank_product(4175));
+        $this->tearDownRankStub();
+    }
+
+    public function test_rank_product_separates_percent_and_fix(): void
+    {
+        $this->installRankStub();
+        update_post_meta(4296, '_affiliate_network_id', '9');
+        update_post_meta(4296, '_offer_id', '389');
+        // Реальные данные staging для skillfactory.ru / Advcake (товар 4296).
+        $GLOBALS['_rank_tariffs'] = array(
+            '389' => array(
+                array('tariff_type' => 'fix', 'payment_size' => '27000.0000'),
+                array('tariff_type' => 'fix', 'payment_size' => '6000.0000'),
+                array('tariff_type' => 'percent', 'payment_size' => '12.0000'),
+            ),
+        );
+
+        $rank = Cashback_Shop_Group_Resolver::rank_product(4296);
+
+        $this->assertIsArray($rank);
+        $this->assertTrue($rank['has_percent']);
+        $this->assertSame(12.0, $rank['best_percent']);
+        $this->assertSame(27000.0, $rank['best_fix']);
+        $this->tearDownRankStub();
+    }
+
+    public function test_rank_product_fix_only_has_no_percent(): void
+    {
+        $this->installRankStub();
+        update_post_meta(70, '_affiliate_network_id', '9');
+        update_post_meta(70, '_offer_id', 'fixoff');
+        $GLOBALS['_rank_tariffs'] = array(
+            'fixoff' => array(
+                array('tariff_type' => 'fix', 'payment_size' => '500.0000'),
+            ),
+        );
+
+        $rank = Cashback_Shop_Group_Resolver::rank_product(70);
+
+        $this->assertIsArray($rank);
+        $this->assertFalse($rank['has_percent']);
+        $this->assertSame(0.0, $rank['best_percent']);
+        $this->assertSame(500.0, $rank['best_fix']);
+        $this->tearDownRankStub();
+    }
+
+    public function test_recompute_preferred_percent_beats_fix_skillfactory(): void
+    {
+        // Регресс-сценарий staging: skillfactory.ru
+        //   4175 Admitad  — percent 16% (best_percent=16)
+        //   4296 Advcake  — fix 27000 + percent 12% (best_percent=12)
+        // Старый score_product выбирал 4296 (27000 > 16). Должен 4175.
+        $this->installRankStub();
+        $GLOBALS['_rank_group']   = array('id' => 1155, 'pin_product_id' => null, 'preferred_product_id' => null);
+        $GLOBALS['_rank_members'] = array(
+            array('product_id' => 4175),
+            array('product_id' => 4296),
+        );
+        update_post_meta(4175, '_affiliate_network_id', '1');
+        update_post_meta(4175, '_offer_id', '22367');
+        update_post_meta(4296, '_affiliate_network_id', '9');
+        update_post_meta(4296, '_offer_id', '389');
+        $GLOBALS['_rank_tariffs'] = array(
+            '22367' => array(
+                array('tariff_type' => 'percent', 'payment_size' => '16.0000'),
+                array('tariff_type' => 'percent', 'payment_size' => '16.0000'),
+            ),
+            '389' => array(
+                array('tariff_type' => 'fix', 'payment_size' => '27000.0000'),
+                array('tariff_type' => 'fix', 'payment_size' => '6000.0000'),
+                array('tariff_type' => 'percent', 'payment_size' => '12.0000'),
+            ),
+        );
+
+        $best = Cashback_Shop_Group_Resolver::recompute_preferred(1155);
+
+        $this->assertSame(4175, $best, 'percent 16% должен победить percent 12% (а не fix 27000)');
+        $this->tearDownRankStub();
+    }
+
+    public function test_recompute_preferred_percent_only_beats_fix_only(): void
+    {
+        $this->installRankStub();
+        $GLOBALS['_rank_group']   = array('id' => 7, 'pin_product_id' => null, 'preferred_product_id' => null);
+        $GLOBALS['_rank_members'] = array(
+            array('product_id' => 11),
+            array('product_id' => 22),
+        );
+        update_post_meta(11, '_affiliate_network_id', '1');
+        update_post_meta(11, '_offer_id', 'pct');
+        update_post_meta(22, '_affiliate_network_id', '9');
+        update_post_meta(22, '_offer_id', 'fx');
+        $GLOBALS['_rank_tariffs'] = array(
+            'pct' => array(array('tariff_type' => 'percent', 'payment_size' => '5.0000')),
+            'fx'  => array(array('tariff_type' => 'fix', 'payment_size' => '99999.0000')),
+        );
+
+        $best = Cashback_Shop_Group_Resolver::recompute_preferred(7);
+
+        $this->assertSame(11, $best, 'любой percent бьёт fix-only, даже 5% против 99999₽');
+        $this->tearDownRankStub();
+    }
+
+    public function test_recompute_preferred_percent_vs_percent_higher_wins(): void
+    {
+        // gb.ru регресс-guard: percent 15.52 vs percent 12 → больший.
+        $this->installRankStub();
+        $GLOBALS['_rank_group']   = array('id' => 301, 'pin_product_id' => null, 'preferred_product_id' => null);
+        $GLOBALS['_rank_members'] = array(
+            array('product_id' => 4121),
+            array('product_id' => 4286),
+        );
+        update_post_meta(4121, '_affiliate_network_id', '1');
+        update_post_meta(4121, '_offer_id', 'gb1');
+        update_post_meta(4286, '_affiliate_network_id', '9');
+        update_post_meta(4286, '_offer_id', 'gb9');
+        $GLOBALS['_rank_tariffs'] = array(
+            'gb1' => array(array('tariff_type' => 'percent', 'payment_size' => '15.5200')),
+            'gb9' => array(array('tariff_type' => 'percent', 'payment_size' => '12.0000')),
+        );
+
+        $this->assertSame(4121, Cashback_Shop_Group_Resolver::recompute_preferred(301));
+        $this->tearDownRankStub();
+    }
+
+    public function test_recompute_preferred_fix_vs_fix_currency_tiebreak(): void
+    {
+        // Оба fix-only, равный payment_size → tie-break по валюте (RUB ≻ USD).
+        $this->installRankStub();
+        $GLOBALS['_rank_group']   = array('id' => 8, 'pin_product_id' => null, 'preferred_product_id' => null);
+        $GLOBALS['_rank_members'] = array(
+            array('product_id' => 31),
+            array('product_id' => 32),
+        );
+        update_post_meta(31, '_affiliate_network_id', '1');
+        update_post_meta(31, '_offer_id', 'r');
+        update_post_meta(31, '_cashback_campaign_currency', 'USD');
+        update_post_meta(32, '_affiliate_network_id', '9');
+        update_post_meta(32, '_offer_id', 's');
+        update_post_meta(32, '_cashback_campaign_currency', 'RUB');
+        $GLOBALS['_rank_tariffs'] = array(
+            'r' => array(array('tariff_type' => 'fix', 'payment_size' => '100.0000')),
+            's' => array(array('tariff_type' => 'fix', 'payment_size' => '100.0000')),
+        );
+
+        $this->assertSame(32, Cashback_Shop_Group_Resolver::recompute_preferred(8), 'RUB бьёт USD при равном fix');
+        $this->tearDownRankStub();
+    }
+
+    public function test_recompute_preferred_exact_tie_is_deterministic_min_id(): void
+    {
+        // Codex HIGH-1: при полном равенстве (та же ставка, та же валюта)
+        // победитель не должен зависеть от порядка строк get_active_members
+        // (в draft-модели флип = флаппинг post_status). Детерминированно —
+        // меньший product_id.
+        $this->installRankStub();
+        $GLOBALS['_rank_group'] = array('id' => 60, 'pin_product_id' => null, 'preferred_product_id' => null);
+        // Stub отдаёт в порядке убывания — победить всё равно должен 5000.
+        $GLOBALS['_rank_members'] = array(
+            array('product_id' => 5001),
+            array('product_id' => 5000),
+        );
+        update_post_meta(5001, '_affiliate_network_id', '1');
+        update_post_meta(5001, '_offer_id', 'a');
+        update_post_meta(5000, '_affiliate_network_id', '9');
+        update_post_meta(5000, '_offer_id', 'b');
+        $GLOBALS['_rank_tariffs'] = array(
+            'a' => array(array('tariff_type' => 'percent', 'payment_size' => '10.0000')),
+            'b' => array(array('tariff_type' => 'percent', 'payment_size' => '10.0000')),
+        );
+
+        $first  = Cashback_Shop_Group_Resolver::recompute_preferred(60);
+        $second = Cashback_Shop_Group_Resolver::recompute_preferred(60);
+
+        $this->assertSame(5000, $first, 'при полном равенстве побеждает меньший product_id');
+        $this->assertSame($first, $second, 'результат стабилен между вызовами');
+        $this->tearDownRankStub();
+    }
+
+    public function test_recompute_preferred_skips_members_without_tariffs(): void
+    {
+        $this->installRankStub();
+        $GLOBALS['_rank_group']   = array('id' => 9, 'pin_product_id' => null, 'preferred_product_id' => null);
+        $GLOBALS['_rank_members'] = array(
+            array('product_id' => 41), // нет тарифов → rank null → пропуск
+            array('product_id' => 42),
+        );
+        update_post_meta(41, '_affiliate_network_id', '1');
+        update_post_meta(41, '_offer_id', 'empty');
+        update_post_meta(42, '_affiliate_network_id', '9');
+        update_post_meta(42, '_offer_id', 'has');
+        $GLOBALS['_rank_tariffs'] = array(
+            'has' => array(array('tariff_type' => 'percent', 'payment_size' => '3.0000')),
+        );
+
+        $this->assertSame(42, Cashback_Shop_Group_Resolver::recompute_preferred(9));
+        $this->tearDownRankStub();
+    }
 }

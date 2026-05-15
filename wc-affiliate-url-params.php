@@ -326,6 +326,9 @@ class WC_Affiliate_URL_Params {
             echo '</div>';
         }
 
+        // Уведомление о дубле магазина с более выгодной ставкой (Этап 3a).
+        $this->render_dup_group_notice((int) $post->ID);
+
         // Контейнер для параметров сети
         echo '<div id="affiliate-network-params-container">';
         if (!empty($network_params)) {
@@ -474,6 +477,61 @@ class WC_Affiliate_URL_Params {
             $this->render_imported_tariffs_table($product_id);
         }
 
+        echo '</div>';
+    }
+
+    /**
+     * Уведомление в метабоксе: этот магазин — дубль, у другой сети ставка
+     * выгоднее. Подсказывает админу держать товар в черновике и включить
+     * «Автопубликация» (Этап 3a draft-модели дедупа).
+     *
+     * Показывается только если товар в группе из >1 member и НЕ является
+     * effective preferred (данные из Cashback_Shop_Dup_Status_Sync::notice_context).
+     */
+    private function render_dup_group_notice( int $product_id ): void {
+        if (! class_exists('Cashback_Shop_Dup_Status_Sync')) {
+            return;
+        }
+        $ctx = Cashback_Shop_Dup_Status_Sync::notice_context($product_id);
+        if ($ctx === null) {
+            return;
+        }
+
+        $domain     = (string) ( $ctx['domain'] ?? '' );
+        $winner_id  = (int) ( $ctx['winner_id'] ?? 0 );
+        $winner_net = (int) ( $ctx['winner_network_id'] ?? 0 );
+
+        // Имя сети-победителя (read-only lookup, best-effort).
+        $net_label = $winner_net > 0 ? ('#' . $winner_net) : '';
+        global $wpdb;
+        if ($winner_net > 0 && isset($wpdb) && is_object($wpdb)) {
+            $name = $wpdb->get_var($wpdb->prepare(
+                'SELECT name FROM ' . $wpdb->prefix . 'cashback_affiliate_networks WHERE id = %d',
+                $winner_net
+            ));
+            if (is_string($name) && $name !== '') {
+                $net_label = $name;
+            }
+        }
+
+        $edit_link = $winner_id > 0 && function_exists('get_edit_post_link')
+            ? (string) get_edit_post_link($winner_id)
+            : '';
+
+        echo '<div class="affiliate-network-warning" style="padding: 8px 12px; margin: 5px 12px; background: #fff3cd; border-left: 4px solid #d63638; color: #856404;">';
+        echo '<strong>' . esc_html__('Дубликат магазина — у другой сети ставка выгоднее', 'wc-affiliate-url-params') . '</strong><br>';
+        echo esc_html(sprintf(
+            /* translators: 1: store domain, 2: winning CPA network label. */
+            __('Магазин «%1$s» уже представлен сетью %2$s с более выгодной ставкой.', 'wc-affiliate-url-params'),
+            $domain,
+            $net_label
+        ));
+        if ($edit_link !== '') {
+            echo ' <a href="' . esc_url($edit_link) . '">'
+                . esc_html(sprintf(/* translators: %d: winner product ID. */ __('Товар-победитель #%d', 'wc-affiliate-url-params'), $winner_id))
+                . '</a>';
+        }
+        echo '<br>' . esc_html__('Рекомендация: держите этот товар в черновике и включите «Автопубликация» в блоке «Опубликовать». Когда ставка этой сети станет выгоднее, он опубликуется автоматически, а конкурент уйдёт в черновик.', 'wc-affiliate-url-params');
         echo '</div>';
     }
 
