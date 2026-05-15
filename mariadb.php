@@ -106,6 +106,7 @@ class Mariadb_Plugin {
             // `>= 15` fast-path и UNIQUE(network_id,param_name) не появился бы.
             $instance->migrate_v15_uniqueness();
             $instance->migrate_dedup_identity_v16();
+            $instance->migrate_dedup_identity_backfill_v17();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -4710,6 +4711,64 @@ class Mariadb_Plugin {
         }
 
         update_option('cashback_db_version', 16, false);
+    }
+
+    /**
+     * Миграция v17: slug-agnostic backfill контракта `dedup_identity`.
+     *
+     * v16 сидил по ЖЁСТКОМУ списку slug'ов (admitad/epn/advcake), но реальные
+     * деплои используют произвольные slug'и (на staging Admitad = 'adm') —
+     * такие сети остались с dedup_identity=NULL. Функционально это корректно
+     * (NULL == legacy native passthrough в резолвере), но не "универсально"
+     * и шумит в P5-панели. v17 ставит безопасный native-дефолт КАЖДОЙ строке
+     * где dedup_identity IS NULL, независимо от slug. `receiver_uniq_source`
+     * НЕ задаётся — это per-deployment знание оператора (postback-макрос),
+     * P5-панель мягко подсветит его отсутствие.
+     *
+     * Идемпотентность: cashback_db_version >= 17 fast-path + WHERE
+     * dedup_identity IS NULL (admin-кастомизация / v16-seed не трогаются).
+     */
+    public function migrate_dedup_identity_backfill_v17(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        if ($current_version >= 17) {
+            return;
+        }
+
+        $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
+
+        // Колонка гарантированно есть (v16). Defensive: если по какой-то
+        // причине нет — пропускаем без bump (v16 доедет и создаст).
+        $has_col = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = %s
+                AND COLUMN_NAME  = %s',
+            $networks_table,
+            'dedup_identity'
+        ));
+        if ($has_col === 0) {
+            return;
+        }
+
+        // Безопасный native-дефолт: все известные сегодня CPA-сети имеют
+        // собственный per-action id; синтетика включается явным конфигом
+        // direct-партнёра. receiver_uniq_source намеренно отсутствует.
+        $base = (string) wp_json_encode(array(
+            'has_native_action_id'       => true,
+            'synthetic_fields'           => array( 'order_number', 'offer_id', 'action_type' ),
+            'synthetic_include_click_id' => false,
+        ));
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot idempotent backfill.
+        $wpdb->query($wpdb->prepare(
+            'UPDATE %i SET dedup_identity = %s WHERE dedup_identity IS NULL',
+            $networks_table,
+            $base
+        ));
+
+        update_option('cashback_db_version', 17, false);
     }
 
     /**
