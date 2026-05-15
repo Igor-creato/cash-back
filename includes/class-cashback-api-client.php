@@ -949,6 +949,45 @@ class Cashback_API_Client {
         return $dt->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
     }
 
+    /**
+     * Разрешить datetime из API: первый УСПЕШНО распарсенный кандидат +
+     * корректная network→UTC нормализация.
+     *
+     * Codex fintech-review v4.4.4:
+     *  - F-3: перебираем кандидатов и берём первый, который parse_api_date
+     *    реально распарсил, а не первый непустой. Иначе present-but-garbage
+     *    поле (напр. Admitad conversion_time=846 — длительность, не дата)
+     *    блокирует деградацию к настоящим datetime-полям → action_date
+     *    NULL и перекос hold-периода / funds_ready.
+     *  - F-2: Unix-timestamp — уже абсолютный момент (parse_api_date
+     *    локализует его через wp_timezone()); повторная network→UTC
+     *    конверсия сдвинула бы его на часы при site-tz != network-tz.
+     *    Конвертируем ТОЛЬКО naive-строки сети (не ts).
+     *
+     * @param array<int,scalar|null> $candidates Сырые значения по приоритету.
+     * @param string                 $api_tz     Зона API сети ('' = UTC).
+     * @return string|null MySQL DATETIME (UTC) или null если ничего не распарсилось.
+     */
+    private static function resolve_api_datetime( array $candidates, string $api_tz ): ?string {
+        foreach ($candidates as $raw) {
+            $raw = trim((string) $raw);
+            if ($raw === '') {
+                continue;
+            }
+            $parsed = self::parse_api_date($raw);
+            if ($parsed === null) {
+                continue;
+            }
+            // Unix-ts: parse_api_date уже дал абсолютный момент — не
+            // подвергаем повторной network→UTC конверсии (F-2).
+            if ($api_tz !== '' && !preg_match('/^\d{10,13}$/', $raw)) {
+                return self::api_datetime_to_utc($parsed, $api_tz);
+            }
+            return $parsed;
+        }
+        return null;
+    }
+
     // =========================================================================
     // Validation logic
     // =========================================================================
@@ -2763,30 +2802,38 @@ class Cashback_API_Client {
         $field_map = $config['field_map'];
         $mapped    = $this->apply_field_map($action, $field_map);
 
-        // 6. Парсим даты (через маппинг)
-        $fm_action_date    = $this->api_field_for('action_date', $field_map) ?: 'action_date';
-        $fm_click_time     = $this->api_field_for('click_time', $field_map) ?: 'click_date';
-        // action_date: зеркало fallback-цепочки click_time (ниже). Если
-        // api_field_map в БД мапит несуществующее поле (напр. Admitad
-        // conversion_time→action_date, а у /statistics/actions/ такого поля
-        // нет) — деградируем к raw-полям Admitad, иначе action_date=NULL и в
-        // UI показывается время вставки вместо реального времени действия.
-        $action_date_mysql = self::parse_api_date((string) (
-            $action[ $fm_action_date ] ?? $action['action_date'] ?? $action['closing_date'] ?? $action['action_time'] ?? ''
-        ));
-        $click_time_raw    = (string) ( $action[ $fm_click_time ] ?? $action['click_time'] ?? $action['closing_date'] ?? '' );
-        $click_time_mysql  = self::parse_api_date($click_time_raw);
-
-        // 6a. API некоторых сетей (Admitad) отдаёт naive локальное время без
+        // 6. Парсим даты (через маппинг).
+        // API некоторых сетей (Admitad) отдаёт naive локальное время без
         // tz-маркера. Хранение — UTC (ADR utc-everywhere) и должно совпадать
         // со строкой webhook-receiver. Зону декларирует адаптер сети;
         // пусто → уже UTC, конверсии нет (EPN/Advcake не затронуты).
-        $adapter = $this->get_adapter($slug);
-        $api_tz  = ( $adapter instanceof Cashback_Network_Adapter_Base )
+        $fm_action_date = $this->api_field_for('action_date', $field_map) ?: 'action_date';
+        $fm_click_time  = $this->api_field_for('click_time', $field_map) ?: 'click_date';
+        $adapter        = $this->get_adapter($slug);
+        $api_tz         = ( $adapter instanceof Cashback_Network_Adapter_Base )
             ? $adapter->get_api_datetime_timezone()
             : '';
-        $action_date_mysql = self::api_datetime_to_utc($action_date_mysql, $api_tz);
-        $click_time_mysql  = self::api_datetime_to_utc($click_time_mysql, $api_tz);
+        // resolve_api_datetime: первый УСПЕШНО распарсенный кандидат (а не
+        // первый непустой — F-3: present-but-garbage поле вроде Admitad
+        // conversion_time=846 не должно блокировать деградацию к реальной
+        // дате) + корректная network→UTC без двойной конверсии unix-ts (F-2).
+        $action_date_mysql = self::resolve_api_datetime(
+            array(
+                $action[ $fm_action_date ] ?? '',
+                $action['action_date']     ?? '',
+                $action['closing_date']    ?? '',
+                $action['action_time']     ?? '',
+            ),
+            $api_tz
+        );
+        $click_time_mysql = self::resolve_api_datetime(
+            array(
+                $action[ $fm_click_time ] ?? '',
+                $action['click_time']     ?? '',
+                $action['closing_date']   ?? '',
+            ),
+            $api_tz
+        );
 
         // Универсальный резолвер — ТОТ ЖЕ id, что использовался при матчинге
         // выше и что произвёл бы realtime-webhook (app/identity.py). Для

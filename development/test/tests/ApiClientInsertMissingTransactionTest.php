@@ -94,7 +94,7 @@ final class ApiClientInsertMissingTransactionTest extends TestCase
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 2. action_date — устойчивая цепочка fallback'ов
+    // 2. action_date — устойчивый резолвер кандидатов (F-3 Codex v4.4.4)
     // ════════════════════════════════════════════════════════════════
 
     public function test_insert_missing_transaction_action_date_has_raw_fallback_chain(): void
@@ -104,18 +104,24 @@ final class ApiClientInsertMissingTransactionTest extends TestCase
             'insert_missing_transaction'
         );
 
-        // Зеркало паттерна click_time: $action[$fm_action_date] ?? raw action_date ?? closing_date ?? action_time
+        // action_date резолвится через resolve_api_datetime по списку
+        // кандидатов: mapped → raw action_date → closing_date → action_time
+        // (первый РАСПАРСЕННЫЙ, не первый непустой — F-3).
         $this->assertMatchesRegularExpression(
-            "/\\\$action\[\s*\\\$fm_action_date\s*\]\s*\?\?\s*\\\$action\['action_date'\]\s*\?\?\s*\\\$action\['closing_date'\]/",
+            "/\\\$action_date_mysql\s*=\s*self::resolve_api_datetime\s*\(\s*array\(\s*"
+            . "\\\$action\[\s*\\\$fm_action_date\s*\]\s*\?\?\s*''\s*,\s*"
+            . "\\\$action\['action_date'\][^,]*,\s*"
+            . "\\\$action\['closing_date'\][^,]*,\s*"
+            . "\\\$action\['action_time'\]/s",
             $body,
-            'action_date должен иметь fallback на raw поля Admitad (action_date / closing_date / action_time), '
-            . 'иначе кривой api_field_map (conversion_time→action_date) даёт NULL.'
+            'action_date должен резолвиться через resolve_api_datetime по кандидатам '
+            . '(mapped / action_date / closing_date / action_time).'
         );
-        // Голый вариант без fallback больше не должен присутствовать.
+        // Старый голый parse_api_date по одному полю не должен присутствовать.
         $this->assertDoesNotMatchRegularExpression(
-            "/parse_api_date\(\s*\(string\)\s*\(\s*\\\$action\[\s*\\\$fm_action_date\s*\]\s*\?\?\s*''\s*\)\s*\)/",
+            "/\\\$action_date_mysql\s*=\s*self::parse_api_date\(/",
             $body,
-            'Голый $action[$fm_action_date] ?? \'\' без fallback должен быть заменён цепочкой.'
+            'Прямой parse_api_date для action_date заменён на resolve_api_datetime.'
         );
     }
 

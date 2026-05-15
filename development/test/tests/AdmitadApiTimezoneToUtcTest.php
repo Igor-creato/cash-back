@@ -123,15 +123,23 @@ final class AdmitadApiTimezoneToUtcTest extends TestCase
     {
         $body = $this->insert_missing_body();
 
+        // С v4.4.4 (Codex F-2/F-3) конверсия MSK→UTC инкапсулирована в
+        // resolve_api_datetime($candidates, $api_tz), который вызывает
+        // api_datetime_to_utc только для naive-строк (не unix-ts).
         self::assertMatchesRegularExpression(
-            '/\$action_date_mysql\s*=\s*self::api_datetime_to_utc\s*\(\s*\$action_date_mysql\s*,/',
+            '/\$action_date_mysql\s*=\s*self::resolve_api_datetime\s*\(/',
             $body,
-            'action_date должен прогоняться через api_datetime_to_utc (MSK→UTC по зоне адаптера).'
+            'action_date должен резолвиться через resolve_api_datetime (MSK→UTC по зоне адаптера).'
         );
         self::assertMatchesRegularExpression(
-            '/\$click_time_mysql\s*=\s*self::api_datetime_to_utc\s*\(\s*\$click_time_mysql\s*,/',
+            '/\$click_time_mysql\s*=\s*self::resolve_api_datetime\s*\(/',
             $body,
-            'click_time должен прогоняться через api_datetime_to_utc симметрично action_date.'
+            'click_time должен резолвиться через resolve_api_datetime симметрично action_date.'
+        );
+        self::assertMatchesRegularExpression(
+            '/\$api_tz\s*=\s*\(\s*\$adapter\s+instanceof\s+Cashback_Network_Adapter_Base\s*\)/',
+            $body,
+            'Зона API должна браться из адаптера (get_api_datetime_timezone).'
         );
     }
 }
