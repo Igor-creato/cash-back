@@ -2315,6 +2315,10 @@ class Cashback_API_Client {
                         $mapped_status,
                         $api_payment
                     );
+                } elseif (!empty($insert_result['skipped_foreign_website'])) {
+                    // Чужая площадка — не ошибка вставки (предохранитель,
+                    // основной фильтр уже отсёк это выше). Считаем отдельно.
+                    ++$skipped_foreign_website;
                 } elseif (strpos($insert_result['error'], 'Duplicate') !== false) {
                     // Дубликат — не ошибка, транзакция уже есть
                     ++$skipped;
