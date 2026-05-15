@@ -814,8 +814,15 @@ class Cashback_Balance_Reconciliation_Admin {
 		$user_id  = (int) ( $claim['user_id'] ?? 0 );
 		$click_id = (string) ( $claim['click_id'] ?? '' );
 
+		// click_id может иметь несколько транзакций (Admitad split-order:
+		// один клик → много действий). Блокируем только при наличии
+		// АКТИВНОГО кэшбэка по этому click_id — declined-sibling не мешает
+		// ручному начислению по claim'у.
 		$existing_tx_id = (int) $wpdb->get_var( $wpdb->prepare(
-			'SELECT id FROM %i WHERE user_id = %d AND click_id = %s LIMIT 1',
+			"SELECT id FROM %i
+			 WHERE user_id = %d AND click_id = %s
+			   AND order_status IN ('waiting','hold','completed','balance')
+			 LIMIT 1",
 			$tx_table,
 			$user_id,
 			$click_id
@@ -824,7 +831,7 @@ class Cashback_Balance_Reconciliation_Admin {
 			wp_send_json_error( array(
 				'message' => sprintf(
 					/* translators: %d: id транзакции. */
-					__( 'Транзакция для этого click_id уже существует (ID %d).', 'cashback-plugin' ),
+					__( 'Активный кэшбэк для этого click_id уже существует (ID %d).', 'cashback-plugin' ),
 					$existing_tx_id
 				),
 			) );
@@ -1039,8 +1046,13 @@ class Cashback_Balance_Reconciliation_Admin {
 			$user_id  = (int) $claim['user_id'];
 			$click_id = (string) $claim['click_id'];
 
+			// Split-order: один click_id → много транзакций. Блокируем только
+			// при АКТИВНОМ кэшбэке по click_id (declined-sibling не мешает).
 			$existing_tx_id = (int) $wpdb->get_var( $wpdb->prepare(
-				'SELECT id FROM %i WHERE user_id = %d AND click_id = %s LIMIT 1 FOR UPDATE',
+				"SELECT id FROM %i
+				 WHERE user_id = %d AND click_id = %s
+				   AND order_status IN ('waiting','hold','completed','balance')
+				 LIMIT 1 FOR UPDATE",
 				$tx_table,
 				$user_id,
 				$click_id
@@ -1048,7 +1060,7 @@ class Cashback_Balance_Reconciliation_Admin {
 			if ( $existing_tx_id > 0 ) {
 				throw new \RuntimeException( sprintf(
 					/* translators: %d: id транзакции. */
-					__( 'Транзакция для этого click_id уже существует (ID %d).', 'cashback-plugin' ),
+					__( 'Активный кэшбэк для этого click_id уже существует (ID %d).', 'cashback-plugin' ),
 					$existing_tx_id
 				) );
 			}

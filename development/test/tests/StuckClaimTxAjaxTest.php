@@ -217,10 +217,13 @@ final class StuckClaimTxAjaxTest extends TestCase
     public function test_create_handler_locks_existing_tx_for_update(): void
     {
         $src = $this->recon_admin_src();
+        // Split-order: один click_id → много транзакций. Pre-flight check
+        // должен (а) оставаться FOR UPDATE (race-safe) и (б) фильтровать по
+        // АКТИВНЫМ статусам, иначе declined-sibling ложно блокирует начисление.
         $this->assertMatchesRegularExpression(
-            '/SELECT id FROM %i WHERE user_id = %d AND click_id = %s LIMIT 1 FOR UPDATE/i',
+            "/SELECT id FROM %i\s+WHERE user_id = %d AND click_id = %s\s+AND order_status IN \([^)]*\)\s+LIMIT 1 FOR UPDATE/i",
             $src,
-            'pre-flight check существующей транзакции должен использовать FOR UPDATE (race-safe)'
+            'pre-flight check существующей транзакции: FOR UPDATE + фильтр active-статусов (split-order safe)'
         );
     }
 

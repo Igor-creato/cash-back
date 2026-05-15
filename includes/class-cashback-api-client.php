@@ -935,16 +935,14 @@ class Cashback_API_Client {
             $local_start
         ), ARRAY_A);
 
-        // ─── Индексы для матчинга ───
-        // 1. Основной: по click_id (= API.subid1, наш UUID)
-        $local_by_click_id = array();
-        // 2. Fallback: по uniq_id (= API.action_id, уникальный ID в рамках CPA-сети)
+        // ─── Индекс для матчинга ───
+        // Идентичность транзакции = uniq_id (= API.action_id, уникальный ID в
+        // рамках CPA-сети). click_id НЕ ключ: split-order siblings разделяют
+        // один click_id, индексация по нему схлопывала бы их в одну запись →
+        // ложные missing_local / mismatched в отчёте сверки.
         $local_by_uniq_id = array();
 
         foreach ($local_transactions as $tx) {
-            if (!empty($tx['click_id'])) {
-                $local_by_click_id[ $tx['click_id'] ] = $tx;
-            }
             if (!empty($tx['uniq_id'])) {
                 $local_by_uniq_id[ $tx['uniq_id'] ] = $tx;
             }
@@ -1022,20 +1020,14 @@ class Cashback_API_Client {
                 $api_sums['declined'] += $api_payment;
             }
 
-            // ─── МАТЧИНГ ───
-            $local_tx = null;
-
-            // 1. Основной ключ: click_id (наш UUID, наиболее надёжный)
-            if ($api_click_id !== '' && isset($local_by_click_id[ $api_click_id ])) {
-                $local_tx = $local_by_click_id[ $api_click_id ];
-            }
-
-            // 2. Fallback: uniq_id (уникальный ID в рамках CPA-сети)
-            if (!$local_tx) {
-                $action_id_key = (string) ( $action[ $fm_uniq_id ] ?? '' );
-                if ($action_id_key !== '' && isset($local_by_uniq_id[ $action_id_key ])) {
-                    $local_tx = $local_by_uniq_id[ $action_id_key ];
-                }
+            // ─── МАТЧИНГ по uniq_id ───
+            // Идентичность = uniq_id (API.action_id). click_id НЕ ключ:
+            // split-order siblings разделяют один click_id, но каждый —
+            // отдельная транзакция со своим admitad_id/action_id.
+            $local_tx      = null;
+            $action_id_key = (string) ( $action[ $fm_uniq_id ] ?? '' );
+            if ($action_id_key !== '' && isset($local_by_uniq_id[ $action_id_key ])) {
+                $local_tx = $local_by_uniq_id[ $action_id_key ];
             }
 
             if (!$local_tx) {
@@ -1187,7 +1179,8 @@ class Cashback_API_Client {
         if (!empty($missing_api)) {
             $transferred_missing = array();
             foreach ($missing_api as $key => $m) {
-                $local_tx   = $local_by_click_id[ $m['click_id'] ] ?? null;
+                // Идентичность по uniq_id (split-order: один click_id → много tx).
+                $local_tx   = $local_by_uniq_id[ $m['uniq_id'] ] ?? null;
                 $orig_subid = $local_tx['original_cpa_subid'] ?? null;
 
                 if ($orig_subid !== null && $orig_subid !== $api_user_value && $orig_subid !== (string) $user_id) {
@@ -1407,16 +1400,14 @@ class Cashback_API_Client {
             );
         }
 
-        // ─── Индексы для матчинга ───
-        // 1. Основной: по click_id (= API.subid1, наш UUID)
-        $local_by_click_id = array();
-        // 2. Fallback: по uniq_id (= API.action_id, уникальный ID в рамках CPA-сети)
+        // ─── Индекс для матчинга ───
+        // Идентичность транзакции = uniq_id (= API.action_id, уникальный ID в
+        // рамках CPA-сети). click_id НЕ ключ: split-order siblings разделяют
+        // один click_id, индексация по нему схлопывала бы их в одну запись →
+        // ложные missing_local / mismatched в отчёте сверки.
         $local_by_uniq_id = array();
 
         foreach ($local_transactions as $tx) {
-            if (!empty($tx['click_id'])) {
-                $local_by_click_id[ $tx['click_id'] ] = $tx;
-            }
             if (!empty($tx['uniq_id'])) {
                 $local_by_uniq_id[ $tx['uniq_id'] ] = $tx;
             }
@@ -1504,20 +1495,14 @@ class Cashback_API_Client {
                 $api_sums['declined'] += $api_payment;
             }
 
-            // ─── МАТЧИНГ ───
-            $local_tx = null;
-
-            // 1. Основной ключ: click_id (наш UUID, наиболее надёжный)
-            if ($api_click_id !== '' && isset($local_by_click_id[ $api_click_id ])) {
-                $local_tx = $local_by_click_id[ $api_click_id ];
-            }
-
-            // 2. Fallback: uniq_id (уникальный ID в рамках CPA-сети)
-            if (!$local_tx) {
-                $action_id_key = (string) ( $action[ $fm_uniq_id ] ?? '' );
-                if ($action_id_key !== '' && isset($local_by_uniq_id[ $action_id_key ])) {
-                    $local_tx = $local_by_uniq_id[ $action_id_key ];
-                }
+            // ─── МАТЧИНГ по uniq_id ───
+            // Идентичность = uniq_id (API.action_id). click_id НЕ ключ:
+            // split-order siblings разделяют один click_id, но каждый —
+            // отдельная транзакция со своим admitad_id/action_id.
+            $local_tx      = null;
+            $action_id_key = (string) ( $action[ $fm_uniq_id ] ?? '' );
+            if ($action_id_key !== '' && isset($local_by_uniq_id[ $action_id_key ])) {
+                $local_tx = $local_by_uniq_id[ $action_id_key ];
             }
 
             if (!$local_tx) {
@@ -1843,35 +1828,21 @@ class Cashback_API_Client {
             $fm_cart    = $this->api_field_for('sum_order', $field_map) ?: 'cart';
             $fm_uniq_id = $this->api_field_for('uniq_id', $field_map) ?: 'action_id';
 
-            // Собираем click_id и action_id из API-ответа
-            $api_click_ids  = array();
+            // Собираем action_id (uniq_id) из API-ответа — ЕДИНСТВЕННЫЙ ключ
+            // идентичности транзакции. click_id НЕ используется для матчинга:
+            // один клик легитимно порождает много действий (Admitad split-order,
+            // по одному постбэку на позицию/тариф), каждое со своим admitad_id.
             $api_action_ids = array();
             foreach ($api_actions as $action) {
-                $cid = (string) ( $action[ $click_field ] ?? '' );
-                if ($cid !== '') {
-                    $api_click_ids[] = $cid;
-                }
                 $aid = (string) ( $action[ $fm_uniq_id ] ?? '' );
                 if ($aid !== '') {
                     $api_action_ids[] = $aid;
                 }
             }
 
-            // ─── Batch-запросы: cashback_transactions ───
-            // 1. По click_id (наш UUID)
-            $local_map_by_click = array();
-            if (!empty($api_click_ids)) {
-                $placeholders = implode(',', array_fill(0, count($api_click_ids), '%s'));
-                $query_args   = array_merge(array( $this->transactions_table ), $api_click_ids, array( $slug, $network_name ));
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %s literals; sniff can't see %s inside $placeholders.
-                $rows = $wpdb->get_results($wpdb->prepare("SELECT id, click_id, uniq_id, order_status, comission, sum_order, api_verified FROM %i WHERE click_id IN ({$placeholders}) AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))", ...$query_args), ARRAY_A);
-
-                foreach ($rows as $row) {
-                    $local_map_by_click[ $row['click_id'] ] = $row;
-                }
-            }
-
-            // 2. По uniq_id (уникальный action_id CPA-сети, надёжный fallback)
+            // ─── Batch-запрос: cashback_transactions по uniq_id ───
+            // Идентичность = (partner, uniq_id), совпадает с DB
+            // UNIQUE(uniq_id, partner). click_id демонтирован до атрибуции.
             $local_map_by_uniq = array();
             if (!empty($api_action_ids)) {
                 $placeholders = implode(',', array_fill(0, count($api_action_ids), '%s'));
@@ -1886,21 +1857,7 @@ class Cashback_API_Client {
                 }
             }
 
-            // ─── Batch-запросы: cashback_unregistered_transactions ───
-            // 1. По click_id
-            $unreg_map_by_click = array();
-            if (!empty($api_click_ids)) {
-                $placeholders = implode(',', array_fill(0, count($api_click_ids), '%s'));
-                $query_args   = array_merge(array( $this->unregistered_table ), $api_click_ids, array( $slug, $network_name ));
-                // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %s literals; sniff can't see %s inside $placeholders.
-                $rows = $wpdb->get_results($wpdb->prepare("SELECT id, click_id, uniq_id, order_status, comission, sum_order, user_id, api_verified FROM %i WHERE click_id IN ({$placeholders}) AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))", ...$query_args), ARRAY_A);
-
-                foreach ($rows as $row) {
-                    $unreg_map_by_click[ $row['click_id'] ] = $row;
-                }
-            }
-
-            // 2. По uniq_id
+            // ─── Batch-запрос: cashback_unregistered_transactions по uniq_id ───
             $unreg_map_by_uniq = array();
             if (!empty($api_action_ids)) {
                 $placeholders = implode(',', array_fill(0, count($api_action_ids), '%s'));
@@ -1922,12 +1879,11 @@ class Cashback_API_Client {
             $potential_tokens   = array();
 
             foreach ($api_actions as $action) {
-                $cid = (string) ( $action[ $click_field ] ?? '' );
-
-                // Проверяем, найдётся ли action в одной из таблиц
+                // Найдётся ли action в одной из таблиц (по uniq_id —
+                // единственному ключу идентичности транзакции).
                 $aid_check   = (string) ( $action[ $fm_uniq_id ] ?? '' );
-                $would_match = ( $cid !== '' && ( isset($local_map_by_click[ $cid ]) || isset($unreg_map_by_click[ $cid ]) ) )
-                    || ( $aid_check !== '' && ( isset($local_map_by_uniq[ $aid_check ]) || isset($unreg_map_by_uniq[ $aid_check ]) ) );
+                $would_match = $aid_check !== ''
+                    && ( isset($local_map_by_uniq[ $aid_check ]) || isset($unreg_map_by_uniq[ $aid_check ]) );
 
                 if (!$would_match) {
                     $uid = (string) ( $action[ $user_field ] ?? '' );
@@ -1973,20 +1929,14 @@ class Cashback_API_Client {
                 $api_payment   = (float) ( $action[ $fm_payment ] ?? 0 );
                 $api_cart      = (float) ( $action[ $fm_cart ] ?? 0 );
 
-                // ─── Матчинг: cashback_transactions ───
-                $local = null;
-
-                // 1. Основной: click_id (наш UUID)
-                if ($api_click_id !== '' && isset($local_map_by_click[ $api_click_id ])) {
-                    $local = $local_map_by_click[ $api_click_id ];
-                }
-
-                // 2. Fallback: uniq_id (уникальный ID в рамках CPA-сети)
-                if (!$local) {
-                    $action_id_key = (string) ( $action[ $fm_uniq_id ] ?? '' );
-                    if ($action_id_key !== '' && isset($local_map_by_uniq[ $action_id_key ])) {
-                        $local = $local_map_by_uniq[ $action_id_key ];
-                    }
+                // ─── Матчинг: cashback_transactions по uniq_id ───
+                // Идентичность = (partner, uniq_id). click_id НЕ используется:
+                // split-order siblings разделяют один click_id, но каждый —
+                // отдельная транзакция со своим admitad_id/action_id.
+                $local         = null;
+                $action_id_key = (string) ( $action[ $fm_uniq_id ] ?? '' );
+                if ($action_id_key !== '' && isset($local_map_by_uniq[ $action_id_key ])) {
+                    $local = $local_map_by_uniq[ $action_id_key ];
                 }
 
                 // ─── Если найдено в cashback_transactions — обновляем ───
@@ -1995,20 +1945,10 @@ class Cashback_API_Client {
                     continue;
                 }
 
-                // ─── Матчинг: cashback_unregistered_transactions ───
+                // ─── Матчинг: cashback_unregistered_transactions по uniq_id ───
                 $unreg = null;
-
-                // 1. Основной: click_id
-                if ($api_click_id !== '' && isset($unreg_map_by_click[ $api_click_id ])) {
-                    $unreg = $unreg_map_by_click[ $api_click_id ];
-                }
-
-                // 2. Fallback: uniq_id
-                if (!$unreg) {
-                    $action_id_key = (string) ( $action[ $fm_uniq_id ] ?? '' );
-                    if ($action_id_key !== '' && isset($unreg_map_by_uniq[ $action_id_key ])) {
-                        $unreg = $unreg_map_by_uniq[ $action_id_key ];
-                    }
+                if ($action_id_key !== '' && isset($unreg_map_by_uniq[ $action_id_key ])) {
+                    $unreg = $unreg_map_by_uniq[ $action_id_key ];
                 }
 
                 // ─── Если найдено в unregistered — обновляем ───
@@ -3334,7 +3274,7 @@ class Cashback_API_Client {
                 u.idempotency_key,
                 u.spam_click,
                 u.created_at,
-                t.user_id       AS real_user_id
+                MAX(t.user_id)  AS real_user_id
              FROM %i u
              INNER JOIN %i t
                  ON t.click_id = u.click_id
