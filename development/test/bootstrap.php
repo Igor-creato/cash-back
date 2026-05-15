@@ -183,6 +183,23 @@ if (!function_exists('update_option')) {
     }
 }
 
+/**
+ * Имитирует WordPress add_option: атомарный INSERT — true только если опции ещё нет.
+ * Это критично для CAS-throttle паттерна (Cashback_Advcake_Stuck_Monitor::claim_email_throttle):
+ * параллельные воркеры пробуют add_option одного и того же key, ровно один получает true.
+ * Реальный WP использует UNIQUE INDEX на wp_options.option_name → ON DUPLICATE → false.
+ */
+if (!function_exists('add_option')) {
+    function add_option(string $option, mixed $value = '', mixed $deprecated = '', mixed $autoload = 'yes'): bool
+    {
+        if (array_key_exists($option, $GLOBALS['_cb_test_options'])) {
+            return false;
+        }
+        $GLOBALS['_cb_test_options'][ $option ] = $value;
+        return true;
+    }
+}
+
 if (!function_exists('delete_option')) {
     function delete_option(string $option): bool
     {

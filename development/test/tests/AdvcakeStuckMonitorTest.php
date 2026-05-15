@@ -138,7 +138,61 @@ final class AdvcakeStuckMonitorTest extends TestCase
         $this->set_select_rows($rows);
         Cashback_Advcake_Stuck_Monitor::check();
         $this->assertCount(1, Cashback_Email_Sender::$sent_calls, 'Второй check (под throttle) — БЕЗ нового email');
-        $this->assertSame(1, get_transient(Cashback_Advcake_Stuck_Monitor::EMAIL_THROTTLE));
+
+        // Throttle живёт в wp_options (атомарный add_option), а не transient.
+        // Закрывает audit L-2: get_transient → set_transient TOCTOU race.
+        $stored = (int) get_option(Cashback_Advcake_Stuck_Monitor::EMAIL_THROTTLE, '0');
+        $this->assertGreaterThan(time(), $stored, 'Throttle expires_at в будущем (окно EMAIL_PERIOD ещё активно)');
+    }
+
+    /**
+     * L-2 hardening: первый вызов claim_email_throttle на чистой инсталляции
+     * получает true (опция ещё не существует → add_option успешен).
+     */
+    public function test_claim_email_throttle_first_call_returns_true_and_sends_email(): void
+    {
+        $rows = array( $this->sample_stuck_row(401, 100) );
+        $this->set_select_rows($rows);
+
+        Cashback_Advcake_Stuck_Monitor::check();
+
+        $this->assertCount(1, Cashback_Email_Sender::$sent_calls);
+        $this->assertArrayHasKey(
+            Cashback_Advcake_Stuck_Monitor::EMAIL_THROTTLE,
+            $GLOBALS['_cb_test_options'],
+            'Опция throttle создана через add_option'
+        );
+    }
+
+    /**
+     * L-2 hardening: при истёкшем throttle одновременная CAS-попытка двух
+     * worker'ов даёт ровно один send_email (второй wpdb->update вернёт 0 affected).
+     *
+     * Сценарий:
+     *   1. Заранее устанавливаем "истёкший" throttle в wp_options (expires_at в прошлом).
+     *   2. set_select_rows для первого check() — должен пройти CAS-ветку и отправить email.
+     *   3. Имитируем race: ставим next_update_affected_rows=0, повторно "истёкший"
+     *      throttle, повторяем check() — claim вернёт false, email НЕ отправится.
+     */
+    public function test_claim_email_throttle_expired_slot_cas_race_one_wins(): void
+    {
+        global $wpdb;
+
+        // Worker A: первый CAS на истёкший слот. add_option=false (слот существует),
+        // current=1 (в прошлом) → пойдёт в wpdb->update ветку с affected=1 → true.
+        $GLOBALS['_cb_test_options'][Cashback_Advcake_Stuck_Monitor::EMAIL_THROTTLE] = '1'; // expires_at=1 (1970)
+        $wpdb->next_update_affected_rows = 1;
+        $this->set_select_rows(array( $this->sample_stuck_row(501, 100) ));
+        Cashback_Advcake_Stuck_Monitor::check();
+        $this->assertCount(1, Cashback_Email_Sender::$sent_calls, 'Worker A выиграл CAS и отправил email');
+
+        // Worker B: параллельно тот же check, но wpdb->update вернёт 0 affected_rows
+        // (другой worker успел перезаписать option_value первым). Email НЕ должен уйти.
+        $GLOBALS['_cb_test_options'][Cashback_Advcake_Stuck_Monitor::EMAIL_THROTTLE] = '1'; // снова "истёкший" для теста
+        $wpdb->next_update_affected_rows = 0;
+        $this->set_select_rows(array( $this->sample_stuck_row(502, 101) ));
+        Cashback_Advcake_Stuck_Monitor::check();
+        $this->assertCount(1, Cashback_Email_Sender::$sent_calls, 'Worker B проиграл CAS — email не отправлен');
     }
 
     public function test_notice_render_outputs_count_and_threshold(): void

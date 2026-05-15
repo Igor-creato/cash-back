@@ -75,10 +75,13 @@ final class Cashback_Advcake_Stuck_Monitor {
     public static function check(): int {
         global $wpdb;
 
+        // Table-name через %i placeholder вместо string-concat $wpdb->prefix —
+        // соблюдает конвенцию плагина (partner-status-sync, promocodes-repository,
+        // shop-tariff-sync) и закрывает аудит-наблюдение L-1 (defense-in-depth).
         $rows = $wpdb->get_results($wpdb->prepare(
             'SELECT id, uniq_id, partner, order_number, comission, currency, created_at,
                     TIMESTAMPDIFF(HOUR, created_at, UTC_TIMESTAMP()) AS age_hours
-               FROM ' . $wpdb->prefix . 'cashback_transactions
+               FROM %i
               WHERE partner IN (%s, %s)
                 AND order_status = %s
                 AND api_verified = 1
@@ -87,6 +90,7 @@ final class Cashback_Advcake_Stuck_Monitor {
                 AND TIMESTAMPDIFF(HOUR, created_at, UTC_TIMESTAMP()) >= %d
               ORDER BY id ASC
               LIMIT %d',
+            $wpdb->prefix . 'cashback_transactions',
             'advcake',
             'Advcake',
             'completed',
@@ -110,8 +114,10 @@ final class Cashback_Advcake_Stuck_Monitor {
             DAY_IN_SECONDS
         );
 
-        if (!get_transient(self::EMAIL_THROTTLE)) {
-            set_transient(self::EMAIL_THROTTLE, 1, self::EMAIL_PERIOD);
+        // Атомарный CAS-throttle через add_option (вместо TOCTOU get_transient→set_transient).
+        // Закрывает аудит-наблюдение L-2: при параллельных AS-task'ах ровно один
+        // worker получает true и отправляет email; остальные — false.
+        if (self::claim_email_throttle()) {
             self::send_email_alert($count, $rows);
         }
 
@@ -123,6 +129,56 @@ final class Cashback_Advcake_Stuck_Monitor {
         ));
 
         return $count;
+    }
+
+    /**
+     * Атомарно «захватить» email-throttle на окно EMAIL_PERIOD.
+     *
+     * Возвращает:
+     *   - true  — мы первые в окне, разрешено отправлять email.
+     *   - false — другой worker уже отправляет (или окно ещё активно).
+     *
+     * Реализация:
+     *   1. {@see add_option()} — атомарный INSERT (MySQL UNIQUE на option_name).
+     *      Если опции ещё нет — true; если есть — false без перезаписи.
+     *   2. Если опция есть и не истекла (> time()) — return false.
+     *   3. Если опция есть но истекла — атомарный CAS-UPDATE через wpdb->update
+     *      с двойным WHERE (option_name AND option_value=$current). При параллельном
+     *      запуске двух worker'ов на истёкшее окно ровно один получит affected=1.
+     *
+     * Закрывает audit-finding L-2 (Advcake-hardening v4.3.5): TOCTOU race на
+     * get_transient → set_transient. Лишних писем больше не будет.
+     *
+     * @internal
+     */
+    private static function claim_email_throttle(): bool {
+        global $wpdb;
+
+        $key        = self::EMAIL_THROTTLE;
+        $now        = time();
+        $expires_at = (string) ( $now + self::EMAIL_PERIOD );
+
+        // Попытка 1: атомарный INSERT (опции ещё нет).
+        if (add_option($key, $expires_at, '', false)) {
+            return true;
+        }
+
+        // Опция существует — проверяем не истекла ли.
+        $current = (string) get_option($key, '0');
+        if ((int) $current > $now) {
+            return false;
+        }
+
+        // Истекла — атомарный CAS-UPDATE. При параллельном race один worker
+        // успеет первым (affected_rows=1), остальные получат 0.
+        $r = $wpdb->update(
+            $wpdb->options,
+            array( 'option_value' => $expires_at ),
+            array( 'option_name' => $key, 'option_value' => $current ),
+            array( '%s' ),
+            array( '%s', '%s' )
+        );
+        return $r === 1;
     }
 
     /**

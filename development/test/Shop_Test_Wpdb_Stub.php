@@ -26,8 +26,12 @@ class Shop_Test_Wpdb_Stub
     public string $prefix = 'wp_';
     public string $postmeta = 'wp_postmeta';
     public string $posts = 'wp_posts';
+    public string $options = 'wp_options';
     public int $insert_id = 0;
     public string $last_error = '';
+
+    /** Сколько rows вернуть из следующего update() (по умолчанию 1). Используется для теста CAS-throttle. */
+    public int $next_update_affected_rows = 1;
 
     /** @var array<int, array<string, mixed>> */
     public array $inserts = array();
@@ -118,7 +122,7 @@ class Shop_Test_Wpdb_Stub
             'format'       => $format,
             'where_format' => $where_format,
         );
-        return 1;
+        return $this->next_update_affected_rows;
     }
 
     public function delete(string $table, array $where, mixed $where_format = null): int
