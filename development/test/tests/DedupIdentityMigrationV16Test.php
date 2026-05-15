@@ -196,4 +196,27 @@ final class DedupIdentityMigrationV16Test extends TestCase
         $this->assertGreaterThan($v15, $v16, 'v16 after v15');
         $this->assertGreaterThan($v16, $obend, 'both invoked before ob_end_clean');
     }
+
+    public function test_init_hook_zero_downtime_autofire_wires_v16(): void
+    {
+        // The activation runner only fires on (re)activation. Zero-downtime
+        // deploys (git pull, no re-activation) rely on the init-hook
+        // auto-fire in cashback-plugin.php — v14/v15 are wired there, v16
+        // MUST be too or the migration never applies on a normal deploy.
+        $src = file_get_contents(self::$plugin_root . '/cashback-plugin.php');
+        $this->assertIsString($src);
+
+        $v14 = strpos($src, 'migrate_advcake_seed_v14();');
+        $v15 = strpos($src, 'migrate_v15_uniqueness();');
+        $v16 = strpos($src, 'migrate_dedup_identity_v16();');
+
+        $this->assertIsInt($v14, 'init-hook must auto-fire v14');
+        $this->assertIsInt($v15, 'init-hook must auto-fire v15');
+        $this->assertIsInt(
+            $v16,
+            'init-hook (cashback-plugin.php) must auto-fire migrate_dedup_identity_v16 '
+            . '— else zero-downtime deploys never apply v16'
+        );
+        $this->assertGreaterThan($v15, $v16, 'init-hook v16 after v15 (same guarded try)');
+    }
 }

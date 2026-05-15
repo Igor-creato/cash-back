@@ -1342,10 +1342,13 @@ class CashbackPlugin {
                 try {
                     Mariadb_Plugin::get_instance()->migrate_advcake_seed_v14();
                     Mariadb_Plugin::get_instance()->migrate_v15_uniqueness();
+                    // v16: universal dedup-identity contract (zero-downtime —
+                    // same auto-fire family as v14/v15, no re-activation needed).
+                    Mariadb_Plugin::get_instance()->migrate_dedup_identity_v16();
                 } catch (\Throwable $e) {
                     set_transient('cashback_migration_v14_throttle', 1, 15 * MINUTE_IN_SECONDS);
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                    error_log('[Cashback] Advcake migration v14/v15 auto-fire failed: ' . $e->getMessage());
+                    error_log('[Cashback] Advcake migration v14/v15/v16 auto-fire failed: ' . $e->getMessage());
                     set_transient('cashback_migration_failure_notice', $e->getMessage(), DAY_IN_SECONDS);
                 }
             }
