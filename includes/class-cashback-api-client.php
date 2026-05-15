@@ -2817,20 +2817,26 @@ class Cashback_API_Client {
         // первый непустой — F-3: present-but-garbage поле вроде Admitad
         // conversion_time=846 не должно блокировать деградацию к реальной
         // дате) + корректная network→UTC без двойной конверсии unix-ts (F-2).
+        //
+        // Кандидаты — ТОЛЬКО семантически верное поле: замапленное (из
+        // api_field_map) и его каноническое raw-имя для этой колонки.
+        // closing_date / action_time НЕ используем как fallback (Codex F-3):
+        // это «дата закрытия/одобрения», не время покупки/клика — её
+        // подстановка сфабриковала бы правдоподобный, но НЕВЕРНЫЙ timestamp
+        // и перекосила бы hold-период / funds_ready. Если ни одно верное
+        // поле не распарсилось — честный NULL (а не выдуманная дата).
         $action_date_mysql = self::resolve_api_datetime(
             array(
                 $action[ $fm_action_date ] ?? '',
                 $action['action_date']     ?? '',
-                $action['closing_date']    ?? '',
-                $action['action_time']     ?? '',
             ),
             $api_tz
         );
         $click_time_mysql = self::resolve_api_datetime(
             array(
                 $action[ $fm_click_time ] ?? '',
+                $action['click_date']     ?? '',
                 $action['click_time']     ?? '',
-                $action['closing_date']   ?? '',
             ),
             $api_tz
         );

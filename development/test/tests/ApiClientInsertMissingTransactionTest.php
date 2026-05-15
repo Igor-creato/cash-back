@@ -104,24 +104,38 @@ final class ApiClientInsertMissingTransactionTest extends TestCase
             'insert_missing_transaction'
         );
 
-        // action_date резолвится через resolve_api_datetime по списку
-        // кандидатов: mapped → raw action_date → closing_date → action_time
+        // action_date резолвится через resolve_api_datetime по семантически
+        // верным кандидатам: mapped → каноническое raw 'action_date'
         // (первый РАСПАРСЕННЫЙ, не первый непустой — F-3).
         $this->assertMatchesRegularExpression(
             "/\\\$action_date_mysql\s*=\s*self::resolve_api_datetime\s*\(\s*array\(\s*"
             . "\\\$action\[\s*\\\$fm_action_date\s*\]\s*\?\?\s*''\s*,\s*"
-            . "\\\$action\['action_date'\][^,]*,\s*"
-            . "\\\$action\['closing_date'\][^,]*,\s*"
-            . "\\\$action\['action_time'\]/s",
+            . "\\\$action\['action_date'\]\s*\?\?\s*''\s*,?\s*\)/s",
             $body,
-            'action_date должен резолвиться через resolve_api_datetime по кандидатам '
-            . '(mapped / action_date / closing_date / action_time).'
+            'action_date должен резолвиться через resolve_api_datetime по [mapped, raw action_date].'
         );
         // Старый голый parse_api_date по одному полю не должен присутствовать.
         $this->assertDoesNotMatchRegularExpression(
             "/\\\$action_date_mysql\s*=\s*self::parse_api_date\(/",
             $body,
             'Прямой parse_api_date для action_date заменён на resolve_api_datetime.'
+        );
+        // F-3: closing_date / action_time НЕ используются как fallback —
+        // это «дата закрытия», не время покупки; честный NULL > выдуманная дата.
+        $action_date_call = '';
+        if (preg_match('/\$action_date_mysql\s*=\s*self::resolve_api_datetime\s*\(.*?\);/s', $body, $mm)) {
+            $action_date_call = $mm[0];
+        }
+        $this->assertNotSame('', $action_date_call, 'action_date resolve-вызов должен находиться.');
+        $this->assertStringNotContainsString(
+            'closing_date',
+            $action_date_call,
+            'F-3: closing_date не должен быть fallback для action_date.'
+        );
+        $this->assertStringNotContainsString(
+            'action_time',
+            $action_date_call,
+            'F-3: action_time не должен быть fallback для action_date.'
         );
     }
 
@@ -171,6 +185,42 @@ final class ApiClientInsertMissingTransactionTest extends TestCase
             "/hash\(\s*'sha256'\s*,\s*strtolower\(\\\$network\)\s*\.\s*'\|'\s*\.\s*\\\$action_id\s*\)/",
             $body,
             'idempotency_key в ajax_add_transaction обязан остаться sha256(lower($network)|action_id).'
+        );
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 5. F-1 Codex: канонизация сети в ajax_add_transaction
+    // ════════════════════════════════════════════════════════════════
+
+    public function test_admin_add_transaction_canonicalizes_network_and_rejects_unknown(): void
+    {
+        $body = $this->extract_method_body(
+            $this->read_source(self::ADMIN_VALIDATION_FILE),
+            'ajax_add_transaction'
+        );
+
+        // Резолв alias→canonical через адаптер при промахе get_network_config.
+        $this->assertMatchesRegularExpression(
+            "/\\\$adapter\s*=\s*\\\$client->get_adapter\(\\\$network\)/",
+            $body,
+            'F-1: при промахе config — резолвить alias через адаптер.'
+        );
+        // ОТКАЗ, если сеть не резолвится (нет canonical slug) — не вставляем
+        // строку с неканоническим partner/idempotency_key (double-credit).
+        $this->assertMatchesRegularExpression(
+            "/if\s*\(\s*!\\\$network_config\s*\|\|\s*empty\(\\\$network_config\['slug'\]\)\s*\)\s*\{\s*wp_send_json_error/s",
+            $body,
+            'F-1: неразрешимая сеть → wp_send_json_error (reject), без INSERT.'
+        );
+        // $network перезаписывается каноническим slug ДО idempotency_key.
+        $pos_canon = strpos($body, '$network        = (string) $network_config[\'slug\'];');
+        $pos_key   = strpos($body, "hash('sha256', strtolower(\$network)");
+        $this->assertIsInt($pos_canon, 'F-1: $network должен переназначаться на canonical slug.');
+        $this->assertIsInt($pos_key, 'idempotency_key hash должен присутствовать.');
+        $this->assertLessThan(
+            $pos_key,
+            $pos_canon,
+            'F-1: канонизация $network должна идти ДО вычисления idempotency_key.'
         );
     }
 }

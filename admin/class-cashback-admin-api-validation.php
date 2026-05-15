@@ -1598,9 +1598,27 @@ echo 'style="display:none"';}
             wp_send_json_error(array( 'message' => 'Обязательные поля: user_id, network, action_id' ));
         }
 
-        // Маппинг статуса API → локальный через конфиг сети
+        // Канонизация сети (Codex F-1): get_network_config() матчит ТОЛЬКО
+        // точный DB-slug. Если admin прислал alias адаптера ('adm') или
+        // имя — резолвим через адаптер к каноническому slug. Если сеть не
+        // резолвится вообще — ОТКАЗ: вставка с неканоническим
+        // partner/idempotency_key создала бы строку, не коллизирующую ни по
+        // UNIQUE(uniq_id,partner), ни по idx_idempotency_key с
+        // webhook/cron-строкой → потенциальный double-credit.
         $client         = Cashback_API_Client::get_instance();
         $network_config = $client->get_network_config($network);
+        if (!$network_config) {
+            $adapter = $client->get_adapter($network);
+            if ($adapter && $adapter->get_slug() !== $network) {
+                $network_config = $client->get_network_config($adapter->get_slug());
+            }
+        }
+        if (!$network_config || empty($network_config['slug'])) {
+            wp_send_json_error(array( 'message' => 'Неизвестная или неактивная сеть: ' . $network ));
+        }
+        // Каноничный slug из резолвленной строки сети — ТОТ ЖЕ, что
+        // использует cron (insert_missing_transaction) и Python-receiver.
+        $network        = (string) $network_config['slug'];
         $status_map     = $network_config['status_map'] ?? array();
         $mapped_status  = $status_map[ strtolower($status) ] ?? 'waiting';
 
