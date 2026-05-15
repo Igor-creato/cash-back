@@ -269,26 +269,33 @@ class Cashback_Shop_Group_Resolver {
             self::clear_pin($group_id);
         }
 
-        $best_id    = 0;
-        $best_score = -1.0;
-        $best_curr_idx = PHP_INT_MAX;
+        $best_id   = 0;
+        // $best_rank — результат rank_product() лучшего члена либо null.
+        $best_rank = null;
 
         foreach ($members as $product_id) {
-            $score = self::score_product((int) $product_id);
-            if ($score < 0) {
+            $product_id = (int) $product_id;
+            $rank       = self::rank_product($product_id);
+            if ($rank === null) {
                 continue; // продукт без тарифов / без offer_id — не учитываем.
             }
-            $curr_idx = self::currency_priority_index(
-                (string) get_post_meta((int) $product_id, '_cashback_campaign_currency', true)
+            $rank['currency_idx'] = self::currency_priority_index(
+                (string) get_post_meta($product_id, '_cashback_campaign_currency', true)
             );
 
-            // Сравнение: больший score лучше; при равенстве — меньший curr_idx.
-            if ($score > $best_score
-                || ( $score === $best_score && $curr_idx < $best_curr_idx )
+            if ($best_rank === null || self::is_better($rank, $best_rank)) {
+                $best_id   = $product_id;
+                $best_rank = $rank;
+            } elseif (
+                $best_id > 0
+                && $product_id < $best_id
+                && ! self::is_better($best_rank, $rank)
             ) {
-                $best_id       = (int) $product_id;
-                $best_score    = $score;
-                $best_curr_idx = $curr_idx;
+                // Полное равенство (ни один не is_better) → детерминированно
+                // меньший product_id. Без этого победитель зависел бы от
+                // порядка строк get_active_members и флапал post_status
+                // в draft-модели (Codex HIGH-1).
+                $best_id = $product_id;
             }
         }
 
@@ -297,13 +304,122 @@ class Cashback_Shop_Group_Resolver {
     }
 
     /**
-     * Score продукта = max(payment_size) среди активных тарифов
-     * (через Cashback_Shop_Tariff_Sync::get_active()).
+     * Ранжирование продукта по активным тарифам для выбора preferred.
      *
-     * Для PERCENT — % напрямую (5.50 = 5.5).
-     * Для FIX — payment_size в native currency.
-     * Возвращает -1.0 если у продукта нет network_id/offer_id или нет
-     * активных тарифов.
+     * Возвращает `null` если у продукта нет network_id/offer_id или нет
+     * активных тарифов (раньше score_product отдавал -1.0).
+     *
+     * Иначе:
+     *   - has_percent   — есть хотя бы один percent-тариф;
+     *   - best_percent  — max(payment_size) среди percent-тарифов (0.0 если нет);
+     *   - best_fix      — max(payment_size) среди fix-тарифов (0.0 если нет).
+     *
+     * Используется recompute_preferred() через is_better(). Разделение по
+     * tariff_type обязательно: percent (16%) и fix (27000₽) нельзя сравнивать
+     * как голые числа — это давало неверный preferred для mixed-групп
+     * (skillfactory.ru: Advcake fix 27000 ошибочно «побеждал» Admitad 16%).
+     *
+     * @return array{has_percent: bool, best_percent: float, best_fix: float}|null
+     */
+    public static function rank_product( int $product_id ): ?array {
+        if ($product_id <= 0) {
+            return null;
+        }
+
+        $network_id = (int) get_post_meta($product_id, '_affiliate_network_id', true);
+        $offer_id   = (string) get_post_meta($product_id, '_offer_id', true);
+        if ($network_id <= 0 || $offer_id === '') {
+            return null;
+        }
+
+        if (! class_exists('Cashback_Shop_Tariff_Sync')) {
+            return null;
+        }
+
+        $tariffs = Cashback_Shop_Tariff_Sync::get_active($network_id, $offer_id);
+        if (empty($tariffs)) {
+            return null;
+        }
+
+        $has_percent  = false;
+        $best_percent = 0.0;
+        $best_fix     = 0.0;
+        foreach ($tariffs as $row) {
+            $type = isset($row['tariff_type']) ? strtolower((string) $row['tariff_type']) : '';
+            $size = isset($row['payment_size']) ? (float) $row['payment_size'] : 0.0;
+            if ($type === 'percent') {
+                $has_percent = true;
+                if ($size > $best_percent) {
+                    $best_percent = $size;
+                }
+            } elseif ($type === 'fix') {
+                if ($size > $best_fix) {
+                    $best_fix = $size;
+                }
+            }
+        }
+
+        return array(
+            'has_percent'  => $has_percent,
+            'best_percent' => $best_percent,
+            'best_fix'     => $best_fix,
+        );
+    }
+
+    /**
+     * Строго ли $a выгоднее $b (для выбора preferred).
+     *
+     * Порядок (зеркалит логику Cashback_Cashback_Display_Calculator, который
+     * при mixed %+fix отбрасывает fix):
+     *   1) percent-товар ≻ fix-only товар (has_percent=true бьёт false);
+     *   2) оба percent → больший best_percent; при равенстве — меньший
+     *      currency_idx (RUB ≻ USD ≻ EUR, см. currency_priority_index);
+     *   3) оба fix-only → больший best_fix; при равенстве — меньший currency_idx.
+     *
+     * $a / $b — массивы из rank_product() с добавленным ключом currency_idx.
+     *
+     * @param array{has_percent: bool, best_percent: float, best_fix: float, currency_idx?: int} $a
+     * @param array{has_percent: bool, best_percent: float, best_fix: float, currency_idx?: int} $b
+     */
+    private static function is_better( array $a, array $b ): bool {
+        $a_has = ! empty($a['has_percent']);
+        $b_has = ! empty($b['has_percent']);
+
+        // (1) percent-товар всегда выгоднее fix-only.
+        if ($a_has !== $b_has) {
+            return $a_has;
+        }
+
+        $a_curr = isset($a['currency_idx']) ? (int) $a['currency_idx'] : PHP_INT_MAX;
+        $b_curr = isset($b['currency_idx']) ? (int) $b['currency_idx'] : PHP_INT_MAX;
+
+        if ($a_has) {
+            // (2) оба percent — сравниваем best_percent, tie → валюта.
+            $a_val = (float) $a['best_percent'];
+            $b_val = (float) $b['best_percent'];
+        } else {
+            // (3) оба fix-only — сравниваем best_fix, tie → валюта.
+            $a_val = (float) $a['best_fix'];
+            $b_val = (float) $b['best_fix'];
+        }
+
+        // Epsilon-сравнение: payment_size приходит из DECIMAL-строк БД, но
+        // currency-конвертация / округление могут дать дрожание младшего
+        // разряда — строгий === тогда молча ломал бы currency tie-break.
+        if (abs($a_val - $b_val) < 1e-9) {
+            return $a_curr < $b_curr;
+        }
+        return $a_val > $b_val;
+    }
+
+    /**
+     * LEGACY (не для выбора preferred — см. rank_product()/is_better()).
+     *
+     * Score продукта = max(payment_size) среди активных тарифов БЕЗ учёта
+     * tariff_type. Сравнение percent и fix как голых чисел давало неверный
+     * preferred для mixed-групп; recompute_preferred() с Этапа 1 использует
+     * rank_product(). Метод оставлен для backward-compat (внешние вызовы /
+     * диагностика). Возвращает -1.0 если нет network_id/offer_id или тарифов.
      */
     public static function score_product( int $product_id ): float {
         if ($product_id <= 0) {
@@ -582,7 +698,8 @@ class Cashback_Shop_Group_Resolver {
                INNER JOIN %i AS p ON p.ID = m.product_id
                                   AND p.post_type = %s
                                   AND p.post_status NOT IN ("trash", "auto-draft")
-              WHERE m.group_id = %d AND m.is_excluded = 0',
+              WHERE m.group_id = %d AND m.is_excluded = 0
+              ORDER BY m.product_id ASC',
             $members_table,
             $wpdb->posts,
             'product',
