@@ -2741,7 +2741,14 @@ class Cashback_API_Client {
         // 6. Парсим даты (через маппинг)
         $fm_action_date    = $this->api_field_for('action_date', $field_map) ?: 'action_date';
         $fm_click_time     = $this->api_field_for('click_time', $field_map) ?: 'click_date';
-        $action_date_mysql = self::parse_api_date((string) ( $action[ $fm_action_date ] ?? '' ));
+        // action_date: зеркало fallback-цепочки click_time (ниже). Если
+        // api_field_map в БД мапит несуществующее поле (напр. Admitad
+        // conversion_time→action_date, а у /statistics/actions/ такого поля
+        // нет) — деградируем к raw-полям Admitad, иначе action_date=NULL и в
+        // UI показывается время вставки вместо реального времени действия.
+        $action_date_mysql = self::parse_api_date((string) (
+            $action[ $fm_action_date ] ?? $action['action_date'] ?? $action['closing_date'] ?? $action['action_time'] ?? ''
+        ));
         $click_time_raw    = (string) ( $action[ $fm_click_time ] ?? $action['click_time'] ?? $action['closing_date'] ?? '' );
         $click_time_mysql  = self::parse_api_date($click_time_raw);
 
@@ -2798,7 +2805,11 @@ class Cashback_API_Client {
             'user_id'         => $is_unregistered ? $raw_user_id : (int) $raw_user_id,
             'uniq_id'         => $action_id,
             'order_number'    => $order_id,
-            'partner'         => strtolower($slug),
+            // Имя сети ($config['name'] ?? $slug, вычислено выше), а НЕ slug:
+            // webhook-receiver и все остальные строки пишут имя ("Admitad").
+            // Дедуп на LOWER(partner) ловит обе формы; idempotency_key ниже
+            // остаётся на lower(slug) — это отдельный cross-path ключ.
+            'partner'         => $network_name,
             'comission'       => number_format($payment, 2, '.', ''),
             'sum_order'       => number_format($cart, 2, '.', ''),
             'order_status'    => $mapped_status,

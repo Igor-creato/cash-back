@@ -1650,7 +1650,10 @@ echo 'style="display:none"';}
             'user_id'         => $is_unregistered ? $user_id : (int) $user_id,
             'uniq_id'         => $action_id,
             'order_number'    => $order_id,
-            'partner'         => strtolower($network),
+            // Имя сети из конфига (как пишет webhook-receiver: "Admitad"),
+            // а не slug. idempotency_key ниже остаётся на strtolower($network)
+            // — отдельный cross-path ключ, зеркало Python-receiver.
+            'partner'         => $network_config['name'] ?? $network,
             'comission'       => number_format($payment, 2, '.', ''),
             'sum_order'       => number_format($cart, 2, '.', ''),
             'order_status'    => $mapped_status,

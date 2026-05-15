@@ -331,7 +331,7 @@ class Cashback_Transactions_Admin {
                                 </td>
                                 <td class="cashback-display"><?php echo esc_html($tx['cashback'] ?? '0.00'); ?></td>
                                 <td><?php echo esc_html($tx['click_id'] ?? ''); ?></td>
-                                <td><?php echo esc_html($tx['created_at'] ?? ''); ?></td>
+                                <td><?php echo esc_html(Cashback_Time::display($tx['created_at'] ?? '', 'Y-m-d H:i:s')); ?></td>
                                 <td>
                                     <?php if ($is_editable) : ?>
                                         <button class="button button-secondary edit-btn">Редактировать</button>
