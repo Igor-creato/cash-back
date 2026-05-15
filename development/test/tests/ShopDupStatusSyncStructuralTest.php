@@ -61,6 +61,43 @@ final class ShopDupStatusSyncStructuralTest extends TestCase
         );
     }
 
+    /**
+     * Голая не-агрегированная и не входящая в GROUP BY колонка g.* в HAVING
+     * отбивается MariaDB 11.8.6 ошибкой «Unknown column 'g.pin_product_id' in
+     * 'HAVING'» — подтверждено на проде и staging 2026-05-16 (запрос падал
+     * молча: (int)$wpdb->get_var(null) = 0). Предикат уровня группы обязан
+     * стоять в WHERE (до GROUP BY), не в HAVING; g.* допустим в HAVING только
+     * внутри агрегата SUM(...).
+     */
+    public function test_count_conflicts_predicate_in_where_not_having(): void
+    {
+        // Срезаем SQL-комментарии `-- ...`: иначе strpos ловит ключевые
+        // слова в пояснениях (memory feedback «structural-test-regex-comments»).
+        $body = (string) preg_replace('/--[^\n]*/', '', $this->methodBody(self::$notice_php, 'count_conflicts'));
+
+        $group_by = strpos($body, 'GROUP BY g.id');
+        $this->assertNotFalse($group_by, 'GROUP BY g.id не найден');
+
+        $where_term = strpos($body, 'WHERE COALESCE(g.pin_product_id, g.preferred_product_id, 0) > 0');
+        $this->assertNotFalse(
+            $where_term,
+            'COALESCE(g.pin/preferred) > 0 должен стоять в WHERE'
+        );
+        $this->assertLessThan(
+            $group_by,
+            $where_term,
+            'WHERE-предикат обязан предшествовать GROUP BY'
+        );
+
+        $having = strpos($body, 'HAVING');
+        $this->assertNotFalse($having, 'HAVING не найден');
+        $this->assertStringNotContainsString(
+            'AND COALESCE(g.pin_product_id, g.preferred_product_id, 0) > 0',
+            substr($body, $having),
+            "голая g.* колонка в HAVING — MariaDB 11.8 'Unknown column ... in HAVING'"
+        );
+    }
+
     // ---- Cashback_Shop_Dup_Status_Sync ----
 
     public function test_sync_class_and_marker_constants(): void

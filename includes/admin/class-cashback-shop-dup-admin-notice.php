@@ -88,14 +88,18 @@ class Cashback_Shop_Dup_Admin_Notice {
                   JOIN %i p ON p.ID = m.product_id
                         AND p.post_type = 'product'
                         AND p.post_status NOT IN ('trash', 'auto-draft')
-                 GROUP BY g.id
-                HAVING COUNT(*) > 1
                    -- Только группы с РЕШЁННЫМ effective preferred. Если
                    -- pin/preferred оба NULL — победитель определяется
                    -- PHP-fallback (pick_fallback_member), и опубликованный
                    -- член может уже быть корректным storefront-товаром;
                    -- такой кейс не баннерим (false-positive, Codex HIGH-2).
-                   AND COALESCE(g.pin_product_id, g.preferred_product_id, 0) > 0
+                   -- Предикат уровня группы (константен при GROUP BY g.id)
+                   -- стоит в WHERE, не в HAVING: голая не-агрегированная g.*
+                   -- в HAVING падает на MariaDB 11.8 (Unknown column
+                   -- 'g.pin_product_id' in 'HAVING') — подтв. прод+staging.
+                 WHERE COALESCE(g.pin_product_id, g.preferred_product_id, 0) > 0
+                 GROUP BY g.id
+                HAVING COUNT(*) > 1
                    AND SUM(
                         CASE WHEN p.post_status = 'publish'
                               AND m.product_id <> COALESCE(g.pin_product_id, g.preferred_product_id, 0)
