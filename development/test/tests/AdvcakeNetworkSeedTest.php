@@ -243,12 +243,19 @@ final class AdvcakeNetworkSeedTest extends TestCase
         $field_map = json_decode((string) $insert['data']['api_field_map'], true);
 
         $this->assertIsArray($field_map);
-        $this->assertSame('commission', $field_map['comission'], 'комиссия в Advcake XML — <commission>');
-        $this->assertSame('price', $field_map['sum_order']);
-        $this->assertSame('id', $field_map['uniq_id']);
-        $this->assertSame('order_id', $field_map['order_number']);
+        // Контракт: ключ — поле normalized action (normalize_xml_item),
+        // значение — колонка cashback_transactions (ALLOWED_LOCAL_COLUMNS).
+        $this->assertSame('comission', $field_map['commission'], 'комиссия в Advcake XML — <commission> → колонка comission');
+        $this->assertSame('sum_order', $field_map['price']);
+        $this->assertSame('uniq_id', $field_map['id']);
+        $this->assertSame('order_number', $field_map['order_id']);
         $this->assertSame('offer_id', $field_map['offer_id']);
-        $this->assertSame('offer', $field_map['offer_name']);
+        $this->assertSame('offer_name', $field_map['offer']);
+        $this->assertSame('action_date', $field_map['date']);
+        $this->assertSame('click_time', $field_map['clicked_at']);
+        // action_type/website_id у Advcake в XML нет — в seed их быть не должно.
+        $this->assertArrayNotHasKey('action_type', $field_map);
+        $this->assertArrayNotHasKey('website_id', $field_map);
     }
 
     // ------------------------------------------------------------------

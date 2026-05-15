@@ -4406,21 +4406,23 @@ class Mariadb_Plugin {
             '3' => 'declined',
         ));
 
-        // api_field_map читается через Cashback_API_Client::api_field_for($local_column).
-        // Ключи — internal cashback_transactions колонки; значения — имена полей
-        // в normalized action-массиве (см. Cashback_Advcake_Adapter::normalize_xml_item).
+        // Контракт api_field_map (Cashback_API_Client::get_field_map / apply_field_map,
+        // admin «Маппинг полей API»): КЛЮЧ — имя поля в normalized action-массиве
+        // (Cashback_Advcake_Adapter::normalize_xml_item), ЗНАЧЕНИЕ — колонка
+        // cashback_transactions из ALLOWED_LOCAL_COLUMNS. Та же ориентация, что и
+        // DEFAULT_FIELD_MAP ('payment' => 'comission'). action_type/website_id у
+        // Advcake в XML-экспорте отсутствуют — не сидим (get_field_map их и так
+        // отфильтровал бы, reverse-lookup упадёт в безопасный дефолт).
         $field_map_json = (string) wp_json_encode(array(
-            'comission'   => 'commission',
-            'sum_order'   => 'price',
-            'uniq_id'     => 'id',
-            'order_number' => 'order_id',
-            'offer_id'    => 'offer_id',
-            'offer_name'  => 'offer',
-            'currency'    => 'currency',
-            'action_date' => 'date',
-            'click_time'  => 'clicked_at',
-            'action_type' => '',
-            'website_id'  => '',
+            'commission' => 'comission',
+            'price'      => 'sum_order',
+            'id'         => 'uniq_id',
+            'order_id'   => 'order_number',
+            'offer_id'   => 'offer_id',
+            'offer'      => 'offer_name',
+            'currency'   => 'currency',
+            'date'       => 'action_date',
+            'clicked_at' => 'click_time',
         ));
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot migration insert.
