@@ -624,6 +624,106 @@ class Cashback_API_Client {
     }
 
     // =========================================================================
+    // Website (площадка) scoping — defense-in-depth поверх API-параметра website
+    // =========================================================================
+
+    /**
+     * Сохранённый в настройках сети id площадки (trimmed).
+     *
+     * @return string '' = площадка не задана (ограничения по площадке нет).
+     */
+    private function configured_website_id( array $config ): string {
+        return trim((string) ( $config['api_website_id'] ?? '' ));
+    }
+
+    /**
+     * Извлечь числовой id площадки из API-action.
+     *
+     * Порядок: маппинг api_field_for('website_id') → 'website_id' → 'website'.
+     * `website_name` НАМЕРЕННО не используется — это имя площадки, не id;
+     * сравнение id с именем дало бы ложный mismatch и отсекло бы все действия.
+     *
+     * @return string '' = в action нет поля website (нечего сверять локально).
+     */
+    private function action_website_id( array $action, array $field_map ): string {
+        $fm = $this->api_field_for('website_id', $field_map) ?: 'website_id';
+        foreach (array( $fm, 'website_id', 'website' ) as $key) {
+            if (isset($action[ $key ]) && $action[ $key ] !== '' && $action[ $key ] !== null) {
+                return (string) $action[ $key ];
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Принадлежит ли action сконфигурированной площадке.
+     *
+     * Политика (общая для всех сетей):
+     * - площадка не задана → true (тянем все площадки, поведение не меняется);
+     * - в action нет website-поля → true (param-level фильтр сети уже применён,
+     *   не плодим ложные скипы, если сеть не возвращает website в action);
+     * - иначе строгое сравнение (как int и как строка — '2941485' == 2941485).
+     */
+    private function action_in_configured_website( array $action, array $config ): bool {
+        $cfg = $this->configured_website_id($config);
+        if ($cfg === '') {
+            return true;
+        }
+
+        $aw = $this->action_website_id($action, $config['field_map'] ?? array());
+        if ($aw === '') {
+            return true;
+        }
+
+        return $aw === $cfg || (string) (int) $aw === (string) (int) $cfg;
+    }
+
+    /**
+     * Отфильтровать список API-actions по сконфигурированной площадке.
+     *
+     * Площадка не задана → массив возвращается как есть (skipped=0).
+     * Каждый отброшенный action логируется (без PII).
+     *
+     * @return array{actions: array<int,array>, skipped: int}
+     */
+    private function filter_actions_by_website( array $actions, array $config, string $context ): array {
+        if ($this->configured_website_id($config) === '') {
+            return array( 'actions' => array_values($actions), 'skipped' => 0 );
+        }
+
+        $kept    = array();
+        $skipped = 0;
+        foreach ($actions as $action) {
+            if ($this->action_in_configured_website($action, $config)) {
+                $kept[] = $action;
+            } else {
+                ++$skipped;
+                $this->log_skipped_foreign_website($context, $action, $config);
+            }
+        }
+
+        return array( 'actions' => $kept, 'skipped' => $skipped );
+    }
+
+    /**
+     * Залогировать отброшенный по чужой площадке action (без PII).
+     */
+    private function log_skipped_foreign_website( string $context, array $action, array $config ): void {
+        if (!( defined('WP_DEBUG') && WP_DEBUG )) {
+            return;
+        }
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+        error_log(sprintf(
+            '[Cashback Website Scope] %s: skipped foreign website slug=%s configured=%s action=%s uniq=%s',
+            $context,
+            (string) ( $config['slug'] ?? '' ),
+            $this->configured_website_id($config),
+            $this->action_website_id($action, $config['field_map'] ?? array()),
+            $this->resolve_action_identity($config, $action)
+        ));
+    }
+
+    // =========================================================================
     // URL builder (used by test_connection for api_key branch)
     // =========================================================================
 
@@ -1106,6 +1206,12 @@ class Cashback_API_Client {
 
         $api_actions = $api_result['actions'];
 
+        // ─── Привязка к площадке (defense-in-depth) ───
+        // Отбрасываем действия чужой площадки ДО матчинга/вставки.
+        $website_filtered        = $this->filter_actions_by_website($api_actions, $network, 'validate_user');
+        $api_actions             = $website_filtered['actions'];
+        $skipped_foreign_website = $website_filtered['skipped'];
+
         // ─── Локальные транзакции ───
         // ВАЖНО: включаем click_id для матчинга и order_number для fallback
         $local_start = DateTime::createFromFormat('d.m.Y', $date_start)->format('Y-m-d');
@@ -1406,7 +1512,10 @@ class Cashback_API_Client {
                     continue;
                 }
 
-                foreach ($extra_result['actions'] as $extra_action) {
+                $extra_filtered           = $this->filter_actions_by_website($extra_result['actions'], $network, 'validate_user:transferred');
+                $skipped_foreign_website += $extra_filtered['skipped'];
+
+                foreach ($extra_filtered['actions'] as $extra_action) {
                     $extra_click_id  = (string) ( $extra_action[ $click_field ] ?? '' );
                     $extra_action_id = (string) ( $extra_action['action_id'] ?? '' );
 
@@ -1478,6 +1587,7 @@ class Cashback_API_Client {
             'local_total'    => count($local_transactions),
             'matched_count'  => count($matched),
             'mismatch_count' => count($mismatched),
+            'skipped_foreign_website' => $skipped_foreign_website,
             'missing_local'  => $missing_local,
             'missing_api'    => $missing_api,
             'mismatched'     => $mismatched,
@@ -1581,6 +1691,7 @@ class Cashback_API_Client {
                 'local_total'    => 0,
                 'matched_count'  => 0,
                 'mismatch_count' => 0,
+                'skipped_foreign_website' => 0,
                 'missing_local'  => array(),
                 'missing_api'    => array(),
                 'mismatched'     => array(),
@@ -1637,6 +1748,11 @@ class Cashback_API_Client {
                 'network' => $network_slug,
             );
         }
+
+        // ─── Привязка к площадке (defense-in-depth) ───
+        $website_filtered        = $this->filter_actions_by_website($api_actions, $network, 'validate_unregistered');
+        $api_actions             = $website_filtered['actions'];
+        $skipped_foreign_website = $website_filtered['skipped'];
 
         // ─── Маппинг статусов и полей ───
         $status_map  = $network['status_map'];
@@ -1883,6 +1999,7 @@ class Cashback_API_Client {
             'local_total'    => count($local_transactions),
             'matched_count'  => count($matched),
             'mismatch_count' => count($mismatched),
+            'skipped_foreign_website' => $skipped_foreign_website,
             'missing_local'  => $missing_local,
             'missing_api'    => $missing_api,
             'mismatched'     => $mismatched,
@@ -1996,6 +2113,13 @@ class Cashback_API_Client {
 
             $api_actions = $api_result['actions'];
 
+            // ─── Привязка к площадке (defense-in-depth) ───
+            // Фильтруем ОДИН раз: индексы, batch-резолв юзеров и цикл
+            // обработки ниже получают только действия своей площадки.
+            $website_filtered        = $this->filter_actions_by_website($api_actions, $config, 'do_background_sync');
+            $api_actions             = $website_filtered['actions'];
+            $skipped_foreign_website = $website_filtered['skipped'];
+
             if (empty($api_actions)) {
                 // Проверяем stale транзакции даже если нет свежих обновлений в API
                 $decline_result   = $this->decline_stale_missing_transactions($config, $slug);
@@ -2007,6 +2131,7 @@ class Cashback_API_Client {
                     'not_found'             => 0,
                     'inserted'              => 0,
                     'insert_errors'         => 0,
+                    'skipped_foreign_website' => $skipped_foreign_website,
                     'declined_stale'        => ( $decline_result['declined_registered'] + $decline_result['declined_unregistered'] ),
                     'declined_stale_detail' => $decline_result,
                 );
@@ -2221,6 +2346,7 @@ class Cashback_API_Client {
                 'not_found'             => $not_found,
                 'inserted'              => $inserted,
                 'insert_errors'         => $insert_errors,
+                'skipped_foreign_website' => $skipped_foreign_website,
                 'declined_stale'        => ( $decline_result['declined_registered'] + $decline_result['declined_unregistered'] ),
                 'declined_stale_detail' => $decline_result,
             );
@@ -2747,6 +2873,19 @@ class Cashback_API_Client {
         $status_map   = $config['status_map'] ?? array();
         $network_name = $config['name'] ?? $slug;
 
+        // 0. Привязка к площадке — финальный предохранитель (вызывающие циклы
+        // уже отфильтрованы, но insert не должен материализовать чужую площадку).
+        if (!$this->action_in_configured_website($action, $config)) {
+            $this->log_skipped_foreign_website('insert_missing_transaction', $action, $config);
+            return array(
+                'success'                 => false,
+                'insert_id'               => 0,
+                'table_type'              => '',
+                'skipped_foreign_website' => true,
+                'error'                   => 'Skipped: action belongs to a different website',
+            );
+        }
+
         // 1. Определяем user_id (subid может содержать partner_token или legacy user_id)
         $raw_user_id = (string) ( $action[ $user_field ] ?? '' );
 
@@ -3053,6 +3192,7 @@ class Cashback_API_Client {
             'declined_registered'   => 0,
             'declined_unregistered' => 0,
             'checked'               => 0,
+            'skipped_foreign_website' => 0,
             'error'                 => null,
         );
 
@@ -3144,7 +3284,12 @@ class Cashback_API_Client {
             return $result;
         }
 
-        $api_actions_list = $api_result['actions'];
+        // ─── Привязка к площадке (defense-in-depth) ───
+        // Действия чужой площадки НЕ должны «спасать» stale-tx от отклонения:
+        // фильтруем до построения click/order-индекса.
+        $website_filtered           = $this->filter_actions_by_website($api_result['actions'], $config, 'decline_stale');
+        $api_actions_list           = $website_filtered['actions'];
+        $result['skipped_foreign_website'] = $website_filtered['skipped'];
 
         // ─── 4. Построить индекс API actions по click_id и order_id ───
 

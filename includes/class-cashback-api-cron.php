@@ -102,7 +102,7 @@ class Cashback_API_Cron {
                     if ($result['success']) {
                         // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                         error_log(sprintf(
-                            'Cashback API Cron [%s]: total=%d, updated=%d, inserted=%d, skipped=%d, not_found=%d, insert_errors=%d, declined_stale=%d (%.2fs)',
+                            'Cashback API Cron [%s]: total=%d, updated=%d, inserted=%d, skipped=%d, not_found=%d, insert_errors=%d, skipped_foreign_website=%d, declined_stale=%d (%.2fs)',
                             $network,
                             $result['total'],
                             $result['updated'],
@@ -110,6 +110,7 @@ class Cashback_API_Cron {
                             $result['skipped'],
                             $result['not_found'],
                             $result['insert_errors'] ?? 0,
+                            $result['skipped_foreign_website'] ?? 0,
                             $result['declined_stale'] ?? 0,
                             $elapsed_sync
                         ));
