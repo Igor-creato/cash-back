@@ -924,6 +924,31 @@ class Cashback_API_Client {
         return null;
     }
 
+    /**
+     * Конвертировать naive datetime, пришедший из API сети в её локальной
+     * зоне, в UTC для хранения (ADR utc-everywhere).
+     *
+     * Применяется ПОСЛЕ parse_api_date (его tz-поведение намеренно
+     * заморожено и shared с EPN/Advcake — не трогаем). Зону декларирует
+     * адаптер сети через get_api_datetime_timezone(); пусто → значение
+     * уже трактуется как UTC, возвращаем без изменений. Нераспарсиваемый
+     * вход возвращается как есть (не роняем INSERT из-за tz-конверсии).
+     *
+     * @param string|null $mysql Выход parse_api_date ('Y-m-d H:i:s') или null.
+     * @param string      $tz    IANA-зона API сети ('' = UTC, без конверсии).
+     */
+    private static function api_datetime_to_utc( ?string $mysql, string $tz ): ?string {
+        if ($mysql === null || $mysql === '' || $tz === '') {
+            return $mysql;
+        }
+        try {
+            $dt = new DateTimeImmutable($mysql, new DateTimeZone($tz));
+        } catch (\Exception $e) {
+            return $mysql;
+        }
+        return $dt->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+    }
+
     // =========================================================================
     // Validation logic
     // =========================================================================
@@ -2751,6 +2776,17 @@ class Cashback_API_Client {
         ));
         $click_time_raw    = (string) ( $action[ $fm_click_time ] ?? $action['click_time'] ?? $action['closing_date'] ?? '' );
         $click_time_mysql  = self::parse_api_date($click_time_raw);
+
+        // 6a. API некоторых сетей (Admitad) отдаёт naive локальное время без
+        // tz-маркера. Хранение — UTC (ADR utc-everywhere) и должно совпадать
+        // со строкой webhook-receiver. Зону декларирует адаптер сети;
+        // пусто → уже UTC, конверсии нет (EPN/Advcake не затронуты).
+        $adapter = $this->get_adapter($slug);
+        $api_tz  = ( $adapter instanceof Cashback_Network_Adapter_Base )
+            ? $adapter->get_api_datetime_timezone()
+            : '';
+        $action_date_mysql = self::api_datetime_to_utc($action_date_mysql, $api_tz);
+        $click_time_mysql  = self::api_datetime_to_utc($click_time_mysql, $api_tz);
 
         // Универсальный резолвер — ТОТ ЖЕ id, что использовался при матчинге
         // выше и что произвёл бы realtime-webhook (app/identity.py). Для

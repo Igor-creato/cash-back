@@ -47,6 +47,21 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
     /**
      * {@inheritdoc}
      *
+     * Admitad `/statistics/actions/` отдаёт `action_date` / `click_date`
+     * в МОСКОВСКОМ naive-времени без tz-маркера (подтверждено probe:
+     * API action_date == время в кабинете Admitad, +3ч к UTC). Webhook-
+     * receiver ту же транзакцию хранит уже в UTC, и инвариант плагина —
+     * UTC-everywhere. Поэтому Admitad-API даты конвертируются MSK→UTC
+     * при записи, иначе строка реконсиляции расходится со строкой
+     * вебхука на 3 часа.
+     */
+    public function get_api_datetime_timezone(): string {
+        return 'Europe/Moscow';
+    }
+
+    /**
+     * {@inheritdoc}
+     *
      * Admitad OAuth2: Basic Auth header + client_credentials grant.
      * Делегирует в Cashback_OAuth2_Client_Credentials_Helper (фундамент
      * для generic-движка купонов).

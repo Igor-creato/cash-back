@@ -32,6 +32,20 @@ abstract class Cashback_Network_Adapter_Base implements Cashback_Network_Adapter
     }
 
     /**
+     * Таймзона, в которой CPA-сеть отдаёт naive datetime в /actions/-API
+     * (без tz-маркера). Пусто = трактовать как UTC (без конвертации).
+     *
+     * Хранение в плагине — UTC (ADR utc-everywhere). Значения из API,
+     * приходящие в локальной зоне сети, конвертируются в UTC при записи
+     * (Cashback_API_Client::api_datetime_to_utc), чтобы строка
+     * реконсиляции совпадала со строкой webhook-receiver. Адаптеры сетей,
+     * чей API отдаёт локальное время, переопределяют этот метод.
+     */
+    public function get_api_datetime_timezone(): string {
+        return '';
+    }
+
+    /**
      * {@inheritdoc}
      */
     public function get_last_token_error(): string {
