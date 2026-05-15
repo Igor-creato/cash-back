@@ -594,6 +594,18 @@ class Cashback_Shop_Group_Resolver {
         );
 
         if ($ok === false) {
+            // Гонка параллельного импорта: конкурент уже вставил тот же
+            // domain, наш INSERT упал по UNIQUE(domain). НЕ возвращаем 0
+            // (это пропустило бы attach_member/recompute на цикл и сломало
+            // дедуп) — перечитываем фактический id (Codex F-iter-41-002).
+            $raced = $wpdb->get_var($wpdb->prepare(
+                'SELECT id FROM %i WHERE domain = %s LIMIT 1',
+                $table,
+                $domain
+            ));
+            if (is_numeric($raced) && (int) $raced > 0) {
+                return (int) $raced;
+            }
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
             error_log('[Cashback Shop Group Resolver] insert group failed: ' . $wpdb->last_error);
             return 0;

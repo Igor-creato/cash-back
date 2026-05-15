@@ -237,22 +237,25 @@ class Cashback_Shop_Dup_Status_Sync {
             return;
         }
 
+        // Маркеры ставим ДО смены post_status: иначе между wp_update_post
+        // (draft) и update_post_meta существует окно, в котором другой
+        // вызов видит draft без _cashback_dup_demoted и может ошибочно
+        // пропустить/неверно отработать maybe_promote (Codex F-iter-41-001,
+        // TOCTOU-сужение; полный cross-request lock — open_question).
+        if (function_exists('update_post_meta')) {
+            $winner_network = $winner_id > 0 && function_exists('get_post_meta')
+                ? (string) get_post_meta($winner_id, '_affiliate_network_id', true)
+                : '';
+            update_post_meta($product_id, self::META_DEMOTED, '1');
+            update_post_meta($product_id, self::META_DEMOTED_AT, self::now_mysql());
+            update_post_meta($product_id, self::META_WINNER_NETWORK, $winner_network);
+            update_post_meta($product_id, self::META_WINNER_PRODUCT, (string) $winner_id);
+        }
+
         wp_update_post(array(
             'ID'          => $product_id,
             'post_status' => 'draft',
         ));
-
-        if (! function_exists('update_post_meta')) {
-            return;
-        }
-        $winner_network = $winner_id > 0 && function_exists('get_post_meta')
-            ? (string) get_post_meta($winner_id, '_affiliate_network_id', true)
-            : '';
-
-        update_post_meta($product_id, self::META_DEMOTED, '1');
-        update_post_meta($product_id, self::META_DEMOTED_AT, self::now_mysql());
-        update_post_meta($product_id, self::META_WINNER_NETWORK, $winner_network);
-        update_post_meta($product_id, self::META_WINNER_PRODUCT, (string) $winner_id);
     }
 
     /**
