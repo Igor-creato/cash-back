@@ -124,8 +124,19 @@ class Cashback_Shop_Dup_Status_Sync {
             return;
         }
 
-        $effective = self::resolve_effective($group_id, $group, $active);
-        if ($effective <= 0) {
+        // post_status (тяжёлый, «липкий» — без авто-возврата при autopublish
+        // OFF) меняем ТОЛЬКО при надёжно определённом победителе: pin или
+        // scored preferred, физически присутствующий среди active members.
+        // Если preferred=0 (recompute не смог — напр. гонка tariff-sync, все
+        // rank=null) или указывает на не-active (stale/trashed) — НЕ трогаем
+        // статусы. Демоут по fallback-догадке (pick_fallback_member) загнал
+        // бы хороший товар в draft без авто-возврата. Single-shop инвариант
+        // на витрине в этот момент держит Catalog_Visibility обратимой
+        // hide-метой (фин-риск ниже флаппинга publish/draft).
+        $pin       = isset($group['pin_product_id']) ? (int) $group['pin_product_id'] : 0;
+        $preferred = isset($group['preferred_product_id']) ? (int) $group['preferred_product_id'] : 0;
+        $effective = $pin > 0 ? $pin : $preferred;
+        if ($effective <= 0 || ! in_array($effective, $active, true)) {
             return;
         }
 

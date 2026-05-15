@@ -141,6 +141,44 @@ final class ShopDupStatusSyncTest extends TestCase
     }
 
     // ============================================================
+    // Tariff-sync race guard (Codex/финтех): НЕ трогать post_status,
+    // когда нет надёжно определённого preferred (recompute вернул 0 —
+    // напр. тарифы ещё не синканы) или preferred вне active. Иначе
+    // хороший publish-товар ушёл бы в draft по fallback-догадке без
+    // авто-возврата.
+    // ============================================================
+
+    public function test_sync_skips_status_when_no_resolved_preferred(): void
+    {
+        $GLOBALS['_dup_group']       = array('id' => 1155, 'pin_product_id' => null, 'preferred_product_id' => null);
+        $GLOBALS['_dup_active']      = array(array('product_id' => 4175), array('product_id' => 4296));
+        $GLOBALS['_dup_publishable'] = array(array('product_id' => 4175), array('product_id' => 4296));
+        $this->makePost(4175, 'publish');
+        $this->makePost(4296, 'publish');
+
+        Cashback_Shop_Dup_Status_Sync::sync_group_status(1155);
+
+        $this->assertSame('publish', $this->postStatus(4175), 'нет preferred → не демоутим');
+        $this->assertSame('publish', $this->postStatus(4296), 'нет preferred → не демоутим');
+        $this->assertSame('', (string) get_post_meta(4296, '_cashback_dup_demoted', true));
+    }
+
+    public function test_sync_skips_status_when_preferred_not_in_active(): void
+    {
+        // preferred указывает на удалённый/trashed товар (нет в active).
+        $GLOBALS['_dup_group']       = array('id' => 1155, 'pin_product_id' => null, 'preferred_product_id' => 999);
+        $GLOBALS['_dup_active']      = array(array('product_id' => 4175), array('product_id' => 4296));
+        $GLOBALS['_dup_publishable'] = array(array('product_id' => 4175), array('product_id' => 4296));
+        $this->makePost(4175, 'publish');
+        $this->makePost(4296, 'publish');
+
+        Cashback_Shop_Dup_Status_Sync::sync_group_status(1155);
+
+        $this->assertSame('publish', $this->postStatus(4175), 'stale preferred → не демоутим');
+        $this->assertSame('publish', $this->postStatus(4296), 'stale preferred → не демоутим');
+    }
+
+    // ============================================================
     // Авто-публикация preferred — строго по условиям.
     // ============================================================
 
