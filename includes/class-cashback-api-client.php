@@ -3559,12 +3559,23 @@ class Cashback_API_Client {
                     continue;
                 }
 
-                // Проверка дубликата по UNIQUE KEY (uniq_id, partner) — O(1)
-                if (!empty($tx['uniq_id']) && !empty($tx['partner'])) {
+                // Проверка дубликата. Основной матч — по каноническому
+                // idempotency_key (sha256(lower(slug)|action_id)): он НЕ
+                // зависит от строки partner, поэтому ловит дубль даже при
+                // смешанных формах ('adm' vs 'Admitad') — иначе висящая
+                // unregistered-строка не вычищается (Codex F-4). Fallback
+                // uniq_id+partner — для legacy-строк без idempotency_key.
+                $tx_idem = (string) ( $tx['idempotency_key'] ?? '' );
+                if (!empty($tx['uniq_id']) || $tx_idem !== '') {
                     $dup = (int) $wpdb->get_var($wpdb->prepare(
-                        'SELECT COUNT(*) FROM %i
-                         WHERE uniq_id = %s AND partner = %s',
+                        "SELECT COUNT(*) FROM %i
+                         WHERE ( idempotency_key = %s AND %s != '' )
+                            OR ( uniq_id = %s AND partner = %s AND %s != '' AND %s != '' )",
                         $this->transactions_table,
+                        $tx_idem,
+                        $tx_idem,
+                        $tx['uniq_id'],
+                        $tx['partner'],
                         $tx['uniq_id'],
                         $tx['partner']
                     ));

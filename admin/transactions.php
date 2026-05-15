@@ -742,13 +742,24 @@ class Cashback_Transactions_Admin {
                 return;
             }
 
-            // Проверяем дубль в целевой таблице
-            if (!empty($tx['uniq_id'])) {
-                $duplicate = (int) $wpdb->get_var($wpdb->prepare(
-                    'SELECT COUNT(*) FROM %i WHERE uniq_id = %s AND partner = %s',
+            // Проверяем дубль в целевой таблице. Основной матч — по
+            // каноническому idempotency_key (не зависит от строки partner,
+            // ловит 'adm' vs 'Admitad'); uniq_id+partner — fallback для
+            // legacy-строк без ключа (Codex F-4 — чтобы не копился мусор).
+            $tx_idem = (string) ( $tx['idempotency_key'] ?? '' );
+            if (!empty($tx['uniq_id']) || $tx_idem !== '') {
+                $tx_partner = (string) ( $tx['partner'] ?? '' );
+                $duplicate  = (int) $wpdb->get_var($wpdb->prepare(
+                    "SELECT COUNT(*) FROM %i
+                     WHERE ( idempotency_key = %s AND %s != '' )
+                        OR ( uniq_id = %s AND partner = %s AND %s != '' AND %s != '' )",
                     $this->registered_table,
+                    $tx_idem,
+                    $tx_idem,
                     $tx['uniq_id'],
-                    (string) ( $tx['partner'] ?? '' )
+                    $tx_partner,
+                    $tx['uniq_id'],
+                    $tx_partner
                 ));
 
                 if ($duplicate > 0) {
