@@ -161,7 +161,10 @@
     cursor: pointer;
 }
 
-.sc-auth-pages-form button[type="submit"] {
+.sc-auth-pages-form button[type="submit"],
+.sc-auth-pages-form .sc-auth-pages-form__submit {
+    display: block;
+    box-sizing: border-box;
     width: 100%;
     padding: 12px 20px;
     background: var(--sc-auth-pages-primary);
@@ -171,15 +174,21 @@
     font-weight: 600;
     font-size: 15px;
     line-height: 1;
+    text-align: center;
+    text-decoration: none;
     cursor: pointer;
     transition: background 0.2s ease, transform 0.1s ease;
 }
 
-.sc-auth-pages-form button[type="submit"]:hover {
+.sc-auth-pages-form button[type="submit"]:hover,
+.sc-auth-pages-form .sc-auth-pages-form__submit:hover {
     background: var(--sc-auth-pages-primary-hover);
+    color: #fff;
+    text-decoration: none;
 }
 
-.sc-auth-pages-form button[type="submit"]:active {
+.sc-auth-pages-form button[type="submit"]:active,
+.sc-auth-pages-form .sc-auth-pages-form__submit:active {
     transform: translateY(1px);
 }
 
