@@ -557,7 +557,14 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
         }
 
         $action = array(
-            'id'             => $id,
+            // Advcake XML-экспорт НЕ содержит элемента `<id>` — идентичность
+            // заказа это `<order_id>` (офиц. дока support.advcake.com), и
+            // постбэк-макрос `{id}` (`uniq_id={id}`) тоже = order_id. Поэтому
+            // при отсутствии `<id>` падаем в order_id: только так webhook-строка
+            // и XML-reconciliation резолвят ОДИН `uniq_id` (контракт
+            // `(partner, uniq_id)`), иначе resolve_uniq_id() → no_dedup_inputs
+            // → action пропускается → cashback не зачисляется в баланс.
+            'id'             => ($id !== '') ? $id : $order_id,
             'order_id'       => $order_id,
             'status'         => isset($item->status) ? trim((string) $item->status) : '',
             'commission'     => isset($item->commission) ? (float) $item->commission : 0.0,

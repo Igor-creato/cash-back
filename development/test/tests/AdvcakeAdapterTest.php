@@ -301,6 +301,61 @@ XML;
         $this->assertSame('balance', $first['payment_status']);
     }
 
+    /**
+     * Advcake XML-экспорт НЕ содержит элемента `<id>` — идентификатор заказа
+     * это `<order_id>` (офиц. дока support.advcake.com + примеры в кабинете).
+     * Постбэк-макрос `{id}` (URL `uniq_id={id}`) тоже = order_id. Чтобы
+     * webhook-строка и XML-reconciliation резолвили ОДИН `uniq_id`
+     * (контракт `(partner, uniq_id)` идентичности), нормализованное поле
+     * `id` обязано падать в `order_id`, когда `<id>` отсутствует. Иначе
+     * `Cashback_API_Client::resolve_uniq_id()` получает пустой native →
+     * `no_dedup_inputs` → XML-action пропускается → баланс не зачисляется.
+     */
+    public function test_id_falls_back_to_order_id_when_id_element_absent(): void
+    {
+        $this->queue_responses(array( $this->http_response(200, $this->sample_xml()) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_actions(
+            $this->default_credentials(),
+            array(),
+            $this->default_network_config()
+        );
+
+        $this->assertTrue($result['success']);
+        $first = $result['actions'][0];
+        $this->assertSame('820217', $first['order_id']);
+        $this->assertSame(
+            '820217',
+            $first['id'],
+            'нет <id> в XML Advcake → id обязан падать в order_id для webhook↔XML uniq_id-паритета'
+        );
+    }
+
+    /**
+     * Если в каком-то оффере Advcake всё же присылает непустой `<id>`,
+     * он имеет приоритет над `order_id` (сохраняем native-идентичность).
+     */
+    public function test_explicit_id_element_takes_precedence_over_order_id(): void
+    {
+        $xml = '<?xml version="1.0"?><items><item>'
+            . '<id>NATIVE-7</id><order_id>820217</order_id><status>2</status>'
+            . '<commission>10</commission><price>100</price>'
+            . '</item></items>';
+        $this->queue_responses(array( $this->http_response(200, $xml) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_actions(
+            $this->default_credentials(),
+            array(),
+            $this->default_network_config()
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('NATIVE-7', $result['actions'][0]['id']);
+        $this->assertSame('820217', $result['actions'][0]['order_id']);
+    }
+
     public function test_xml_parsing_returns_success_for_empty_items_list(): void
     {
         $this->queue_responses(array( $this->http_response(200, '<?xml version="1.0"?><items></items>') ));
