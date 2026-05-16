@@ -1,5 +1,5 @@
 {
-  "_comment": "Shared parity fixture for the universal dedup resolver. Replayed byte-identically by DedupResolverParityTest.php (PHP Cashback_Api_Client::resolve_uniq_id) and F:/cash-back/webhook-resiver/tests/replay_dedup_vectors.py (Python app.identity.resolve_uniq_id). expected_id/expected_reason are the frozen contract — any drift between PHP and Python fails one side.",
+  "_comment": "Shared parity fixture for the universal dedup resolver. Replayed byte-identically by DedupResolverParityTest.php (PHP Cashback_Api_Client::resolve_uniq_id) and F:/cash-back/deploy/postback/tests/replay_dedup_vectors.py (Python app.identity.resolve_uniq_id — the production webhook-receiver tree). expected_id/expected_reason are the frozen contract — any drift between PHP and Python fails one side. CONTRACT: native uniq_id is an opaque, case-sensitive, exact-match token (Stripe/IETF idempotency-key + affiliate-network postback standard). The ONLY permitted normalizations are representation type-coercion (int->string) and trim(); case-fold and leading-zero strip are FORBIDDEN (entropy loss collapses distinct conversions => lost transaction). The guard:* vectors below freeze that.",
   "vectors": [
     {
       "name": "admitad native passthrough",
@@ -126,6 +126,60 @@
       "dedup_identity": {"has_native_action_id": false, "synthetic_include_click_id": false},
       "expected_id": "",
       "expected_reason": "no_dedup_inputs"
+    },
+    {
+      "name": "guard: native case preserved (NO case-fold — ABC123 != abc123, may be distinct orders)",
+      "slug": "admitad",
+      "native_uniq_id": "ABC123",
+      "fields": {"order_number": "ORD", "offer_id": "1", "action_type": "sale", "click_id": "c"},
+      "dedup_identity": {"has_native_action_id": true},
+      "expected_id": "ABC123",
+      "expected_reason": null
+    },
+    {
+      "name": "guard: native lowercase sibling resolves DISTINCT (case-sensitive exact-match)",
+      "slug": "admitad",
+      "native_uniq_id": "abc123",
+      "fields": {"order_number": "ORD", "offer_id": "1", "action_type": "sale", "click_id": "c"},
+      "dedup_identity": {"has_native_action_id": true},
+      "expected_id": "abc123",
+      "expected_reason": null
+    },
+    {
+      "name": "guard: native leading zeros preserved (NO zero-strip — 00123 != 123)",
+      "slug": "admitad",
+      "native_uniq_id": "00123",
+      "fields": {"order_number": "ORD", "offer_id": "1", "action_type": "sale", "click_id": "c"},
+      "dedup_identity": {"has_native_action_id": true},
+      "expected_id": "00123",
+      "expected_reason": null
+    },
+    {
+      "name": "guard: representation type-coercion (JSON number 123 => string \"123\")",
+      "slug": "admitad",
+      "native_uniq_id": 123,
+      "fields": {"order_number": "ORD", "offer_id": "1", "action_type": "sale", "click_id": "c"},
+      "dedup_identity": {"has_native_action_id": true},
+      "expected_id": "123",
+      "expected_reason": null
+    },
+    {
+      "name": "guard: synthetic preserves component case (mixed-case order/offer/type)",
+      "slug": "px",
+      "native_uniq_id": "",
+      "fields": {"order_number": "Ab-9", "offer_id": "X1", "action_type": "Sale", "click_id": "D"},
+      "dedup_identity": {"has_native_action_id": false},
+      "expected_id": "syn_017b4e6eda7b6b39302f80c1494d95f910f5b251",
+      "expected_reason": null
+    },
+    {
+      "name": "guard: synthetic lowered components resolve DISTINCT (synthetic is case-sensitive too)",
+      "slug": "px",
+      "native_uniq_id": "",
+      "fields": {"order_number": "ab-9", "offer_id": "x1", "action_type": "sale", "click_id": "D"},
+      "dedup_identity": {"has_native_action_id": false},
+      "expected_id": "syn_a7f87efbfb4d2bf902649d1bab53a9cc5470e800",
+      "expected_reason": null
     }
   ]
 }

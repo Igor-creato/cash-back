@@ -11,10 +11,12 @@ use PHPUnit\Framework\Attributes\DataProvider;
  *
  * Replays development/test/fixtures/dedup-vectors.json through the real
  * Cashback_API_Client::resolve_uniq_id(). The SAME fixture is replayed by the
- * Python mirror (F:/cash-back/webhook-resiver/tests/replay_dedup_vectors.py)
- * against app.identity.resolve_uniq_id(). expected_id/expected_reason are the
- * frozen contract — if PHP and Python ever diverge, one side fails here / there
- * (silent dup/loss is the failure mode this guards against).
+ * Python mirror (F:/cash-back/deploy/postback/tests/replay_dedup_vectors.py —
+ * the production webhook-receiver tree) against app.identity.resolve_uniq_id().
+ * expected_id/expected_reason are the frozen contract — if PHP and Python ever
+ * diverge, one side fails here / there (silent dup/loss is the failure mode
+ * this guards against). The guard:* vectors freeze the opaque/exact-match
+ * contract: native uniq_id is NEVER case-folded or zero-stripped.
  */
 #[Group('split-order')]
 final class DedupResolverParityTest extends TestCase
@@ -83,6 +85,13 @@ final class DedupResolverParityTest extends TestCase
         $this->assertStringContainsString('include_click_id true', $blob);
         $this->assertStringContainsString('all inputs empty => no_dedup_inputs', $blob);
         $this->assertStringContainsString('legacy null contract', $blob);
-        $this->assertGreaterThanOrEqual(12, count($names), 'fixture must keep broad branch coverage');
+        // Opaque/exact-match contract (Stripe/IETF + affiliate-network standard):
+        // native id is never case-folded or zero-stripped (entropy loss =>
+        // collapsed distinct conversions => lost transaction).
+        $this->assertStringContainsString('guard: native case preserved', $blob);
+        $this->assertStringContainsString('guard: native leading zeros preserved', $blob);
+        $this->assertStringContainsString('guard: representation type-coercion', $blob);
+        $this->assertStringContainsString('guard: synthetic preserves component case', $blob);
+        $this->assertGreaterThanOrEqual(18, count($names), 'fixture must keep broad branch coverage');
     }
 }

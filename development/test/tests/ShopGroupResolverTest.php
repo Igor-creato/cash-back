@@ -239,7 +239,8 @@ final class ShopGroupResolverTest extends TestCase
         $wpdb_with_get_col = new class extends Shop_Test_Wpdb_Stub {
             public string $captured_last_error_at_query_time = '__not_set__';
 
-            public function get_col(mixed $sql): array
+            // Signature MUST match Shop_Test_Wpdb_Stub::get_col (PHP 8.4 LSP).
+            public function get_col(mixed $sql, mixed $column_offset = 0): mixed
             {
                 // Снимок last_error на момент запроса — ожидаем, что cron его сбросил.
                 $this->captured_last_error_at_query_time = $this->last_error;

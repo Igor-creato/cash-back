@@ -1069,6 +1069,104 @@ echo 'style="display:none"';}
             $fields['api_field_map'] = wp_json_encode($decoded_fm);
         }
 
+        // S2 enforced source-field guard (narrow trigger). Native uniq_id —
+        // opaque exact-match токен (НЕ нормализуем: case-fold/zero-strip
+        // запрещены). Реальный риск дублей = silent push/pull drift. Cron
+        // по умолчанию берёт uniq_id из action_id (DEFAULT_FIELD_MAP merge),
+        // поэтому drift ВОЗМОЖЕН только когда оператор ЯВНО ремапит uniq_id
+        // на другое API-поле. В этом (и только этом) случае требуем, чтобы
+        // push-источник (dedup_identity.receiver_uniq_source) был объявлен —
+        // иначе webhook и cron разойдутся. Кросс-имённую авто-сверку сделать
+        // нельзя (разные пространства имён, ADR D-5b), поэтому проверяем
+        // только присутствие. Корректные сети (дефолтный map / уже
+        // объявленный receiver_uniq_source) не затрагиваются.
+        if (isset($fields['api_field_map'])) {
+            $fm_decoded = json_decode((string) $fields['api_field_map'], true);
+
+            // B-3: drift ВОЗМОЖЕН только когда эффективный API-источник
+            // uniq_id ОТЛИЧАЕТСЯ от дефолтного `action_id`. get_field_map()
+            // мержит DEFAULT_FIELD_MAP, поэтому явная пара
+            // {"action_id":"uniq_id"} функционально == дефолту (cron всё
+            // равно берёт action_id) и НЕ является ремапом — иначе ротация
+            // несвязанного credential ложно блокировалась бы (lost-tx).
+            // КРИТИЧНО: семантика ДОЛЖНА совпадать с runtime
+            // Cashback_API_Client::api_field_for() = array_flip($map)
+            // (last-wins при дубликатах значений). array_search() вернул бы
+            // ПЕРВЫЙ ключ — при `{"action_id":"uniq_id","foo":"uniq_id"}`
+            // gate увидел бы action_id (не блок), а cron взял бы foo →
+            // рассинхрон и double-credit. array_flip мирроррит runtime.
+            $fm_strvals   = is_array($fm_decoded) ? array_map('strval', $fm_decoded) : array();
+            $uniq_src_key = array_flip($fm_strvals)['uniq_id'] ?? false;
+            $explicit_uniq_remap = ( $uniq_src_key !== false )
+                && ( (string) $uniq_src_key !== 'action_id' );
+
+            if ($explicit_uniq_remap) {
+                $networks_tbl = $wpdb->prefix . 'cashback_affiliate_networks';
+                $wpdb->last_error = '';
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Single-row config read for save-time guard.
+                $di_raw = $wpdb->get_var($wpdb->prepare(
+                    'SELECT dedup_identity FROM %i WHERE id = %d',
+                    $networks_tbl,
+                    $network_id
+                ));
+                if ($wpdb->last_error) {
+                    // B-1: FAIL-CLOSED. idempotency_key НЕ backstop против
+                    // source-drift (разные uniq_id → разные ключи, UNIQUE не
+                    // ловит), а v18 fast-path не перепроверит сайт на db>=18.
+                    // Блокируем save (оператор повторит) — лучше отказ, чем
+                    // тихий double-credit.
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                    error_log('[cashback] dedup source-guard read failed (fail-closed): ' . $wpdb->last_error);
+                    wp_send_json_error(array(
+                        'message' => 'Не удалось проверить контракт дедупликации (временная ошибка БД). '
+                            . 'Сохранение отклонено во избежание рассинхрона webhook/cron. '
+                            . 'Повторите сохранение.',
+                    ));
+                }
+                $di      = ( is_string($di_raw) && $di_raw !== '' ) ? json_decode($di_raw, true) : null;
+                $di      = is_array($di) ? $di : null;
+                $native  = ($di === null) ? true : ( ($di['has_native_action_id'] ?? true) !== false );
+                $rcv_src = ($di !== null) ? (string) ( $di['receiver_uniq_source'] ?? '' ) : '';
+                if ($native && $rcv_src === '') {
+                    wp_send_json_error(array(
+                        'message' => 'Вы переопределяете API-поле uniq_id, но не объявлен '
+                            . 'push-источник native id (receiver_uniq_source) в контракте '
+                            . 'дедупликации этой сети. Без него webhook и cron создадут разные '
+                            . 'uniq_id на одну конверсию → дубль и двойное начисление. '
+                            . 'Задайте receiver_uniq_source (имя поля native id в постбэке сети) '
+                            . 'и повторите сохранение. (Кросс-имённая авто-сверка невозможна — '
+                            . 'имена API-поля и постбэк-макроса в разных пространствах имён.)',
+                    ));
+                }
+                // Residual: drift-состояние НЕ должно зависеть от one-shot
+                // v18. Save-path авторитетен для app-изменений api_field_map:
+                // конфиг прошёл гард (receiver_uniq_source объявлен ИЛИ
+                // сеть synthetic) — снимаем slug этой сети из drift-option
+                // (self-heal notice независимо от cashback_db_version).
+                $wpdb->last_error = '';
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Single-row slug read for drift self-heal.
+                $slug_for_drift = (string) $wpdb->get_var($wpdb->prepare(
+                    'SELECT slug FROM %i WHERE id = %d',
+                    $networks_tbl,
+                    $network_id
+                ));
+                if ($slug_for_drift !== '' && !$wpdb->last_error) {
+                    $drift_now = get_option('cashback_dedup_source_drift');
+                    if (is_array($drift_now) && in_array($slug_for_drift, $drift_now, true)) {
+                        $drift_now = array_values(array_filter(
+                            $drift_now,
+                            static fn ( $s ): bool => (string) $s !== $slug_for_drift
+                        ));
+                        if ($drift_now === array()) {
+                            delete_option('cashback_dedup_source_drift');
+                        } else {
+                            update_option('cashback_dedup_source_drift', $drift_now, false);
+                        }
+                    }
+                }
+            }
+        }
+
         $wpdb->update(
             $wpdb->prefix . 'cashback_affiliate_networks',
             $fields,
@@ -1643,12 +1741,45 @@ echo 'style="display:none"';}
             $currency = 'RUB';
         }
 
+        // Единый код-пас идентичности: прогоняем admin-введённый action_id
+        // через ТОТ ЖЕ универсальный резолвер, что cron
+        // (resolve_action_identity) и webhook-receiver (app/identity.py).
+        // Раньше admin брал $action_id из POST напрямую — при будущем
+        // изменении резолвера admin-вставка дрейфанула бы от cron/webhook
+        // → double-credit. Native uniq_id — opaque exact-match токен:
+        // резолвер только trim'ит (НЕ case-fold / НЕ zero-strip), поэтому
+        // для встроенных сетей значение байт-в-байт прежнее.
+        $di_raw = $network_config['dedup_identity'] ?? null;
+        $di     = ( is_string($di_raw) && $di_raw !== '' ) ? json_decode($di_raw, true) : null;
+        $di     = is_array($di) ? $di : null;
+        [$resolved_action_id, $resolve_reason] = Cashback_API_Client::resolve_uniq_id(
+            $network,
+            $action_id,
+            array(
+                'order_number' => $order_id,
+                'offer_id'     => $campaign_id,
+                'action_type'  => $action_type,
+                'click_id'     => $click_id,
+            ),
+            $di
+        );
+        if ($resolve_reason !== null || $resolved_action_id === '') {
+            // Нет дедуп-идентичности → вставка создала бы строку, не
+            // коллизирующую с webhook/cron → потенциальный double-credit.
+            wp_send_json_error(array(
+                'message' => 'Не удалось определить идентичность транзакции для дедупликации'
+                    . ( $resolve_reason !== null ? ' (' . $resolve_reason . ')' : '' )
+                    . '. Проверьте action_id и контракт dedup_identity сети.',
+            ));
+        }
+        $action_id = $resolved_action_id;
+
         // Канонический cross-path ключ: sha256( lower(slug) | uniq_id ) —
         // та же формула, что в Cashback_API_Client::insert_missing_transaction
         // и webhook-receiver (app/db.py). idx_idempotency_key → настоящий
         // cross-path exactly-once backstop (webhook / cron / manual коллизируют
-        // на одном логическом действии). Для встроенных (native-id) сетей
-        // $action_id == native uniq_id == выход универсального резолвера.
+        // на одном логическом действии). $action_id теперь == выход
+        // универсального резолвера (единый код-пас).
         $idempotency_key = hash('sha256', strtolower($network) . '|' . $action_id);
 
         // Разрешение partner_token → user_id (subid может содержать токен вместо числового ID)

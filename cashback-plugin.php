@@ -244,6 +244,10 @@ class CashbackPlugin {
         // auto-run на plugins_loaded чтобы подхватить upgrade без re-activation плагина.
         add_action('plugins_loaded', array( 'CashbackPlugin', 'migrate_schema_idempotency_v1' ), 110);
         add_action('admin_notices', array( 'CashbackPlugin', 'schema_idempotency_blocked_notice' ));
+        // v18 source-field consistency guard: persistent notice если миграция
+        // обнаружила кастомную native-сеть с явным uniq_id-ремапом, но без
+        // объявленного receiver_uniq_source (silent push/pull drift = риск дублей).
+        add_action('admin_notices', array( 'CashbackPlugin', 'dedup_source_drift_notice' ));
         // Миграция группы 7 (шаг 3 ADR): создание таблицы cashback_rate_limit_counters
         // для атомарного INSERT ... ON DUPLICATE KEY UPDATE (SQL rate-limit backend).
         add_action('plugins_loaded', array( 'CashbackPlugin', 'migrate_rate_limit_v1' ), 115);
@@ -1347,10 +1351,14 @@ class CashbackPlugin {
                     // no re-activation needed).
                     Mariadb_Plugin::get_instance()->migrate_dedup_identity_v16();
                     Mariadb_Plugin::get_instance()->migrate_dedup_identity_backfill_v17();
+                    // v18: source-field consistency guard (re-assert каноничного
+                    // receiver_uniq_source встроенным сетям + detect silent-drift
+                    // у кастомных). Никакой нормализации/backfill uniq_id.
+                    Mariadb_Plugin::get_instance()->migrate_dedup_source_consistency_v18();
                 } catch (\Throwable $e) {
                     set_transient('cashback_migration_v14_throttle', 1, 15 * MINUTE_IN_SECONDS);
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                    error_log('[Cashback] Advcake migration v14/v15/v16/v17 auto-fire failed: ' . $e->getMessage());
+                    error_log('[Cashback] Advcake migration v14/v15/v16/v17/v18 auto-fire failed: ' . $e->getMessage());
                     set_transient('cashback_migration_failure_notice', $e->getMessage(), DAY_IN_SECONDS);
                 }
             }
@@ -2007,6 +2015,36 @@ class CashbackPlugin {
             esc_html($msg),
             esc_html__('Schema-level защита финансовых инвариантов (payout immutability, status transitions, fail_reason invariant) не активна. Деактивируйте и заново активируйте плагин для повторной попытки. Если проблема повторится — обратитесь к хостинг-провайдеру за SUPER privilege на БД.', 'cashback-plugin'),
             'Plugins → Cashback → Deactivate → Activate'
+        );
+    }
+
+    /**
+     * Admin notice: миграция v18 обнаружила silent push/pull source-drift.
+     *
+     * Кастомная native-сеть ЯВНО ремапит uniq_id в api_field_map (override
+     * дефолта action_id→uniq_id), но не объявила dedup_identity.receiver_uniq_source
+     * (поле native id в её ПОСТБЭКЕ). webhook (push) и cron (pull) тогда могут
+     * писать разные uniq_id на одно действие → silent duplicate + double-credit.
+     * Кросс-имённую авто-сверку сделать нельзя (разные пространства имён,
+     * ADR D-5b) — оператор должен задать receiver_uniq_source вручную.
+     * Опция перезаписывается миграцией (не накапливает); очищается когда
+     * drift устранён.
+     */
+    public static function dedup_source_drift_notice(): void {
+        $slugs = get_option('cashback_dedup_source_drift');
+        if (!is_array($slugs) || $slugs === array()) {
+            return;
+        }
+        $clean = array_values(array_filter(array_map('strval', $slugs), static fn ( $s ): bool => $s !== ''));
+        if ($clean === array()) {
+            return;
+        }
+        printf(
+            '<div class="notice notice-error"><p><strong>%s</strong></p><p>%s</p><p><strong>%s</strong> <code>%s</code></p></div>',
+            esc_html__('Cashback Plugin — рассинхрон источника дедупликации', 'cashback-plugin'),
+            esc_html__('Сети ниже переопределяют API-поле uniq_id, но не объявили поле native id в своём постбэке (receiver_uniq_source). Webhook и cron могут создать разные uniq_id на одну конверсию → дубль и двойное начисление. Задайте receiver_uniq_source в контракте dedup_identity этих сетей.', 'cashback-plugin'),
+            esc_html__('Сети:', 'cashback-plugin'),
+            esc_html(implode(', ', $clean))
         );
     }
 

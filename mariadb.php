@@ -107,6 +107,7 @@ class Mariadb_Plugin {
             $instance->migrate_v15_uniqueness();
             $instance->migrate_dedup_identity_v16();
             $instance->migrate_dedup_identity_backfill_v17();
+            $instance->migrate_dedup_source_consistency_v18();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -4769,6 +4770,167 @@ class Mariadb_Plugin {
         ));
 
         update_option('cashback_db_version', 17, false);
+    }
+
+    /**
+     * Миграция v18: source-field consistency guard для dedup-контракта.
+     *
+     * Native uniq_id — opaque, регистрозависимый, exact-match токен
+     * (Stripe/IETF idempotency-key + affiliate-postback стандарт). НЕ
+     * нормализуем: case-fold/zero-strip ЗАПРЕЩЕНЫ — потеря энтропии
+     * схлопывает разные конверсии (ABC123 ≠ abc123, 00123 ≠ 123) →
+     * потерянная транзакция (under-credit). Реальный риск дублей не
+     * нормализация, а рассинхрон source-поля: webhook берёт native из
+     * push-макроса (dedup_identity.receiver_uniq_source), cron — из
+     * api_field_map[uniq_id] (дефолт action_id). Кросс-имённую авто-сверку
+     * сделать нельзя (разные пространства имён, ADR D-5b), поэтому v18:
+     *   1. Re-assert каноничного receiver_uniq_source встроенным сетям
+     *      (admitad/epn/advcake) — v16 сидил ТОЛЬКО WHERE IS NULL, сеть с
+     *      непустым контрактом без receiver_uniq_source осталась "немой".
+     *   2. Кастомные native-сети, ЯВНО ремапящие uniq_id (override дефолта
+     *      action_id) но без receiver_uniq_source — единственный
+     *      silent-drift вектор: пишем в option для persistent admin notice
+     *      (НЕ авто-правим чужой конфиг).
+     * Значения uniq_id НЕ трогаются (никакой нормализации/backfill).
+     *
+     * Идемпотентность: cashback_db_version >= 18 fast-path; шаг 1 — UPDATE
+     * только где receiver_uniq_source реально пуст; шаг 2 — перезапись
+     * option (не накапливает).
+     */
+    public function migrate_dedup_source_consistency_v18(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        if ($current_version >= 18) {
+            return;
+        }
+
+        $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
+
+        $wpdb->last_error = '';
+        $has_col = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = %s
+                AND COLUMN_NAME  = %s',
+            $networks_table,
+            'dedup_identity'
+        ));
+        if ($wpdb->last_error || $has_col === 0) {
+            // B-2: get_var() глотает SQL-ошибку — на ошибке/отсутствии
+            // колонки выходим БЕЗ bump (db_version<18 → следующий init
+            // перезапустит). Иначе риск замёрз бы навсегда под fast-path.
+            return;
+        }
+
+        $native_default = array(
+            'has_native_action_id'       => true,
+            'synthetic_fields'           => array( 'order_number', 'offer_id', 'action_type' ),
+            'synthetic_include_click_id' => false,
+        );
+
+        // ── Шаг 1: re-assert каноничного receiver_uniq_source встроенным сетям.
+        $canonical = array(
+            'admitad' => 'admitad_id',
+            'epn'     => 'transactionId',
+            'advcake' => 'id',
+        );
+        foreach ($canonical as $slug => $src) {
+            $wpdb->last_error = '';
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot idempotent migration read.
+            $row = $wpdb->get_row($wpdb->prepare(
+                'SELECT id, dedup_identity FROM %i WHERE slug = %s',
+                $networks_table,
+                $slug
+            ), ARRAY_A);
+            if ($wpdb->last_error) {
+                // B-2: read-ошибка — выходим БЕЗ bump, БЕЗ изменения
+                // drift-option. Следующий init перезапустит миграцию.
+                return;
+            }
+            if (!is_array($row)) {
+                continue;
+            }
+            $raw     = (string) ( $row['dedup_identity'] ?? '' );
+            $decoded = ( $raw !== '' ) ? json_decode($raw, true) : null;
+            if (!is_array($decoded)) {
+                $decoded = $native_default;
+            }
+            if ((string) ( $decoded['receiver_uniq_source'] ?? '' ) !== '') {
+                continue; // уже задан — идемпотентно не трогаем.
+            }
+            $decoded['receiver_uniq_source'] = $src;
+            $wpdb->last_error = '';
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot idempotent migration seed.
+            $wpdb->query($wpdb->prepare(
+                'UPDATE %i SET dedup_identity = %s WHERE id = %d',
+                $networks_table,
+                (string) wp_json_encode($decoded),
+                (int) $row['id']
+            ));
+            if ($wpdb->last_error) {
+                // B-2: UPDATE-ошибка — частичное состояние, НЕ bump'аем.
+                return;
+            }
+        }
+
+        // ── Шаг 2: detect silent-drift у кастомных native-сетей.
+        // Drift возможен ТОЛЬКО когда api_field_map ЯВНО ремапит uniq_id
+        // (override дефолта action_id→uniq_id) И receiver_uniq_source пуст.
+        $drift = array();
+        $wpdb->last_error = '';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot idempotent migration scan.
+        $rows = $wpdb->get_results($wpdb->prepare(
+            'SELECT slug, api_field_map, dedup_identity FROM %i',
+            $networks_table
+        ), ARRAY_A);
+        if ($wpdb->last_error || !is_array($rows)) {
+            // B-2: scan-ошибка — НЕ bump'аем и НЕ трогаем существующий
+            // drift-option (следующий init перепроверит).
+            return;
+        }
+        if (is_array($rows)) {
+            foreach ($rows as $r) {
+                $slug = (string) ( $r['slug'] ?? '' );
+                if ($slug === '' || isset($canonical[ $slug ])) {
+                    continue; // встроенные уже каноничны (шаг 1).
+                }
+                $di_raw = (string) ( $r['dedup_identity'] ?? '' );
+                $di     = ( $di_raw !== '' ) ? json_decode($di_raw, true) : null;
+                $di     = is_array($di) ? $di : null;
+                $is_native = ($di === null)
+                    ? true
+                    : ( ($di['has_native_action_id'] ?? true) !== false );
+                if (!$is_native) {
+                    continue; // synthetic — native source-drift неприменим.
+                }
+                $rcv = ($di !== null) ? (string) ( $di['receiver_uniq_source'] ?? '' ) : '';
+                if ($rcv !== '') {
+                    continue; // push-источник объявлен — не drift.
+                }
+                $fm_raw = (string) ( $r['api_field_map'] ?? '' );
+                $fm     = ( $fm_raw !== '' ) ? json_decode($fm_raw, true) : null;
+                if (!is_array($fm)) {
+                    continue; // дефолтный map → cron берёт action_id, drift не вводится.
+                }
+                // B-3: drift только если эффективный источник uniq_id ≠
+                // дефолтного 'action_id'. Семантика ДОЛЖНА совпадать с
+                // runtime api_field_for() = array_flip (last-wins при
+                // дублях значений); array_search вернул бы первый ключ →
+                // дыра `{"action_id":"uniq_id","foo":"uniq_id"}`.
+                $uniq_src_key = array_flip(array_map('strval', $fm))['uniq_id'] ?? false;
+                if ($uniq_src_key !== false && (string) $uniq_src_key !== 'action_id') {
+                    $drift[] = $slug;
+                }
+            }
+        }
+        if ($drift !== array()) {
+            update_option('cashback_dedup_source_drift', array_values(array_unique($drift)), false);
+        } else {
+            delete_option('cashback_dedup_source_drift');
+        }
+
+        update_option('cashback_db_version', 18, false);
     }
 
     /**
