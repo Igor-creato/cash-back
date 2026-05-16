@@ -1650,21 +1650,17 @@ class Cashback_API_Client {
         $start_obj = DateTime::createFromFormat('d.m.Y', $start_dmy);
         $start_sql = $start_obj ? $start_obj->format('Y-m-d') : gmdate('Y-m-d', strtotime('-180 days'));
 
-        $cols = 'id,user_id,partner,uniq_id,idempotency_key,click_id,order_number,'
-              . 'offer_id,action_type,action_date,created_at,original_cpa_subid,'
-              . 'created_by_admin,comission,sum_order';
-
         $samples = array();
         foreach (array( 'transactions' => $this->transactions_table, 'unregistered' => $this->unregistered_table ) as $tkey => $table) {
+            // Колонки — статический литерал (без интерполяции переменных в SQL).
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Read-only diagnostic, narrow window + LIMIT.
             $rows = $wpdb->get_results($wpdb->prepare(
-                "SELECT {$cols} FROM %i
-                  WHERE LOWER(partner) IN (LOWER(%s), LOWER(%s))
-                    AND created_by_admin = 0
-                    AND uniq_id <> ''
-                    AND created_at >= %s
-                  ORDER BY created_at DESC
-                  LIMIT %d",
+                'SELECT id,user_id,partner,uniq_id,idempotency_key,click_id,order_number,'
+                . 'offer_id,action_type,action_date,created_at,original_cpa_subid,'
+                . 'created_by_admin,comission,sum_order FROM %i'
+                . ' WHERE LOWER(partner) IN (LOWER(%s), LOWER(%s))'
+                . " AND created_by_admin = 0 AND uniq_id <> ''"
+                . ' AND created_at >= %s ORDER BY created_at DESC LIMIT %d',
                 $table,
                 $slug,
                 $name,
@@ -1741,8 +1737,8 @@ class Cashback_API_Client {
         // какую строку «выбрали».
         $profile_table = $wpdb->prefix . 'cashback_user_profile';
         $by_user = array();
-        foreach ($samples as $R) {
-            $uid_raw = (string) ( $R['user_id'] ?? '' );
+        foreach ($samples as $row) {
+            $uid_raw = (string) ( $row['user_id'] ?? '' );
             $uv = '';
             if (ctype_digit($uid_raw) && (int) $uid_raw > 0) {
                 // READ-ONLY токен-lookup. НЕ Mariadb_Plugin::get_partner_token()
@@ -1755,14 +1751,14 @@ class Cashback_API_Client {
                     (int) $uid_raw
                 ));
                 $uv  = ( $tok !== null && (string) $tok !== '' ) ? (string) $tok : $uid_raw;
-            } elseif ((string) ( $R['original_cpa_subid'] ?? '' ) !== '') {
-                $uv = (string) $R['original_cpa_subid'];
+            } elseif ((string) ( $row['original_cpa_subid'] ?? '' ) !== '') {
+                $uv = (string) $row['original_cpa_subid'];
             }
             if ($uv === '') {
                 $reason_tally['no_usable_identifier'] = ( $reason_tally['no_usable_identifier'] ?? 0 ) + 1;
                 continue;
             }
-            $by_user[ $uv ][] = $R;
+            $by_user[ $uv ][] = $row;
         }
 
         $max_probes = 8;
@@ -1772,14 +1768,14 @@ class Cashback_API_Client {
             if ($probes >= $max_probes) {
                 break;
             }
-            $probes++;
+            ++$probes;
 
             // Окно покрывает все строки пользователя (min−7д … max+2д).
             $anchors = array();
-            foreach ($user_rows as $R) {
-                $a = (string) ( $R['action_date'] ?? '' );
+            foreach ($user_rows as $row) {
+                $a = (string) ( $row['action_date'] ?? '' );
                 if ($a === '' || $a === '0000-00-00 00:00:00') {
-                    $a = (string) ( $R['created_at'] ?? '' );
+                    $a = (string) ( $row['created_at'] ?? '' );
                 }
                 $anchors[] = strtotime($a) ?: time();
             }
@@ -1806,29 +1802,29 @@ class Cashback_API_Client {
                 'dedup_selftest'
             )['actions'];
 
-            foreach ($user_rows as $R) {
-                $anchor = (string) ( $R['action_date'] ?? '' );
+            foreach ($user_rows as $row) {
+                $anchor = (string) ( $row['action_date'] ?? '' );
                 if ($anchor === '' || $anchor === '0000-00-00 00:00:00') {
-                    $anchor = (string) ( $R['created_at'] ?? '' );
+                    $anchor = (string) ( $row['created_at'] ?? '' );
                 }
                 $anchor_ts = strtotime($anchor) ?: time();
 
                 // Грубый фильтр «та же конверсия» БЕЗ uniq_id.
-                $r_order = trim((string) ( $R['order_number'] ?? '' ));
-                $r_offer = (int) ( $R['offer_id'] ?? 0 );
-                $r_atype = strtolower(trim((string) ( $R['action_type'] ?? '' )));
+                $r_order = trim((string) ( $row['order_number'] ?? '' ));
+                $r_offer = (int) ( $row['offer_id'] ?? 0 );
+                $r_atype = strtolower(trim((string) ( $row['action_type'] ?? '' )));
                 $candidates = array();
-                foreach ($actions as $A) {
-                    if (trim((string) ( $A[ $fm_order ] ?? '' )) !== $r_order) {
+                foreach ($actions as $act) {
+                    if (trim((string) ( $act[ $fm_order ] ?? '' )) !== $r_order) {
                         continue;
                     }
-                    if ((int) ( $A[ $fm_offer ] ?? 0 ) !== $r_offer) {
+                    if ((int) ( $act[ $fm_offer ] ?? 0 ) !== $r_offer) {
                         continue;
                     }
-                    if (strtolower(trim((string) ( $A['action_type'] ?? '' ))) !== $r_atype) {
+                    if (strtolower(trim((string) ( $act['action_type'] ?? '' ))) !== $r_atype) {
                         continue;
                     }
-                    $candidates[] = $A;
+                    $candidates[] = $act;
                 }
 
                 if ($candidates === array()) {
@@ -1837,22 +1833,22 @@ class Cashback_API_Client {
                 }
                 if (count($candidates) > 1) {
                     // Split-order: доуточняем click_id + сумма + дата.
-                    $r_click  = (string) ( $R['click_id'] ?? '' );
-                    $r_amount = round((float) ( $R['comission'] ?? 0 ), 2);
+                    $r_click  = (string) ( $row['click_id'] ?? '' );
+                    $r_amount = round((float) ( $row['comission'] ?? 0 ), 2);
                     $r_day    = gmdate('Y-m-d', $anchor_ts);
                     $refined  = array();
-                    foreach ($candidates as $A) {
-                        if ((string) ( $A[ $click_field ] ?? '' ) !== $r_click) {
+                    foreach ($candidates as $act) {
+                        if ((string) ( $act[ $click_field ] ?? '' ) !== $r_click) {
                             continue;
                         }
-                        if (round((float) ( $A[ $fm_pay ] ?? 0 ), 2) !== $r_amount) {
+                        if (round((float) ( $act[ $fm_pay ] ?? 0 ), 2) !== $r_amount) {
                             continue;
                         }
-                        $a_date = self::parse_api_date((string) ( $A[ $fm_adate ] ?? '' ));
+                        $a_date = self::parse_api_date((string) ( $act[ $fm_adate ] ?? '' ));
                         if ($a_date === null || substr($a_date, 0, 10) !== $r_day) {
                             continue;
                         }
-                        $refined[] = $A;
+                        $refined[] = $act;
                     }
                     if (count($refined) !== 1) {
                         // Неоднозначно → честное INCONCLUSIVE, НИКОГДА не MISMATCH.
@@ -1862,33 +1858,33 @@ class Cashback_API_Client {
                     $candidates = $refined;
                 }
 
-                $A = $candidates[0];
-                $checked++;
+                $act = $candidates[0];
+                ++$checked;
 
                 [$computed_uniq] = self::resolve_uniq_id(
                     $slug,
-                    (string) ( $A[ $fm_uniq ] ?? '' ),
+                    (string) ( $act[ $fm_uniq ] ?? '' ),
                     array(
-                        'order_number' => (string) ( $A[ $fm_order ] ?? '' ),
-                        'offer_id'     => (string) ( $A[ $fm_offer ] ?? '' ),
-                        'action_type'  => (string) ( $A['action_type'] ?? '' ),
-                        'click_id'     => (string) ( $A[ $click_field ] ?? '' ),
+                        'order_number' => (string) ( $act[ $fm_order ] ?? '' ),
+                        'offer_id'     => (string) ( $act[ $fm_offer ] ?? '' ),
+                        'action_type'  => (string) ( $act['action_type'] ?? '' ),
+                        'click_id'     => (string) ( $act[ $click_field ] ?? '' ),
                     ),
                     $di
                 );
-                $stored_uniq   = (string) ( $R['uniq_id'] ?? '' );
+                $stored_uniq   = (string) ( $row['uniq_id'] ?? '' );
                 $computed_idem = hash('sha256', $slug . '|' . $computed_uniq);
-                $stored_idem   = (string) ( $R['idempotency_key'] ?? '' );
+                $stored_idem   = (string) ( $row['idempotency_key'] ?? '' );
 
                 if ($computed_uniq !== '' && $computed_uniq !== $stored_uniq) {
                     $uniq_mismatch = array(
                         'sub'                  => 'uniq_mismatch',
-                        'table'                => (string) $R['__table'],
-                        'tx_id'                => (int) ( $R['id'] ?? 0 ),
+                        'table'                => (string) $row['__table'],
+                        'tx_id'                => (int) ( $row['id'] ?? 0 ),
                         'stored_uniq'          => $stored_uniq,
                         'computed_uniq'        => $computed_uniq,
                         'api_field_cron_reads' => $fm_uniq,
-                        'api_field_value'      => (string) ( $A[ $fm_uniq ] ?? '' ),
+                        'api_field_value'      => (string) ( $act[ $fm_uniq ] ?? '' ),
                         'stored_idem'          => $stored_idem,
                         'computed_idem'        => $computed_idem,
                     );
@@ -1898,8 +1894,8 @@ class Cashback_API_Client {
                     if ($stored_idem !== '' && $computed_idem !== $stored_idem && $idem_mismatch === null) {
                         $idem_mismatch = array(
                             'sub'           => 'idempotency_formula_mismatch',
-                            'table'         => (string) $R['__table'],
-                            'tx_id'         => (int) ( $R['id'] ?? 0 ),
+                            'table'         => (string) $row['__table'],
+                            'tx_id'         => (int) ( $row['id'] ?? 0 ),
                             'stored_uniq'   => $stored_uniq,
                             'computed_uniq' => $computed_uniq,
                             'stored_idem'   => $stored_idem,
@@ -1907,7 +1903,7 @@ class Cashback_API_Client {
                         );
                         continue;
                     }
-                    $match_count++;
+                    ++$match_count;
                 }
             }
         }
