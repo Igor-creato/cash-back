@@ -4807,7 +4807,10 @@ class Mariadb_Plugin {
 
         $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
 
-        $wpdb->last_error = '';
+        // wpdb::query() (через который идут get_var/get_row/get_results)
+        // сбрасывает last_error в начале КАЖДОГО запроса — поэтому проверка
+        // last_error СРАЗУ после запроса отражает только этот запрос
+        // (предварительный ручной reset не нужен и ломал бы narrowing).
         $has_col = (int) $wpdb->get_var($wpdb->prepare(
             'SELECT COUNT(*) FROM information_schema.COLUMNS
               WHERE TABLE_SCHEMA = DATABASE()
@@ -4816,7 +4819,11 @@ class Mariadb_Plugin {
             $networks_table,
             'dedup_identity'
         ));
-        if ($wpdb->last_error || $has_col === 0) {
+        // last_error читаем в свежую локалку (PHPStan не моделирует мутацию
+        // свойства методами wpdb; прямой if($wpdb->last_error) сузил бы
+        // свойство до '' на весь scope → ложные always-false).
+        $db_err = (string) $wpdb->last_error;
+        if ($db_err !== '' || $has_col === 0) {
             // B-2: get_var() глотает SQL-ошибку — на ошибке/отсутствии
             // колонки выходим БЕЗ bump (db_version<18 → следующий init
             // перезапустит). Иначе риск замёрз бы навсегда под fast-path.
@@ -4836,14 +4843,14 @@ class Mariadb_Plugin {
             'advcake' => 'id',
         );
         foreach ($canonical as $slug => $src) {
-            $wpdb->last_error = '';
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot idempotent migration read.
             $row = $wpdb->get_row($wpdb->prepare(
                 'SELECT id, dedup_identity FROM %i WHERE slug = %s',
                 $networks_table,
                 $slug
             ), ARRAY_A);
-            if ($wpdb->last_error) {
+            $db_err = (string) $wpdb->last_error;
+            if ($db_err !== '') {
                 // B-2: read-ошибка — выходим БЕЗ bump, БЕЗ изменения
                 // drift-option. Следующий init перезапустит миграцию.
                 return;
@@ -4860,7 +4867,6 @@ class Mariadb_Plugin {
                 continue; // уже задан — идемпотентно не трогаем.
             }
             $decoded['receiver_uniq_source'] = $src;
-            $wpdb->last_error = '';
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot idempotent migration seed.
             $wpdb->query($wpdb->prepare(
                 'UPDATE %i SET dedup_identity = %s WHERE id = %d',
@@ -4868,7 +4874,8 @@ class Mariadb_Plugin {
                 (string) wp_json_encode($decoded),
                 (int) $row['id']
             ));
-            if ($wpdb->last_error) {
+            $db_err = (string) $wpdb->last_error;
+            if ($db_err !== '') {
                 // B-2: UPDATE-ошибка — частичное состояние, НЕ bump'аем.
                 return;
             }
@@ -4878,13 +4885,13 @@ class Mariadb_Plugin {
         // Drift возможен ТОЛЬКО когда api_field_map ЯВНО ремапит uniq_id
         // (override дефолта action_id→uniq_id) И receiver_uniq_source пуст.
         $drift = array();
-        $wpdb->last_error = '';
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot idempotent migration scan.
         $rows = $wpdb->get_results($wpdb->prepare(
             'SELECT slug, api_field_map, dedup_identity FROM %i',
             $networks_table
         ), ARRAY_A);
-        if ($wpdb->last_error || !is_array($rows)) {
+        $db_err = (string) $wpdb->last_error;
+        if ($db_err !== '') {
             // B-2: scan-ошибка — НЕ bump'аем и НЕ трогаем существующий
             // drift-option (следующий init перепроверит).
             return;

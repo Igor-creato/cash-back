@@ -1102,21 +1102,27 @@ echo 'style="display:none"';}
 
             if ($explicit_uniq_remap) {
                 $networks_tbl = $wpdb->prefix . 'cashback_affiliate_networks';
-                $wpdb->last_error = '';
+                // wpdb::query() сбрасывает last_error в начале каждого
+                // запроса → проверка СРАЗУ после get_var отражает только
+                // его (ручной pre-reset не нужен).
                 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Single-row config read for save-time guard.
                 $di_raw = $wpdb->get_var($wpdb->prepare(
                     'SELECT dedup_identity FROM %i WHERE id = %d',
                     $networks_tbl,
                     $network_id
                 ));
-                if ($wpdb->last_error) {
+                // Свежая локалка (PHPStan не моделирует мутацию свойства
+                // методами wpdb; прямой if($wpdb->last_error) сузил бы
+                // свойство до '' и ломал последующие проверки).
+                $guard_db_err = (string) $wpdb->last_error;
+                if ($guard_db_err !== '') {
                     // B-1: FAIL-CLOSED. idempotency_key НЕ backstop против
                     // source-drift (разные uniq_id → разные ключи, UNIQUE не
                     // ловит), а v18 fast-path не перепроверит сайт на db>=18.
                     // Блокируем save (оператор повторит) — лучше отказ, чем
                     // тихий double-credit.
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                    error_log('[cashback] dedup source-guard read failed (fail-closed): ' . $wpdb->last_error);
+                    error_log('[cashback] dedup source-guard read failed (fail-closed): ' . $guard_db_err);
                     wp_send_json_error(array(
                         'message' => 'Не удалось проверить контракт дедупликации (временная ошибка БД). '
                             . 'Сохранение отклонено во избежание рассинхрона webhook/cron. '
@@ -1143,14 +1149,14 @@ echo 'style="display:none"';}
                 // конфиг прошёл гард (receiver_uniq_source объявлен ИЛИ
                 // сеть synthetic) — снимаем slug этой сети из drift-option
                 // (self-heal notice независимо от cashback_db_version).
-                $wpdb->last_error = '';
                 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Single-row slug read for drift self-heal.
                 $slug_for_drift = (string) $wpdb->get_var($wpdb->prepare(
                     'SELECT slug FROM %i WHERE id = %d',
                     $networks_tbl,
                     $network_id
                 ));
-                if ($slug_for_drift !== '' && !$wpdb->last_error) {
+                $slug_db_err = (string) $wpdb->last_error;
+                if ($slug_for_drift !== '' && $slug_db_err === '') {
                     $drift_now = get_option('cashback_dedup_source_drift');
                     if (is_array($drift_now) && in_array($slug_for_drift, $drift_now, true)) {
                         $drift_now = array_values(array_filter(
