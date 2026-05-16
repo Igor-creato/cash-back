@@ -581,6 +581,7 @@ class CashbackPlugin {
             'cashback_api_sync_statuses',          // API Валидация: фоновая синхронизация
             'cashback_notification_process_queue', // Обработка очереди уведомлений
             'cashback_broadcast_process',          // Обработка очереди массовых рассылок
+            'cashback_logs_retention',             // Retention 11 лог/аудит/очередь-таблиц
         );
 
         foreach ($as_hooks as $hook) {
@@ -958,6 +959,10 @@ class CashbackPlugin {
         $this->require_file('includes/class-cashback-advcake-stuck-monitor.php');
         $this->require_file('includes/class-cashback-stuck-transactions-monitor.php');
         $this->require_file('includes/class-cashback-webhooks-retention.php');
+
+        // Retention для 11 лог/аудит/очередь-таблиц без ретеншна (180d,
+        // override через filter cashback_logs_retention_days).
+        $this->require_file('includes/class-cashback-logs-retention.php');
 
         // Группа 14: ежедневная сверка ledger vs кэш баланса.
         $this->require_file('includes/class-cashback-balance-reconciliation.php');
@@ -1708,6 +1713,11 @@ class CashbackPlugin {
         // --- cashback_webhooks retention (P-3): ежедневная очистка >90d ---
         if (class_exists('Cashback_Webhooks_Retention')) {
             Cashback_Webhooks_Retention::register();
+        }
+
+        // --- Logs retention: ежедневная очистка 11 лог/аудит/очередь-таблиц (180d) ---
+        if (class_exists('Cashback_Logs_Retention')) {
+            Cashback_Logs_Retention::register();
         }
 
         // --- Промокоды CPA-сетей: AS-cron 6ч + manual refresh ---
