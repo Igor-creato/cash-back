@@ -34,7 +34,7 @@
  * Двойной алерт по Advcake-строкам приемлем (разные throttle-окна).
  *
  * @package CashbackPlugin
- * @since   4.4.13
+ * @since   4.4.14
  */
 
 declare(strict_types=1);
