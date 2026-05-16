@@ -1,0 +1,57 @@
+name: Release plugin package
+
+# На push тега vX.Y.Z собираем version-нейтральный production-архив
+# (внутренняя папка ровно cash-back/, имя файла cash-back.zip) и
+# автоматически создаём GitHub Release с ассетами.
+#
+# Зачем: GitHub «Source code» zip распаковывается в cash-back-<tag>/,
+# WordPress определяет плагин по имени папки → ставит как НОВЫЙ плагин,
+# а не обновление. Фиксированная папка cash-back/ → WP предлагает
+# «Заменить текущую версию загруженной» без ручной перепаковки.
+#
+# Источник правды по составу пакета — .gitattributes (export-ignore):
+# git archive автоматически исключает development/, vendor/, obsidian/ и пр.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write          # создание Release + заливка ассетов
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (tagged commit)
+        uses: actions/checkout@v4
+
+      - name: Verify plugin header Version matches tag
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"                       # v4.4.11 -> 4.4.11
+          HDR=$(grep -m1 -oP '^\s*\*\s*Version:\s*\K[0-9.]+' cashback-plugin.php)
+          echo "tag=$TAG header=$HDR"
+          test "$TAG" = "$HDR" || { echo "::error::Tag v$TAG != plugin header Version $HDR (bump cashback-plugin.php before tagging)"; exit 1; }
+
+      - name: Build versionless package (folder = cash-back/)
+        run: |
+          git archive --format=zip --prefix=cash-back/ -o cash-back.zip HEAD
+          sha256sum cash-back.zip > cash-back.zip.sha256
+
+      - name: Sanity-check archive contents
+        run: |
+          unzip -l cash-back.zip | grep -q ' cash-back/cashback-plugin.php$' || { echo "::error::main plugin file missing from archive"; exit 1; }
+          unzip -l cash-back.zip | grep -q ' cash-back/includes/' || { echo "::error::includes/ missing from archive"; exit 1; }
+          if unzip -l cash-back.zip | grep -qE ' cash-back/(development|vendor|obsidian|context|\.github)/'; then
+            echo "::error::dev files leaked into archive"; exit 1;
+          fi
+
+      - name: Create GitHub Release + upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            cash-back.zip
+            cash-back.zip.sha256
