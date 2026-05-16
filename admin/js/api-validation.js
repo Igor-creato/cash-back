@@ -129,6 +129,98 @@
         });
     });
 
+    // =========================================================================
+    // Self-test дедупликации (read-only) — ловит перепутанный крон-маппинг
+    // =========================================================================
+
+    $(document).on('click', '#cashback-dedup-selftest-btn', function () {
+        const $btn = $(this);
+        const network = $('#cashback-validate-network').val();
+
+        if (!network || network === '__all__') {
+            alert('Выберите конкретную CPA-сеть (не «Все сети»).');
+            return;
+        }
+
+        const orig = $btn.text();
+        $btn.prop('disabled', true).text('Проверка дедупа...');
+        $('#cashback-dedup-selftest-result').hide();
+
+        $.ajax({
+            url: config.ajaxUrl,
+            method: 'POST',
+            data: {
+                action: 'cashback_dedup_selftest',
+                nonce: config.nonce,
+                network: network,
+            },
+            success: function (response) {
+                $btn.prop('disabled', false).text(orig);
+                if (response.success && response.data) {
+                    renderDedupSelftestResult(response.data);
+                } else {
+                    renderDedupSelftestError(response.data?.message || 'Неизвестная ошибка');
+                }
+            },
+            error: function (xhr) {
+                $btn.prop('disabled', false).text(orig);
+                renderDedupSelftestError('Ошибка сети: ' + xhr.status + ' ' + xhr.statusText);
+            },
+        });
+    });
+
+    function dedupEsc(v) {
+        return $('<div>').text(v == null ? '' : String(v)).html();
+    }
+
+    function renderDedupSelftestError(msg) {
+        $('#cashback-dedup-selftest-result')
+            .html('<div class="notice notice-error" style="padding:12px"><strong>❌ ' + dedupEsc(msg) + '</strong></div>')
+            .show();
+    }
+
+    function renderDedupSelftestResult(data) {
+        const verdict = data.verdict || 'inconclusive';
+        let cls = 'notice-warning';
+        let head = 'ℹ️ Неубедительно (это НЕ ошибка)';
+        if (verdict === 'match') {
+            cls = 'notice-success';
+            head = '✅ Маппинг согласован';
+        } else if (verdict === 'mismatch') {
+            cls = 'notice-error';
+            head = '⚠️ РАССИНХРОН МАППИНГА';
+        }
+
+        let html = '<div class="notice ' + cls + '" style="padding:12px">';
+        html += '<p><strong>' + head + '</strong> — сеть <code>' + dedupEsc(data.network) + '</code>';
+        if (typeof data.checked === 'number') {
+            html += ' · проверено конверсий: ' + dedupEsc(data.checked);
+        }
+        html += '</p>';
+        html += '<p>' + dedupEsc(data.message) + '</p>';
+
+        if (verdict === 'mismatch' && data.detail) {
+            const d = data.detail;
+            html += '<table class="widefat striped" style="max-width:760px;margin-top:8px">';
+            html += '<tbody>';
+            if (d.api_field_cron_reads !== undefined) {
+                html += '<tr><td>API-поле, которое читает крон под uniq_id</td><td><code>'
+                    + dedupEsc(d.api_field_cron_reads) + '</code> = «' + dedupEsc(d.api_field_value) + '»</td></tr>';
+            }
+            html += '<tr><td>uniq_id сохранён (webhook)</td><td><code>' + dedupEsc(d.stored_uniq) + '</code></td></tr>';
+            html += '<tr><td>uniq_id вычислил крон-резолвер</td><td><code>' + dedupEsc(d.computed_uniq) + '</code></td></tr>';
+            html += '<tr><td>idempotency_key сохранён</td><td><code>' + dedupEsc(d.stored_idem) + '</code></td></tr>';
+            html += '<tr><td>idempotency_key ожидаемый</td><td><code>' + dedupEsc(d.computed_idem) + '</code></td></tr>';
+            html += '</tbody></table>';
+        }
+        if (verdict === 'inconclusive' && data.reason) {
+            html += '<p><em>reason: <code>' + dedupEsc(data.reason) + '</code></em></p>';
+        }
+        html += '</div>';
+
+        $('#cashback-dedup-selftest-result').html(html).show();
+    }
+
     /**
      * Рендер результата валидации
      */

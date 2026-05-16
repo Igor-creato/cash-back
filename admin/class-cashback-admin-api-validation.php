@@ -50,6 +50,9 @@ class Cashback_Admin_API_Validation {
         add_action('wp_ajax_cashback_save_sync_window', array( $this, 'ajax_save_sync_window' ));
         // P5: push/pull dedup-identity консистентность (универсальный дедуп).
         add_action('wp_ajax_cashback_validate_dedup_config', array( $this, 'ajax_validate_dedup_config' ));
+        // Поведенческий self-test дедупликации (read-only): ловит перепутанный
+        // крон-маппинг uniq_id, который config-валидация поймать не может.
+        add_action('wp_ajax_cashback_dedup_selftest', array( $this, 'ajax_dedup_selftest' ));
 
         // Тест подключения к API
         add_action('wp_ajax_cashback_test_connection', array( $this, 'ajax_test_connection' ));
@@ -126,7 +129,7 @@ class Cashback_Admin_API_Validation {
             'cashback-api-validation',
             plugin_dir_url(__DIR__) . 'admin/js/api-validation.js',
             array( 'jquery', 'cashback-pagination' ),
-            '5.2.0',
+            '5.3.0',
             true
         );
 
@@ -160,7 +163,7 @@ class Cashback_Admin_API_Validation {
             'cashback-api-validation',
             plugin_dir_url(__DIR__) . 'admin/css/api-validation.css',
             array(),
-            '5.2.0'
+            '5.3.0'
         );
     }
 
@@ -676,10 +679,17 @@ echo 'style="display:none"';}
                 <button type="button" id="cashback-validate-btn" class="button button-primary button-hero">
                     🔍 Проверить пользователя
                 </button>
+                <button type="button" id="cashback-dedup-selftest-btn" class="button button-secondary"
+                    title="Поведенческая проверка: на свежей конверсии сверяет, что крон-резолвер даёт тот же uniq_id, что webhook (ловит перепутанный api_field_map). Read-only.">
+                    🔬 Self-test дедупликации
+                </button>
             </p>
 
             <div id="cashback-validation-result" style="display:none; margin-top: 20px;">
                 <!-- Результат валидации подставляется через JS -->
+            </div>
+            <div id="cashback-dedup-selftest-result" style="display:none; margin-top: 20px;">
+                <!-- Результат self-test подставляется через JS -->
             </div>
         </div>
     <?php
@@ -1514,6 +1524,44 @@ echo 'style="display:none"';}
             'all_ok' => $all_ok,
             'report' => $report,
         ));
+    }
+
+    /**
+     * AJAX: поведенческий self-test дедупликации (read-only).
+     *
+     * Делегирует в Cashback_API_Client::dedup_selftest() — строго без
+     * side-effects (SELECT + HTTP-GET). Ловит перепутанный крон-маппинг
+     * uniq_id, который config-валидация (разные пространства имён, D-5b)
+     * поймать не может.
+     */
+    public function ajax_dedup_selftest(): void {
+        check_ajax_referer('cashback_api_validation', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array( 'message' => 'Недостаточно прав' ));
+        }
+
+        // СТРОГО read-only: НЕ пишем rate-limit transient (это была бы
+        // запись в wp_options/кэш). Эндпоинт admin-only за nonce+cap,
+        // dedup_selftest ограничен sample_limit и узким date-окном —
+        // ручной клик не DoS-вектор. Отказ от транзиента сохраняет
+        // абсолютную zero-write гарантию фичи.
+        $network = isset($_POST['network']) ? sanitize_text_field(wp_unslash($_POST['network'])) : '';
+        if ($network === '' || $network === '__all__') {
+            wp_send_json_error(array( 'message' => 'Выберите конкретную CPA-сеть (не «Все сети»).' ));
+        }
+
+        try {
+            $client = Cashback_API_Client::get_instance();
+            $result = $client->dedup_selftest($network);
+            wp_send_json_success($result);
+        } catch (\Throwable $e) {
+            if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging (debug only).
+                error_log('[cashback] dedup_selftest failed: ' . $e->getMessage());
+            }
+            wp_send_json_error(array( 'message' => 'Ошибка self-test. Подробности в журнале.' ));
+        }
     }
 
     /**

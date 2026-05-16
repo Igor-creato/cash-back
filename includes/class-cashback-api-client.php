@@ -1603,6 +1603,385 @@ class Cashback_API_Client {
         );
     }
 
+    /**
+     * Self-test дедупликации (read-only, zero side-effects).
+     *
+     * Ловит невнимательность админа: webhook-ресивер настроен верно, а в
+     * кроне (api_field_map) на uniq_id повешено НЕ то API-поле (например
+     * «номер заказа» вместо «ID действия»). Кросс-имённую авто-сверку
+     * сделать нельзя (поля постбэка и API в разных пространствах имён,
+     * ADR D-5b) — поэтому проверка ПОВЕДЕНЧЕСКАЯ: на свежей webhook-строке
+     * берём ТУ ЖЕ конверсию из API, прогоняем крон-резолвер и сравниваем
+     * полученный uniq_id с уже сохранённым.
+     *
+     * СТРОГО read-only: только SELECT + исходящий HTTP-GET к CPA (та же
+     * операция, что у кнопки validate). НЕ вызывает validate_user /
+     * sync_update_local / update_checkpoint / insert_missing_transaction /
+     * log_audit / ledger — ни одного INSERT/UPDATE.
+     *
+     * @param string $network_slug Slug сети.
+     * @param int    $sample_limit Сколько свежих строк проверить (по обеим таблицам).
+     * @return array{verdict:string,network:string,checked:int,reason?:string,detail?:array,message:string}
+     */
+    public function dedup_selftest( string $network_slug, int $sample_limit = 25 ): array {
+        global $wpdb;
+
+        $slug_in = trim($network_slug);
+        $cfg     = $this->get_network_config($slug_in);
+        if (!is_array($cfg) || empty($cfg['credentials'])) {
+            return array(
+                'verdict' => 'inconclusive',
+                'network' => $slug_in,
+                'checked' => 0,
+                'reason'  => 'network_unavailable',
+                'message' => 'Сеть не найдена, неактивна или API не настроен — проверить нельзя.',
+            );
+        }
+
+        $slug   = strtolower(trim((string) ( $cfg['slug'] ?? $slug_in )));
+        $name   = (string) ( $cfg['name'] ?? '' );
+        // Широкая выборка (closes Codex iter-2 B-2): webhook-строки
+        // реалтайм → присутствуют среди свежих; «любой MISMATCH доминирует».
+        $limit  = max(1, min(50, $sample_limit));
+
+        // Окно выборки: то же, что lookback у validate (узкий хвост →
+        // range-scan по idx_stats_created_at, оборван LIMIT).
+        $start_dmy = $this->default_lookback_date_dmy();
+        $start_obj = DateTime::createFromFormat('d.m.Y', $start_dmy);
+        $start_sql = $start_obj ? $start_obj->format('Y-m-d') : gmdate('Y-m-d', strtotime('-180 days'));
+
+        $cols = 'id,user_id,partner,uniq_id,idempotency_key,click_id,order_number,'
+              . 'offer_id,action_type,action_date,created_at,original_cpa_subid,'
+              . 'created_by_admin,comission,sum_order';
+
+        $samples = array();
+        foreach (array( 'transactions' => $this->transactions_table, 'unregistered' => $this->unregistered_table ) as $tkey => $table) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Read-only diagnostic, narrow window + LIMIT.
+            $rows = $wpdb->get_results($wpdb->prepare(
+                "SELECT {$cols} FROM %i
+                  WHERE LOWER(partner) IN (LOWER(%s), LOWER(%s))
+                    AND created_by_admin = 0
+                    AND uniq_id <> ''
+                    AND created_at >= %s
+                  ORDER BY created_at DESC
+                  LIMIT %d",
+                $table,
+                $slug,
+                $name,
+                $start_sql,
+                $limit
+            ), ARRAY_A);
+            if (is_array($rows)) {
+                foreach ($rows as $r) {
+                    $r['__table'] = $tkey;
+                    $samples[]    = $r;
+                }
+            }
+        }
+
+        if ($samples === array()) {
+            return array(
+                'verdict' => 'inconclusive',
+                'network' => $slug,
+                'checked' => 0,
+                'reason'  => 'no_webhook_sample',
+                'message' => 'Нет свежих транзакций этой сети для проверки. Дождитесь хотя бы одной конверсии и повторите.',
+            );
+        }
+
+        // Примечание о soundness (Codex iter-2 Blocker-1): локальный
+        // scan «один заказ под двумя uniq_id» НЕ применяется — он не
+        // отличим от ЛЕГИТИМНОГО Admitad split-order (один заказ →
+        // несколько действий, у каждого свой uniq_id — это норма). Поэтому
+        // вердикт строится ТОЛЬКО на сравнении «крон-резолвер из API vs
+        // сохранённый uniq_id». Риск ложного MATCH на cron-origin строке
+        // (нет origin-флага в схеме) закрывается ШИРОКОЙ выборкой: webhook
+        // пишется в реалтайме на конверсию (раньше cron-reconciliation),
+        // поэтому среди свежих строк окна webhook-строки присутствуют, а
+        // агрегатор «любой MISMATCH доминирует» ловит баг по ним.
+        // Остаточный edge (всё окно — только cron-дубли) — узкий; покрыт
+        // defense-in-depth: v18 source-drift notice + dedup-config панель.
+
+        // Свежие первыми; webhook-подобные (есть click_id, нет
+        // original_cpa_subid — не перенос из unregistered) в приоритете.
+        usort($samples, static function ( $a, $b ): int {
+            $aw = ( ( (string) ( $a['click_id'] ?? '' ) ) !== '' && ( (string) ( $a['original_cpa_subid'] ?? '' ) ) === '' ) ? 1 : 0;
+            $bw = ( ( (string) ( $b['click_id'] ?? '' ) ) !== '' && ( (string) ( $b['original_cpa_subid'] ?? '' ) ) === '' ) ? 1 : 0;
+            if ($aw !== $bw) {
+                return $bw <=> $aw;
+            }
+            return strcmp((string) ( $b['created_at'] ?? '' ), (string) ( $a['created_at'] ?? '' ));
+        });
+        $samples = array_slice($samples, 0, $limit);
+
+        // Поля API (точно как resolve_action_identity()).
+        $field_map   = is_array($cfg['field_map'] ?? null) ? $cfg['field_map'] : array();
+        $fm_uniq     = $this->api_field_for('uniq_id', $field_map) ?: 'action_id';
+        $fm_order    = $this->api_field_for('order_number', $field_map) ?: 'order_id';
+        $fm_offer    = $this->api_field_for('offer_id', $field_map) ?: 'advcampaign_id';
+        $fm_pay      = $this->api_field_for('comission', $field_map) ?: 'payment';
+        $fm_adate    = $this->api_field_for('action_date', $field_map) ?: 'action_date';
+        $click_field = (string) ( $cfg['api_click_field'] ?? 'subid1' );
+        $user_field  = (string) ( $cfg['api_user_field'] ?? 'subid2' );
+        $di          = $this->dedup_identity_for($cfg);
+
+        $checked        = 0;
+        $match_count    = 0;
+        $reason_tally   = array();
+        $uniq_mismatch  = null;
+        $idem_mismatch  = null;
+
+        // Группируем строки по идентификатору пользователя для API. ОДИН
+        // HTTP-запрос на пользователя (бюджет $max_probes пользователей —
+        // 50 запросов на клик уронили бы CPA rate-limit), но КАЖДАЯ строка
+        // пользователя оценивается против его actions. Это закрывает Codex
+        // iter-2 B-2: webhook-строка и cron-дубль одной конверсии делят
+        // user → обе будут проверены против одного fetch, и «любой
+        // MISMATCH доминирует» поймает рассинхрон, не завися от того,
+        // какую строку «выбрали».
+        $profile_table = $wpdb->prefix . 'cashback_user_profile';
+        $by_user = array();
+        foreach ($samples as $R) {
+            $uid_raw = (string) ( $R['user_id'] ?? '' );
+            $uv = '';
+            if (ctype_digit($uid_raw) && (int) $uid_raw > 0) {
+                // READ-ONLY токен-lookup. НЕ Mariadb_Plugin::get_partner_token()
+                // — та материализует NULL-токен через UPDATE (mariadb.php
+                // ~2233), что нарушило бы zero-write контракт self-test.
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Read-only token lookup for diagnostic.
+                $tok = $wpdb->get_var($wpdb->prepare(
+                    'SELECT partner_token FROM %i WHERE user_id = %d',
+                    $profile_table,
+                    (int) $uid_raw
+                ));
+                $uv  = ( $tok !== null && (string) $tok !== '' ) ? (string) $tok : $uid_raw;
+            } elseif ((string) ( $R['original_cpa_subid'] ?? '' ) !== '') {
+                $uv = (string) $R['original_cpa_subid'];
+            }
+            if ($uv === '') {
+                $reason_tally['no_usable_identifier'] = ( $reason_tally['no_usable_identifier'] ?? 0 ) + 1;
+                continue;
+            }
+            $by_user[ $uv ][] = $R;
+        }
+
+        $max_probes = 8;
+        $probes     = 0;
+
+        foreach ($by_user as $api_user_value => $user_rows) {
+            if ($probes >= $max_probes) {
+                break;
+            }
+            $probes++;
+
+            // Окно покрывает все строки пользователя (min−7д … max+2д).
+            $anchors = array();
+            foreach ($user_rows as $R) {
+                $a = (string) ( $R['action_date'] ?? '' );
+                if ($a === '' || $a === '0000-00-00 00:00:00') {
+                    $a = (string) ( $R['created_at'] ?? '' );
+                }
+                $anchors[] = strtotime($a) ?: time();
+            }
+            $ds = gmdate('d.m.Y', min($anchors) - 7 * DAY_IN_SECONDS);
+            $de = gmdate('d.m.Y', max($anchors) + 2 * DAY_IN_SECONDS);
+
+            $api_params = array(
+                $user_field  => (string) $api_user_value,
+                'date_start' => $ds,
+                'date_end'   => $de,
+            );
+            if (!empty($cfg['api_website_id'])) {
+                $api_params['website'] = $cfg['api_website_id'];
+            }
+
+            $api = $this->fetch_all_actions_for_network($slug, $cfg['credentials'], $api_params, 20, $cfg);
+            if (empty($api['success'])) {
+                $reason_tally['api_unavailable'] = ( $reason_tally['api_unavailable'] ?? 0 ) + count($user_rows);
+                continue;
+            }
+            $actions = $this->filter_actions_by_website(
+                is_array($api['actions'] ?? null) ? $api['actions'] : array(),
+                $cfg,
+                'dedup_selftest'
+            )['actions'];
+
+            foreach ($user_rows as $R) {
+                $anchor = (string) ( $R['action_date'] ?? '' );
+                if ($anchor === '' || $anchor === '0000-00-00 00:00:00') {
+                    $anchor = (string) ( $R['created_at'] ?? '' );
+                }
+                $anchor_ts = strtotime($anchor) ?: time();
+
+                // Грубый фильтр «та же конверсия» БЕЗ uniq_id.
+                $r_order = trim((string) ( $R['order_number'] ?? '' ));
+                $r_offer = (int) ( $R['offer_id'] ?? 0 );
+                $r_atype = strtolower(trim((string) ( $R['action_type'] ?? '' )));
+                $candidates = array();
+                foreach ($actions as $A) {
+                    if (trim((string) ( $A[ $fm_order ] ?? '' )) !== $r_order) {
+                        continue;
+                    }
+                    if ((int) ( $A[ $fm_offer ] ?? 0 ) !== $r_offer) {
+                        continue;
+                    }
+                    if (strtolower(trim((string) ( $A['action_type'] ?? '' ))) !== $r_atype) {
+                        continue;
+                    }
+                    $candidates[] = $A;
+                }
+
+                if ($candidates === array()) {
+                    $reason_tally['api_action_not_found'] = ( $reason_tally['api_action_not_found'] ?? 0 ) + 1;
+                    continue;
+                }
+                if (count($candidates) > 1) {
+                    // Split-order: доуточняем click_id + сумма + дата.
+                    $r_click  = (string) ( $R['click_id'] ?? '' );
+                    $r_amount = round((float) ( $R['comission'] ?? 0 ), 2);
+                    $r_day    = gmdate('Y-m-d', $anchor_ts);
+                    $refined  = array();
+                    foreach ($candidates as $A) {
+                        if ((string) ( $A[ $click_field ] ?? '' ) !== $r_click) {
+                            continue;
+                        }
+                        if (round((float) ( $A[ $fm_pay ] ?? 0 ), 2) !== $r_amount) {
+                            continue;
+                        }
+                        $a_date = self::parse_api_date((string) ( $A[ $fm_adate ] ?? '' ));
+                        if ($a_date === null || substr($a_date, 0, 10) !== $r_day) {
+                            continue;
+                        }
+                        $refined[] = $A;
+                    }
+                    if (count($refined) !== 1) {
+                        // Неоднозначно → честное INCONCLUSIVE, НИКОГДА не MISMATCH.
+                        $reason_tally['ambiguous_match'] = ( $reason_tally['ambiguous_match'] ?? 0 ) + 1;
+                        continue;
+                    }
+                    $candidates = $refined;
+                }
+
+                $A = $candidates[0];
+                $checked++;
+
+                [$computed_uniq] = self::resolve_uniq_id(
+                    $slug,
+                    (string) ( $A[ $fm_uniq ] ?? '' ),
+                    array(
+                        'order_number' => (string) ( $A[ $fm_order ] ?? '' ),
+                        'offer_id'     => (string) ( $A[ $fm_offer ] ?? '' ),
+                        'action_type'  => (string) ( $A['action_type'] ?? '' ),
+                        'click_id'     => (string) ( $A[ $click_field ] ?? '' ),
+                    ),
+                    $di
+                );
+                $stored_uniq   = (string) ( $R['uniq_id'] ?? '' );
+                $computed_idem = hash('sha256', $slug . '|' . $computed_uniq);
+                $stored_idem   = (string) ( $R['idempotency_key'] ?? '' );
+
+                if ($computed_uniq !== '' && $computed_uniq !== $stored_uniq) {
+                    $uniq_mismatch = array(
+                        'sub'                  => 'uniq_mismatch',
+                        'table'                => (string) $R['__table'],
+                        'tx_id'                => (int) ( $R['id'] ?? 0 ),
+                        'stored_uniq'          => $stored_uniq,
+                        'computed_uniq'        => $computed_uniq,
+                        'api_field_cron_reads' => $fm_uniq,
+                        'api_field_value'      => (string) ( $A[ $fm_uniq ] ?? '' ),
+                        'stored_idem'          => $stored_idem,
+                        'computed_idem'        => $computed_idem,
+                    );
+                    break 2; // надёжный MISMATCH — дальше API не дёргаем.
+                }
+                if ($computed_uniq !== '' && $computed_uniq === $stored_uniq) {
+                    if ($stored_idem !== '' && $computed_idem !== $stored_idem && $idem_mismatch === null) {
+                        $idem_mismatch = array(
+                            'sub'           => 'idempotency_formula_mismatch',
+                            'table'         => (string) $R['__table'],
+                            'tx_id'         => (int) ( $R['id'] ?? 0 ),
+                            'stored_uniq'   => $stored_uniq,
+                            'computed_uniq' => $computed_uniq,
+                            'stored_idem'   => $stored_idem,
+                            'computed_idem' => $computed_idem,
+                        );
+                        continue;
+                    }
+                    $match_count++;
+                }
+            }
+        }
+
+        if ($uniq_mismatch !== null) {
+            return array(
+                'verdict' => 'mismatch',
+                'network' => $slug,
+                'checked' => $checked,
+                'detail'  => $uniq_mismatch,
+                'message' => 'РАССИНХРОН: крон-маппинг для uniq_id читает API-поле «'
+                    . $uniq_mismatch['api_field_cron_reads'] . '» (значение «'
+                    . $uniq_mismatch['api_field_value'] . '»), а webhook сохранил uniq_id «'
+                    . $uniq_mismatch['stored_uniq'] . '». Вероятно, в кроне на uniq_id '
+                    . 'повешено не то поле — одна конверсия запишется дважды с разными '
+                    . 'uniq_id (двойное начисление). Проверьте api_field_map этой сети.',
+            );
+        }
+        if ($idem_mismatch !== null) {
+            return array(
+                'verdict' => 'mismatch',
+                'network' => $slug,
+                'checked' => $checked,
+                'detail'  => $idem_mismatch,
+                'message' => 'uniq_id совпадает, но idempotency_key разошёлся: сохранённый «'
+                    . $idem_mismatch['stored_idem'] . '» ≠ ожидаемый sha256(lower(slug)|uniq_id). '
+                    . 'Расхождение формулы ключа между путями записи — риск дубля. '
+                    . 'Сверьте формулу idempotency_key (lower(slug), не имя сети).',
+            );
+        }
+        if ($match_count > 0) {
+            // Codex iter-3 B-2: если групп пользователей больше бюджета
+            // ($max_probes), часть осталась НЕ опрошена — buggy webhook-
+            // строка могла быть там. MATCH в этом случае недостоверен →
+            // INCONCLUSIVE (MISMATCH доминирует выше и валиден всегда).
+            if (count($by_user) > $max_probes) {
+                return array(
+                    'verdict' => 'inconclusive',
+                    'network' => $slug,
+                    'checked' => $checked,
+                    'reason'  => 'probe_budget_exhausted',
+                    'message' => 'Совпало на ' . $checked . ' конверсии(ях), но проверено '
+                        . 'только ' . $max_probes . ' из ' . count($by_user) . ' групп '
+                        . 'пользователей (лимит обращений к API). MATCH недостоверен — '
+                        . 'повторите позже или сузьте окно (это НЕ ошибка маппинга).',
+                );
+            }
+            return array(
+                'verdict' => 'match',
+                'network' => $slug,
+                'checked' => $checked,
+                'message' => 'OK: на ' . $match_count . ' проверенной(ых) конверсии(ях) крон-резолвер '
+                    . 'даёт тот же uniq_id и idempotency_key, что уже сохранён webhook-ом. '
+                    . 'Маппинг webhook и крона согласован.',
+            );
+        }
+
+        arsort($reason_tally);
+        $top_reason = (string) ( array_key_first($reason_tally) ?: 'api_action_not_found' );
+        $reason_text = array(
+            'api_unavailable'      => 'API сети недоступен / лимит запросов — повторите позже (это НЕ ошибка маппинга).',
+            'api_action_not_found' => 'API не вернул проверяемые конверсии в окне дат — повторите позже или на другой сети (это НЕ ошибка).',
+            'ambiguous_match'      => 'Не удалось ОДНОЗНАЧНО сопоставить конверсию с API (split-order) — повторите на другой конверсии (это НЕ ошибка).',
+            'no_usable_identifier' => 'У свежих строк нет идентификатора для запроса API — это НЕ ошибка маппинга.',
+        );
+        return array(
+            'verdict' => 'inconclusive',
+            'network' => $slug,
+            'checked' => $checked,
+            'reason'  => $top_reason,
+            'message' => $reason_text[ $top_reason ] ?? 'Проверка неубедительна — повторите позже (это НЕ ошибка).',
+        );
+    }
+
     // =========================================================================
     // Validation — unregistered transactions
     // =========================================================================
