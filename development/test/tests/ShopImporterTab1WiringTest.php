@@ -170,7 +170,7 @@ final class ShopImporterTab1WiringTest extends TestCase
         $this->call_apply(self::PRODUCT_ID, self::NETWORK_ID, self::OFFER_ID);
 
         $this->assertSame('Условия', get_post_meta(self::PRODUCT_ID, '_woodmart_product_custom_tab_title', true));
-        $this->assertSame('80', get_post_meta(self::PRODUCT_ID, '_woodmart_product_custom_tab_priority', true));
+        $this->assertSame('1', get_post_meta(self::PRODUCT_ID, '_woodmart_product_custom_tab_priority', true));
         $this->assertSame('text', get_post_meta(self::PRODUCT_ID, '_woodmart_product_custom_tab_content_type', true));
     }
 

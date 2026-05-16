@@ -1443,6 +1443,28 @@ class CashbackPlugin {
             }
         }
 
+        // 2026-05-16: разовый backfill приоритета Tab[1] «Условия» 80→1 для
+        // уже импортированных товаров (новый дефолт DEFAULT_TAB1_PRIORITY='1'
+        // покрывает только будущие прогоны). Гейт через опцию — повторно не
+        // выполняется. Guard контекста (как у v14): не запускаем с frontend-
+        // request'а. Без throttle-transient — операция лёгкая (UPDATE postmeta
+        // ~50 строк, не ALTER).
+        if (class_exists('Cashback_Shop_Importer')
+            && get_option('cashback_tab1_priority_backfill_2026_05_16_done', '') !== '1') {
+            $should_run_backfill = wp_doing_cron()
+                || ( is_admin() && current_user_can('manage_options') )
+                || ( defined('WP_CLI') && WP_CLI );
+            if ($should_run_backfill) {
+                try {
+                    Cashback_Shop_Importer::backfill_tab1_priority();
+                    update_option('cashback_tab1_priority_backfill_2026_05_16_done', '1', false);
+                } catch (\Throwable $e) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                    error_log('[Cashback Shop Importer] Tab1 priority backfill 2026-05-16 failed: ' . $e->getMessage());
+                }
+            }
+        }
+
         // Legal template storage (UI-редактирование текстов): создание таблицы
         // wp_cashback_legal_template_versions. Идемпотентно — fast-path через
         // cashback_legal_template_db_version.

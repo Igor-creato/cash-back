@@ -637,7 +637,7 @@ final class ShopImporterStructuralTest extends TestCase
 
         // Tab 1 — Условия (пустой content).
         $this->assertSame('Условия', $bucket['_woodmart_product_custom_tab_title'] ?? null);
-        $this->assertSame('80', $bucket['_woodmart_product_custom_tab_priority'] ?? null);
+        $this->assertSame('1', $bucket['_woodmart_product_custom_tab_priority'] ?? null);
         $this->assertSame('text', $bucket['_woodmart_product_custom_tab_content_type'] ?? null);
         $this->assertSame('', $bucket['_woodmart_product_custom_tab_content'] ?? null);
 

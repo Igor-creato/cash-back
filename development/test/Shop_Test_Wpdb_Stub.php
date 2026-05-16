@@ -44,6 +44,8 @@ class Shop_Test_Wpdb_Stub
 
     public mixed $next_get_var = null;
     /** @var array<int, mixed> */
+    public array $next_get_col = array();
+    /** @var array<int, mixed> */
     public array $next_get_results = array();
     /** @var array<string, mixed>|null */
     public ?array $next_get_row = null;
@@ -151,6 +153,11 @@ class Shop_Test_Wpdb_Stub
             }
         }
         return $this->next_get_var;
+    }
+
+    public function get_col(mixed $sql, mixed $column_offset = 0): mixed
+    {
+        return $this->next_get_col;
     }
 
     public function get_results(mixed $sql, mixed $output = ARRAY_A): mixed

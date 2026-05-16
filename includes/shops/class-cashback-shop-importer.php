@@ -52,7 +52,7 @@ class Cashback_Shop_Importer {
     public const DEFAULT_POPUP_MODE     = 'hide';
     public const DEFAULT_DISPLAY_LABEL  = 'Кэшбэк';
     public const DEFAULT_TAB1_TITLE     = 'Условия';
-    public const DEFAULT_TAB1_PRIORITY  = '80';
+    public const DEFAULT_TAB1_PRIORITY  = '1';
     public const DEFAULT_TAB2_TITLE     = 'Промокоды';
     public const DEFAULT_TAB2_PRIORITY  = '90';
     public const DEFAULT_TAB2_CONTENT   = '[cashback_promocodes]';
@@ -727,6 +727,50 @@ class Cashback_Shop_Importer {
                 update_post_meta($product_id, $meta_key, $default_value);
             }
         }
+    }
+
+    /**
+     * Разовый backfill приоритета Tab[1] «Условия» для уже импортированных
+     * товаров. Маркер авто-импорта — наличие meta `_affiliate_network_id`
+     * (= self::META_NETWORK_ID). Приоритет — это лишь порядок вкладки, не
+     * контент, поэтому перезаписываем у ВСЕХ авто-товаров (включая те, где
+     * админ редактировал контент «Условий»).
+     *
+     * Идемпотентно: update_post_meta идёт только если текущее значение != '1',
+     * повторный вызов вернёт 0. update_post_meta (а не raw SQL) — чтобы
+     * object cache postmeta остался когерентным.
+     *
+     * @return int Количество товаров, у которых приоритет был изменён на '1'.
+     */
+    public static function backfill_tab1_priority(): int {
+        global $wpdb;
+
+        $product_ids = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT DISTINCT post_id FROM {$wpdb->postmeta} WHERE meta_key = %s",
+                self::META_NETWORK_ID
+            )
+        );
+
+        if (! is_array($product_ids) || $product_ids === array()) {
+            return 0;
+        }
+
+        $updated = 0;
+        foreach ($product_ids as $product_id) {
+            $product_id = (int) $product_id;
+            if ($product_id <= 0) {
+                continue;
+            }
+            $current = (string) get_post_meta($product_id, '_woodmart_product_custom_tab_priority', true);
+            if ($current === self::DEFAULT_TAB1_PRIORITY) {
+                continue;
+            }
+            update_post_meta($product_id, '_woodmart_product_custom_tab_priority', self::DEFAULT_TAB1_PRIORITY);
+            ++$updated;
+        }
+
+        return $updated;
     }
 
     /**
