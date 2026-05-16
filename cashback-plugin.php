@@ -956,6 +956,7 @@ class CashbackPlugin {
         $this->require_file('includes/class-cashback-api-cron.php');
         $this->require_file('includes/class-cashback-advcake-partner-status-sync.php');
         $this->require_file('includes/class-cashback-advcake-stuck-monitor.php');
+        $this->require_file('includes/class-cashback-stuck-transactions-monitor.php');
         $this->require_file('includes/class-cashback-webhooks-retention.php');
 
         // Группа 14: ежедневная сверка ledger vs кэш баланса.
@@ -1691,6 +1692,16 @@ class CashbackPlugin {
             Cashback_Advcake_Stuck_Monitor::register();
             if (is_admin() && get_transient(Cashback_Advcake_Stuck_Monitor::NOTICE_KEY)) {
                 add_action('admin_notices', array( 'Cashback_Advcake_Stuck_Monitor', 'notice' ));
+            }
+        }
+
+        // --- Универсальный монитор: транзакции, тихо не доходящие до
+        // зачисления по ЛЮБОЙ сети (обобщение F-1/F-2 + детектор
+        // несматчиваемых uniq_id — класс отказа ef32586). ---
+        if (class_exists('Cashback_Stuck_Transactions_Monitor')) {
+            Cashback_Stuck_Transactions_Monitor::register();
+            if (is_admin() && get_transient(Cashback_Stuck_Transactions_Monitor::NOTICE_KEY)) {
+                add_action('admin_notices', array( 'Cashback_Stuck_Transactions_Monitor', 'notice' ));
             }
         }
 

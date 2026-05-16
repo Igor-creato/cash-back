@@ -904,6 +904,70 @@ XML;
         );
     }
 
+    // ------------------------------------------------------------------
+    // uniq_id-паритет: `id` ← order_id fallback (регресс-замок 8266c33).
+    // Advcake XML НЕ содержит <id>; идентичность = <order_id>. Без
+    // fallback'а normalize_xml_item даёт пустой `id` → resolve_uniq_id()
+    // → no_dedup_inputs → action скипается → cashback не зачисляется.
+    // ef32586 убрал click_id-fallback, поэтому паритет критичен.
+    // ------------------------------------------------------------------
+
+    /**
+     * @dataProvider provide_id_order_id_parity
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('provide_id_order_id_parity')]
+    public function test_uniq_id_parity_id_falls_back_to_order_id(
+        string $id_xml,
+        string $order_id_xml,
+        ?string $expected_id
+    ): void {
+        $xml = '<?xml version="1.0"?><items><item>'
+            . $id_xml . $order_id_xml
+            . '<status>2</status><payment_status>balance</payment_status>'
+            . '<commission>10</commission><price>100</price>'
+            . '</item></items>';
+        $this->queue_responses(array( $this->http_response(200, $xml) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_actions(
+            $this->default_credentials(),
+            array(),
+            $this->default_network_config()
+        );
+
+        $this->assertTrue($result['success']);
+
+        if ($expected_id === null) {
+            // Ни <id>, ни <order_id> — action бесполезен, скипается.
+            $this->assertCount(0, $result['actions']);
+            return;
+        }
+
+        $this->assertCount(1, $result['actions']);
+        $this->assertArrayHasKey(
+            'id',
+            $result['actions'][0],
+            'normalize_xml_item ОБЯЗАН всегда отдавать ключ `id` (контракт api_field_for(uniq_id))'
+        );
+        $this->assertSame(
+            $expected_id,
+            $result['actions'][0]['id'],
+            "id_xml={$id_xml} order_id_xml={$order_id_xml} должен дать id={$expected_id}"
+        );
+    }
+
+    public static function provide_id_order_id_parity(): array
+    {
+        return array(
+            '<id> присутствует — берём id'              => array( '<id>ADV-1</id>', '<order_id>ORD-9</order_id>', 'ADV-1' ),
+            '<id> отсутствует — fallback на order_id'   => array( '', '<order_id>ORD-9</order_id>', 'ORD-9' ),
+            '<id> пустой — fallback на order_id'        => array( '<id></id>', '<order_id>ORD-9</order_id>', 'ORD-9' ),
+            '<id> только пробелы — fallback на order_id' => array( '<id>   </id>', '<order_id>ORD-9</order_id>', 'ORD-9' ),
+            'оба отсутствуют — action скипается'        => array( '', '', null ),
+            'оба пустые — action скипается'             => array( '<id> </id>', '<order_id> </order_id>', null ),
+        );
+    }
+
     public function test_fetch_shop_tariffs_returns_success_stub(): void
     {
         $adapter = new Cashback_Advcake_Adapter();
