@@ -108,6 +108,11 @@ class Mariadb_Plugin {
             $instance->migrate_dedup_identity_v16();
             $instance->migrate_dedup_identity_backfill_v17();
             $instance->migrate_dedup_source_consistency_v18();
+            // v19: alias-tolerant re-assert (slug ИЛИ LOWER(name)) — после
+            // bump до 18 slug-only fast-path v18 заморожен, без v19
+            // деплои с alias-слагом (Admitad='adm') остаются без
+            // receiver_uniq_source.
+            $instance->migrate_dedup_source_alias_v19();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -4938,6 +4943,117 @@ class Mariadb_Plugin {
         }
 
         update_option('cashback_db_version', 18, false);
+    }
+
+    /**
+     * Миграция v19: alias-tolerant re-assert receiver_uniq_source.
+     *
+     * v16 и v18-шаг1 ищут встроенные сети по ЛИТЕРАЛЬНОМУ слагу
+     * (admitad/epn/advcake). На реальных деплоях слаг Admitad — алиас
+     * `adm` (name = "Admitad"): v16 промахнулся, v17 поставил generic
+     * native-дефолт БЕЗ receiver_uniq_source (намеренно — per-deployment
+     * знание оператора), а bump db_version до 18 навсегда заморозил
+     * slug-only fast-path v18 (`>= 18` return) → in-place правка v18 на
+     * такой деплой уже не приедет. v19 переназначает каноничный
+     * receiver_uniq_source встроенным сетям, резолвя их по slug ИЛИ
+     * LOWER(name) — тот же alias-паттерн, что у receiver
+     * transaction_exists_for_action (`LOWER(partner) IN
+     * (LOWER(slug),LOWER(name))`), и в духе правила «не хардкодить
+     * CPA-слаги в миграциях». receiver_uniq_source — аудит-маркер
+     * стороны плагина (резолвер его не потребляет): закрывает P5-варнинг
+     * и обезопасивает детектор source-drift. Значения uniq_id НЕ
+     * трогаются. Канон-значение = ключ канона lower-case, поэтому
+     * name='Admitad' матчится через LOWER(name)='admitad'; для
+     * epn/advcake exact-slug ветка уже покрывает, name-ветка безвредна
+     * (LOWER(NULL) ни с чем не равно).
+     *
+     * Идемпотентность: cashback_db_version >= 19 fast-path; UPDATE только
+     * там, где receiver_uniq_source реально пуст; прочие ключи контракта
+     * сохраняются (merge). B-2: на любой ошибке чтения/записи выходим БЕЗ
+     * bump (db_version<19 → следующий init перезапустит).
+     */
+    public function migrate_dedup_source_alias_v19(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        if ($current_version >= 19) {
+            return;
+        }
+
+        $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
+
+        // wpdb сбрасывает last_error в начале каждого запроса — проверка
+        // СРАЗУ после запроса отражает только его (как в v18).
+        $has_col = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = %s
+                AND COLUMN_NAME  = %s',
+            $networks_table,
+            'dedup_identity'
+        ));
+        // last_error читаем в свежую локалку (PHPStan-narrowing, как в v18).
+        $db_err = (string) $wpdb->last_error;
+        if ($db_err !== '' || $has_col === 0) {
+            // B-2: ошибка/нет колонки — выходим БЕЗ bump (v16 ещё создаст
+            // колонку, db_version<19 → следующий init перезапустит).
+            return;
+        }
+
+        $native_default = array(
+            'has_native_action_id'       => true,
+            'synthetic_fields'           => array( 'order_number', 'offer_id', 'action_type' ),
+            'synthetic_include_click_id' => false,
+        );
+
+        $canonical = array(
+            'admitad' => 'admitad_id',
+            'epn'     => 'transactionId',
+            'advcake' => 'id',
+        );
+        foreach ($canonical as $slug => $src) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot idempotent migration read.
+            $rows = $wpdb->get_results($wpdb->prepare(
+                'SELECT id, dedup_identity FROM %i WHERE slug = %s OR LOWER(name) = %s',
+                $networks_table,
+                $slug,
+                $slug
+            ), ARRAY_A);
+            $db_err = (string) $wpdb->last_error;
+            if ($db_err !== '') {
+                // B-2: read-ошибка — выходим БЕЗ bump. Следующий init
+                // перезапустит миграцию.
+                return;
+            }
+            if (!is_array($rows)) {
+                continue;
+            }
+            foreach ($rows as $row) {
+                $raw     = (string) ( $row['dedup_identity'] ?? '' );
+                $decoded = ( $raw !== '' ) ? json_decode($raw, true) : null;
+                if (!is_array($decoded)) {
+                    $decoded = $native_default;
+                }
+                if ((string) ( $decoded['receiver_uniq_source'] ?? '' ) !== '') {
+                    continue; // уже задан — идемпотентно не трогаем.
+                }
+                $decoded['receiver_uniq_source'] = $src;
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot idempotent migration seed.
+                $wpdb->query($wpdb->prepare(
+                    'UPDATE %i SET dedup_identity = %s WHERE id = %d',
+                    $networks_table,
+                    (string) wp_json_encode($decoded),
+                    (int) $row['id']
+                ));
+                $db_err = (string) $wpdb->last_error;
+                if ($db_err !== '') {
+                    // B-2: UPDATE-ошибка — частичное состояние, НЕ bump'аем.
+                    return;
+                }
+            }
+        }
+
+        update_option('cashback_db_version', 19, false);
     }
 
     /**

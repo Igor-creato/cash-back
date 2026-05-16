@@ -1355,10 +1355,15 @@ class CashbackPlugin {
                     // receiver_uniq_source встроенным сетям + detect silent-drift
                     // у кастомных). Никакой нормализации/backfill uniq_id.
                     Mariadb_Plugin::get_instance()->migrate_dedup_source_consistency_v18();
+                    // v19: alias-tolerant re-assert receiver_uniq_source
+                    // (slug ИЛИ LOWER(name)) — закрывает деплои с alias-слагом
+                    // (Admitad='adm'), которые slug-only v18 пропустил и
+                    // которые fast-path '>= 18' больше не перезапустит.
+                    Mariadb_Plugin::get_instance()->migrate_dedup_source_alias_v19();
                 } catch (\Throwable $e) {
                     set_transient('cashback_migration_v14_throttle', 1, 15 * MINUTE_IN_SECONDS);
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                    error_log('[Cashback] Advcake migration v14/v15/v16/v17/v18 auto-fire failed: ' . $e->getMessage());
+                    error_log('[Cashback] Advcake migration v14/v15/v16/v17/v18/v19 auto-fire failed: ' . $e->getMessage());
                     set_transient('cashback_migration_failure_notice', $e->getMessage(), DAY_IN_SECONDS);
                 }
             }
