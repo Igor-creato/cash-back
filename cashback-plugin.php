@@ -1462,6 +1462,52 @@ class CashbackPlugin {
             }
         }
 
+        // 2026-05-17: подключён счётчик Яндекс.Метрики с Вебвизором. В тексты
+        // pd_policy / cookies_policy / tech_data добавлено описание передачи
+        // обезличенных данных ООО «Яндекс» и маскирования ПДн в записях
+        // Вебвизора. bump major всех трёх документов — для consistent
+        // audit-trail и обновления document_version в шапке. Дополнительно
+        // bump pd_consent: появление нового получателя ПДн (ООО «Яндекс») и
+        // новой операции (запись сессий) — материальное изменение объёма
+        // обработки, требующее свежего согласия по ст. 9 152-ФЗ. pd_consent
+        // входит в обязательные re-consent типы (см.
+        // Cashback_Legal_Consent_Manager::get_pending_reconsent_types) —
+        // needs_reconsent сравнивает granted_version < active_version, поэтому
+        // bump активной версии достаточно: на следующем входе всем ранее
+        // согласовавшим пользователям покажется модал повторного согласия
+        // (тот же механизм, что у глобального bump 2026-05-09). Гейт через
+        // опцию — повторно не выполняется.
+        if (class_exists('Cashback_Legal_Documents')
+            && get_option('cashback_legal_yandex_metrica_2026_05_17_done', '') !== '1') {
+            try {
+                $bumped = array();
+                foreach (array( 'pd_policy', 'cookies_policy', 'tech_data', 'pd_consent' ) as $legal_type) {
+                    $old                   = Cashback_Legal_Documents::get_active_version($legal_type);
+                    $new                   = Cashback_Legal_Documents::bump_major($legal_type);
+                    $bumped[ $legal_type ] = array( 'old' => $old, 'new' => $new );
+                }
+                update_option('cashback_legal_yandex_metrica_2026_05_17_done', '1', false);
+
+                if (class_exists('Cashback_Encryption')
+                    && method_exists('Cashback_Encryption', 'write_audit_log')) {
+                    try {
+                        Cashback_Encryption::write_audit_log(
+                            'legal_yandex_metrica_bump_2026_05_17',
+                            0,
+                            'legal',
+                            0,
+                            array( 'bumped' => $bumped )
+                        );
+                    } catch (\Throwable $audit_error) {
+                        unset($audit_error);
+                    }
+                }
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Legal] bump_major migration 2026-05-17 (yandex metrica) failed: ' . $e->getMessage());
+            }
+        }
+
         // 2026-05-16: разовый backfill приоритета Tab[1] «Условия» 80→1 для
         // уже импортированных товаров (новый дефолт DEFAULT_TAB1_PRIORITY='1'
         // покрывает только будущие прогоны). Гейт через опцию — повторно не

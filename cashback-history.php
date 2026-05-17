@@ -126,7 +126,7 @@ class CashbackHistory {
 
         echo '<div class="clicks-filter-group">';
         echo '<label for="history-search">' . esc_html__('Магазин', 'cashback-plugin') . '</label>';
-        echo '<input type="text" id="history-search" class="clicks-filter-input" placeholder="' . esc_attr__('Поиск по названию...', 'cashback-plugin') . '">';
+        echo '<input type="text" id="history-search" class="clicks-filter-input ym-disable-keys" placeholder="' . esc_attr__('Поиск по названию...', 'cashback-plugin') . '">';
         echo '</div>';
 
         echo '<div class="clicks-filter-group">';
@@ -149,7 +149,7 @@ class CashbackHistory {
         echo '</div>'; // clicks-filters-row
         echo '</div>'; // clicks-filters
 
-        echo '<div id="transactions-table-container">';
+        echo '<div id="transactions-table-container" class="ym-hide-content">';
         if (empty($transactions)) {
             echo '<p>' . esc_html__('У вас нет истории покупок.', 'cashback-plugin') . '</p>';
         } else {

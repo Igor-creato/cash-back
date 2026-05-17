@@ -148,7 +148,7 @@ class Cashback_Shortcodes {
 ?>
         <span class="cashback-balance cashback-balance--<?php echo esc_attr($type); ?>">
             <span class="cashback-balance__label"><?php echo esc_html($label); ?>:</span>
-            <span class="cashback-balance__amount"><?php echo esc_html($this->format_amount($value, $decimals)); ?></span>
+            <span class="cashback-balance__amount ym-hide-content"><?php echo esc_html($this->format_amount($value, $decimals)); ?></span>
         </span>
     <?php
         return (string) ob_get_clean();
@@ -165,15 +165,15 @@ class Cashback_Shortcodes {
         <div class="cashback-balance-widget">
             <div class="cashback-balance-widget__row cashback-balance-widget__row--available">
                 <span class="cashback-balance-widget__label">Доступный баланс</span>
-                <span class="cashback-balance-widget__amount"><?php echo esc_html($this->format_amount($balance['available'], $decimals)); ?></span>
+                <span class="cashback-balance-widget__amount ym-hide-content"><?php echo esc_html($this->format_amount($balance['available'], $decimals)); ?></span>
             </div>
             <div class="cashback-balance-widget__row cashback-balance-widget__row--pending">
                 <span class="cashback-balance-widget__label">В обработке</span>
-                <span class="cashback-balance-widget__amount"><?php echo esc_html($this->format_amount($balance['pending'], $decimals)); ?></span>
+                <span class="cashback-balance-widget__amount ym-hide-content"><?php echo esc_html($this->format_amount($balance['pending'], $decimals)); ?></span>
             </div>
             <div class="cashback-balance-widget__row cashback-balance-widget__row--paid">
                 <span class="cashback-balance-widget__label">Выплачено</span>
-                <span class="cashback-balance-widget__amount"><?php echo esc_html($this->format_amount($balance['paid'], $decimals)); ?></span>
+                <span class="cashback-balance-widget__amount ym-hide-content"><?php echo esc_html($this->format_amount($balance['paid'], $decimals)); ?></span>
             </div>
         </div>
 <?php

@@ -568,7 +568,7 @@ class CashbackWithdrawal {
             echo '<div id="withdrawal-messages"></div>';
             echo '<div id="cashback-content">';
             echo '<div class="balance-display">';
-            echo '<p>' . esc_html__('Доступный баланс:', 'cashback-plugin') . ' <span id="cashback-balance-amount" class="balance-amount">0</span></p>';
+            echo '<p>' . esc_html__('Доступный баланс:', 'cashback-plugin') . ' <span id="cashback-balance-amount" class="balance-amount ym-hide-content">0</span></p>';
             echo '</div>';
             echo '<p>' . esc_html__('Минимальная сумма выплаты:', 'cashback-plugin') . ' <span class="min-payout-amount">0</span></p>';
             echo '<div class="error-message">' . esc_html__('Вы должны быть авторизованы для просмотра этой страницы.', 'cashback-plugin') . '</div>';
@@ -581,7 +581,7 @@ class CashbackWithdrawal {
             echo '<h2 id="withdrawal-form-stub-heading" class="screen-reader-text">' . esc_html__('Форма вывода кэшбэка (требуется авторизация)', 'cashback-plugin') . '</h2>';
             echo '<p class="form-row">';
             echo '<label for="withdrawal-amount">' . esc_html__('Сумма вывода', 'cashback-plugin') . ' <span class="required">*</span></label>';
-            echo '<input type="number" class="input-text" name="withdrawal_amount" id="withdrawal-amount" placeholder="' . esc_attr__('Введите сумму', 'cashback-plugin') . '" value="" min="0" max="0" step="0.01" disabled aria-describedby="withdrawal-min-payout-hint-stub" />';
+            echo '<input type="number" class="input-text ym-disable-keys" name="withdrawal_amount" id="withdrawal-amount" placeholder="' . esc_attr__('Введите сумму', 'cashback-plugin') . '" value="" min="0" max="0" step="0.01" disabled aria-describedby="withdrawal-min-payout-hint-stub" />';
             echo '</p>';
             echo '<p class="form-row">';
             echo '<button type="submit" class="woocommerce-Button button" id="withdrawal-submit" name="withdrawal_submit" value="' . esc_attr__('Вывести', 'cashback-plugin') . '" disabled>' . esc_html__('Вывести', 'cashback-plugin') . '</button>';
@@ -643,17 +643,17 @@ class CashbackWithdrawal {
 
         echo '<div class="balance-info-card">';
         echo '<span class="balance-info-label">' . esc_html__('Доступный баланс', 'cashback-plugin') . '</span>';
-        echo '<span id="cashback-balance-amount" class="balance-info-value ' . esc_attr( $balance > 0 ? 'balance-green' : 'balance-gray' ) . '">' . esc_html( $this->format_price_plain( $balance ) ) . '</span>';
+        echo '<span id="cashback-balance-amount" class="balance-info-value ym-hide-content ' . esc_attr( $balance > 0 ? 'balance-green' : 'balance-gray' ) . '">' . esc_html( $this->format_price_plain( $balance ) ) . '</span>';
         echo '</div>';
 
         echo '<div class="balance-info-card">';
         echo '<span class="balance-info-label">' . esc_html__('В обработке', 'cashback-plugin') . '</span>';
-        echo '<span id="cashback-pending-amount" class="balance-info-value ' . esc_attr( $pending_balance > 0 ? 'balance-pending' : 'balance-gray' ) . '">' . esc_html( $this->format_price_plain( $pending_balance ) ) . '</span>';
+        echo '<span id="cashback-pending-amount" class="balance-info-value ym-hide-content ' . esc_attr( $pending_balance > 0 ? 'balance-pending' : 'balance-gray' ) . '">' . esc_html( $this->format_price_plain( $pending_balance ) ) . '</span>';
         echo '</div>';
 
         echo '<div class="balance-info-card">';
         echo '<span class="balance-info-label">' . esc_html__('Заработано', 'cashback-plugin') . '</span>';
-        echo '<span id="cashback-paid-amount" class="balance-info-value ' . esc_attr( $paid_balance > 0 ? 'balance-paid' : 'balance-gray' ) . '">' . esc_html( $this->format_price_plain( $paid_balance ) ) . '</span>';
+        echo '<span id="cashback-paid-amount" class="balance-info-value ym-hide-content ' . esc_attr( $paid_balance > 0 ? 'balance-paid' : 'balance-gray' ) . '">' . esc_html( $this->format_price_plain( $paid_balance ) ) . '</span>';
         echo '</div>';
 
         echo '</div>'; // .balance-info-grid
@@ -671,7 +671,7 @@ class CashbackWithdrawal {
         echo '<h2 id="withdrawal-form-heading" class="screen-reader-text">' . esc_html__('Форма вывода кэшбэка', 'cashback-plugin') . '</h2>';
         echo '<p class="form-row">';
         echo '<label for="withdrawal-amount">' . esc_html__('Сумма вывода', 'cashback-plugin') . ' <span class="required">*</span></label>';
-        echo '<input type="number" class="input-text" name="withdrawal_amount" id="withdrawal-amount" placeholder="' . esc_attr__('Введите сумму', 'cashback-plugin') . '" value="" step="0.01" min="' . esc_attr((string) $min_payout_amount) . '" required aria-describedby="withdrawal-min-payout-hint" />';
+        echo '<input type="number" class="input-text ym-disable-keys" name="withdrawal_amount" id="withdrawal-amount" placeholder="' . esc_attr__('Введите сумму', 'cashback-plugin') . '" value="" step="0.01" min="' . esc_attr((string) $min_payout_amount) . '" required aria-describedby="withdrawal-min-payout-hint" />';
         echo '</p>';
         // CAPTCHA контейнер для серых IP
         if (class_exists('Cashback_Captcha')) {
@@ -711,7 +711,7 @@ class CashbackWithdrawal {
             $method_name               = $this->get_payout_method_name($payout_method_id);
             $bank_required_for_display = $this->is_bank_required_for_method($payout_method_id);
 
-            echo '<div id="payout_settings_display" class="payout-settings-display">';
+            echo '<div id="payout_settings_display" class="payout-settings-display ym-hide-content">';
             echo '<p class="woocommerce-form-row">';
             echo '<strong>' . esc_html__('Способ вывода:', 'cashback-plugin') . '</strong> ';
             echo esc_html($method_name);
@@ -757,7 +757,7 @@ class CashbackWithdrawal {
         // всегда стартует пустым; JS на «Изменить данные» уже очищает его (см.
         // assets/js/cashback-withdrawal.js — обработчик #edit_payout_settings_btn),
         // так что UX не меняется. Маскированное отображение есть в #payout_settings_display.
-        echo '<input type="text" class="woocommerce-Input woocommerce-Input--text input-text" name="payout_account" id="payout_account" value="" placeholder="' . esc_attr__('Введите номер счета или телефона', 'cashback-plugin') . '" autocomplete="off" />';
+        echo '<input type="text" class="woocommerce-Input woocommerce-Input--text input-text ym-disable-keys" name="payout_account" id="payout_account" value="" placeholder="' . esc_attr__('Введите номер счета или телефона', 'cashback-plugin') . '" autocomplete="off" />';
         echo '</p>';
 
         // Кастомный компонент поиска банков с autocomplete
@@ -770,7 +770,7 @@ class CashbackWithdrawal {
         echo '<div class="bank-search-wrapper" role="combobox" aria-expanded="false" aria-owns="bank_search_results" aria-haspopup="listbox">';
         // Используем ранее полученное название банка
         $current_bank_name = $bank_name;
-        echo '<input type="text" class="woocommerce-Input woocommerce-Input--text input-text" id="bank_search_input" autocomplete="off" placeholder="' . esc_attr__('Начните вводить название банка...', 'cashback-plugin') . '" value="' . esc_attr($current_bank_name) . '" role="searchbox" aria-autocomplete="list" aria-controls="bank_search_results" aria-labelledby="bank_search_label" />';
+        echo '<input type="text" class="woocommerce-Input woocommerce-Input--text input-text ym-disable-keys" id="bank_search_input" autocomplete="off" placeholder="' . esc_attr__('Начните вводить название банка...', 'cashback-plugin') . '" value="' . esc_attr($current_bank_name) . '" role="searchbox" aria-autocomplete="list" aria-controls="bank_search_results" aria-labelledby="bank_search_label" />';
         echo '<ul id="bank_search_results" class="bank-search-results" role="listbox" aria-label="' . esc_attr__('Список банков', 'cashback-plugin') . '">';
         // Первый элемент — показ начальных 10 банков при фокусе
         foreach ($banks as $idx => $bank) {

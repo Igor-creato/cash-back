@@ -98,7 +98,7 @@ class HistoryPayout {
 
         echo '<div class="clicks-filter-group">';
         echo '<label for="payout-search">' . esc_html__('Номер заявки', 'cashback-plugin') . '</label>';
-        echo '<input type="text" id="payout-search" class="clicks-filter-input" placeholder="' . esc_attr__('WD-XXXXXXXX', 'cashback-plugin') . '">';
+        echo '<input type="text" id="payout-search" class="clicks-filter-input ym-disable-keys" placeholder="' . esc_attr__('WD-XXXXXXXX', 'cashback-plugin') . '">';
         echo '</div>';
 
         echo '<div class="clicks-filter-group">';
@@ -122,7 +122,7 @@ class HistoryPayout {
         echo '</div>'; // clicks-filters-row
         echo '</div>'; // clicks-filters
 
-        echo '<div id="payouts-table-container">';
+        echo '<div id="payouts-table-container" class="ym-hide-content">';
         if (empty($payouts)) {
             echo '<p>' . esc_html__('У вас нет истории выплат.', 'cashback-plugin') . '</p>';
         } else {

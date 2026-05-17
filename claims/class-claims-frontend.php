@@ -128,7 +128,7 @@ class Cashback_Claims_Frontend {
         </div>
 
         <!-- Модалка создания заявки -->
-        <div id="claim-modal" class="claim-modal" style="display:none;">
+        <div id="claim-modal" class="claim-modal ym-hide-content" style="display:none;">
             <div class="claim-modal-content">
                 <span class="claim-modal-close">&times;</span>
                 <h3><?php esc_html_e('Заявка на неначисленный кэшбэк', 'cashback-plugin'); ?></h3>
@@ -145,22 +145,22 @@ class Cashback_Claims_Frontend {
 
                     <p class="form-row form-row-wide">
                         <label for="claim-order-id"><?php esc_html_e('Номер заказа', 'cashback-plugin'); ?> <span class="required">*</span></label>
-                        <input type="text" id="claim-order-id" name="order_id" required>
+                        <input type="text" id="claim-order-id" name="order_id" required class="ym-disable-keys">
                     </p>
 
                     <p class="form-row form-row-wide">
                         <label for="claim-order-value"><?php esc_html_e('Сумма заказа', 'cashback-plugin'); ?> <span class="required">*</span></label>
-                        <input type="number" id="claim-order-value" name="order_value" step="0.01" min="0.01" required>
+                        <input type="number" id="claim-order-value" name="order_value" step="0.01" min="0.01" required class="ym-disable-keys">
                     </p>
 
                     <p class="form-row form-row-wide">
                         <label for="claim-order-date"><?php esc_html_e('Дата заказа', 'cashback-plugin'); ?> <span class="required">*</span></label>
-                        <input type="date" id="claim-order-date" name="order_date" required>
+                        <input type="date" id="claim-order-date" name="order_date" required class="ym-disable-keys">
                     </p>
 
                     <p class="form-row form-row-wide">
                         <label for="claim-comment"><?php esc_html_e('Комментарий', 'cashback-plugin'); ?></label>
-                        <textarea id="claim-comment" name="comment" rows="3"></textarea>
+                        <textarea id="claim-comment" name="comment" rows="3" class="ym-disable-keys"></textarea>
                     </p>
 
                     <div id="claim-score-display" class="claim-score" style="display:none;">
@@ -227,7 +227,7 @@ class Cashback_Claims_Frontend {
                 </div>
             </div>
         </div>
-        <div id="clicks-table-container">
+        <div id="clicks-table-container" class="ym-hide-content">
             <?php if (empty($result['clicks'])) : ?>
                 <p><?php esc_html_e('У вас пока нет переходов по партнёрским ссылкам.', 'cashback-plugin'); ?></p>
             <?php else : ?>
@@ -292,7 +292,7 @@ class Cashback_Claims_Frontend {
             </div>
         </div>
 
-        <div id="claims-table-container">
+        <div id="claims-table-container" class="ym-hide-content">
             <?php if (empty($result['claims'])) : ?>
                 <p><?php esc_html_e('У вас пока нет заявок.', 'cashback-plugin'); ?></p>
             <?php else : ?>

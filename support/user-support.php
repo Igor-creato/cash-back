@@ -233,7 +233,7 @@ class Cashback_User_Support {
         </div>
 
         <!-- Область просмотра тикета -->
-        <div id="support-ticket-detail" style="display: none;">
+        <div id="support-ticket-detail" class="ym-hide-content" style="display: none;">
             <p><a href="#" id="support-back-to-list">&larr; Назад к списку</a></p>
             <div id="support-ticket-detail-content"></div>
         </div>
@@ -255,7 +255,7 @@ class Cashback_User_Support {
 
         echo '<p style="color: #666; font-size: 0.9em; margin-bottom: 15px;">Все закрытые тикеты автоматически удаляются через месяц!</p>';
 
-        echo '<div id="support-tickets-container">';
+        echo '<div id="support-tickets-container" class="ym-hide-content">';
         if (empty($tickets)) {
             echo '<p>У вас пока нет тикетов. Создайте новый тикет, чтобы связаться с поддержкой.</p>';
         } else {
@@ -368,7 +368,7 @@ class Cashback_User_Support {
             <?php endif; ?>
             <div class="support-form-group">
                 <label for="support-subject">Тема</label>
-                <input type="text" id="support-subject" name="subject" maxlength="255" placeholder="Опишите тему обращения">
+                <input type="text" id="support-subject" name="subject" maxlength="255" class="ym-disable-keys" placeholder="Опишите тему обращения">
             </div>
             <div class="support-form-group">
                 <label for="support-priority">Срочность</label>
@@ -381,10 +381,10 @@ class Cashback_User_Support {
             </div>
             <div class="support-form-group">
                 <label for="support-message">Сообщение</label>
-                <textarea id="support-message" name="message" maxlength="5000" placeholder="Опишите вашу проблему или вопрос подробно..."></textarea>
+                <textarea id="support-message" name="message" maxlength="5000" class="ym-disable-keys" placeholder="Опишите вашу проблему или вопрос подробно..."></textarea>
             </div>
             <?php if (Cashback_Support_DB::is_attachments_enabled()) : ?>
-            <div class="support-form-group">
+            <div class="support-form-group ym-hide-content">
                 <label for="support-files">Прикрепить файлы</label>
                 <input type="file" id="support-files" name="support_files[]" multiple
                         accept="<?php echo esc_attr('.' . implode(',.', Cashback_Support_DB::get_allowed_extensions())); ?>">

@@ -175,7 +175,7 @@ class Cashback_Affiliate_Frontend {
         echo '<div class="cashback-affiliate-section">';
         echo '<h3>' . esc_html__('Ваша реферальная ссылка', 'cashback-plugin') . '</h3>';
         echo '<div class="cashback-affiliate-link-box">';
-        echo '<input type="text" readonly value="' . esc_attr($referral_link) . '" class="cashback-affiliate-link-input" id="affiliate-link-input">';
+        echo '<input type="text" readonly value="' . esc_attr($referral_link) . '" class="cashback-affiliate-link-input ym-disable-keys" id="affiliate-link-input">';
         echo '<button type="button" class="button cashback-affiliate-copy-btn" data-target="affiliate-link-input">'
             . esc_html__('Копировать', 'cashback-plugin') . '</button>';
         echo '</div>';
@@ -187,7 +187,7 @@ class Cashback_Affiliate_Frontend {
         echo '</div>';
 
         // Статистика
-        echo '<div class="cashback-affiliate-section cashback-affiliate-stats">';
+        echo '<div class="cashback-affiliate-section cashback-affiliate-stats ym-hide-content">';
         echo '<h3>' . esc_html__('Статистика', 'cashback-plugin') . '</h3>';
         echo '<div class="cashback-affiliate-stats-grid">';
 
@@ -235,7 +235,7 @@ class Cashback_Affiliate_Frontend {
 
         // Вкладка: История начислений
         echo '<div class="cashback-tab-content active" id="affiliate-tab-accruals">';
-        echo '<div id="affiliate-accruals-container">';
+        echo '<div id="affiliate-accruals-container" class="ym-hide-content">';
         $accruals_meta = $this->render_accruals_table($user_id, 1);
         echo '</div>';
         echo '<div id="affiliate-accruals-pagination">';
@@ -251,7 +251,7 @@ class Cashback_Affiliate_Frontend {
 
         // Вкладка: Список приглашённых
         echo '<div class="cashback-tab-content" id="affiliate-tab-referrals">';
-        echo '<div id="affiliate-referrals-container">';
+        echo '<div id="affiliate-referrals-container" class="ym-hide-content">';
         $referrals_meta = $this->render_referrals_table($user_id, 1);
         echo '</div>';
         echo '<div id="affiliate-referrals-pagination">';
