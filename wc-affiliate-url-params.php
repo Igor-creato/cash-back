@@ -452,6 +452,8 @@ class WC_Affiliate_URL_Params {
             'label'       => __('Заблокировать ставку (manual override)', 'wc-affiliate-url-params'),
             'description' => __('При sync импортёр НЕ перезаписывает товар; рендер использует Manual override выше.', 'wc-affiliate-url-params'),
             'desc_tip'    => true,
+            'value'       => get_post_meta($post->ID, '_rate_locked', true),
+            'cbvalue'     => '1',
         ));
 
         // Read-only превью текущего динамического расчёта (если есть тарифы).
