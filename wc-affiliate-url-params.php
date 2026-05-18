@@ -62,6 +62,10 @@ class WC_Affiliate_URL_Params {
         // Админ-уведомления (ошибки валидации при сохранении)
         add_action('admin_notices', array( $this, 'show_admin_notices' ));
 
+        // Уведомление о дубле магазина — в самом верху страницы товара
+        // (над заголовком), чтобы админ его не пропускал (Этап 3a).
+        add_action('edit_form_top', array( $this, 'render_dup_group_notice_top' ));
+
         // Хуки для модификации URL на фронтенде
         add_filter('woocommerce_product_add_to_cart_url', array( $this, 'modify_external_url' ), 10, 2);
 
@@ -430,9 +434,6 @@ class WC_Affiliate_URL_Params {
             echo '</div>';
         }
 
-        // Уведомление о дубле магазина с более выгодной ставкой (Этап 3a).
-        $this->render_dup_group_notice((int) $post->ID);
-
         // Контейнер для параметров сети
         echo '<div id="affiliate-network-params-container">';
         if (!empty($network_params)) {
@@ -594,6 +595,19 @@ class WC_Affiliate_URL_Params {
      * Показывается только если товар в группе из >1 member и НЕ является
      * effective preferred (данные из Cashback_Shop_Dup_Status_Sync::notice_context).
      */
+    /**
+     * Callback для edit_form_top: показывает уведомление о дубле магазина
+     * в самом верху страницы редактирования товара (над заголовком).
+     *
+     * @param WP_Post $post Текущая запись.
+     */
+    public function render_dup_group_notice_top( $post ): void {
+        if (! $post instanceof WP_Post || $post->post_type !== 'product') {
+            return;
+        }
+        $this->render_dup_group_notice((int) $post->ID);
+    }
+
     private function render_dup_group_notice( int $product_id ): void {
         if (! class_exists('Cashback_Shop_Dup_Status_Sync')) {
             return;
@@ -624,7 +638,7 @@ class WC_Affiliate_URL_Params {
             ? (string) get_edit_post_link($winner_id)
             : '';
 
-        echo '<div class="affiliate-network-warning" style="padding: 8px 12px; margin: 5px 12px; background: #fff3cd; border-left: 4px solid #d63638; color: #856404;">';
+        echo '<div class="affiliate-network-warning" style="padding: 8px 12px; margin: 12px 0; background: #fff3cd; border-left: 4px solid #d63638; color: #856404;">';
         echo '<strong>' . esc_html__('Дубликат магазина — у другой сети ставка выгоднее', 'wc-affiliate-url-params') . '</strong><br>';
         echo esc_html(sprintf(
             /* translators: 1: store domain, 2: winning CPA network label. */

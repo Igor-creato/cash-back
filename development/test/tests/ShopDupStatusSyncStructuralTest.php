@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Group;
  * Структурные тесты на draft-модель дедупа (Этап 2-3 + wiring):
  *   - Cashback_Shop_Dup_Status_Sync: константы, register-хуки, reentrancy
  *     guard, demote/promote-инварианты, only-demote backfill;
- *   - метабокс wc-affiliate-url-params.php: вызов render_dup_group_notice;
+ *   - wc-affiliate-url-params.php: вызов render_dup_group_notice через edit_form_top;
  *   - Cashback_Shop_Dup_Admin_Notice: admin_notices + dismiss nonce;
  *   - cashback-plugin.php: require + register + ensure_backfilled.
  *
@@ -170,6 +170,8 @@ final class ShopDupStatusSyncStructuralTest extends TestCase
 
     public function test_metabox_invokes_dup_notice_renderer(): void
     {
+        $this->assertStringContainsString("add_action('edit_form_top', array( \$this, 'render_dup_group_notice_top' ))", self::$metabox_php);
+        $this->assertStringContainsString('public function render_dup_group_notice_top( $post ): void', self::$metabox_php);
         $this->assertStringContainsString('$this->render_dup_group_notice((int) $post->ID);', self::$metabox_php);
         $this->assertStringContainsString('private function render_dup_group_notice( int $product_id ): void', self::$metabox_php);
         $this->assertStringContainsString('Cashback_Shop_Dup_Status_Sync::notice_context($product_id)', self::$metabox_php);
