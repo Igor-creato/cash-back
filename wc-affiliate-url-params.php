@@ -204,6 +204,7 @@ class WC_Affiliate_URL_Params {
     public function render_network_filter_dropdown(): void {
         global $typenow, $wpdb;
 
+        // phpcs:ignore WordPress.WP.Capabilities.Unknown -- WooCommerce-provided capability 'edit_products'.
         if ('product' !== $typenow || !current_user_can('edit_products')) {
             return;
         }
@@ -259,6 +260,7 @@ class WC_Affiliate_URL_Params {
             return;
         }
 
+        // phpcs:ignore WordPress.WP.Capabilities.Unknown -- WooCommerce-provided capability 'edit_products'.
         if ('product' !== $query->get('post_type') || !current_user_can('edit_products')) {
             return;
         }
