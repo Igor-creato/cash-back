@@ -48,6 +48,12 @@ class WC_Affiliate_URL_Params {
         add_action('woocommerce_product_options_general_product_data', array( $this, 'add_custom_fields' ));
         add_action('woocommerce_process_product_meta', array( $this, 'save_custom_fields' ));
 
+        // Фильтр списка товаров по CPA-сети (Товары → список).
+        // restrict_manage_posts/parse_query — стандартные WP-хуки, не зависят
+        // от файлов ядра WooCommerce, поэтому обновление WC фильтр не ломает.
+        add_action('restrict_manage_posts', array( $this, 'render_network_filter_dropdown' ));
+        add_action('parse_query', array( $this, 'filter_products_by_network' ));
+
         // 12h-2 ADR (F-2-001): админ-валидация scheme в external product URL.
         // WooCommerce вызывает этот хук до persist'а товара, поэтому set_props()
         // с пустым product_url фактически отменяет запись unsafe-URL в БД.
@@ -180,6 +186,102 @@ class WC_Affiliate_URL_Params {
     public static function reset_suppress_state(): void {
         self::$suppress_filter_for_product = array();
         self::$layout_has_shortcode_cache  = array();
+    }
+
+    /**
+     * Выпадающий список «CPA-сеть» в строке фильтров списка товаров.
+     *
+     * Хук restrict_manage_posts вызывается для всех типов постов, поэтому
+     * фильтр рисуем только на экране списка товаров ($typenow === 'product').
+     * Список сетей берём из той же таблицы, что и метабокс товара, без
+     * фильтра по is_active — товар может быть привязан к временно отключённой
+     * сети, и его тоже нужно уметь найти.
+     *
+     * @since 4.4.18
+     *
+     * @return void
+     */
+    public function render_network_filter_dropdown(): void {
+        global $typenow, $wpdb;
+
+        if ('product' !== $typenow || !current_user_can('edit_products')) {
+            return;
+        }
+
+        $networks_table = $wpdb->prefix . 'cashback_affiliate_networks';
+
+        $networks = $wpdb->get_results(
+            $wpdb->prepare(
+                'SELECT id, name FROM %i ORDER BY sort_order ASC, name ASC',
+                $networks_table
+            ),
+            ARRAY_A
+        );
+
+        if (empty($networks)) {
+            return;
+        }
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only фильтр списка, значение приводится absint().
+        $selected = isset($_GET['_cashback_network_filter']) ? absint(wp_unslash($_GET['_cashback_network_filter'])) : 0;
+
+        echo '<select name="_cashback_network_filter" id="cashback_network_filter">';
+        echo '<option value="">' . esc_html__('Все CPA-сети', 'wc-affiliate-url-params') . '</option>';
+
+        foreach ($networks as $network) {
+            printf(
+                '<option value="%d"%s>%s</option>',
+                (int) $network['id'],
+                selected($selected, (int) $network['id'], false), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- selected() возвращает безопасный HTML-атрибут.
+                esc_html($network['name'])
+            );
+        }
+
+        echo '</select>';
+    }
+
+    /**
+     * Применяет фильтр по выбранной CPA-сети к запросу списка товаров.
+     *
+     * Дописывает условие в существующий meta_query, не затирая фильтры
+     * WooCommerce (категория/статус/тип товара).
+     *
+     * @since 4.4.18
+     *
+     * @param WP_Query $query Основной запрос экрана списка товаров.
+     *
+     * @return void
+     */
+    public function filter_products_by_network( $query ): void {
+        global $pagenow;
+
+        if (!is_admin() || 'edit.php' !== $pagenow || !$query->is_main_query()) {
+            return;
+        }
+
+        if ('product' !== $query->get('post_type') || !current_user_can('edit_products')) {
+            return;
+        }
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only фильтр списка, значение приводится absint().
+        $network_id = isset($_GET['_cashback_network_filter']) ? absint(wp_unslash($_GET['_cashback_network_filter'])) : 0;
+
+        if ($network_id <= 0) {
+            return;
+        }
+
+        $meta_query = $query->get('meta_query');
+        if (!is_array($meta_query)) {
+            $meta_query = array();
+        }
+
+        $meta_query[] = array(
+            'key'     => '_affiliate_network_id',
+            'value'   => $network_id,
+            'compare' => '=',
+        );
+
+        $query->set('meta_query', $meta_query);
     }
 
     /**
