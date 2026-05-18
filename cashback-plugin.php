@@ -6,7 +6,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Cashback Plugin
  * Description: Объединенный плагин для системы кэшбэка и аффилиат-партнерства
- * Version: 4.4.20
+ * Version: 4.4.21
  * Author: Cashback
  * Author URI: https://example.com
  * Text Domain: cashback-plugin
