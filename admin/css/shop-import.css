@@ -1,0 +1,23 @@
+/* Кэшбэк → Импорт магазинов: статусы строк лога (real-time). v1.0.0 */
+
+.cashback-import-status--pending {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    background: #fff3cd;
+    color: #8a6d3b;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.cashback-import-error {
+    color: #b32d2e;
+}
+
+.cashback-import-optimistic {
+    background: #f6f7f7;
+}
+
+#cashback-shop-import-rows tr[data-run] {
+    transition: background-color 0.4s ease;
+}
