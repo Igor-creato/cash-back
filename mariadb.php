@@ -2218,6 +2218,16 @@ class Mariadb_Plugin {
             return $token;
         }
 
+        $profile_status = $wpdb->get_var($wpdb->prepare(
+            'SELECT status FROM %i WHERE user_id = %d',
+            $table,
+            $user_id
+        ));
+
+        if (is_string($profile_status) && in_array($profile_status, array( 'banned', 'deleted' ), true)) {
+            return null;
+        }
+
         // Проверяем, существует ли профиль вообще
         $profile_exists = $wpdb->get_var($wpdb->prepare(
             'SELECT COUNT(*) FROM %i WHERE user_id = %d',
@@ -2226,7 +2236,56 @@ class Mariadb_Plugin {
         ));
 
         if (!$profile_exists) {
-            return null;
+            // Recover-on-heal (финтех-инвариант): partner_token — vault-идентификатор,
+            // уже отправленный в CPA в составе subid2. Если строка профиля пропала
+            // (ручная чистка БД, гонка, сбой user_register/wp_login), НЕ генерируем
+            // новый токен — это порвало бы постбэки/сверки/транзакции. Сначала
+            // восстанавливаем прежний токен из durable-ссылки; свежий — ТОЛЬКО когда
+            // в CPA ничего не ссылается на старый токен (сверка не может сломаться).
+            // @see plans/functional-petting-jellyfish.md Часть B
+
+            // Гость / невалидный id / несуществующий WP-юзер — прежнее поведение.
+            $wp_user_exists = $wpdb->get_var($wpdb->prepare(
+                'SELECT ID FROM %i WHERE ID = %d',
+                $wpdb->users,
+                $user_id
+            ));
+            if (!$wp_user_exists) {
+                return null;
+            }
+
+            $recovered = self::recover_partner_token_from_references($user_id);
+
+            if ($recovered !== null) {
+                // Идемпотентно воссоздаём строку профиля с ВОССТАНОВЛЕННЫМ токеном.
+                $wpdb->query($wpdb->prepare(
+                    "INSERT IGNORE INTO %i (user_id, partner_token, status, created_at) VALUES (%d, %s, 'active', UTC_TIMESTAMP())",
+                    $table,
+                    $user_id,
+                    $recovered
+                ));
+                // Баланс/прочие строки — идемпотентно (профиль уже есть → только баланс).
+                self::get_instance()->add_user_to_cashback_tables($user_id);
+
+                $restored = $wpdb->get_var($wpdb->prepare(
+                    'SELECT partner_token FROM %i WHERE user_id = %d',
+                    $table,
+                    $user_id
+                ));
+
+                return ( is_string($restored) && $restored !== '' ) ? $restored : $recovered;
+            }
+
+            // Durable-ссылок нет нигде → свежий токен безопасен (ничего не осиротеет).
+            self::get_instance()->add_user_to_cashback_tables($user_id);
+
+            $fresh = $wpdb->get_var($wpdb->prepare(
+                'SELECT partner_token FROM %i WHERE user_id = %d',
+                $table,
+                $user_id
+            ));
+
+            return ( is_string($fresh) && $fresh !== '' ) ? $fresh : null;
         }
 
         // Генерируем новый токен с защитой от коллизий (UNIQUE KEY)
@@ -2261,6 +2320,108 @@ class Mariadb_Plugin {
 
         // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
         error_log('[Cashback] Failed to generate unique partner_token for user #' . $user_id . ' after ' . $max_retries . ' attempts');
+        return null;
+    }
+
+    /**
+     * Восстановление прежнего partner_token из durable-ссылок.
+     *
+     * partner_token уходит в CPA в составе subid2 и сохраняется в
+     * cashback_click_log.affiliate_url. Это байт-точный довайповый
+     * идентификатор: при пропавшей строке профиля его восстанавливаем,
+     * а не генерируем новый (иначе постбэки/сверки не совпадут).
+     *
+     * @param int $user_id ID пользователя WordPress.
+     *
+     * @return string|null 32-hex токен из ссылки или null, если ссылок нет
+     *                      (или кандидат принадлежит другому юзеру).
+     */
+    private static function recover_partner_token_from_references( int $user_id ): ?string {
+        global $wpdb;
+
+        $click_log = $wpdb->prefix . 'cashback_click_log';
+
+        $limit  = 200;
+        $offset = 0;
+
+        do {
+            // Сканируем батчами newest → oldest, пока не найдём валидный токен.
+            $urls = $wpdb->get_col($wpdb->prepare(
+                'SELECT affiliate_url FROM %i WHERE user_id = %d ORDER BY id DESC LIMIT %d OFFSET %d',
+                $click_log,
+                $user_id,
+                $limit,
+                $offset
+            ));
+
+            $batch_size = is_array($urls) ? count($urls) : 0;
+
+            if ($batch_size === 0) {
+                return null;
+            }
+
+            foreach ($urls as $url) {
+                $candidate = self::extract_partner_token_from_affiliate_url((string) $url);
+                if ($candidate === null) {
+                    continue;
+                }
+
+                // Коллизия: токен уже принадлежит другому юзеру — НЕ воруем.
+                $owner = self::resolve_partner_token($candidate);
+                if ($owner !== null && $owner !== $user_id) {
+                    // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                    error_log('[Cashback] recover_partner_token: candidate for user #' . $user_id . ' owned by #' . $owner . ' — skipping (no theft)');
+                    continue;
+                }
+
+                return $candidate;
+            }
+
+            $offset += $batch_size;
+        } while ($batch_size === $limit);
+
+        return null;
+    }
+
+    /**
+     * Извлекает partner_token (subid2) из affiliate URL.
+     *
+     * Поддерживает:
+     * - обычный query-string;
+     * - дубли subid2 (берём последний, т.к. build path appends params);
+     * - регистр SUBID2/subId2;
+     * - legacy percent-encoded delimiters в сырой строке.
+     *
+     * @param string $url Полный affiliate URL.
+     *
+     * @return string|null Валидный 32-hex токен или null.
+     */
+    private static function extract_partner_token_from_affiliate_url( string $url ): ?string {
+        $query = wp_parse_url($url, PHP_URL_QUERY);
+        if (is_string($query) && $query !== '') {
+            $params = array();
+            parse_str($query, $params);
+
+            $candidate = null;
+            foreach ($params as $key => $value) {
+                if (!is_string($key) || strcasecmp($key, 'subid2') !== 0 || !is_string($value)) {
+                    continue;
+                }
+                if (preg_match('/^[0-9a-fA-F]{32}$/', $value) === 1) {
+                    $candidate = strtolower($value);
+                }
+            }
+
+            if ($candidate !== null) {
+                return $candidate;
+            }
+        }
+
+        if (preg_match_all('/(?:[?&]|%3[fF]|%26)subid2(?:=|%3[dD])([0-9a-fA-F]{32})(?:(?:&|$|#)|(?:%26|%23|$))/i', $url, $matches) > 0) {
+            $last = end($matches[1]);
+            return is_string($last) ? strtolower($last) : null;
+        }
+
         return null;
     }
 
