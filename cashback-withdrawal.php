@@ -341,7 +341,15 @@ class CashbackWithdrawal {
             $user_id
         ));
 
-        return (float) ( $min_payout_amount ?: 100.00 ); // Default to 100.00 if not set
+        // Fallback на глобальный дефолт (Cashback_User_Defaults), если у пользователя
+        // нет записи в profile (race condition при первом логине / удалённая запись).
+        if ( $min_payout_amount ) {
+return (float) $min_payout_amount;
+}
+        $fallback = class_exists('Cashback_User_Defaults')
+            ? Cashback_User_Defaults::get_default_min_payout_atomically()
+            : '100.00';
+return (float) $fallback;
     }
 
     /**

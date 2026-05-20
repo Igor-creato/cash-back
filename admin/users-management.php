@@ -42,6 +42,10 @@ class Cashback_Users_Management_Admin {
         add_action('wp_ajax_bulk_update_cashback_rate', array( $this, 'handle_bulk_update_cashback_rate' ));
         add_action('wp_ajax_bulk_update_min_payout', array( $this, 'handle_bulk_update_min_payout' ));
 
+        // Глобальные дефолты для НОВЫХ пользователей (Cashback_User_Defaults).
+        add_action('wp_ajax_cashback_update_default_rate', array( $this, 'handle_update_default_rate' ));
+        add_action('wp_ajax_cashback_update_default_min_payout', array( $this, 'handle_update_default_min_payout' ));
+
         // Группа 15, S2: ручная корректировка баланса через ledger (type=adjustment).
         add_action('wp_ajax_cashback_adjust_balance', array( $this, 'handle_adjust_balance' ));
 
@@ -80,18 +84,20 @@ class Cashback_Users_Management_Admin {
             'cashback-admin-users',
             plugins_url('../assets/js/admin-users-management.js', __FILE__),
             array( 'jquery' ),
-            '1.1.0',
+            '1.2.0',
             true
         );
 
         wp_localize_script('cashback-admin-users', 'cashbackUsersData', array(
-            'updateNonce'        => wp_create_nonce('update_user_profile_nonce'),
-            'getNonce'           => wp_create_nonce('get_user_profile_nonce'),
-            'bulkRateNonce'      => wp_create_nonce('bulk_update_cashback_rate_nonce'),
-            'bulkMinPayoutNonce' => wp_create_nonce('bulk_update_min_payout_nonce'),
-            'anonymizeNonce'     => wp_create_nonce('cashback_anonymize_user_nonce'),
-            'ajaxUrl'            => admin_url('admin-ajax.php'),
-            'i18nAnonymize'      => array(
+            'updateNonce'           => wp_create_nonce('update_user_profile_nonce'),
+            'getNonce'              => wp_create_nonce('get_user_profile_nonce'),
+            'bulkRateNonce'         => wp_create_nonce('bulk_update_cashback_rate_nonce'),
+            'bulkMinPayoutNonce'    => wp_create_nonce('bulk_update_min_payout_nonce'),
+            'defaultRateNonce'      => wp_create_nonce('cashback_update_default_rate_nonce'),
+            'defaultMinPayoutNonce' => wp_create_nonce('cashback_update_default_min_payout_nonce'),
+            'anonymizeNonce'        => wp_create_nonce('cashback_anonymize_user_nonce'),
+            'ajaxUrl'               => admin_url('admin-ajax.php'),
+            'i18nAnonymize'         => array(
                 'confirmTitle'   => __('Анонимизировать пользователя?', 'cashback-plugin'),
                 'confirmBody'    => __('PII (логин, email, имя, реквизиты) будет стёрт. Финансовая история (транзакции, выплаты, ledger) сохраняется ≥ 5 лет согласно 115-ФЗ / НК ст. 23. Действие необратимо.', 'cashback-plugin'),
                 'reasonLabel'    => __('Причина (для журнала аудита, минимум 10 символов)', 'cashback-plugin'),
@@ -327,6 +333,18 @@ class Cashback_Users_Management_Admin {
                         В поле <strong>«Новая ставка»</strong> укажите новый процент кэшбэка (от 0 до 100).<br>
                         Нажмите <strong>«Предпросмотр»</strong>, чтобы увидеть количество затронутых пользователей, затем <strong>«Применить»</strong> для подтверждения.
                     </p>
+                    <hr style="margin: 16px 0; border: 0; border-top: 1px solid #c3c4c7;" />
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <strong>Значение по умолчанию для новых пользователей:</strong>
+                        <span>Текущее:&nbsp;<code id="default-rate-current"><?php echo esc_html(Cashback_User_Defaults::get_default_rate()); ?></code>&nbsp;%</span>
+                        <label for="default-rate-new">Новое значение (%):</label>
+                        <input type="number" id="default-rate-new" step="0.01" min="0" max="100" placeholder="<?php echo esc_attr(Cashback_User_Defaults::get_default_rate()); ?>" style="width: 100px;" />
+                        <button type="button" id="default-rate-save" class="button button-primary">Сохранить</button>
+                        <span id="default-rate-info" style="color: #666;"></span>
+                    </div>
+                    <p class="description" style="margin-top: 10px;">
+                        Это значение присваивается <strong>только новым</strong> пользователям при первом входе/регистрации. Существующих пользователей оно не затрагивает — для них используйте массовое изменение выше.
+                    </p>
                 </div>
             </details>
 
@@ -348,6 +366,18 @@ class Cashback_Users_Management_Admin {
                         или введите <code>all</code>, чтобы изменить минимальную сумму у всех пользователей сразу.<br>
                         В поле <strong>«Новая сумма»</strong> укажите новый минимум (от 1 до 100&nbsp;000 ₽).<br>
                         Нажмите <strong>«Предпросмотр»</strong>, чтобы увидеть количество затронутых пользователей, затем <strong>«Применить»</strong> для подтверждения.
+                    </p>
+                    <hr style="margin: 16px 0; border: 0; border-top: 1px solid #c3c4c7;" />
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <strong>Значение по умолчанию для новых пользователей:</strong>
+                        <span>Текущее:&nbsp;<code id="default-min-payout-current"><?php echo esc_html(Cashback_User_Defaults::get_default_min_payout()); ?></code>&nbsp;₽</span>
+                        <label for="default-min-payout-new">Новое значение (₽):</label>
+                        <input type="number" id="default-min-payout-new" step="0.01" min="1" max="100000" placeholder="<?php echo esc_attr(Cashback_User_Defaults::get_default_min_payout()); ?>" style="width: 110px;" />
+                        <button type="button" id="default-min-payout-save" class="button button-primary">Сохранить</button>
+                        <span id="default-min-payout-info" style="color: #666;"></span>
+                    </div>
+                    <p class="description" style="margin-top: 10px;">
+                        Это значение присваивается <strong>только новым</strong> пользователям при первом входе/регистрации. Существующих пользователей оно не затрагивает — для них используйте массовое изменение выше.
                     </p>
                 </div>
             </details>
@@ -391,10 +421,10 @@ class Cashback_Users_Management_Admin {
                                     <td><?php echo esc_html($user['display_name']); ?></td>
                                     <td><?php echo esc_html($user['user_email']); ?></td>
                                     <td class="edit-field" data-field="cashback_rate">
-                                        <?php echo esc_html($user['cashback_rate'] ?? '60.00'); ?>
+                                        <?php echo esc_html($user['cashback_rate'] ?? Cashback_User_Defaults::get_default_rate()); ?>
                                     </td>
                                     <td class="edit-field" data-field="min_payout_amount">
-                                        <?php echo esc_html($user['min_payout_amount'] ?? '100.00'); ?>
+                                        <?php echo esc_html($user['min_payout_amount'] ?? Cashback_User_Defaults::get_default_min_payout()); ?>
                                     </td>
                                     <td class="edit-field" data-field="status">
                                         <?php echo esc_html($user['status'] ?? 'active'); ?>
@@ -846,8 +876,8 @@ class Cashback_Users_Management_Admin {
         if (!$user_data) {
             // Если записи нет, возвращаем значения по умолчанию
             $user_data = array(
-                'cashback_rate'     => '60.00',
-                'min_payout_amount' => '100.00',
+                'cashback_rate'     => Cashback_User_Defaults::get_default_rate(),
+                'min_payout_amount' => Cashback_User_Defaults::get_default_min_payout(),
                 'status'            => 'active',
                 'ban_reason'        => '',
                 'ban_reason_admin'  => '',
@@ -1237,6 +1267,143 @@ class Cashback_Users_Management_Admin {
         }
 
         wp_send_json_success($response_data);
+    }
+
+    /**
+     * Обновление глобального дефолта cashback_rate для НОВЫХ пользователей.
+     *
+     * Опция Cashback_User_Defaults::OPT_RATE. Существующие профили не затрагиваются.
+     */
+    public function handle_update_default_rate(): void {
+        if (!isset($_POST['nonce'])) {
+            wp_send_json_error(array( 'message' => 'Отсутствует nonce.' ));
+            return;
+        }
+
+        if (!wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'cashback_update_default_rate_nonce')) {
+            wp_send_json_error(array( 'message' => 'Неверный nonce.' ));
+            return;
+        }
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array( 'message' => 'Недостаточно прав для выполнения этого действия.' ));
+            return;
+        }
+
+        if (!isset($_POST['value'])) {
+            wp_send_json_error(array( 'message' => 'Не указано значение.' ));
+            return;
+        }
+
+        $raw = sanitize_text_field(wp_unslash($_POST['value']));
+
+        try {
+            $result    = Cashback_User_Defaults::set_default_rate_atomically($raw);
+            $old_value = $result['old_value'];
+            $new_value = $result['new_value'];
+        } catch ( InvalidArgumentException $e ) {
+            wp_send_json_error(array( 'message' => 'Ставка должна быть числом от 0 до 100.' ));
+            return;
+        } catch ( RuntimeException $e ) {
+            wp_send_json_error(array( 'message' => 'Не удалось сохранить значение. Повторите попытку.' ));
+            return;
+        }
+
+        // Audit-log пишется СРАЗУ после atomic-setter (до sync DB DEFAULT), чтобы окно
+        // потери audit-trail при PHP-падении было минимальным: option уже изменена → запись
+        // зафиксирована → sync_user_profile_default_columns() best-effort (bootstrap migration
+        // догонит на следующем pageload).
+        if (class_exists('Cashback_Encryption')) {
+            Cashback_Encryption::write_audit_log(
+                'cashback_default_rate_updated',
+                get_current_user_id(),
+                Cashback_User_Defaults::OPT_RATE,
+                null,
+                array(
+                    'old_value' => $old_value,
+                    'new_value' => $new_value,
+                )
+            );
+        }
+
+        if (class_exists('Mariadb_Plugin')) {
+            try {
+                Mariadb_Plugin::get_instance()->sync_user_profile_default_columns($new_value, null);
+            } catch ( \Throwable $e ) {
+                // Best-effort: bootstrap migration догонит. Не блокируем UI-ответ.
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] sync_user_profile_default_columns(rate) failed: ' . $e->getMessage());
+            }
+        }
+
+        wp_send_json_success(array( 'value' => $new_value ));
+    }
+
+    /**
+     * Обновление глобального дефолта min_payout_amount для НОВЫХ пользователей.
+     *
+     * Опция Cashback_User_Defaults::OPT_MIN_PAYOUT. Существующие профили не затрагиваются.
+     */
+    public function handle_update_default_min_payout(): void {
+        if (!isset($_POST['nonce'])) {
+            wp_send_json_error(array( 'message' => 'Отсутствует nonce.' ));
+            return;
+        }
+
+        if (!wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'cashback_update_default_min_payout_nonce')) {
+            wp_send_json_error(array( 'message' => 'Неверный nonce.' ));
+            return;
+        }
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array( 'message' => 'Недостаточно прав для выполнения этого действия.' ));
+            return;
+        }
+
+        if (!isset($_POST['value'])) {
+            wp_send_json_error(array( 'message' => 'Не указано значение.' ));
+            return;
+        }
+
+        $raw = sanitize_text_field(wp_unslash($_POST['value']));
+
+        try {
+            $result    = Cashback_User_Defaults::set_default_min_payout_atomically($raw);
+            $old_value = $result['old_value'];
+            $new_value = $result['new_value'];
+        } catch ( InvalidArgumentException $e ) {
+            wp_send_json_error(array( 'message' => 'Сумма должна быть числом от 1 до 100 000 ₽.' ));
+            return;
+        } catch ( RuntimeException $e ) {
+            wp_send_json_error(array( 'message' => 'Не удалось сохранить значение. Повторите попытку.' ));
+            return;
+        }
+
+        // Audit-log пишется СРАЗУ после atomic-setter (до sync DB DEFAULT). См. handle_update_default_rate.
+        if (class_exists('Cashback_Encryption')) {
+            Cashback_Encryption::write_audit_log(
+                'cashback_default_min_payout_updated',
+                get_current_user_id(),
+                Cashback_User_Defaults::OPT_MIN_PAYOUT,
+                null,
+                array(
+                    'old_value' => $old_value,
+                    'new_value' => $new_value,
+                )
+            );
+        }
+
+        if (class_exists('Mariadb_Plugin')) {
+            try {
+                Mariadb_Plugin::get_instance()->sync_user_profile_default_columns(null, $new_value);
+            } catch ( \Throwable $e ) {
+                // Best-effort: bootstrap migration догонит. Не блокируем UI-ответ.
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] sync_user_profile_default_columns(min_payout) failed: ' . $e->getMessage());
+            }
+        }
+
+        wp_send_json_success(array( 'value' => $new_value ));
     }
 
     /**

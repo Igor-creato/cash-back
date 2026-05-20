@@ -225,6 +225,76 @@ jQuery(document).ready(function($) {
         $('#bulk-min-payout-info').text('');
     });
 
+    // Глобальный дефолт cashback_rate для новых пользователей — сохранение.
+    $('#default-rate-save').on('click', function() {
+        var value = $('#default-rate-new').val().trim();
+        var parsed = parseFloat(value);
+        if (value === '' || isNaN(parsed) || parsed < 0 || parsed > 100) {
+            alert('Значение должно быть числом от 0 до 100.');
+            return;
+        }
+
+        var $btn  = $('#default-rate-save');
+        var $info = $('#default-rate-info');
+        $btn.prop('disabled', true);
+        $info.text('Сохранение...');
+
+        $.post(ajaxurl, {
+            action: 'cashback_update_default_rate',
+            nonce: cashbackUsersData.defaultRateNonce,
+            value: value
+        }, function(response) {
+            if (response.success) {
+                var saved = response.data && response.data.value ? response.data.value : value;
+                $('#default-rate-current').text(saved);
+                $('#default-rate-new').val('').attr('placeholder', saved);
+                $info.html('<span style="color: green;">Сохранено: ' + escapeHtml(saved) + ' %</span>');
+            } else {
+                var msg = response.data && response.data.message ? response.data.message : 'Ошибка сохранения.';
+                $info.html('<span style="color: red;">Ошибка: ' + escapeHtml(msg) + '</span>');
+            }
+        }).fail(function() {
+            $info.html('<span style="color: red;">Ошибка соединения.</span>');
+        }).always(function() {
+            $btn.prop('disabled', false);
+        });
+    });
+
+    // Глобальный дефолт min_payout_amount для новых пользователей — сохранение.
+    $('#default-min-payout-save').on('click', function() {
+        var value = $('#default-min-payout-new').val().trim();
+        var parsed = parseFloat(value);
+        if (value === '' || isNaN(parsed) || parsed < 1 || parsed > 100000) {
+            alert('Значение должно быть числом от 1 до 100 000 ₽.');
+            return;
+        }
+
+        var $btn  = $('#default-min-payout-save');
+        var $info = $('#default-min-payout-info');
+        $btn.prop('disabled', true);
+        $info.text('Сохранение...');
+
+        $.post(ajaxurl, {
+            action: 'cashback_update_default_min_payout',
+            nonce: cashbackUsersData.defaultMinPayoutNonce,
+            value: value
+        }, function(response) {
+            if (response.success) {
+                var saved = response.data && response.data.value ? response.data.value : value;
+                $('#default-min-payout-current').text(saved);
+                $('#default-min-payout-new').val('').attr('placeholder', saved);
+                $info.html('<span style="color: green;">Сохранено: ' + escapeHtml(saved) + ' ₽</span>');
+            } else {
+                var msg = response.data && response.data.message ? response.data.message : 'Ошибка сохранения.';
+                $info.html('<span style="color: red;">Ошибка: ' + escapeHtml(msg) + '</span>');
+            }
+        }).fail(function() {
+            $info.html('<span style="color: red;">Ошибка соединения.</span>');
+        }).always(function() {
+            $btn.prop('disabled', false);
+        });
+    });
+
     // Обработка фильтра по статусу
     $('#filter-submit').on('click', function() {
         var status = $('#filter-status').val();

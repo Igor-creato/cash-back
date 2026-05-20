@@ -6,7 +6,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Cashback Plugin
  * Description: Объединенный плагин для системы кэшбэка и аффилиат-партнерства
- * Version: 4.4.21
+ * Version: 4.4.22
  * Author: Cashback
  * Author URI: https://example.com
  * Text Domain: cashback-plugin
@@ -151,6 +151,12 @@ Cashback_Woodmart_Per_Page_Floor::init();
 // стирает cookie и при следующей перезагрузке WoodMart берёт Theme Option.
 require_once __DIR__ . '/includes/class-cashback-shop-per-page-sanitize-assets.php';
 Cashback_Shop_Per_Page_Sanitize_Assets::register();
+
+// Глобальные дефолты для нового пользователя: cashback_rate / min_payout_amount.
+// Применяются в Mariadb_Plugin::add_user_to_profile() при INSERT в wp_cashback_user_profile,
+// редактируются через AJAX-handler'ы в Cashback_Users_Management_Admin.
+require_once __DIR__ . '/includes/class-cashback-user-defaults.php';
+add_action('admin_init', array( 'Cashback_User_Defaults', 'register_settings' ));
 
 /**
  * Проверка совместимости с текущими версиями PHP и WordPress
@@ -1197,6 +1203,13 @@ class CashbackPlugin {
         // Группа 14: ban_freeze/ban_unfreeze значения в ENUM type таблицы cashback_balance_ledger.
         // Миграция идемпотентна — fast-path через COLUMN_TYPE из information_schema.
         if (class_exists('Mariadb_Plugin')) {
+            try {
+                Mariadb_Plugin::get_instance()->sync_user_profile_default_columns();
+            } catch (\Throwable $e) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback] User-profile defaults schema sync failed: ' . $e->getMessage());
+            }
+
             try {
                 Mariadb_Plugin::get_instance()->migrate_ledger_ban_enum();
             } catch (\Throwable $e) {

@@ -73,6 +73,7 @@ class Mariadb_Plugin {
             $instance->create_tables();
             $instance->create_triggers();
             $instance->create_events();
+            $instance->sync_user_profile_default_columns();
             // Cleanup legacy option (Codex round 5, 2026-05-10): после удаления
             // PHP-фолбэков `cashback_triggers_active` больше не имеет смысла.
             // Удаляем для existing-installs где option остался в wp_options
@@ -1528,11 +1529,25 @@ class Mariadb_Plugin {
             // INSERT IGNORE атомарно игнорирует дубли по PRIMARY KEY (user_id)
             // Защита от race condition
             $partner_token = self::generate_partner_token();
-            $result        = $wpdb->query($wpdb->prepare(
-                "INSERT IGNORE INTO %i (user_id, partner_token, status, created_at) VALUES (%d, %s, 'active', UTC_TIMESTAMP())",
+            // Глобальные дефолты cashback_rate / min_payout_amount для НОВЫХ пользователей.
+            // Класс подключается в bootstrap (cashback-plugin.php). Defensive-fallback на
+            // литералы '60.00' / '100.00' эквивалентен историческому DB DEFAULT — на случай
+            // вызова в bootstrap-фазе до require_once helper'а.
+            if (class_exists('Cashback_User_Defaults')) {
+                $defaults           = Cashback_User_Defaults::get_new_user_profile_defaults();
+                $default_rate       = $defaults['rate'];
+                $default_min_payout = $defaults['min_payout'];
+            } else {
+                $default_rate       = '60.00';
+                $default_min_payout = '100.00';
+            }
+            $result             = $wpdb->query($wpdb->prepare(
+                "INSERT IGNORE INTO %i (user_id, partner_token, cashback_rate, min_payout_amount, status, created_at) VALUES (%d, %s, %s, %s, 'active', UTC_TIMESTAMP())",
                 $table_name,
                 $user_id,
-                $partner_token
+                $partner_token,
+                $default_rate,
+                $default_min_payout
             ));
 
             // $result = 0 если запись уже существовала (игнорирована)
@@ -1559,6 +1574,87 @@ class Mariadb_Plugin {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log('Mariadb Plugin Error: Transaction failed for user ' . $user_id . '. Error: ' . $e->getMessage());
             return false;
+        }
+    }
+
+    /**
+     * Идемпотентно синхронизирует DB DEFAULT для cashback_user_profile с текущими WP-опциями.
+     *
+     * Нужен как guard против drift между schema DEFAULT и runtime-опциями:
+     * add_user_to_profile() явно передаёт значения, но любые legacy/manual INSERT без
+     * колонок cashback_rate/min_payout_amount иначе продолжают использовать 60/100.
+     *
+     * @param string|null $target_rate       Нормализованное decimal-string значение или null для авто-чтения из опции.
+     * @param string|null $target_min_payout Нормализованное decimal-string значение или null для авто-чтения из опции.
+     */
+    public function sync_user_profile_default_columns( ?string $target_rate = null, ?string $target_min_payout = null ): void {
+        global $wpdb;
+
+        $table  = $wpdb->prefix . 'cashback_user_profile';
+        $exists = (int) $wpdb->get_var(
+            $wpdb->prepare(
+                'SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+                $table
+            )
+        );
+
+        if ($exists < 1) {
+            return;
+        }
+
+        if ($target_rate === null) {
+            $target_rate = class_exists('Cashback_User_Defaults')
+                ? Cashback_User_Defaults::get_default_rate()
+                : '60.00';
+        }
+
+        if ($target_min_payout === null) {
+            $target_min_payout = class_exists('Cashback_User_Defaults')
+                ? Cashback_User_Defaults::get_default_min_payout()
+                : '100.00';
+        }
+
+        $columns = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT COLUMN_NAME, COLUMN_DEFAULT
+                 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = %s
+                   AND COLUMN_NAME IN ('cashback_rate', 'min_payout_amount')",
+                $table
+            ),
+            ARRAY_A
+        );
+
+        if (!is_array($columns) || count($columns) < 2) {
+            return;
+        }
+
+        $current_defaults = array();
+        foreach ($columns as $column) {
+            $name    = (string) ( $column['COLUMN_NAME'] ?? '' );
+            $default = (string) ( $column['COLUMN_DEFAULT'] ?? '' );
+
+            if ($name !== '') {
+                $current_defaults[ $name ] = number_format((float) $default, 2, '.', '');
+            }
+        }
+
+        if (($current_defaults['cashback_rate'] ?? '') === $target_rate
+            && ($current_defaults['min_payout_amount'] ?? '') === $target_min_payout
+        ) {
+            return;
+        }
+
+        $safe_table = $this->validate_table_prefix($wpdb->prefix) . 'cashback_user_profile';
+        $sql        = "ALTER TABLE `{$safe_table}` MODIFY COLUMN `cashback_rate` decimal(5,2) NOT NULL DEFAULT {$target_rate} COMMENT 'Процент кэшбэка (60 = 60%)', MODIFY COLUMN `min_payout_amount` decimal(18,2) DEFAULT {$target_min_payout} COMMENT 'Минимальная сумма выплаты'";
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL ALTER TABLE with validated numeric defaults and validated prefix.
+        $wpdb->query($sql);
+
+        if ($wpdb->last_error) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback] Failed to sync cashback_user_profile defaults: ' . $wpdb->last_error);
         }
     }
 
@@ -2258,11 +2354,24 @@ class Mariadb_Plugin {
 
             if ($recovered !== null) {
                 // Идемпотентно воссоздаём строку профиля с ВОССТАНОВЛЕННЫМ токеном.
+                // Дефолты cashback_rate / min_payout_amount берём из Cashback_User_Defaults
+                // (a не из DB schema DEFAULT), чтобы recovery-path не игнорировал
+                // admin-configured глобальные дефолты для новых пользователей.
+                if (class_exists('Cashback_User_Defaults')) {
+                    $rec_defaults           = Cashback_User_Defaults::get_new_user_profile_defaults();
+                    $rec_default_rate       = $rec_defaults['rate'];
+                    $rec_default_min_payout = $rec_defaults['min_payout'];
+                } else {
+                    $rec_default_rate       = '60.00';
+                    $rec_default_min_payout = '100.00';
+                }
                 $wpdb->query($wpdb->prepare(
-                    "INSERT IGNORE INTO %i (user_id, partner_token, status, created_at) VALUES (%d, %s, 'active', UTC_TIMESTAMP())",
+                    "INSERT IGNORE INTO %i (user_id, partner_token, cashback_rate, min_payout_amount, status, created_at) VALUES (%d, %s, %s, %s, 'active', UTC_TIMESTAMP())",
                     $table,
                     $user_id,
-                    $recovered
+                    $recovered,
+                    $rec_default_rate,
+                    $rec_default_min_payout
                 ));
                 // Баланс/прочие строки — идемпотентно (профиль уже есть → только баланс).
                 self::get_instance()->add_user_to_cashback_tables($user_id);
