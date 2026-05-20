@@ -44,7 +44,12 @@ final class Cashback_CPA_Approval_Rate_Provider {
             return null;
         }
 
-        if (! self::network_supports_approval_rate($network_id)) {
+        // Сеть либо имеет API-метод обновления (Admitad), либо поддерживает
+        // ручной ввод (Advcake/EPN, v4.4.28+). В обоих режимах post_meta
+        // читается одинаково — режим важен только для рендера UI.
+        if (! self::network_supports_approval_rate($network_id)
+            && ! self::network_supports_manual_entry($network_id)
+        ) {
             return null;
         }
 
@@ -91,24 +96,92 @@ final class Cashback_CPA_Approval_Rate_Provider {
     }
 
     /**
+     * Сеть поддерживает **ручной ввод** approval rate (admin вводит число
+     * из кабинета CPA-сети). Условие: сеть активна и у товара есть _offer_id.
+     * Используется UI-renderer'ом для решения «показать ли manual-блок» когда
+     * `network_supports_approval_rate()` = false (Advcake/EPN и пр., где
+     * offer-wide AR не выставлен в публичном API).
+     *
+     * @since 4.4.28
+     */
+    public static function network_supports_manual_entry( int $network_id ): bool {
+        $slug = self::get_active_network_slug($network_id);
+        return in_array($slug, array( 'advcake', 'epn' ), true);
+    }
+
+    /**
+     * Сохранить approval rate, введённый админом вручную. Запись в те же
+     * post_meta что и API-режим — UI-renderer и `for_product()` читают их
+     * без разделения. `source` = `manual` (а не slug сети), чтобы по аудиту
+     * было видно происхождение значения.
+     *
+     * Пустая строка / null → удаление post_meta (отказ от прежнего значения).
+     * Числа клампятся в [0..100]; за пределами диапазона — ошибка без записи.
+     *
+     * @since 4.4.28
+     * @param mixed $rate string|float|null от UI
+     * @return array{success: bool, rate: ?float, fetched_at: ?int, source: string, error: ?string}
+     */
+    public static function save_manual_rate( int $product_id, $rate ): array {
+        if ($product_id <= 0) {
+            return self::error_result('Некорректный product_id');
+        }
+
+        $network_id = (int) get_post_meta($product_id, Cashback_Shop_Importer::META_NETWORK_ID, true);
+        $offer_id   = (string) get_post_meta($product_id, Cashback_Shop_Importer::META_OFFER_ID, true);
+        if ($network_id <= 0 || $offer_id === '') {
+            return self::error_result('Товар не привязан к CPA-сети');
+        }
+
+        if (! self::network_supports_manual_entry($network_id)) {
+            return self::error_result('Сеть не поддерживает ручной ввод');
+        }
+
+        // Пустая строка → удалить запись (UI: «нет данных от сети»).
+        $is_empty = ($rate === null) || (is_string($rate) && trim($rate) === '');
+        if ($is_empty) {
+            delete_post_meta($product_id, Cashback_Shop_Rate_Of_Approve_Refresher::META_RATE);
+            delete_post_meta($product_id, Cashback_Shop_Rate_Of_Approve_Refresher::META_FETCHED_AT);
+            delete_post_meta($product_id, Cashback_Shop_Rate_Of_Approve_Refresher::META_SOURCE);
+            return array(
+                'success'    => true,
+                'rate'       => null,
+                'fetched_at' => null,
+                'source'     => '',
+                'error'      => null,
+            );
+        }
+
+        if (! is_numeric($rate)) {
+            return self::error_result('Значение должно быть числом');
+        }
+
+        $value = (float) $rate;
+        if ($value < 0.0 || $value > 100.0) {
+            return self::error_result('Значение должно быть в диапазоне 0..100');
+        }
+
+        $rounded = round($value, 2);
+        $now     = time();
+        update_post_meta($product_id, Cashback_Shop_Rate_Of_Approve_Refresher::META_RATE, (string) $rounded);
+        update_post_meta($product_id, Cashback_Shop_Rate_Of_Approve_Refresher::META_FETCHED_AT, (string) $now);
+        update_post_meta($product_id, Cashback_Shop_Rate_Of_Approve_Refresher::META_SOURCE, 'manual');
+
+        return array(
+            'success'    => true,
+            'rate'       => $rounded,
+            'fetched_at' => $now,
+            'source'     => 'manual',
+            'error'      => null,
+        );
+    }
+
+    /**
      * Сеть поддерживает обновление approval rate если на её адаптере есть
      * метод `fetch_campaign_by_id` (текущий де-факто интерфейс).
      */
     public static function network_supports_approval_rate( int $network_id ): bool {
-        if ($network_id <= 0) {
-            return false;
-        }
-        global $wpdb;
-        if (! isset($wpdb) || ! is_object($wpdb)
-            || ! method_exists($wpdb, 'get_var') || ! method_exists($wpdb, 'prepare')
-        ) {
-            return false;
-        }
-        $slug = $wpdb->get_var($wpdb->prepare(
-            'SELECT slug FROM %i WHERE id = %d AND is_active = 1',
-            $wpdb->prefix . 'cashback_affiliate_networks',
-            $network_id
-        ));
+        $slug = self::get_active_network_slug($network_id);
         if (! is_string($slug) || $slug === '') {
             return false;
         }
@@ -122,6 +195,29 @@ final class Cashback_CPA_Approval_Rate_Provider {
         }
         $adapter = $client->get_adapter($slug);
         return is_object($adapter) && method_exists($adapter, 'fetch_campaign_by_id');
+    }
+
+    /**
+     * Возвращает slug активной сети или null, если сеть неактивна/недоступна.
+     */
+    private static function get_active_network_slug( int $network_id ): ?string {
+        if ($network_id <= 0) {
+            return null;
+        }
+        global $wpdb;
+        if (! isset($wpdb) || ! is_object($wpdb)
+            || ! method_exists($wpdb, 'get_var') || ! method_exists($wpdb, 'prepare')
+        ) {
+            return null;
+        }
+
+        $slug = $wpdb->get_var($wpdb->prepare(
+            'SELECT slug FROM %i WHERE id = %d AND is_active = 1',
+            $wpdb->prefix . 'cashback_affiliate_networks',
+            $network_id
+        ));
+
+        return is_string($slug) && $slug !== '' ? $slug : null;
     }
 
     private static function default_read( int $product_id ): array {

@@ -977,17 +977,20 @@ XML;
     }
 
     /**
-     * Smoke: метод fetch_campaign_by_id присутствует на адаптере — это де-факто
-     * интерфейс, на который смотрят Cashback_CPA_Approval_Rate_Provider /
-     * Cashback_Shop_Rate_Of_Approve_Refresher через method_exists(). Если метод
-     * случайно потеряется при рефакторе, UI-блок «Данные CPA-сети» молча
-     * перестанет показываться для Advcake.
+     * Regression-guard: Advcake-адаптер НЕ должен иметь fetch_campaign_by_id.
+     * Метод был добавлен в v4.4.27 (API-импорт `ar` из /stat) и откатан в
+     * v4.4.28: Advcake `/stat.ar` — публикатор-специфичная статистика, а блок
+     * в редакторе товара показывает offer-wide AR из кабинета Advcake (не
+     * выставлен в публичном Publisher API). Для Advcake-товаров значение
+     * вводится админом вручную через UI, для Admitad — обновляется через API.
+     * Если метод вернётся, Cashback_Shop_Rate_Of_Approve_Refresher переключит
+     * Advcake обратно в API-режим — это регрессия, тест её поймает.
      */
-    public function test_fetch_campaign_by_id_is_implemented(): void
+    public function test_fetch_campaign_by_id_is_not_implemented_for_advcake(): void
     {
-        $this->assertTrue(
+        $this->assertFalse(
             method_exists(Cashback_Advcake_Adapter::class, 'fetch_campaign_by_id'),
-            'Advcake adapter must expose fetch_campaign_by_id (Refresher checks via method_exists)'
+            'Advcake adapter must NOT expose fetch_campaign_by_id — Publisher API не отдаёт offer-wide AR; для Advcake-товаров используется manual UI ввод.'
         );
     }
 }

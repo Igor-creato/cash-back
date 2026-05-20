@@ -100,6 +100,7 @@ class WC_Affiliate_URL_Params {
         // AJAX: ручное обновление поля «Данные CPA-сети о подтверждении заказов»
         // (rate_of_approve) для одного товара. Дёргает Cashback_CPA_Approval_Rate_Provider::refresh().
         add_action('wp_ajax_cashback_refresh_cpa_approval_rate', array( $this, 'ajax_refresh_cpa_approval_rate' ));
+        add_action('wp_ajax_cashback_save_cpa_approval_rate', array( $this, 'ajax_save_cpa_approval_rate' ));
     }
 
     /**
@@ -826,6 +827,9 @@ class WC_Affiliate_URL_Params {
             return;
         }
 
+        $network_id = (int) get_post_meta($product_id, Cashback_Shop_Importer::META_NETWORK_ID, true);
+        $api_mode   = Cashback_CPA_Approval_Rate_Provider::network_supports_approval_rate($network_id);
+
         $rate       = isset($snapshot['rate']) ? $snapshot['rate'] : null;
         $fetched_at = isset($snapshot['fetched_at']) ? $snapshot['fetched_at'] : null;
         $source     = isset($snapshot['source']) ? (string) $snapshot['source'] : '';
@@ -843,11 +847,31 @@ class WC_Affiliate_URL_Params {
             )
             : __('Ещё не обновлялось', 'wc-affiliate-url-params');
 
-        $nonce = wp_create_nonce('cashback_refresh_cpa_rate_' . $product_id);
-
         echo '<h4 style="padding: 10px 12px; margin: 12px 0 0; border-top: 1px solid #ddd; border-bottom: 1px solid #ddd;">'
             . esc_html__('Данные CPA-сети о подтверждении заказов', 'wc-affiliate-url-params')
             . '</h4>';
+
+        if ($api_mode) {
+            $this->render_cpa_approval_rate_api_mode($product_id, $rate, $bucket, $badge_text, $fetched_label, $source);
+        } else {
+            $this->render_cpa_approval_rate_manual_mode($product_id, $rate, $bucket, $badge_text, $fetched_label, $source);
+        }
+    }
+
+    /**
+     * Admitad-режим: бейдж + кнопка «Обновить данные» (AJAX → API).
+     * Поведение v4.4.26+ без изменений.
+     */
+    private function render_cpa_approval_rate_api_mode(
+        int $product_id,
+        $rate,
+        string $bucket,
+        string $badge_text,
+        string $fetched_label,
+        string $source
+    ): void {
+        $nonce = wp_create_nonce('cashback_refresh_cpa_rate_' . $product_id);
+
         echo '<p class="description" style="padding: 5px 12px; color: #666; margin: 0;">'
             . esc_html__('Источник: API CPA-сети (поле rate_of_approve). Обновляется автоматически каждые 2 часа и по кнопке ниже.', 'wc-affiliate-url-params')
             . '</p>';
@@ -874,6 +898,59 @@ class WC_Affiliate_URL_Params {
             . '</button>';
         echo ' <span class="description" data-cpa-rate-status="1"></span>';
         echo '</p>';
+    }
+
+    /**
+     * Manual-режим (Advcake/EPN/...): поле ввода + кнопка «Сохранить».
+     * Admin копирует число из кабинета CPA-сети («В среднем по офферу» AR%
+     * у Advcake). Бейдж рендерится поверх как у API-режима (тот же стиль).
+     */
+    private function render_cpa_approval_rate_manual_mode(
+        int $product_id,
+        $rate,
+        string $bucket,
+        string $badge_text,
+        string $fetched_label,
+        string $source
+    ): void {
+        $nonce        = wp_create_nonce('cashback_save_cpa_rate_' . $product_id);
+        $current_val  = is_numeric($rate) ? number_format((float) $rate, 2, '.', '') : '';
+
+        echo '<p class="description" style="padding: 5px 12px; color: #666; margin: 0;">'
+            . esc_html__('Источник: ручной ввод. Скопируйте «В среднем по офферу → AR» из кабинета CPA-сети и сохраните.', 'wc-affiliate-url-params')
+            . '</p>';
+
+        echo '<p class="form-field" style="padding-left:12px;">';
+        echo '<span class="cashback-approval-badge cashback-approval-badge--' . esc_attr($bucket) . '" data-cpa-rate-badge="1">'
+            . esc_html($badge_text)
+            . '</span>';
+        echo ' <span class="description" data-cpa-rate-fetched="1">' . esc_html($fetched_label) . '</span>';
+        if ($source !== '') {
+            echo ' <span class="description" style="color:#999;">' . esc_html(sprintf(
+                /* translators: %s — источник значения, slug сети или "manual". */
+                __('(источник: %s)', 'wc-affiliate-url-params'),
+                $source
+            )) . '</span>';
+        }
+        echo '</p>';
+
+        echo '<p class="form-field" style="padding-left:12px;">';
+        echo '<label for="cashback-cpa-rate-input" style="display:inline-block; margin-right:6px;">'
+            . esc_html__('Значение, %:', 'wc-affiliate-url-params')
+            . '</label>';
+        echo '<input type="number" id="cashback-cpa-rate-input" min="0" max="100" step="0.01" '
+            . 'placeholder="0..100" value="' . esc_attr($current_val) . '" '
+            . 'style="width:90px;" '
+            . 'data-product-id="' . esc_attr((string) $product_id) . '"'
+            . ' data-nonce="' . esc_attr($nonce) . '" />';
+        echo ' <button type="button" class="button" id="cashback-save-cpa-rate">'
+            . esc_html__('Сохранить', 'wc-affiliate-url-params')
+            . '</button>';
+        echo ' <span class="description" data-cpa-rate-status="1"></span>';
+        echo '</p>';
+        echo '<p class="description" style="padding: 0 12px 6px; color: #888;">'
+            . esc_html__('Оставьте пустым и нажмите «Сохранить» — значение будет сброшено («нет данных от сети»).', 'wc-affiliate-url-params')
+            . '</p>';
     }
 
     /**
@@ -905,7 +982,7 @@ class WC_Affiliate_URL_Params {
         }
 
         if (! class_exists('Cashback_CPA_Approval_Rate_Provider')) {
-            wp_send_json_error(array( 'message' => esc_html__('Provider недоступен', 'wc-affiliate-url-params') ), 500);
+wp_send_json_error(array( 'message' => esc_html__('Сервис временно недоступен', 'wc-affiliate-url-params') ), 500);
         }
 
         $result = Cashback_CPA_Approval_Rate_Provider::refresh($product_id);
@@ -947,6 +1024,105 @@ class WC_Affiliate_URL_Params {
             'badge_text'     => $badge_text,
             'fetched_label'  => $fetched_label,
         ));
+    }
+
+    /**
+     * AJAX: ручное сохранение rate_of_approve для одного товара
+     * (manual-режим для Advcake/EPN). Admin вводит число из кабинета
+     * CPA-сети и нажимает «Сохранить». Защиты те же что у refresh-handler'а:
+     * nonce-per-product, capability `edit_post`, rate-limit per user.
+     * Допустимое значение `0..100` (`""` — сброс).
+     *
+     * @since 4.4.28
+     */
+    public function ajax_save_cpa_approval_rate(): void {
+        $product_id = isset($_POST['product_id']) ? absint(wp_unslash($_POST['product_id'])) : 0;
+        if ($product_id <= 0) {
+            wp_send_json_error(array( 'message' => esc_html__('Некорректный product_id', 'wc-affiliate-url-params') ), 400);
+        }
+
+        check_ajax_referer('cashback_save_cpa_rate_' . $product_id, 'nonce');
+
+        if (! current_user_can('edit_post', $product_id)) {
+            wp_send_json_error(array( 'message' => esc_html__('Недостаточно прав', 'wc-affiliate-url-params') ), 403);
+        }
+
+        if (self::cpa_save_rate_limited()) {
+            wp_send_json_error(array( 'message' => esc_html__('Слишком часто. Подождите минуту.', 'wc-affiliate-url-params') ), 429);
+        }
+
+        if (! class_exists('Cashback_CPA_Approval_Rate_Provider')) {
+wp_send_json_error(array( 'message' => esc_html__('Сервис временно недоступен', 'wc-affiliate-url-params') ), 500);
+        }
+
+        // Принимаем строку, чтобы корректно отличить "" (сброс) от "0" (валидное 0%).
+        // Sanitize inline для PHPCS WordPress.Security.ValidatedSanitizedInput.
+        $raw = isset($_POST['rate']) && is_scalar($_POST['rate'])
+            ? sanitize_text_field(wp_unslash((string) $_POST['rate']))
+            : '';
+        $raw = trim($raw);
+
+        $result = Cashback_CPA_Approval_Rate_Provider::save_manual_rate($product_id, $raw === '' ? null : $raw);
+        if (empty($result['success'])) {
+            $internal_error = isset($result['error']) ? (string) $result['error'] : 'unknown';
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log('[Cashback CPA Save] product=' . $product_id . ' err=' . $internal_error);
+
+            // Сообщение о валидации (range/non-numeric/network) безопасно показать
+            // пользователю — это его собственный ввод; раскрытие internal-полей нет.
+            wp_send_json_error(array( 'message' => self::sanitize_cpa_save_error_message($internal_error) ), 400);
+        }
+
+        $rate       = isset($result['rate']) ? $result['rate'] : null;
+        $fetched_at = isset($result['fetched_at']) ? (int) $result['fetched_at'] : time();
+        $bucket     = Cashback_CPA_Approval_Rate_Provider::bucket_for_rate(is_numeric($rate) ? (float) $rate : null);
+
+        $badge_text = ($rate === null)
+            ? esc_html__('нет данных от сети', 'wc-affiliate-url-params')
+            : sprintf('%s%%', number_format((float) $rate, 1, '.', ''));
+
+        $fetched_label = function_exists('human_time_diff')
+            ? sprintf(
+                /* translators: %s — относительное время */
+                __('Обновлено %s назад', 'wc-affiliate-url-params'),
+                human_time_diff($fetched_at, time())
+            )
+            : __('Сохранено только что', 'wc-affiliate-url-params');
+
+        wp_send_json_success(array(
+            'rate'           => $rate,
+            'fetched_at'     => $fetched_at,
+            'bucket'         => $bucket,
+            'badge_text'     => $badge_text,
+            'fetched_label'  => $fetched_label,
+        ));
+    }
+
+    /**
+     * Rate-limit: 5 save'ов в минуту на текущего пользователя через transient.
+     * Отдельный bucket от refresh-handler'а, чтобы один не съедал лимит другого.
+     */
+    private static function cpa_save_rate_limited(): bool {
+        $key = 'cb_cpa_rate_save_' . get_current_user_id();
+$cnt = (int) get_transient($key);
+if ($cnt >= 5) {
+return true;
+        }
+        set_transient($key, $cnt + 1, MINUTE_IN_SECONDS);
+return false;
+}
+
+    /**
+     * Отдаём в UI только безопасные validation-сообщения manual-save.
+     * Произвольные provider/filter diagnostics пишутся в server log.
+     */
+    private static function sanitize_cpa_save_error_message( string $internal_error ): string {
+        $safe_messages = array( 'Некорректный product_id', 'Товар не привязан к CPA-сети', 'Сеть не поддерживает ручной ввод', 'Значение должно быть числом', 'Значение должно быть в диапазоне 0..100' );
+if (in_array($internal_error, $safe_messages, true)) {
+return $internal_error;
+}
+
+        return esc_html__('Не удалось сохранить значение.', 'wc-affiliate-url-params');
     }
 
     /**
@@ -2564,21 +2740,24 @@ HTML;
             'deleteParamNonce' => wp_create_nonce('delete_network_param_nonce'),
         ));
 
-        // Кнопка «Обновить данные» в блоке «Данные CPA-сети о подтверждении заказов».
-        // Подгружаем только на post.php — кнопка появляется только в редакторе товара.
+        // Кнопки «Обновить данные» (API-режим Admitad) + «Сохранить» (manual
+        // Advcake/EPN, v4.4.28). Подгружаем только на post.php — кнопки
+        // появляются только в редакторе товара.
         if ($hook === 'post.php') {
             wp_enqueue_script(
                 'cashback-admin-cpa-rate',
                 plugins_url('assets/js/cashback-admin-cpa-rate.js', __FILE__),
                 array( 'jquery' ),
-                '1.0.0',
+                '1.1.0',
                 true
             );
             wp_localize_script('cashback-admin-cpa-rate', 'cashbackCpaRateData', array(
-                'ajaxUrl'  => admin_url('admin-ajax.php'),
-                'action'   => 'cashback_refresh_cpa_approval_rate',
-                'i18n'     => array(
+                'ajaxUrl'    => admin_url('admin-ajax.php'),
+                'action'     => 'cashback_refresh_cpa_approval_rate',
+                'saveAction' => 'cashback_save_cpa_approval_rate',
+                'i18n'       => array(
                     'loading' => __('Обновляю…', 'wc-affiliate-url-params'),
+                    'saving'  => __('Сохраняю…', 'wc-affiliate-url-params'),
                     'failure' => __('Ошибка обновления', 'wc-affiliate-url-params'),
                 ),
             ));
