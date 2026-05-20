@@ -239,8 +239,13 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
 
                 // Rate-limit pause — даже после ошибки, чтобы не упереться
                 // в admitad anti-flood retry-after на батче из 30 запросов.
-                if (self::PER_REQUEST_PAUSE_US > 0) {
-                    usleep(self::PER_REQUEST_PAUSE_US);
+                // Filterable, чтобы PHPUnit мог отключить sleep в тестах.
+                $pause_us = (int) apply_filters(
+                    'cashback_shop_rate_of_approve_per_request_pause_us',
+                    self::PER_REQUEST_PAUSE_US
+                );
+                if ($pause_us > 0) {
+                    usleep($pause_us);
                 }
             }
 

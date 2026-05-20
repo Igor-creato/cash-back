@@ -117,7 +117,7 @@ final class Cashback_CPA_Approval_Rate_Provider {
             return false;
         }
         $client = Cashback_API_Client::get_instance();
-        if (! is_object($client) || ! method_exists($client, 'get_adapter')) {
+        if (! method_exists($client, 'get_adapter')) {
             return false;
         }
         $adapter = $client->get_adapter($slug);
