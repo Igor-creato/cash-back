@@ -111,6 +111,20 @@ class Cashback_Nginx_Cache_Hooks {
 
         // Customizer: smaller scope, но тоже меняет HTML/CSS-выдачу.
         add_action('customize_save_after', array( __CLASS__, 'on_customize_save' ), 10);
+
+        // Display rate version bump: универсальный сигнал, что отображаемая ставка
+        // кэшбэка изменилась (guest_display_rate / per-user / bulk-rate update /
+        // bust_cache_for_product). Без purge nginx fastcgi_cache держит старый HTML
+        // с прежним процентом до истечения TTL (~30 мин), пока WP Object Cache уже
+        // invalidated — юзер видит «3%» на витрине, начисление идёт по новой ставке.
+        add_action('update_option_cashback_display_rate_version', array( __CLASS__, 'on_display_rate_version_bumped' ), 10, 0);
+    }
+
+    /**
+     * Хук `update_option_cashback_display_rate_version`: bump rate_version → full purge.
+     */
+    public static function on_display_rate_version_bumped(): void {
+        self::dispatch_purge_all('display_rate_version_bumped');
     }
 
     /**
