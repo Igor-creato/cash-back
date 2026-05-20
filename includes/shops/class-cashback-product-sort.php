@@ -31,12 +31,6 @@ class Cashback_Product_Sort {
     public const ORDERBY_DESC      = 'cashback-desc';
     public const BACKFILL_OPTION   = 'cashback_product_sort_backfill_v1';
     public const CRON_BACKFILL_HOOK = 'cashback_product_sort_backfill';
-    // V2: пересчёт sort_value с учётом approval_factor. Отдельный гейт от V1,
-    // чтобы релиз с новой формулой триггерил один пересчёт по существующим
-    // магазинам (старые числа без approval не теряют монотонность, но дают
-    // субоптимальный порядок до первого 2h-cycle обновления rate_of_approve).
-    public const BACKFILL_OPTION_V2   = 'cashback_product_sort_backfill_v2';
-    public const CRON_BACKFILL_HOOK_V2 = 'cashback_product_sort_backfill_v2';
 
     /**
      * Регистрация фильтров. Идемпотентно — внутренний static guard.
@@ -57,13 +51,8 @@ class Cashback_Product_Sort {
             // Tariff sync: пересчёт meta при изменении тарифов.
             // Приоритет 20 — после nginx purger (10), не блокируем.
             add_action('cashback_tariffs_changed', array( __CLASS__, 'recompute_for_product' ), 20, 1);
-            // Approval rate updates (AS-cron 2h или manual save) — пересчитать
-            // sort_value, потому что approval_factor домножает результат.
-            add_action('cashback_rate_of_approve_updated', array( __CLASS__, 'recompute_for_product' ), 20, 1);
             // Deferred one-shot backfill (см. ensure_backfilled).
             add_action(self::CRON_BACKFILL_HOOK, array( __CLASS__, 'handle_backfill_cron' ), 10, 0);
-            // V2 backfill — пересчёт после релиза формулы с approval_factor.
-            add_action(self::CRON_BACKFILL_HOOK_V2, array( __CLASS__, 'handle_backfill_cron_v2' ), 10, 0);
         }
     }
 
@@ -159,18 +148,8 @@ class Cashback_Product_Sort {
     /**
      * Пересчитать `_cashback_sort_value` для одного product_id.
      *
-     * Идемпотентно. Вызывается на cashback_tariffs_changed, на новом
-     * cashback_rate_of_approve_updated action и из save_meta_box при
-     * сохранении ставок в админке.
-     *
-     * Concurrency: оба event'а пишут одну постмету; если они приходят
-     * в разных процессах (AS-cron tariff_sync и AS-cron approval-refresher
-     * параллельно), один процесс может read stale data → compute медленно
-     * → overwrite свежий результат другого процесса. Защищаемся per-product
-     * advisory lock через MariaDB GET_LOCK с коротким timeout: после
-     * acquire каждый процесс перечитывает meta заново (compute → get_active
-     * tariffs + get_approval_factor читают БД), поэтому последний write
-     * всегда основан на актуальном snapshot'е.
+     * Идемпотентно. Вызывается на cashback_tariffs_changed action и из
+     * save_meta_box при сохранении ставок в админке.
      */
     public static function recompute_for_product( $product_id ): void {
         $product_id = (int) $product_id;
@@ -178,52 +157,14 @@ class Cashback_Product_Sort {
             return;
         }
 
-        $lock_acquired = self::acquire_recompute_lock($product_id);
-        try {
-            $value = self::compute_value_for_product($product_id);
+        $value = self::compute_value_for_product($product_id);
 
-            // Сохраняем как строку с фиксированной точностью — meta_value_num
-            // парсит число из строки независимо от формата.
-            $stored = self::format_for_storage($value);
-            if (function_exists('update_post_meta')) {
-                update_post_meta($product_id, self::SORT_META_KEY, $stored);
-            }
-        } finally {
-            if ($lock_acquired) {
-                self::release_recompute_lock($product_id);
-            }
+        // Сохраняем как строку с фиксированной точностью — meta_value_num
+        // парсит число из строки независимо от формата.
+        $stored = self::format_for_storage($value);
+        if (function_exists('update_post_meta')) {
+            update_post_meta($product_id, self::SORT_META_KEY, $stored);
         }
-    }
-
-    /**
-     * Advisory lock на product_id. timeout = 2с — после освобождения
-     * предыдущим writer'ом второй процесс продолжает с актуальными данными.
-     * Если timeout исчерпан (тяжёлая нагрузка), всё равно идём дальше:
-     * следующий 2h-cycle refresher'а / daily tariff_sync пересчитает.
-     */
-    private static function acquire_recompute_lock( int $product_id ): bool {
-        global $wpdb;
-        if (! isset($wpdb) || ! is_object($wpdb)
-            || ! method_exists($wpdb, 'get_var') || ! method_exists($wpdb, 'prepare')
-        ) {
-            return false; // тесты / non-DB окружение — пропускаем acquire/release
-        }
-        $key = 'cashback_sort_recompute_' . $product_id;
-        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- advisory lock.
-        $r = $wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, %d)', $key, 2));
-        return (int) $r === 1;
-    }
-
-    private static function release_recompute_lock( int $product_id ): void {
-        global $wpdb;
-        if (! isset($wpdb) || ! is_object($wpdb)
-            || ! method_exists($wpdb, 'get_var') || ! method_exists($wpdb, 'prepare')
-        ) {
-            return;
-        }
-        $key = 'cashback_sort_recompute_' . $product_id;
-        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- advisory lock.
-        $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $key));
     }
 
     /**
@@ -370,50 +311,6 @@ class Cashback_Product_Sort {
         }
         if (function_exists('update_option')) {
             update_option(self::BACKFILL_OPTION, '1', false);
-        }
-    }
-
-    /**
-     * V2 self-healing gate — пересчёт sort_value после релиза формулы с
-     * approval_factor. Семантика идентична `ensure_backfilled()`: терминал —
-     * только '1', промежуточный 'scheduled' лечится при пропавшем wp-cron.
-     *
-     * Отдельная опция, чтобы V1-сайты подхватили V2 при апгрейде, а свежие
-     * установки прошли через оба гейта (V1 заполнит мету, V2 ничего не
-     * меняет — backfill_all идемпотентен).
-     */
-    public static function ensure_backfilled_v2(): void {
-        if (! function_exists('get_option') || ! function_exists('update_option')) {
-            return;
-        }
-        if ((string) get_option(self::BACKFILL_OPTION_V2, '') === '1') {
-            return;
-        }
-        if (function_exists('wp_next_scheduled') && function_exists('wp_schedule_single_event')) {
-            if (wp_next_scheduled(self::CRON_BACKFILL_HOOK_V2)) {
-                return;
-            }
-            wp_schedule_single_event(time() + 60, self::CRON_BACKFILL_HOOK_V2);
-            update_option(self::BACKFILL_OPTION_V2, 'scheduled', false);
-            return;
-        }
-        self::handle_backfill_cron_v2();
-    }
-
-    /**
-     * wp-cron handler для V2 backfill (см. ensure_backfilled_v2). Делит
-     * `backfill_all()` с V1, отличается только опцией-флагом.
-     */
-    public static function handle_backfill_cron_v2(): void {
-        try {
-            self::backfill_all();
-        } catch (\Throwable $e) {
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
-            error_log('[Cashback Product Sort] backfill v2 failed: ' . $e->getMessage());
-            return;
-        }
-        if (function_exists('update_option')) {
-            update_option(self::BACKFILL_OPTION_V2, '1', false);
         }
     }
 
