@@ -936,6 +936,8 @@ class CashbackPlugin {
         $this->require_file('includes/shops/class-cashback-shop-group-resolver.php');
         $this->require_file('includes/shops/class-cashback-tab-conditions-renderer.php');
         $this->require_file('includes/shops/class-cashback-shop-importer.php');
+        $this->require_file('includes/shops/class-cashback-shop-rate-of-approve-refresher.php');
+        $this->require_file('includes/shops/class-cashback-cpa-approval-rate-provider.php');
         $this->require_file('includes/shops/class-cashback-cashback-display-calculator.php');
         // Сортировка каталога «По возрастанию/убыванию кэшбэка»: фильтры
         // woocommerce_catalog_orderby + woocommerce_get_catalog_ordering_args,
@@ -1596,6 +1598,13 @@ class CashbackPlugin {
         // Recurring schedule + admin-кнопка добавятся в Этапе 9.
         if (class_exists('Cashback_Shop_Importer')) {
             Cashback_Shop_Importer::init();
+        }
+
+        // Rate-of-approve refresher: отдельный 2-часовой AS-cron, тянет
+        // `rate_of_approve` per-campaign из `/advcampaigns/{id}/` (Admitad)
+        // и пишет post_meta. Существующий daily-импорт магазинов не трогает.
+        if (class_exists('Cashback_Shop_Rate_Of_Approve_Refresher')) {
+            Cashback_Shop_Rate_Of_Approve_Refresher::init();
         }
 
         // Сортировка каталога по кэшбэку: фильтры orderby + recompute хуки

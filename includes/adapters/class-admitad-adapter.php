@@ -692,6 +692,149 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
     }
 
     /**
+     * GET /advcampaigns/{id}/ — детали одной кампании, включая `rate_of_approve`,
+     * которое **не приходит** в массовом `/advcampaigns/website/{wid}/` (подтверждено
+     * пробным запросом 2026-05-20: keys у website-list не содержат rate_of_approve;
+     * single-campaign endpoint отдаёт его строкой, например `"75"`).
+     *
+     * Используется обоими путями: 2h-cron `Cashback_Shop_Rate_Of_Approve_Refresher`
+     * и ручной AJAX-кнопкой в редакторе товара.
+     *
+     * Retry-паттерн зеркалит `fetch_shop_tariffs()` / `fetch_campaigns_detailed()`:
+     * 401 → invalidate_token + один retry; 403 insufficient_scope → invalidate +
+     * один retry; 5xx → до 2 повторов с backoff через filter
+     * `cashback_admitad_5xx_retry_delay_seconds` (тот же что использует
+     * `fetch_actions()`). `$retry_5xx_attempt` — internal counter, defense
+     * против infinite-loop'а (см. F-44-002).
+     *
+     * @return array{success: bool, campaign: array<string,mixed>|null, error: ?string}
+     */
+    public function fetch_campaign_by_id( array $credentials, array $network_config, string $campaign_id, int $retry_5xx_attempt = 0 ): array {
+        if ($campaign_id === '') {
+            return array(
+                'success'  => false,
+                'campaign' => null,
+                'error'    => 'campaign_id обязателен',
+            );
+        }
+
+        $auth_headers = $this->build_auth_headers($credentials, $network_config);
+        if (!$auth_headers) {
+            return array(
+                'success'  => false,
+                'campaign' => null,
+                'error'    => 'Не удалось получить токен Admitad',
+            );
+        }
+
+        $base_url = rtrim((string) ( $network_config['api_base_url'] ?? 'https://api.admitad.com' ), '/');
+        $url      = $base_url . '/advcampaigns/' . rawurlencode($campaign_id) . '/';
+
+        $response = $this->http_get($url, $auth_headers);
+        if (is_wp_error($response)) {
+            return array(
+                'success'  => false,
+                'campaign' => null,
+                'error'    => 'HTTP error: ' . $response->get_error_message(),
+            );
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+
+        if ($code === 401) {
+            $this->invalidate_token($credentials);
+            $auth_headers = $this->build_auth_headers($credentials, $network_config);
+            if (!$auth_headers) {
+                return array(
+                    'success'  => false,
+                    'campaign' => null,
+                    'error'    => 'Token refresh failed after 401',
+                );
+            }
+            $response = $this->http_get($url, $auth_headers);
+            if (is_wp_error($response)) {
+                return array(
+                    'success'  => false,
+                    'campaign' => null,
+                    'error'    => 'HTTP error after 401 retry: ' . $response->get_error_message(),
+                );
+            }
+            $code = wp_remote_retrieve_response_code($response);
+        }
+
+        if ($code === 403) {
+            $body_text = wp_remote_retrieve_body($response);
+            if (is_string($body_text) && str_contains($body_text, 'insufficient_scope')) {
+                $this->invalidate_token($credentials);
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('Cashback Admitad: 403 insufficient_scope on advcampaigns/{id}, invalidating token and retrying');
+
+                $auth_headers = $this->build_auth_headers($credentials, $network_config);
+                if (!$auth_headers) {
+                    return array(
+                        'success'  => false,
+                        'campaign' => null,
+                        'error'    => 'Token refresh failed after 403 insufficient_scope',
+                    );
+                }
+                $response = $this->http_get($url, $auth_headers);
+                if (is_wp_error($response)) {
+                    return array(
+                        'success'  => false,
+                        'campaign' => null,
+                        'error'    => 'HTTP error after 403 retry: ' . $response->get_error_message(),
+                    );
+                }
+                $code = wp_remote_retrieve_response_code($response);
+            }
+        }
+
+        // 5xx — до 2 повторов с backoff. Использует тот же filter что
+        // fetch_actions() (`cashback_admitad_5xx_retry_delay_seconds`), чтобы
+        // тестам не приходилось спать. $retry_5xx_attempt — bounded counter
+        // против infinite-loop'а (F-44-002).
+        if ($code >= 500 && $code < 600 && $retry_5xx_attempt < 2) {
+            $next_attempt = $retry_5xx_attempt + 1;
+            $delay        = (int) apply_filters(
+                'cashback_admitad_5xx_retry_delay_seconds',
+                $next_attempt,
+                $next_attempt,
+                $code
+            );
+            if ($delay > 0) {
+                sleep($delay);
+            }
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log("Cashback Admitad: HTTP {$code} on advcampaigns/{$campaign_id}, retry attempt {$next_attempt} of 2");
+            return $this->fetch_campaign_by_id($credentials, $network_config, $campaign_id, $next_attempt);
+        }
+
+        if ($code !== 200) {
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+            return array(
+                'success'  => false,
+                'campaign' => null,
+                'error'    => "HTTP {$code}: " . $this->safe_error_summary($body),
+            );
+        }
+
+        $raw = json_decode(wp_remote_retrieve_body($response), true);
+        if (!is_array($raw)) {
+            return array(
+                'success'  => false,
+                'campaign' => null,
+                'error'    => 'Invalid JSON in /advcampaigns/{id}/ response',
+            );
+        }
+
+        return array(
+            'success'  => true,
+            'campaign' => $this->normalize_campaign_detail($raw),
+            'error'    => null,
+        );
+    }
+
+    /**
      * Нормализовать одну запись /advcampaigns/?... в формат CampaignDetailDTO.
      *
      * Admitad может вернуть `categories` как [{id,name}, …] или просто список
@@ -770,6 +913,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             'raw'               => $raw,
             'inline_tariffs'    => $inline_tariffs,
             'payment_time_days' => $payment_time_days,
+            'rate_of_approve'   => $this->extract_rate_of_approve($raw),
         );
     }
 
@@ -806,6 +950,45 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
                 continue;
             }
             return $days;
+        }
+
+        return null;
+    }
+
+    /**
+     * Извлечь "approval rate" — процент подтверждённых рекламодателем
+     * заказов, как его видит сама CPA-сеть. Endpoint `/advcampaigns/{id}/`
+     * отдаёт поле строкой ("75"), реже числом; в массиве `/advcampaigns/website/{wid}/`
+     * поле **отсутствует** — то есть `null` тут — это нормальный сигнал
+     * "endpoint не даёт значения", а не ошибка.
+     *
+     * Валидация: numeric, диапазон [0..100]; иначе null.
+     *
+     * Имена полей-кандидатов filterable, чтобы можно было поменять без правки
+     * кода (например, если у наследника адаптера поле называется иначе).
+     *
+     * @param array<string, mixed> $raw
+     */
+    private function extract_rate_of_approve( array $raw ): ?float {
+        $candidates = array( 'rate_of_approve' );
+        /** @var array<int, string> $candidates */
+        $candidates = (array) apply_filters( 'cashback_admitad_rate_of_approve_fields', $candidates, $raw );
+
+        foreach ( $candidates as $key ) {
+            if ( ! is_string( $key ) || $key === '' ) {
+                continue;
+            }
+            if ( ! array_key_exists( $key, $raw ) || $raw[ $key ] === null ) {
+                continue;
+            }
+            if ( ! is_numeric( $raw[ $key ] ) ) {
+                continue;
+            }
+            $value = (float) $raw[ $key ];
+            if ( $value < 0.0 || $value > 100.0 ) {
+                continue;
+            }
+            return round( $value, 2 );
         }
 
         return null;
