@@ -975,4 +975,19 @@ XML;
         $this->assertTrue($result['success']);
         $this->assertSame(array(), $result['tariffs']);
     }
+
+    /**
+     * Smoke: метод fetch_campaign_by_id присутствует на адаптере — это де-факто
+     * интерфейс, на который смотрят Cashback_CPA_Approval_Rate_Provider /
+     * Cashback_Shop_Rate_Of_Approve_Refresher через method_exists(). Если метод
+     * случайно потеряется при рефакторе, UI-блок «Данные CPA-сети» молча
+     * перестанет показываться для Advcake.
+     */
+    public function test_fetch_campaign_by_id_is_implemented(): void
+    {
+        $this->assertTrue(
+            method_exists(Cashback_Advcake_Adapter::class, 'fetch_campaign_by_id'),
+            'Advcake adapter must expose fetch_campaign_by_id (Refresher checks via method_exists)'
+        );
+    }
 }
