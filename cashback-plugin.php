@@ -932,6 +932,7 @@ class CashbackPlugin {
         // Shop Importer (v12) — оркестратор + tariff sync + import log + group resolver + display calculator + tab1 renderer
         $this->require_file('includes/shops/class-cashback-shop-import-log.php');
         $this->require_file('includes/shops/class-cashback-shop-tariff-sync.php');
+        $this->require_file('includes/shops/class-cashback-shop-approval-rate.php');
         $this->require_file('includes/shops/class-cashback-shop-group-resolver.php');
         $this->require_file('includes/shops/class-cashback-tab-conditions-renderer.php');
         $this->require_file('includes/shops/class-cashback-shop-importer.php');

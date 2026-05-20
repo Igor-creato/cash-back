@@ -582,6 +582,7 @@ class WC_Affiliate_URL_Params {
         $product_id   = $current_post instanceof WP_Post ? (int) $current_post->ID : 0;
         if ($product_id > 0) {
             $this->render_imported_tariffs_table($product_id);
+            $this->render_shop_approval_rate_block($product_id);
         }
 
         echo '</div>';
@@ -734,6 +735,68 @@ class WC_Affiliate_URL_Params {
             echo '</tr>';
         }
         echo '</tbody></table>';
+    }
+
+    /**
+     * Read-only блок «% подтверждения заказов магазином (30 дней)».
+     *
+     * Под таблицей тарифов. Показывает локально посчитанный approval rate
+     * (Cashback_Shop_Approval_Rate) с цветовой плашкой: <50% красный,
+     * 50–80% жёлтый, ≥80% зелёный, при выборке <10 — серая «недостаточно данных».
+     */
+    private function render_shop_approval_rate_block( int $product_id ): void {
+        if (! class_exists('Cashback_Shop_Approval_Rate')) {
+            return;
+        }
+
+        $network_id = (int) get_post_meta($product_id, '_affiliate_network_id', true);
+        $offer_id   = (string) get_post_meta($product_id, '_offer_id', true);
+        if ($network_id <= 0 || $offer_id === '') {
+            return;
+        }
+
+        // Сети со строковыми offer_id (Advcake) — метрика по нашей формуле
+        // недоступна (cashback_transactions.offer_id = int unsigned). Лучше
+        // не рендерить блок, чем показать ложное «недостаточно данных».
+        if (! ctype_digit(trim($offer_id))) {
+            return;
+        }
+
+        $data   = Cashback_Shop_Approval_Rate::for_shop($network_id, $offer_id);
+        $bucket = (string) ($data['bucket'] ?? 'insufficient');
+        $rate   = $data['rate'] ?? null;
+        $sample = (int) ($data['sample'] ?? 0);
+        $window = (int) ($data['window_days'] ?? Cashback_Shop_Approval_Rate::WINDOW_DAYS);
+
+        $badge_text = ($rate === null)
+            ? esc_html__('недостаточно данных', 'wc-affiliate-url-params')
+            : sprintf('%s%%', number_format((float) $rate, 1, '.', ''));
+
+        echo '<h4 style="padding: 10px 12px; margin: 12px 0 0; border-top: 1px solid #ddd; border-bottom: 1px solid #ddd;">'
+            . esc_html(sprintf(
+                /* translators: %d — окно в днях */
+                __('%% подтверждения заказов магазином (%d дней)', 'wc-affiliate-url-params'),
+                $window
+            ))
+            . '</h4>';
+        echo '<p class="description" style="padding: 5px 12px; color: #666; margin: 0;">'
+            . esc_html__('Локальный расчёт по нашим транзакциям: completed / (completed + declined). Обновляется раз в час.', 'wc-affiliate-url-params')
+            . '</p>';
+
+        echo '<p class="form-field" style="padding-left:12px;">';
+        echo '<span class="cashback-approval-badge cashback-approval-badge--' . esc_attr($bucket) . '">'
+            . esc_html($badge_text)
+            . '</span>';
+        echo ' <span class="description">'
+            . esc_html(sprintf(
+                /* translators: 1: total sample, 2: confirmed count, 3: declined count */
+                __('N=%1$d (одобрено %2$d / отклонено %3$d)', 'wc-affiliate-url-params'),
+                $sample,
+                (int) ($data['confirmed'] ?? 0),
+                (int) ($data['declined']  ?? 0)
+            ))
+            . '</span>';
+        echo '</p>';
     }
 
     /**
