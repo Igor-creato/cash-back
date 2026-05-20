@@ -341,6 +341,10 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
 
     /**
      * Сохранить значение в post_meta. Null → удалить мету (честное «нет данных»).
+     *
+     * После записи / удаления стреляет `cashback_rate_of_approve_updated` —
+     * Cashback_Product_Sort подписан на этот action и пересчитывает sort-ключ
+     * каталога (`_cashback_sort_value` учитывает approval как множитель).
      */
     private static function save_rate_for_product( int $product_id, $rate, string $source ): void {
         if ($product_id <= 0) {
@@ -350,6 +354,7 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
             delete_post_meta($product_id, self::META_RATE);
             delete_post_meta($product_id, self::META_FETCHED_AT);
             delete_post_meta($product_id, self::META_SOURCE);
+            self::fire_updated_action($product_id);
             return;
         }
 
@@ -358,6 +363,18 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
         if ($source !== '') {
             update_post_meta($product_id, self::META_SOURCE, $source);
         }
+        self::fire_updated_action($product_id);
+    }
+
+    /**
+     * Стреляем «approval rate изменился» — отдельный helper, чтобы подавить
+     * случайное рекурсивное обновление и держать имя action в одном месте.
+     */
+    private static function fire_updated_action( int $product_id ): void {
+        if ($product_id <= 0 || ! function_exists('do_action')) {
+            return;
+        }
+        do_action('cashback_rate_of_approve_updated', $product_id);
     }
 
     /**

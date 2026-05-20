@@ -143,12 +143,17 @@ class Cashback_Cashback_Display_Calculator {
     /**
      * Числовое значение кэшбэка для сортировки каталога.
      *
-     * Возвращает ту же цифру, которая выводится в карточке (для guest-rate),
-     * без HTML-обёртки. Используется Cashback_Product_Sort::recompute_for_product
-     * для записи в meta `_cashback_sort_value`.
+     * Возвращает «ожидаемый» процент кэшбэка для гостя — guest-rate, домноженный
+     * на approval_factor (доля заказов, которые CPA-сеть подтверждает). Это
+     * sort-ключ для `_cashback_sort_value` (см. Cashback_Product_Sort).
      *
-     * Свойство монотонности: умножение всех значений на rate сохраняет
-     * порядок, поэтому достаточно guest-варианта (user_id = 0).
+     * Формула: payment_size_max × guest_rate × approval_factor / 100.
+     * UI-карточка по-прежнему показывает guest-rate без approval — пользователь
+     * видит «6%», но сортируется витрина по «ожидаемому 3,96%» (= 6 × 0.66).
+     *
+     * Свойство монотонности относительно guest_rate сохраняется (все товары
+     * получают тот же множитель), поэтому для сортировки достаточно гостевого
+     * варианта; approval_factor различается по товарам и даёт вторичный сигнал.
      *
      * Возвращает 0.0 если расчёт невозможен — caller (Cashback_Product_Sort)
      * сам падает в legacy-fallback по `_cashback_display_value`.
@@ -167,16 +172,75 @@ class Cashback_Cashback_Display_Calculator {
         $value     = isset($compute['value']) ? (float) $compute['value'] : 0.0;
         $formatted = isset($compute['formatted']) ? (string) $compute['formatted'] : '';
 
+        $base = 0.0;
         if ($type === 'manual') {
             // Manual override приходит как строка ("12.5%" или "65 ₽") —
             // парсим число тем же helper, что и legacy fallback.
             if ($formatted !== '' && class_exists('Cashback_Product_Sort')) {
-                return Cashback_Product_Sort::parse_legacy_value($formatted);
+                $base = Cashback_Product_Sort::parse_legacy_value($formatted);
             }
+        } elseif ($value > 0.0) {
+            $base = $value;
+        }
+
+        if ($base <= 0.0) {
             return 0.0;
         }
 
-        return $value > 0.0 ? $value : 0.0;
+        return $base * self::get_approval_factor($product_id);
+    }
+
+    /**
+     * Approval factor [0..1] для сортировки. Свежий `_cashback_rate_of_approve`
+     * (≤ stale_after_days) → rate/100; иначе neutral prior (default 70%). Floor
+     * применяется к итогу.
+     *
+     * Filterable:
+     *   - cashback_sort_approval_prior            (default 70.0) — подставляется при missing/stale.
+     *   - cashback_sort_approval_floor            (default 0.0)  — мин. effective approval %.
+     *   - cashback_sort_approval_stale_after_days (default 7)    — окно свежести meta.
+     */
+    public static function get_approval_factor( int $product_id ): float {
+        if ($product_id <= 0) {
+            return 1.0;
+        }
+
+        $prior = 70.0;
+        $floor = 0.0;
+        $stale = 7;
+        if (function_exists('apply_filters')) {
+            $prior = (float) apply_filters('cashback_sort_approval_prior', 70.0);
+            $floor = (float) apply_filters('cashback_sort_approval_floor', 0.0);
+            $stale = (int) apply_filters('cashback_sort_approval_stale_after_days', 7);
+        }
+        $prior = max(0.0, min(100.0, $prior));
+        $floor = max(0.0, min(100.0, $floor));
+        $stale = max(1, $stale);
+
+        $meta_rate_key       = class_exists('Cashback_Shop_Rate_Of_Approve_Refresher')
+            ? Cashback_Shop_Rate_Of_Approve_Refresher::META_RATE
+            : '_cashback_rate_of_approve';
+        $meta_fetched_at_key = class_exists('Cashback_Shop_Rate_Of_Approve_Refresher')
+            ? Cashback_Shop_Rate_Of_Approve_Refresher::META_FETCHED_AT
+            : '_cashback_rate_of_approve_fetched_at';
+
+        $rate_raw       = function_exists('get_post_meta') ? get_post_meta($product_id, $meta_rate_key, true) : '';
+        $fetched_at_raw = function_exists('get_post_meta') ? get_post_meta($product_id, $meta_fetched_at_key, true) : '';
+
+        $has_value = is_string($rate_raw) ? $rate_raw !== '' : ($rate_raw !== null && $rate_raw !== false);
+
+        if (! $has_value || ! is_numeric($rate_raw)) {
+            return max($prior, $floor) / 100.0;
+        }
+
+        $fetched_at    = is_numeric($fetched_at_raw) ? (int) $fetched_at_raw : 0;
+        $stale_seconds = $stale * (defined('DAY_IN_SECONDS') ? DAY_IN_SECONDS : 86400);
+        if ($fetched_at > 0 && (time() - $fetched_at) > $stale_seconds) {
+            return max($prior, $floor) / 100.0;
+        }
+
+        $rate = max(0.0, min(100.0, (float) $rate_raw));
+        return max($rate, $floor) / 100.0;
     }
 
     /**

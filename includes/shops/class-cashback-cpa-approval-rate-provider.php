@@ -143,6 +143,9 @@ final class Cashback_CPA_Approval_Rate_Provider {
             delete_post_meta($product_id, Cashback_Shop_Rate_Of_Approve_Refresher::META_RATE);
             delete_post_meta($product_id, Cashback_Shop_Rate_Of_Approve_Refresher::META_FETCHED_AT);
             delete_post_meta($product_id, Cashback_Shop_Rate_Of_Approve_Refresher::META_SOURCE);
+            if (function_exists('do_action')) {
+                do_action('cashback_rate_of_approve_updated', $product_id);
+            }
             return array(
                 'success'    => true,
                 'rate'       => null,
@@ -166,6 +169,9 @@ final class Cashback_CPA_Approval_Rate_Provider {
         update_post_meta($product_id, Cashback_Shop_Rate_Of_Approve_Refresher::META_RATE, (string) $rounded);
         update_post_meta($product_id, Cashback_Shop_Rate_Of_Approve_Refresher::META_FETCHED_AT, (string) $now);
         update_post_meta($product_id, Cashback_Shop_Rate_Of_Approve_Refresher::META_SOURCE, 'manual');
+        if (function_exists('do_action')) {
+            do_action('cashback_rate_of_approve_updated', $product_id);
+        }
 
         return array(
             'success'    => true,

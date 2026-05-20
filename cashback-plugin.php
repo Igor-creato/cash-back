@@ -6,7 +6,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Cashback Plugin
  * Description: Объединенный плагин для системы кэшбэка и аффилиат-партнерства
- * Version: 4.4.28
+ * Version: 4.4.29
  * Author: Cashback
  * Author URI: https://example.com
  * Text Domain: cashback-plugin
@@ -1608,11 +1608,14 @@ class CashbackPlugin {
         }
 
         // Сортировка каталога по кэшбэку: фильтры orderby + recompute хуки
-        // (cashback_tariffs_changed). Идемпотентный one-shot backfill при
-        // первом init после релиза — гейтится опцией cashback_product_sort_backfill_v1.
+        // (cashback_tariffs_changed, cashback_rate_of_approve_updated). Идемпотентный
+        // one-shot backfill при первом init после релиза — гейтится опциями
+        // cashback_product_sort_backfill_v1 и _v2. V2 пересчитывает sort_value
+        // с учётом approval_factor (релиз с формулой payment × rate × approval).
         if (class_exists('Cashback_Product_Sort')) {
             Cashback_Product_Sort::register();
             Cashback_Product_Sort::ensure_backfilled();
+            Cashback_Product_Sort::ensure_backfilled_v2();
         }
 
         // Catalog visibility: pre_get_posts фильтр + sync на cashback_group_preferred_changed.
