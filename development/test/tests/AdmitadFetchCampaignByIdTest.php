@@ -176,16 +176,55 @@ final class AdmitadFetchCampaignByIdTest extends TestCase
         $this->assertSame(1, $adapter->invalidate_count, '401 should invalidate token once');
     }
 
-    public function test_404_returns_error_with_code(): void
+    public function test_404_means_campaign_deleted_returns_success_null(): void
     {
+        // 404 = удалённая кампания → success=true + campaign=null,
+        // caller (Refresher / Provider) интерпретирует как «удалить мету».
+        // Это НЕ ошибка, а валидный «нет данных от сети» (prod-инцидент
+        // 2026-05-20: 404 для product=4203, кампания исчезла из Admitad).
         $this->queue(array($this->resp(404, '{"error":"Not Found"}')));
 
         $adapter = $this->make_adapter();
         $result  = $adapter->fetch_campaign_by_id($this->creds(), $this->cfg(), '999999');
 
-        $this->assertFalse($result['success']);
+        $this->assertTrue($result['success']);
         $this->assertNull($result['campaign']);
-        $this->assertStringContainsString('HTTP 404', (string) $result['error']);
+        $this->assertNull($result['error']);
+    }
+
+    public function test_429_retries_with_admitad_body_delay(): void
+    {
+        // Отключаем sleep в тестах — filter возвращает 0.
+        add_filter('cashback_admitad_429_retry_delay_seconds', static fn() => 0);
+
+        $this->queue(array(
+            $this->resp(429, '{"error":"Запрос был проигнорирован. Expected available in 11 seconds."}'),
+            $this->resp(200, wp_json_encode(array('id' => 1, 'rate_of_approve' => '60'))),
+        ));
+
+        $adapter = $this->make_adapter();
+        $result  = $adapter->fetch_campaign_by_id($this->creds(), $this->cfg(), '1');
+
+        $this->assertTrue($result['success']);
+        $this->assertSame(60.0, $result['campaign']['rate_of_approve']);
+    }
+
+    public function test_429_after_2_retries_returns_error(): void
+    {
+        add_filter('cashback_admitad_429_retry_delay_seconds', static fn() => 0);
+
+        // Три подряд 429 — после 2 повторов сдаёмся.
+        $this->queue(array(
+            $this->resp(429, '{"error":"available in 5 seconds"}'),
+            $this->resp(429, '{"error":"available in 5 seconds"}'),
+            $this->resp(429, '{"error":"available in 5 seconds"}'),
+        ));
+
+        $adapter = $this->make_adapter();
+        $result  = $adapter->fetch_campaign_by_id($this->creds(), $this->cfg(), '1');
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('HTTP 429', (string) $result['error']);
     }
 
     public function test_invalid_json_returns_error(): void

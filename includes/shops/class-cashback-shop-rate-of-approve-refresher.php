@@ -39,8 +39,14 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
     /** Сколько WC-product'ов обрабатывать в одной AS-итерации. */
     public const BATCH_SIZE = 30;
 
-    /** Пауза между HTTP-запросами внутри батча (микросекунды). */
-    public const PER_REQUEST_PAUSE_US = 150_000;
+    /**
+     * Пауза между HTTP-запросами внутри батча (микросекунды). 1 секунда —
+     * подобрано после prod-инцидента 2026-05-20: при 150ms Admitad возвращал
+     * 429 для большинства запросов в batch'е (rate-limit ~5 req/sec).
+     * 1 сек даёт стабильные ~1 req/sec, под Admitad-лимит. Filterable
+     * через `cashback_shop_rate_of_approve_per_request_pause_us`.
+     */
+    public const PER_REQUEST_PAUSE_US = 1_000_000;
 
     /**
      * Lock helper. Сообщает is_lock_held для тестов; в проде GET_LOCK
@@ -223,10 +229,15 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
                 $result = $adapter->fetch_campaign_by_id($creds, $network, $offer_id);
                 ++$processed;
 
-                if (empty($result['success']) || ! is_array($result['campaign'] ?? null)) {
+                if (empty($result['success'])) {
                     ++$errors;
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
                     error_log('[Cashback Rate-Of-Approve] product=' . $pid . ' err=' . (string) ($result['error'] ?? 'unknown'));
+                } elseif (! is_array($result['campaign'] ?? null)) {
+                    // success=true + campaign=null → 404 / удалённая кампания.
+                    // Не ошибка: удаляем мету, чтобы UI показал «нет данных».
+                    self::save_rate_for_product($pid, null, (string) ($network['slug'] ?? ''));
+                    ++$updated;
                 } else {
                     $campaign = $result['campaign'];
                     self::save_rate_for_product(
@@ -309,12 +320,14 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
         }
 
         $result = $adapter->fetch_campaign_by_id($creds, $network, $offer_id);
-        if (empty($result['success']) || ! is_array($result['campaign'] ?? null)) {
+        if (empty($result['success'])) {
             return self::single_error((string) ($result['error'] ?? 'Не удалось получить данные кампании'));
         }
 
-        $campaign = $result['campaign'];
-        $rate     = isset($campaign['rate_of_approve']) ? $campaign['rate_of_approve'] : null;
+        // success=true + campaign=null → 404 (удалённая кампания) — это
+        // валидный «нет данных», а не ошибка. Удаляем мету.
+        $campaign = is_array($result['campaign'] ?? null) ? $result['campaign'] : null;
+        $rate     = is_array($campaign) && isset($campaign['rate_of_approve']) ? $campaign['rate_of_approve'] : null;
         self::save_rate_for_product($product_id, $rate, (string) ($network['slug'] ?? ''));
 
         return array(

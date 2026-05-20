@@ -704,12 +704,17 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
      * 401 → invalidate_token + один retry; 403 insufficient_scope → invalidate +
      * один retry; 5xx → до 2 повторов с backoff через filter
      * `cashback_admitad_5xx_retry_delay_seconds` (тот же что использует
-     * `fetch_actions()`). `$retry_5xx_attempt` — internal counter, defense
-     * против infinite-loop'а (см. F-44-002).
+     * `fetch_actions()`). `$retry_429_attempt` / `$retry_5xx_attempt` — internal
+     * counters, defense против infinite-loop'а (см. F-44-002).
+     *
+     * 429 (Admitad rate-limit) — Admitad возвращает body вида
+     * `{"error":"Запрос был проигнорирован. Expected available in 11 seconds."}`.
+     * Парсим delay из body, sleep + retry до 2 раз. Если delay не разобрался —
+     * берём дефолт 5 секунд (filter `cashback_admitad_429_default_delay_seconds`).
      *
      * @return array{success: bool, campaign: array<string,mixed>|null, error: ?string}
      */
-    public function fetch_campaign_by_id( array $credentials, array $network_config, string $campaign_id, int $retry_5xx_attempt = 0 ): array {
+    public function fetch_campaign_by_id( array $credentials, array $network_config, string $campaign_id, int $retry_5xx_attempt = 0, int $retry_429_attempt = 0 ): array {
         if ($campaign_id === '') {
             return array(
                 'success'  => false,
@@ -789,6 +794,27 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             }
         }
 
+        // 429 — Admitad rate-limit. Body содержит "Expected available in N seconds";
+        // парсим N и спим. До 2 повторов. Без 429-handle batch-cron теряет до 90%
+        // обновлений при стандартном темпе ~5 req/sec (production-инцидент 2026-05-20).
+        if ($code === 429 && $retry_429_attempt < 2) {
+            $body_text   = (string) wp_remote_retrieve_body($response);
+            $delay       = $this->parse_429_retry_after($body_text, $response);
+            $delay_clamp = max(1, min(60, $delay));
+            $delay_filt  = (int) apply_filters(
+                'cashback_admitad_429_retry_delay_seconds',
+                $delay_clamp,
+                $retry_429_attempt + 1,
+                $body_text
+            );
+            if ($delay_filt > 0) {
+                sleep($delay_filt);
+            }
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log("Cashback Admitad: HTTP 429 on advcampaigns/{$campaign_id}, sleeping {$delay_filt}s, retry attempt " . ( $retry_429_attempt + 1 ) . ' of 2');
+            return $this->fetch_campaign_by_id($credentials, $network_config, $campaign_id, $retry_5xx_attempt, $retry_429_attempt + 1);
+        }
+
         // 5xx — до 2 повторов с backoff. Использует тот же filter что
         // fetch_actions() (`cashback_admitad_5xx_retry_delay_seconds`), чтобы
         // тестам не приходилось спать. $retry_5xx_attempt — bounded counter
@@ -806,7 +832,18 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             }
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
             error_log("Cashback Admitad: HTTP {$code} on advcampaigns/{$campaign_id}, retry attempt {$next_attempt} of 2");
-            return $this->fetch_campaign_by_id($credentials, $network_config, $campaign_id, $next_attempt);
+            return $this->fetch_campaign_by_id($credentials, $network_config, $campaign_id, $next_attempt, $retry_429_attempt);
+        }
+
+        // 404 — кампания удалена/недоступна. Это не транзитная ошибка, а
+        // явный сигнал «нет данных у сети». Возвращаем success=true с
+        // null campaign → caller (Refresher / Provider) удалит post_meta.
+        if ($code === 404) {
+            return array(
+                'success'  => true,
+                'campaign' => null,
+                'error'    => null,
+            );
         }
 
         if ($code !== 200) {
@@ -832,6 +869,42 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             'campaign' => $this->normalize_campaign_detail($raw),
             'error'    => null,
         );
+    }
+
+    /**
+     * Распарсить задержку из 429-ответа Admitad. API возвращает body вида
+     * `{"error":"Запрос был проигнорирован. Expected available in 11 seconds."}`.
+     * Также проверяем стандартный header `Retry-After` если есть.
+     *
+     * Дефолт — 5 секунд (filter-овый, см. caller).
+     *
+     * @param string                $body_text
+     * @param array<string, mixed>|\WP_Error $response
+     */
+    private function parse_429_retry_after( string $body_text, $response ): int {
+        // 1) Header Retry-After (HTTP-standard, может быть в секундах или HTTP-date)
+        if (function_exists('wp_remote_retrieve_header')) {
+            $hdr = wp_remote_retrieve_header($response, 'retry-after');
+            if (is_string($hdr) && $hdr !== '') {
+                if (ctype_digit($hdr)) {
+                    return (int) $hdr;
+                }
+                $ts = strtotime($hdr);
+                if ($ts !== false) {
+                    $delta = $ts - time();
+                    if ($delta > 0) {
+                        return $delta;
+                    }
+                }
+            }
+        }
+
+        // 2) Admitad-specific: "Expected available in N seconds"
+        if (preg_match('/available in\s+(\d+)\s+second/i', $body_text, $m)) {
+            return (int) $m[1];
+        }
+
+        return 5;
     }
 
     /**
