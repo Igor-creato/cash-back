@@ -799,6 +799,19 @@ class Cashback_Users_Management_Admin {
             $wpdb->query($wpdb->prepare('DO RELEASE_LOCK(%s)', $withdrawal_lock_name));
         }
 
+        // Инвалидируем cached display: смена cashback_rate юзера должна сразу
+        // отразиться на витрине, иначе он видит старую ставку до cache TTL (12ч
+        // по умолчанию), а начисление уже идёт по новой → юзер жалуется
+        // «получил меньше чем показывали».
+        if (
+            $new_cashback_rate !== null
+            && $old_cashback_rate !== null
+            && $old_cashback_rate !== $new_cashback_rate
+            && class_exists('Cashback_Shop_Options')
+        ) {
+            Cashback_Shop_Options::bump_display_rate_version();
+        }
+
         // Получаем обновленные данные из базы.
         $updated_user_data = $wpdb->get_row(
             $wpdb->prepare(
@@ -1066,6 +1079,13 @@ class Cashback_Users_Management_Admin {
             }
             wp_send_json_error(array( 'message' => 'Ошибка при обновлении базы данных.' ));
             return;
+        }
+
+        // Инвалидируем cached display после bulk-rate update — иначе пользователи
+        // видят старую ставку на витрине до истечения cache TTL (12ч default),
+        // а начисление уже идёт по новой → расхождение «показано vs получено».
+        if (class_exists('Cashback_Shop_Options')) {
+            Cashback_Shop_Options::bump_display_rate_version();
         }
 
         $response_data = array(
