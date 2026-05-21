@@ -49,6 +49,17 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
     public const PER_REQUEST_PAUSE_US = 1_000_000;
 
     /**
+     * Cooldown для товаров, у которых CPA-сеть вернула «нет данных»
+     * (success=true + campaign=null, типично 404 — удалённая кампания).
+     * После такого ответа товар выпадает из cron-выборки на этот срок,
+     * чтобы не сжигать rate-limit повторными бесполезными запросами.
+     * `refresh_one()` (ручная кнопка) cooldown игнорирует. Filterable
+     * через `cashback_shop_rate_of_approve_null_cooldown_seconds`.
+     * @since 4.4.31
+     */
+    public const NULL_RESULT_COOLDOWN_SECONDS = 604800; // 7 дней
+
+    /**
      * Lock helper. Сообщает is_lock_held для тестов; в проде GET_LOCK
      * освобождается при закрытии connection (на случай зависшего AS-job).
      */
@@ -340,7 +351,17 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
     }
 
     /**
-     * Сохранить значение в post_meta. Null → удалить мету (честное «нет данных»).
+     * Сохранить значение в post_meta.
+     *
+     * Null → удалить `META_RATE`/`META_SOURCE`, но **записать** `META_FETCHED_AT
+     * = time()`. Это «sentinel факта проверки»: товар реально опрашивался,
+     * сеть ответила «нет данных» (например, 404 — удалённая кампания), и
+     * `query_product_ids_for_network()` теперь умеет исключать такие товары
+     * на cooldown-период (`NULL_RESULT_COOLDOWN_SECONDS`).
+     *
+     * Раньше при null удалялся и `META_FETCHED_AT` тоже, и товар возвращался
+     * в выборку каждый 2-часовой тик — бесконечный цикл бесполезных запросов
+     * к Admitad (поймано 2026-05-21 при диагностике staging).
      */
     private static function save_rate_for_product( int $product_id, $rate, string $source ): void {
         if ($product_id <= 0) {
@@ -348,8 +369,8 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
         }
         if ($rate === null || ! is_numeric($rate)) {
             delete_post_meta($product_id, self::META_RATE);
-            delete_post_meta($product_id, self::META_FETCHED_AT);
             delete_post_meta($product_id, self::META_SOURCE);
+            update_post_meta($product_id, self::META_FETCHED_AT, (string) time());
             return;
         }
 
@@ -368,6 +389,12 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
      *     и автоматически выпадает из выборки следующего батча (F-44-001 fix);
      *   - сортировка «NULL → самые старые» сохраняется как приоритет внутри
      *     цикла, но больше не влияет на пагинацию (она по cutoff'у).
+     *
+     * **Null-result cooldown** (4.4.31): товары, у которых `META_RATE` IS NULL
+     * И `META_FETCHED_AT >= time() - NULL_RESULT_COOLDOWN_SECONDS`, исключаются
+     * из выборки. Это защита от бесконечного цикла бесполезных запросов
+     * к удалённым кампаниям (404 от Admitad возвращает success=true+null,
+     * `save_rate_for_product()` записывает sentinel-timestamp без rate).
      *
      * `$cycle_started_at <= 0` → cutoff отключён: возвращаем NULL/самые старые
      * (используется WP-CLI / тестами при прямом вызове `run_batch`).
@@ -390,16 +417,30 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
             ? '(mf.meta_value IS NULL OR CAST(mf.meta_value AS UNSIGNED) < %d)'
             : '(1 = 1 OR %d = 0)'; // %d-плейсхолдер сохраняем для одинакового arg-списка prepare()
 
+        // Null-result cooldown: товар с rate=NULL пропускаем, если опрашивали
+        // его свежее, чем cooldown назад. Когда rate есть — это правило не
+        // применяется (для них работает только cycle-cutoff).
+        $cooldown = (int) apply_filters(
+            'cashback_shop_rate_of_approve_null_cooldown_seconds',
+            self::NULL_RESULT_COOLDOWN_SECONDS
+        );
+        if ($cooldown < 0) {
+            $cooldown = self::NULL_RESULT_COOLDOWN_SECONDS;
+        }
+        $cooldown_threshold = time() - $cooldown;
+
         $sql = "SELECT p.ID
                 FROM {$wpdb->posts} p
                 INNER JOIN {$wpdb->postmeta} mn ON mn.post_id = p.ID AND mn.meta_key = %s
                 INNER JOIN {$wpdb->postmeta} mo ON mo.post_id = p.ID AND mo.meta_key = %s
                 LEFT JOIN {$wpdb->postmeta} mf ON mf.post_id = p.ID AND mf.meta_key = %s
+                LEFT JOIN {$wpdb->postmeta} mr ON mr.post_id = p.ID AND mr.meta_key = %s
                 WHERE p.post_type = 'product'
                   AND p.post_status IN ('publish', 'draft', 'private', 'pending')
                   AND mn.meta_value = %d
                   AND mo.meta_value <> ''
-                  AND " . $cutoff_clause . '
+                  AND " . $cutoff_clause
+                . ' AND (mr.meta_id IS NOT NULL OR mf.meta_value IS NULL OR CAST(mf.meta_value AS UNSIGNED) < %d)
                 ORDER BY (mf.meta_value IS NULL) DESC, CAST(mf.meta_value AS UNSIGNED) ASC, p.ID ASC
                 LIMIT %d';
 
@@ -409,8 +450,10 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
             Cashback_Shop_Importer::META_NETWORK_ID,
             Cashback_Shop_Importer::META_OFFER_ID,
             self::META_FETCHED_AT,
+            self::META_RATE,
             $network_id,
             $cycle_started_at,
+            $cooldown_threshold,
             $limit
         ));
         // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
