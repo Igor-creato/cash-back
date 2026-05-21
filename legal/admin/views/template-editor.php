@@ -26,13 +26,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-$back_url    = admin_url('admin.php?page=' . Cashback_Legal_Admin::PAGE_SLUG_VERSIONS);
-$next_major = ( function ( string $current ): string {
-    if (preg_match('/^(\d+)\.(\d+)\.(\d+)/', $current, $m)) {
-        return ((int) $m[1] + 1) . '.0.0';
-    }
-    return '2.0.0';
-} )($published_version);
+$back_url   = admin_url('admin.php?page=' . Cashback_Legal_Admin::PAGE_SLUG_VERSIONS);
+$next_major = Cashback_Legal_Template_Editor::next_major($published_version);
 
 ?>
 <div class="wrap cashback-legal-template-editor" data-type="<?php echo esc_attr($type); ?>">
@@ -169,13 +164,4 @@ $next_major = ( function ( string $current ): string {
     </dialog>
 
     <div class="cashback-legal-template-feedback" data-role="feedback" aria-live="polite"></div>
-
-    <script>
-        window.CashbackLegalTemplateEditorBoot = {
-            type: <?php echo wp_json_encode($type); ?>,
-            publishedHash: <?php echo wp_json_encode($published_hash); ?>,
-            publishedVersion: <?php echo wp_json_encode($published_version); ?>,
-            nextMajor: <?php echo wp_json_encode($next_major); ?>,
-        };
-    </script>
 </div>

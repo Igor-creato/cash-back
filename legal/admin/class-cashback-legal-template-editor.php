@@ -100,6 +100,13 @@ class Cashback_Legal_Template_Editor {
             return;
         }
 
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only navigation параметр; сами действия защищены AJAX-nonce. Совпадает с render_page().
+        $type = isset($_GET['type']) ? sanitize_key((string) wp_unslash($_GET['type'])) : '';
+        if (!class_exists('Cashback_Legal_Documents') || !in_array($type, Cashback_Legal_Documents::all_types(), true)) {
+            // На невалидном type render_page редиректит — не enqueue'им редактор.
+            return;
+        }
+
         $plugin_root = dirname(__DIR__, 2);
         $plugin_file = $plugin_root . '/cashback-plugin.php';
         $css_path    = $plugin_root . '/legal/admin/css/template-editor.css';
@@ -107,8 +114,15 @@ class Cashback_Legal_Template_Editor {
         $css_url     = plugins_url('legal/admin/css/template-editor.css', $plugin_file);
         $js_url      = plugins_url('legal/admin/js/template-editor.js', $plugin_file);
 
-        $css_ver = file_exists($css_path) ? (string) filemtime($css_path) : '1.7.0';
-        $js_ver  = file_exists($js_path) ? (string) filemtime($js_path) : '1.7.0';
+        // Версия = max(filemtime ассета, filemtime главного плагин-файла) — последний
+        // обновляется при каждом релизе (git pull / GitHub Actions деплой), поэтому
+        // браузерный кэш JS инвалидируется при любом bump'е версии плагина, даже если
+        // сам template-editor.js не правился.
+        $plugin_mtime = file_exists($plugin_file) ? (int) filemtime($plugin_file) : 0;
+        $css_mtime    = file_exists($css_path) ? (int) filemtime($css_path) : 0;
+        $js_mtime     = file_exists($js_path) ? (int) filemtime($js_path) : 0;
+        $css_ver      = (string) max($css_mtime, $plugin_mtime, 1);
+        $js_ver       = (string) max($js_mtime, $plugin_mtime, 1);
 
         wp_register_style(self::ASSET_HANDLE, $css_url, array(), $css_ver);
         // Зависимость на 'editor' — wp.editor.* объект (TinyMCE init/post API);
@@ -129,8 +143,37 @@ class Cashback_Legal_Template_Editor {
             ),
         ));
 
+        // Boot-данные ($type/publishedHash/...) раньше эмитились inline-тегом
+        // <script> внутри view. На проде за nginx fastcgi_cache + WAF inline-блок
+        // мог не доехать до браузера (фильтр/прокси), что давало silent return на
+        // !boot.type в JS и неработающие кнопки. wp_localize_script выводит блок
+        // ДО основного скрипта в footer гарантированно.
+        $published_body    = (string) (Cashback_Legal_Template_Storage::get_active_body($type) ?? '');
+        $published_hash    = $published_body !== '' ? hash('sha256', $published_body) : '';
+        $published_version = (string) Cashback_Legal_Documents::get_active_version($type);
+        $next_major        = self::next_major($published_version);
+
+        wp_localize_script(self::ASSET_HANDLE, 'CashbackLegalTemplateEditorBoot', array(
+            'type'             => $type,
+            'publishedHash'    => $published_hash,
+            'publishedVersion' => $published_version,
+            'nextMajor'        => $next_major,
+        ));
+
         wp_enqueue_style(self::ASSET_HANDLE);
         wp_enqueue_script(self::ASSET_HANDLE);
+    }
+
+    /**
+     * Вычислить целевую (next) major-семвер-версию: incr major + ".0.0".
+     * Дублируется в view для backwards-compat (показ в кнопке/диалоге), но
+     * authoritative-значение — здесь, в enqueue → boot.nextMajor.
+     */
+    public static function next_major( string $current ): string {
+        if (preg_match('/^(\d+)\.(\d+)\.(\d+)/', $current, $m)) {
+            return ((int) $m[1] + 1) . '.0.0';
+        }
+        return '2.0.0';
     }
 
     // ────────────────────────────────────────────────────────────

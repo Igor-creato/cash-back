@@ -5,6 +5,10 @@
     var cfg = window.CashbackLegalTemplateEditor || {};
     var boot = window.CashbackLegalTemplateEditorBoot || {};
     if (!cfg.ajaxUrl || !boot.type || !cfg.editorId) {
+        // Silent failure прошлой реализации прятала root cause (cfg/boot не доехал).
+        if (window.console && window.console.warn) {
+            window.console.warn('cashback-legal-template-editor: missing cfg/boot, aborting init', { cfg: cfg, boot: boot });
+        }
         return;
     }
 
@@ -20,6 +24,9 @@
     var publishedHash = boot.publishedHash || '';
 
     if (!textarea) {
+        if (window.console && window.console.warn) {
+            window.console.warn('cashback-legal-template-editor: textarea #' + cfg.editorId + ' not found, aborting init');
+        }
         return;
     }
 
