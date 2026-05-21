@@ -88,6 +88,21 @@ class Cashback_Legal_Template_Editor {
         $draft             = Cashback_Legal_Template_Storage::get_draft($type);
         $required_phs      = Cashback_Legal_Template_Validator::required_placeholders_for_type($type);
 
+        // Boot-данные для JS. wp_add_inline_script(position='before') выводит
+        // блок ДО основного template-editor.js, гарантированно устанавливая
+        // window.CashbackLegalTemplateEditorBoot. enqueue_assets() уже
+        // зарегистрировал handle к этому моменту.
+        wp_add_inline_script(
+            self::ASSET_HANDLE,
+            'window.CashbackLegalTemplateEditorBoot = ' . wp_json_encode(array(
+                'type'             => $type,
+                'publishedHash'    => $published_hash,
+                'publishedVersion' => (string) $published_version,
+                'nextMajor'        => self::next_major((string) $published_version),
+            )) . ';',
+            'before'
+        );
+
         $view = dirname(__DIR__) . '/admin/views/template-editor.php';
         if (!file_exists($view)) {
             wp_die(esc_html__('View не найден.', 'cashback-plugin'));
@@ -95,15 +110,22 @@ class Cashback_Legal_Template_Editor {
         include $view;
     }
 
-    public static function enqueue_assets( string $hook = '' ): void {
-        if ($hook !== 'cashback_page_' . self::PAGE_SLUG) {
+    /**
+     * @param string $hook  Не используется — гард по $_GET['page'] (см. ниже),
+     *                      сигнатура остаётся ради совместимости с add_action.
+     */
+    public static function enqueue_assets( string $hook = '' ): void { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+        // ВАЖНО: WP формирует $hook через '<sanitize_title(parent menu_title)>_page_<slug>'.
+        // У нас parent menu_title = "Кэшбэк" → sanitize_title даёт "keshbek" (транслит),
+        // поэтому hardcode 'cashback_page_...' никогда не матчился — JS не подгружался,
+        // отсюда и историческая нерабочесть кнопок редактора. Используем slug страницы
+        // (предсказуемое значение из URL), а не hookname-лотерею.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only navigation параметр; сами действия защищены AJAX-nonce.
+        $page = isset($_GET['page']) ? sanitize_key((string) wp_unslash($_GET['page'])) : '';
+        if ($page !== self::PAGE_SLUG) {
             return;
         }
-
-        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only navigation параметр; сами действия защищены AJAX-nonce. Совпадает с render_page().
-        $type = isset($_GET['type']) ? sanitize_key((string) wp_unslash($_GET['type'])) : '';
-        if (!class_exists('Cashback_Legal_Documents') || !in_array($type, Cashback_Legal_Documents::all_types(), true)) {
-            // На невалидном type render_page редиректит — не enqueue'им редактор.
+        if (!current_user_can(self::CAPABILITY)) {
             return;
         }
 
@@ -143,22 +165,10 @@ class Cashback_Legal_Template_Editor {
             ),
         ));
 
-        // Boot-данные ($type/publishedHash/...) раньше эмитились inline-тегом
-        // <script> внутри view. На проде за nginx fastcgi_cache + WAF inline-блок
-        // мог не доехать до браузера (фильтр/прокси), что давало silent return на
-        // !boot.type в JS и неработающие кнопки. wp_localize_script выводит блок
-        // ДО основного скрипта в footer гарантированно.
-        $published_body    = (string) (Cashback_Legal_Template_Storage::get_active_body($type) ?? '');
-        $published_hash    = $published_body !== '' ? hash('sha256', $published_body) : '';
-        $published_version = (string) Cashback_Legal_Documents::get_active_version($type);
-        $next_major        = self::next_major($published_version);
-
-        wp_localize_script(self::ASSET_HANDLE, 'CashbackLegalTemplateEditorBoot', array(
-            'type'             => $type,
-            'publishedHash'    => $published_hash,
-            'publishedVersion' => $published_version,
-            'nextMajor'        => $next_major,
-        ));
+        // Boot-данные (тип, hash, версии) добавляются в render_page() через
+        // wp_add_inline_script(position='before') — там доступны Storage/Documents
+        // и сам $type. Здесь, в hook admin_enqueue_scripts, эти классы ещё не
+        // обязательно загружены, плюс нет смысла дёргать DB пока render не идёт.
 
         wp_enqueue_style(self::ASSET_HANDLE);
         wp_enqueue_script(self::ASSET_HANDLE);
