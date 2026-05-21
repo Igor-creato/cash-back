@@ -21,11 +21,14 @@ if (!defined('ABSPATH')) {
 class Cashback_REST_API {
 
     private const NAMESPACE             = 'cashback/v1';
+    // v3: добавлено поле `permalink` (URL страницы товара-магазина) — нужно
+    // расширению, чтобы popup мог вести пользователя на single product page
+    // вместо самостоятельной активации через /activate.
     // v2: формат cashback_value переключён с legacy _cashback_display_value на
     // динамический Cashback_Cashback_Display_Calculator::compute() — теперь
     // отдаём строку с префиксом «до » для multi-tariff магазинов (matches
     // карточку товара). Bump ключа инвалидирует все старые transient'ы.
-    private const STORES_CACHE_KEY       = 'cashback_ext_stores_cache_v2';
+    private const STORES_CACHE_KEY       = 'cashback_ext_stores_cache_v3';
     private const STORES_CACHE_TTL       = 6 * HOUR_IN_SECONDS;
     private const ACTIVATION_WINDOW      = 30 * MINUTE_IN_SECONDS;
     private const TRANSACTIONS_PER_PAGE  = 10;
@@ -384,9 +387,11 @@ class Cashback_REST_API {
     public function get_stores( \WP_REST_Request $request ): \WP_REST_Response {
         $cached = get_transient(self::STORES_CACHE_KEY);
         if (false !== $cached) {
-            // Инвалидируем устаревший кеш, построенный до добавления поля product_id.
-            // При попадании в эту ветку кеш перестраивается один раз автоматически.
-            if (!empty($cached) && is_array($cached) && !array_key_exists('product_id', $cached[0])) {
+            // Инвалидируем устаревший кеш, построенный до добавления поля permalink.
+            // Defense-in-depth поверх bump'а STORES_CACHE_KEY: если кеш каким-то
+            // образом сохранился под актуальным ключом без последнего поля
+            // (миграция, ручное копирование) — пересоберём один раз автоматически.
+            if (!empty($cached) && is_array($cached) && !array_key_exists('permalink', $cached[0])) {
                 delete_transient(self::STORES_CACHE_KEY);
                 $cached = false;
             } else {
@@ -476,6 +481,7 @@ class Cashback_REST_API {
                 'cashback_label' => $product['cashback_label'] ?: 'Кэшбэк',
                 'cashback_value' => $cashback_value,
                 'product_id'     => (int) $product['ID'],
+                'permalink'      => get_permalink( (int) $product['ID'] ) ?: '',
                 'network_slug'   => $product['network_slug'] ?: '',
                 'popup_mode'     => $product['popup_mode'] ?: 'show',
             );
