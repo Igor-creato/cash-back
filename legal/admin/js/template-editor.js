@@ -177,28 +177,79 @@
         setTimeout(function () { window.location.reload(); }, 1200);
     }
 
-    function bindPlaceholderChips() {
-        document.querySelectorAll('.cashback-legal-placeholder-chip').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                var ph = btn.getAttribute('data-placeholder') || '';
-                if (window.navigator && window.navigator.clipboard) {
-                    window.navigator.clipboard.writeText(ph).catch(function () {});
-                }
-                // Дополнительно — вставка в курсор TinyMCE если editor активен.
-                var ed = getEditor();
-                if (ed && !ed.isHidden()) {
-                    ed.execCommand('mceInsertContent', false, ph);
-                }
-                notify('Скопировано / вставлено: ' + ph, 'ok');
-            });
-        });
+    function closeDialog(dlg) {
+        if (!dlg) { return; }
+        if (typeof dlg.close === 'function') { dlg.close(); }
+        else { dlg.removeAttribute('open'); }
+    }
+
+    // Единый делегированный обработчик кликов. Делегация на document вместо
+    // прямого addEventListener на каждой кнопке гарантирует работоспособность
+    // даже если кнопки добавлены в DOM после init() или если что-то прерывает
+    // прямую привязку (TinyMCE async-init, theme-overlay, browser extension).
+    function onDocumentClick(e) {
+        var t = e.target;
+        if (!t || typeof t.closest !== 'function') { return; }
+
+        // Все обработчики работают только внутри wrap'а редактора, чтобы не
+        // ловить клики по чужим элементам на других admin-страницах.
+        var wrap = t.closest('.cashback-legal-template-editor');
+        if (!wrap) { return; }
+
+        // placeholder chip — копирование/вставка
+        var chip = t.closest('.cashback-legal-placeholder-chip');
+        if (chip) {
+            e.preventDefault();
+            var ph = chip.getAttribute('data-placeholder') || '';
+            if (window.navigator && window.navigator.clipboard) {
+                window.navigator.clipboard.writeText(ph).catch(function () {});
+            }
+            var ed = getEditor();
+            if (ed && !ed.isHidden()) {
+                ed.execCommand('mceInsertContent', false, ph);
+            }
+            notify('Скопировано / вставлено: ' + ph, 'ok');
+            return;
+        }
+
+        // dialog close (×)
+        var closeBtn = t.closest('.cashback-legal-template-dialog-close');
+        if (closeBtn) {
+            e.preventDefault();
+            closeDialog(closeBtn.closest('dialog'));
+            return;
+        }
+
+        // основные кнопки
+        var btn = t.closest('[data-action]');
+        if (!btn) { return; }
+        var action = btn.getAttribute('data-action');
+        switch (action) {
+            case 'save':            e.preventDefault(); saveDraft(); break;
+            case 'discard':         e.preventDefault(); discardDraft(); break;
+            case 'preview':         e.preventDefault(); preview(); break;
+            case 'publish':         e.preventDefault(); openPublishDialog(); break;
+            case 'cancel-publish':  e.preventDefault(); closeDialog(publishDialog); break;
+            case 'confirm-publish': e.preventDefault(); closeDialog(publishDialog); doPublish(); break;
+            default: /* посторонний data-action на странице — игнор */ break;
+        }
     }
 
     function bindActions() {
-        document.querySelectorAll('[data-action="save"]').forEach(function (b) { b.addEventListener('click', saveDraft); });
-        document.querySelectorAll('[data-action="discard"]').forEach(function (b) { b.addEventListener('click', discardDraft); });
-        document.querySelectorAll('[data-action="preview"]').forEach(function (b) { b.addEventListener('click', preview); });
-        document.querySelectorAll('[data-action="publish"]').forEach(function (b) { b.addEventListener('click', openPublishDialog); });
+        if (window.console && window.console.log) {
+            window.console.log('cashback-legal-template-editor: bound (delegated)', {
+                editorId:    cfg.editorId,
+                bootType:    boot.type,
+                chips:       document.querySelectorAll('.cashback-legal-placeholder-chip').length,
+                save:        document.querySelectorAll('[data-action="save"]').length,
+                discard:     document.querySelectorAll('[data-action="discard"]').length,
+                preview:     document.querySelectorAll('[data-action="preview"]').length,
+                publish:     document.querySelectorAll('[data-action="publish"]').length,
+                confirmBtn:  !!publishConfirmBtn,
+            });
+        }
+
+        document.addEventListener('click', onDocumentClick);
 
         if (publishConfirmInput) {
             publishConfirmInput.addEventListener('input', function () {
@@ -208,39 +259,6 @@
                 }
             });
         }
-
-        if (publishConfirmBtn) {
-            publishConfirmBtn.addEventListener('click', function () {
-                if (typeof publishDialog.close === 'function') {
-                    publishDialog.close();
-                } else {
-                    publishDialog.removeAttribute('open');
-                }
-                doPublish();
-            });
-        }
-
-        document.querySelectorAll('[data-action="cancel-publish"]').forEach(function (b) {
-            b.addEventListener('click', function () {
-                if (typeof publishDialog.close === 'function') {
-                    publishDialog.close();
-                } else {
-                    publishDialog.removeAttribute('open');
-                }
-            });
-        });
-
-        document.querySelectorAll('.cashback-legal-template-dialog-close').forEach(function (b) {
-            b.addEventListener('click', function () {
-                var dlg = b.closest('dialog');
-                if (!dlg) { return; }
-                if (typeof dlg.close === 'function') {
-                    dlg.close();
-                } else {
-                    dlg.removeAttribute('open');
-                }
-            });
-        });
     }
 
     function bindDirtyTracking() {
@@ -257,7 +275,6 @@
     }
 
     function init() {
-        bindPlaceholderChips();
         bindActions();
         bindDirtyTracking();
 
