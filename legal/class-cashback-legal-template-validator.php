@@ -26,6 +26,15 @@ class Cashback_Legal_Template_Validator {
     public const MIN_BODY_BYTES = 1;
 
     /**
+     * ASCII-only маркеры обёртки плейсхолдеров на время wp_kses-фильтрации.
+     * Только буквы/цифры/_ — wp_kses такой текст не трогает (в отличие от
+     * control bytes \x02/\x03, которые он вырезает, ломая обратную замену).
+     * Уникальная форма ___CBPH___ — не появится в обычном тексте документа.
+     */
+    private const PLACEHOLDER_MARK_OPEN  = '___CBPHX_';
+    private const PLACEHOLDER_MARK_CLOSE = '_XHPBC___';
+
+    /**
      * @return array<int, string>
      */
     public static function extract_placeholders( string $html ): array {
@@ -159,13 +168,19 @@ class Cashback_Legal_Template_Validator {
         // Вырезаем javascript:/data:/vbscript: в href.
         $body = (string) preg_replace('/(href\s*=\s*["\']?)\s*(javascript|vbscript|data)\s*:/i', '$1#blocked-', $body);
 
+        // Защищаем плейсхолдеры от wp_kses ASCII-маркером (только буквы/цифры/_),
+        // чтобы фильтр их не тронул и снаружи можно было гарантированно восстановить.
+        // Прежняя обёртка через \x02..\x03 (control chars) ломалась — wp_kses
+        // вырезает control bytes, и pattern обратной замены не находил маркер,
+        // в итоге пользователь видел литеральный `CBPH_<hex>` в редакторе и
+        // получал «Удалены обязательные плейсхолдеры» при publish.
         $placeholders = array();
         $protected    = preg_replace_callback(
             '/\{\{([a-z0-9_\.]+)\}\}/i',
             function ( array $m ) use ( &$placeholders ): string {
                 $key                  = bin2hex($m[1]);
                 $placeholders[ $key ] = $m[0];
-                return "\x02CBPH_" . $key . "\x03";
+                return self::PLACEHOLDER_MARK_OPEN . $key . self::PLACEHOLDER_MARK_CLOSE;
             },
             $body
         );
@@ -184,8 +199,10 @@ class Cashback_Legal_Template_Validator {
             $cleaned = strip_tags($protected, $allowed_tags_str);
         }
 
+        $open_q  = preg_quote(self::PLACEHOLDER_MARK_OPEN, '/');
+        $close_q = preg_quote(self::PLACEHOLDER_MARK_CLOSE, '/');
         $restored = preg_replace_callback(
-            '/\x02CBPH_([a-f0-9]+)\x03/',
+            '/' . $open_q . '([a-f0-9]+)' . $close_q . '/',
             function ( array $m ) use ( $placeholders ): string {
                 $orig = $placeholders[ $m[1] ] ?? '';
                 if ($orig !== '') {
