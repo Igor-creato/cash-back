@@ -126,8 +126,17 @@ class Cashback_Legal_Template_Storage {
     }
 
     /**
-     * Идемпотентно создаёт published v1.0.0 копией PHP-шаблона если на тип нет
-     * строки published. Безопасен: повторный вызов — no-op.
+     * Идемпотентно создаёт published копией PHP-шаблона если на тип нет строки
+     * published. Безопасен: повторный вызов — no-op.
+     *
+     * Версия для seed выбирается так:
+     *   1) authoritative значение из опции cashback_legal_consent_versions (если есть);
+     *   2) иначе "1.0.0".
+     *
+     * Если выбранная версия уже занята в БД (например осталась superseded-запись
+     * v1.0.0 после прошлых bump'ов, а published-строки нет — историческая
+     * рассинхронизация опции и таблицы) — бампаем major до первой свободной,
+     * чтобы не словить UNIQUE (consent_type, version) на INSERT.
      */
     public static function seed_if_missing( string $type ): void {
         if (!self::is_known_type($type)) {
@@ -142,9 +151,22 @@ class Cashback_Legal_Template_Storage {
             return;
         }
 
+        $version = '1.0.0';
+        if (class_exists('Cashback_Legal_Documents')) {
+            $opt_ver = (string) Cashback_Legal_Documents::get_active_version($type);
+            if ($opt_ver !== '') {
+                $version = $opt_ver;
+            }
+        }
+
+        $existing_versions = self::all_versions($type);
+        while (in_array($version, $existing_versions, true)) {
+            $version = self::bump_major($version);
+        }
+
         self::insert_row(array(
             'consent_type' => $type,
-            'version'      => '1.0.0',
+            'version'      => $version,
             'body_html'    => $body,
             'body_hash'    => hash('sha256', $body),
             'status'       => self::STATUS_PUBLISHED,
@@ -153,6 +175,56 @@ class Cashback_Legal_Template_Storage {
             'published_at' => self::utc_now(),
             'published_by' => self::current_user_id_or_null(),
         ));
+
+        // Подтверждаем что published-строка реально появилась (insert_row молча
+        // глотает $wpdb->insert ошибки). Только тогда синхронизируем опцию —
+        // иначе оставляем как есть, дальнейшие seed-вызовы попробуют снова.
+        if (self::find_row_by_status($type, self::STATUS_PUBLISHED) === null) {
+            return;
+        }
+
+        // Sync опции: если seed зашёл по bumpup-ветке (опция показывала версию,
+        // которой нет среди existing published — например залипло после ручного
+        // rollback'а), синхронизируем опцию с реально вставленной версией.
+        if (class_exists('Cashback_Legal_Documents')) {
+            $current_opt = (string) Cashback_Legal_Documents::get_active_version($type);
+            if ($current_opt !== $version) {
+                $opt = get_option('cashback_legal_consent_versions', array());
+                if (!is_array($opt)) {
+                    $opt = array();
+                }
+                $opt[ $type ] = $version;
+                update_option('cashback_legal_consent_versions', $opt);
+            }
+        }
+    }
+
+    /**
+     * @return list<string> Все версии всех статусов для типа (исторические +
+     *                     текущие), для проверки UNIQUE-конфликта перед INSERT.
+     */
+    private static function all_versions( string $type ): array {
+        global $wpdb;
+        if (!is_object($wpdb) || !method_exists($wpdb, 'prepare') || !method_exists($wpdb, 'get_col')) {
+            return array();
+        }
+        $table = self::table_name();
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Имя таблицы из $wpdb->prefix.
+        $sql = $wpdb->prepare(
+            "SELECT version FROM {$table} WHERE consent_type = %s",
+            $type
+        );
+        // phpcs:enable
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $sql собран через $wpdb->prepare выше.
+        $rows = $wpdb->get_col($sql);
+        return is_array($rows) ? array_values(array_map('strval', $rows)) : array();
+    }
+
+    private static function bump_major( string $semver ): string {
+        if (preg_match('/^(\d+)\.(\d+)\.(\d+)/', $semver, $m)) {
+            return ((int) $m[1] + 1) . '.0.0';
+        }
+        return '2.0.0';
     }
 
     /**
