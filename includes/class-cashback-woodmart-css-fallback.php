@@ -78,9 +78,10 @@ class Cashback_Woodmart_Css_Fallback {
     }
 
     /**
-     * На авто-страницах плагина и wishlist WoodMart может не иметь прогретого
-     * `wd_page_css_files`, поэтому footer-base догружается поздно из footer.php.
-     * Форсируем его заранее в head только для затронутых публичных страниц.
+     * На авто-страницах плагина, wishlist и страницах личного кабинета WoodMart
+     * может не иметь прогретого `wd_page_css_files`, поэтому footer-base
+     * догружается поздно из footer.php. Форсируем его заранее в head только для
+     * затронутых публичных страниц.
      */
     public static function force_footer_styles_on_cashback_pages(): void {
         if ((function_exists('is_admin') && is_admin()) || !self::is_cashback_public_page()) {
@@ -198,6 +199,10 @@ class Cashback_Woodmart_Css_Fallback {
         }
 
         $post_id = function_exists('get_queried_object_id') ? (int) get_queried_object_id() : 0;
+        if (self::is_woocommerce_account_page()) {
+            return true;
+        }
+
         if (self::is_woodmart_wishlist_page()) {
             return true;
         }
@@ -225,6 +230,13 @@ class Cashback_Woodmart_Css_Fallback {
         }
 
         return false;
+    }
+
+    /**
+     * Определить frontend-страницы WooCommerce My Account вместе с endpoints.
+     */
+    private static function is_woocommerce_account_page(): bool {
+        return function_exists('is_account_page') && is_account_page();
     }
 
     /**
