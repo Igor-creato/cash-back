@@ -228,10 +228,19 @@ class Cashback_Woodmart_Css_Fallback {
     }
 
     /**
-     * Определить страницу избранного WoodMart по Theme Option `wishlist_page`.
+     * Определить страницу избранного WoodMart по Theme Option `wishlist_page`
+     * или по текущему production slug.
      */
     private static function is_woodmart_wishlist_page(): bool {
-        if (!function_exists('woodmart_get_opt') || !function_exists('is_page')) {
+        if (!function_exists('is_page')) {
+            return false;
+        }
+
+        if (is_page('izbrannye-magaziny')) {
+            return true;
+        }
+
+        if (!function_exists('woodmart_get_opt')) {
             return false;
         }
 
