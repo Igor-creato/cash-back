@@ -78,9 +78,9 @@ class Cashback_Woodmart_Css_Fallback {
     }
 
     /**
-     * На авто-страницах плагина WoodMart может не иметь прогретого
+     * На авто-страницах плагина и wishlist WoodMart может не иметь прогретого
      * `wd_page_css_files`, поэтому footer-base догружается поздно из footer.php.
-     * Форсируем его заранее в head только для наших публичных страниц.
+     * Форсируем его заранее в head только для затронутых публичных страниц.
      */
     public static function force_footer_styles_on_cashback_pages(): void {
         if ((function_exists('is_admin') && is_admin()) || !self::is_cashback_public_page()) {
@@ -198,6 +198,10 @@ class Cashback_Woodmart_Css_Fallback {
         }
 
         $post_id = function_exists('get_queried_object_id') ? (int) get_queried_object_id() : 0;
+        if (self::is_woodmart_wishlist_page()) {
+            return true;
+        }
+
         if ($post_id > 0 && function_exists('get_post_meta')) {
             $legal_type = (string) get_post_meta($post_id, '_cashback_legal_type', true);
             if ($legal_type !== '') {
@@ -221,5 +225,17 @@ class Cashback_Woodmart_Css_Fallback {
         }
 
         return false;
+    }
+
+    /**
+     * Определить страницу избранного WoodMart по Theme Option `wishlist_page`.
+     */
+    private static function is_woodmart_wishlist_page(): bool {
+        if (!function_exists('woodmart_get_opt') || !function_exists('is_page')) {
+            return false;
+        }
+
+        $wishlist_page_id = (int) woodmart_get_opt('wishlist_page');
+        return $wishlist_page_id > 0 && is_page($wishlist_page_id);
     }
 }

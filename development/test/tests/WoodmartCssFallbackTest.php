@@ -32,6 +32,8 @@ final class WoodmartCssFallbackTest extends TestCase
         $this->assertStringContainsString('_cashback_legal_type', $this->source);
         $this->assertStringContainsString('cashback_legal_doc', $this->source);
         $this->assertStringContainsString('cashback_contact_form', $this->source);
+        $this->assertStringContainsString('is_woodmart_wishlist_page', $this->source);
+        $this->assertStringContainsString('wishlist_page', $this->source);
     }
 
     public function test_footer_fallback_forces_woodmart_footer_base_style(): void
