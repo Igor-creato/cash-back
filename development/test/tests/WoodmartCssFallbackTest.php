@@ -23,6 +23,8 @@ final class WoodmartCssFallbackTest extends TestCase
     {
         $this->assertStringContainsString("'wp_enqueue_scripts'", $this->source);
         $this->assertStringContainsString("'force_footer_styles_on_cashback_pages'", $this->source);
+        $this->assertStringContainsString("'wp_head'", $this->source);
+        $this->assertStringContainsString("'print_footer_layout_fallback_on_cashback_pages'", $this->source);
     }
 
     public function test_footer_fallback_targets_legal_and_contact_shortcode_pages(): void
@@ -35,5 +37,13 @@ final class WoodmartCssFallbackTest extends TestCase
     public function test_footer_fallback_forces_woodmart_footer_base_style(): void
     {
         $this->assertStringContainsString("woodmart_force_enqueue_style('footer-base')", $this->source);
+    }
+
+    public function test_footer_layout_fallback_keeps_elementor_payment_block_stacked(): void
+    {
+        $this->assertStringContainsString('FOOTER_LAYOUT_CSS', $this->source);
+        $this->assertStringContainsString('.elementor-element-fc1da1d.e-flexbox-base', $this->source);
+        $this->assertStringContainsString('flex-direction:column', $this->source);
+        $this->assertStringContainsString('cashback-woodmart-footer-layout-fallback', $this->source);
     }
 }

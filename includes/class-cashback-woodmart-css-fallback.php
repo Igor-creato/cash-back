@@ -55,6 +55,14 @@ class Cashback_Woodmart_Css_Fallback {
     );
 
     /**
+     * Elementor's generated footer CSS does not include rules for the outer
+     * atomic flexbox container, so Elementor's base-desktop.css can leave it as
+     * a row on shortcode pages. Keep the payment footer stacked like the rest of
+     * the site without changing the Elementor template.
+     */
+    private const FOOTER_LAYOUT_CSS = '.wd-footer .elementor-588 .elementor-element-fc1da1d.e-flexbox-base{flex-direction:column;align-items:center;justify-content:center;width:100%;text-align:center}.wd-footer .elementor-588 .elementor-element-586bbda>.e-con-inner{justify-content:center}';
+
+    /**
      * Регистрация хука. Идемпотентно: повторный вызов не дублирует action.
      */
     public static function register(): void {
@@ -62,6 +70,7 @@ class Cashback_Woodmart_Css_Fallback {
             return;
         }
         add_action('wp_enqueue_scripts', array( __CLASS__, 'force_footer_styles_on_cashback_pages' ), 100);
+        add_action('wp_head', array( __CLASS__, 'print_footer_layout_fallback_on_cashback_pages' ), 100);
         // priority 999 — после WoodMart's Frontend->styles() (prio 200) и
         // wp_enqueue_scripts callback'ов плагинов; до фактического print
         // styles темой/ядром.
@@ -82,6 +91,18 @@ class Cashback_Woodmart_Css_Fallback {
         }
 
         woodmart_force_enqueue_style('footer-base');
+    }
+
+    /**
+     * На тех же публичных страницах фиксируем layout Elementor footer-блока.
+     */
+    public static function print_footer_layout_fallback_on_cashback_pages(): void {
+        if ((function_exists('is_admin') && is_admin()) || !self::is_cashback_public_page()) {
+            return;
+        }
+
+        // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static plugin-owned CSS, no user input.
+        echo '<style id="cashback-woodmart-footer-layout-fallback">' . self::FOOTER_LAYOUT_CSS . '</style>' . "\n";
     }
 
     /**
