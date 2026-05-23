@@ -61,10 +61,27 @@ class Cashback_Woodmart_Css_Fallback {
         if (!function_exists('add_action')) {
             return;
         }
+        add_action('wp_enqueue_scripts', array( __CLASS__, 'force_footer_styles_on_cashback_pages' ), 100);
         // priority 999 — после WoodMart's Frontend->styles() (prio 200) и
         // wp_enqueue_scripts callback'ов плагинов; до фактического print
         // styles темой/ядром.
         add_action('wp_print_styles', array( __CLASS__, 'maybe_fallback_to_inline' ), 999);
+    }
+
+    /**
+     * На авто-страницах плагина WoodMart может не иметь прогретого
+     * `wd_page_css_files`, поэтому footer-base догружается поздно из footer.php.
+     * Форсируем его заранее в head только для наших публичных страниц.
+     */
+    public static function force_footer_styles_on_cashback_pages(): void {
+        if ((function_exists('is_admin') && is_admin()) || !self::is_cashback_public_page()) {
+            return;
+        }
+        if (!function_exists('woodmart_force_enqueue_style')) {
+            return;
+        }
+
+        woodmart_force_enqueue_style('footer-base');
     }
 
     /**
@@ -149,5 +166,39 @@ class Cashback_Woodmart_Css_Fallback {
                 strlen($css)
             ));
         }
+    }
+
+    /**
+     * Определить публичные страницы плагина, где контент рендерится шорткодом.
+     */
+    private static function is_cashback_public_page(): bool {
+        if (function_exists('is_singular') && !is_singular()) {
+            return false;
+        }
+
+        $post_id = function_exists('get_queried_object_id') ? (int) get_queried_object_id() : 0;
+        if ($post_id > 0 && function_exists('get_post_meta')) {
+            $legal_type = (string) get_post_meta($post_id, '_cashback_legal_type', true);
+            if ($legal_type !== '') {
+                return true;
+            }
+        }
+
+        if (!function_exists('get_post') || !function_exists('has_shortcode')) {
+            return false;
+        }
+
+        $post = get_post($post_id > 0 ? $post_id : null);
+        if (!$post instanceof WP_Post) {
+            return false;
+        }
+
+        foreach (array( 'cashback_legal_doc', 'cashback_contact_form' ) as $shortcode) {
+            if (has_shortcode($post->post_content, $shortcode)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
