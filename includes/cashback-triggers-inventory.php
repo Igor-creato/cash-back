@@ -161,13 +161,19 @@ if (!function_exists('cashback_check_required_schema_present')) {
             $type    = (string) ( $artifact['type'] ?? '' );
             $table   = (string) ( $artifact['table'] ?? '' );
             $column  = (string) ( $artifact['column'] ?? '' );
-            $full_table = $wpdb->prefix . $table;
 
             if ($type === 'column') {
                 if ($present_override !== null) {
                     $columns = (array) ( $present_override[ $table ] ?? array() );
                     $exists  = in_array($column, $columns, true);
                 } else {
+                    if (!is_object($wpdb) || !isset($wpdb->prefix)) {
+                        // Test/bootstrap or transient early-load without wpdb:
+                        // fail-open like other inconclusive probes, never mark
+                        // schema missing without a real DB answer.
+                        continue;
+                    }
+                    $full_table = $wpdb->prefix . $table;
                     // Codex round 12 (2026-05-10): probe ДОЛЖЕН различать
                     // confirmed-missing и transient query failure. Сбрасываем
                     // last_error до probe — иначе пред. ошибка из чужого кода
@@ -208,6 +214,12 @@ if (!function_exists('cashback_check_required_schema_present')) {
                     $exists     = ( strpos($values_csv, "'" . $enum_value . "'") !== false )
                         || in_array($enum_value, explode(',', $values_csv), true);
                 } else {
+                    if (!is_object($wpdb) || !isset($wpdb->prefix)) {
+                        // See column branch: no real DB answer means
+                        // inconclusive, not missing.
+                        continue;
+                    }
+                    $full_table = $wpdb->prefix . $table;
                     // Codex round 12 (2026-05-10): см. column branch выше.
                     $wpdb->last_error = '';
                     // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- runtime invariant probe.

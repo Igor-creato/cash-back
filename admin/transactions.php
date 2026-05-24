@@ -213,7 +213,7 @@ class Cashback_Transactions_Admin {
 
         // Fetch rows
         if (!empty($where_params)) {
-            $select_sql   = "SELECT id, reference_id, user_id, order_number, partner, order_status, sum_order, comission, cashback, click_id, created_at FROM %i{$where_clause} ORDER BY created_at DESC LIMIT %d OFFSET %d";
+            $select_sql   = "SELECT id, reference_id, user_id, order_number, partner, order_status, decline_reason, sum_order, comission, cashback, click_id, created_at FROM %i{$where_clause} ORDER BY created_at DESC LIMIT %d OFFSET %d";
             $transactions = $wpdb->get_results(
                 // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- $where_clause из allowlist (order_status/partner/LIKE) с %s; значения биндятся ниже.
                 $wpdb->prepare($select_sql, $table_name, ...array_merge($where_params, array( $this->per_page, $offset ))),
@@ -222,7 +222,7 @@ class Cashback_Transactions_Admin {
         } else {
             $transactions = $wpdb->get_results(
                 $wpdb->prepare(
-                    'SELECT id, reference_id, user_id, order_number, partner, order_status, sum_order, comission, cashback, click_id, created_at
+                    'SELECT id, reference_id, user_id, order_number, partner, order_status, decline_reason, sum_order, comission, cashback, click_id, created_at
                      FROM %i
                      ORDER BY created_at DESC
                      LIMIT %d OFFSET %d',
@@ -300,6 +300,7 @@ class Cashback_Transactions_Admin {
                         <th scope="col">Номер заказа</th>
                         <th scope="col">Сеть</th>
                         <th scope="col" style="width: 140px;">Статус</th>
+                        <th scope="col" style="width: 180px;">Причина отказа</th>
                         <th scope="col" style="width: 120px;">Сумма заказа</th>
                         <th scope="col" style="width: 120px;">Комиссия</th>
                         <th scope="col" style="width: 100px;">Кэшбэк</th>
@@ -322,6 +323,12 @@ class Cashback_Transactions_Admin {
                                 <td><?php echo esc_html($tx['partner'] ?? ''); ?></td>
                                 <td class="<?php echo $is_editable ? 'edit-field' : ''; ?>" data-field="order_status">
                                     <?php echo esc_html($this->get_status_label($tx['order_status'])); ?>
+                                </td>
+                                <?php
+                                $decline_reason = ( $tx['order_status'] === 'declined' ) ? trim((string) ( $tx['decline_reason'] ?? '' )) : '';
+                                ?>
+                                <td class="decline-reason-display" title="<?php echo esc_attr($decline_reason); ?>" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                                    <?php echo esc_html($decline_reason !== '' ? $decline_reason : '—'); ?>
                                 </td>
                                 <td class="<?php echo $is_editable ? 'edit-field' : ''; ?>" data-field="sum_order">
                                     <?php echo esc_html($tx['sum_order'] ?? '0.00'); ?>
@@ -352,7 +359,7 @@ class Cashback_Transactions_Admin {
                         <?php endforeach; ?>
                     <?php else : ?>
                         <tr>
-                            <td colspan="12">
+                            <td colspan="13">
                                 <?php if (!empty($search_query)) : ?>
                                     По запросу &laquo;<?php echo esc_html($search_query); ?>&raquo; транзакции не найдены.
                                 <?php else : ?>
@@ -597,7 +604,7 @@ class Cashback_Transactions_Admin {
 
         // Return fresh data (cashback may have been recalculated by trigger)
         $updated = $wpdb->get_row($wpdb->prepare(
-            'SELECT id, reference_id, user_id, order_number, partner, order_status, sum_order, comission, cashback, click_id, created_at
+            'SELECT id, reference_id, user_id, order_number, partner, order_status, decline_reason, sum_order, comission, cashback, click_id, created_at
              FROM %i WHERE id = %d',
             $table_name,
             $transaction_id
@@ -639,7 +646,7 @@ class Cashback_Transactions_Admin {
         $table_name = ( $tab === 'unregistered' ) ? $this->unregistered_table : $this->registered_table;
 
         $data = $wpdb->get_row($wpdb->prepare(
-            'SELECT id, reference_id, user_id, order_number, partner, order_status, sum_order, comission, cashback, click_id, created_at
+            'SELECT id, reference_id, user_id, order_number, partner, order_status, decline_reason, sum_order, comission, cashback, click_id, created_at
              FROM %i WHERE id = %d',
             $table_name,
             $transaction_id
@@ -799,6 +806,7 @@ class Cashback_Transactions_Admin {
                     'offer_id'           => $tx['offer_id'] !== null ? (int) $tx['offer_id'] : null,
                     'offer_name'         => $tx['offer_name'],
                     'order_status'       => $tx['order_status'],
+                    'decline_reason'     => $tx['decline_reason'],
                     'partner'            => $tx['partner'],
                     'sum_order'          => $tx['sum_order'],
                     'comission'          => $tx['comission'],
@@ -826,6 +834,7 @@ class Cashback_Transactions_Admin {
 					'%s',
 					'%s',
 					'%s',
+                    '%s',
                     '%s', // sum_order (money → decimal-string, F-35-004 locale-safe)
 					'%s', // comission (money → decimal-string)
 					'%s',

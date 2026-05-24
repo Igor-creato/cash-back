@@ -204,6 +204,7 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
     public function fetch_all_actions( array $credentials, array $params, int $max_pages, array $network_config ): array {
         unset( $max_pages ); // Advcake не пагинирует — параметр оставлен только для совместимости с интерфейсом.
 
+        $params  = $this->normalize_update_window_params($params);
         $clamped = $this->clamp_window_params($params);
 
         $result = $this->fetch_actions($credentials, $clamped, $network_config);
@@ -422,6 +423,31 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
         }
 
         return http_build_query($query);
+    }
+
+    /**
+     * Совместимость с общим cron-клиентом: Admitad-style status_updated_*
+     * превращаем в Advcake update_from/update_to (Y-m-d).
+     *
+     * @param array $params
+     * @return array
+     */
+    private function normalize_update_window_params( array $params ): array {
+        if (empty($params['update_from']) && !empty($params['status_updated_start'])) {
+            $from_ts = strtotime((string) $params['status_updated_start']);
+            if ($from_ts !== false) {
+                $params['update_from'] = gmdate('Y-m-d', $from_ts);
+            }
+        }
+
+        if (empty($params['update_to']) && !empty($params['status_updated_end'])) {
+            $to_ts = strtotime((string) $params['status_updated_end']);
+            if ($to_ts !== false) {
+                $params['update_to'] = gmdate('Y-m-d', $to_ts);
+            }
+        }
+
+        return $params;
     }
 
     /**

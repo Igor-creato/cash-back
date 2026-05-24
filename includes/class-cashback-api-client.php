@@ -375,6 +375,7 @@ class Cashback_API_Client {
 		'action_type',
 		'website_id',
 		'funds_ready',
+        'decline_reason',
     );
 
     /**
@@ -621,6 +622,65 @@ class Cashback_API_Client {
             return empty($action['processed']) ? 0 : 1;
         }
         return 0;
+    }
+
+    /**
+     * Определить причину отказа из action только для итогового declined.
+     *
+     * Поддерживает field_map (любой API field → decline_reason), затем
+     * каноничные fallback'и: Admitad `comment`, Advcake `reason`.
+     */
+    private function resolve_decline_reason( array $action, array $field_map, string $mapped_status ): ?string {
+        if ($mapped_status !== 'declined') {
+            return null;
+        }
+
+        $candidate_fields = array();
+        $fm_reason        = $this->api_field_for('decline_reason', $field_map);
+        if ($fm_reason !== '') {
+            $candidate_fields[] = $fm_reason;
+        }
+        $candidate_fields[] = 'comment';
+        $candidate_fields[] = 'reason';
+        $candidate_fields   = array_values(array_unique($candidate_fields));
+
+        foreach ($candidate_fields as $field) {
+            if (!array_key_exists($field, $action)) {
+                continue;
+            }
+            $reason = trim((string) $action[ $field ]);
+            if ($reason === '') {
+                continue;
+            }
+            return mb_substr($reason, 0, 2000);
+        }
+
+        return null;
+    }
+
+    /**
+     * Нормализовать окно фоновой синхронизации под конкретную CPA-сеть.
+     */
+    private function build_background_sync_params( string $slug, array $config, string $date_start_dmy, string $date_end_dmy ): array {
+        $adapter = $this->get_adapter($slug);
+
+        if ($adapter instanceof Cashback_Advcake_Adapter) {
+            $from = DateTime::createFromFormat('!d.m.Y', $date_start_dmy);
+            $to   = DateTime::createFromFormat('!d.m.Y', $date_end_dmy);
+
+            return array(
+                'update_from' => $from instanceof DateTime ? $from->format('Y-m-d') : gmdate('Y-m-d', strtotime('-7 days')),
+                'update_to'   => $to instanceof DateTime ? $to->format('Y-m-d') : gmdate('Y-m-d'),
+            );
+        }
+
+        // Admitad и совместимые API: статусное окно + широкий date-range.
+        return array(
+            'status_updated_start' => $date_start_dmy . ' 00:00:00',
+            'status_updated_end'   => $date_end_dmy . ' 23:59:59',
+            'date_start'           => $this->default_lookback_date_dmy(),
+            'date_end'             => $date_end_dmy,
+        );
     }
 
     // =========================================================================
@@ -2462,15 +2522,7 @@ class Cashback_API_Client {
 
             $date_end = ( new DateTime() )->format('d.m.Y');
 
-            // Запрос по status_updated_start — получаем все действия с обновлёнными статусами.
-            // date_start задан 180-дневным fallback'ом, не от 2020 — широкие окна
-            // ронят /statistics/actions/ Admitad в HTTP 500/timeout (см. default_lookback_date_dmy).
-            $sync_params = array(
-                'status_updated_start' => $date_start . ' 00:00:00',
-                'status_updated_end'   => $date_end . ' 23:59:59',
-                'date_start'           => $this->default_lookback_date_dmy(),
-                'date_end'             => $date_end,
-            );
+            $sync_params = $this->build_background_sync_params($slug, $config, $date_start, $date_end);
 
             if (!empty($config['api_website_id'])) {
                 $sync_params['website'] = $config['api_website_id'];
@@ -2544,7 +2596,7 @@ class Cashback_API_Client {
                 $placeholders = implode(',', array_fill(0, count($api_action_ids), '%s'));
                 $query_args   = array_merge(array( $this->transactions_table ), $api_action_ids, array( $slug, $network_name ));
                 // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %s literals; sniff can't see %s inside $placeholders.
-                $rows = $wpdb->get_results($wpdb->prepare("SELECT id, click_id, uniq_id, order_status, comission, sum_order, api_verified FROM %i WHERE uniq_id IN ({$placeholders}) AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))", ...$query_args), ARRAY_A);
+                $rows = $wpdb->get_results($wpdb->prepare("SELECT id, click_id, uniq_id, order_status, decline_reason, comission, sum_order, api_verified FROM %i WHERE uniq_id IN ({$placeholders}) AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))", ...$query_args), ARRAY_A);
 
                 foreach ($rows as $row) {
                     if (!isset($local_map_by_uniq[ $row['uniq_id'] ])) {
@@ -2559,7 +2611,7 @@ class Cashback_API_Client {
                 $placeholders = implode(',', array_fill(0, count($api_action_ids), '%s'));
                 $query_args   = array_merge(array( $this->unregistered_table ), $api_action_ids, array( $slug, $network_name ));
                 // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $placeholders is array_fill of %s literals; sniff can't see %s inside $placeholders.
-                $rows = $wpdb->get_results($wpdb->prepare("SELECT id, click_id, uniq_id, order_status, comission, sum_order, user_id, api_verified FROM %i WHERE uniq_id IN ({$placeholders}) AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))", ...$query_args), ARRAY_A);
+                $rows = $wpdb->get_results($wpdb->prepare("SELECT id, click_id, uniq_id, order_status, decline_reason, comission, sum_order, user_id, api_verified FROM %i WHERE uniq_id IN ({$placeholders}) AND (LOWER(partner) = LOWER(%s) OR LOWER(partner) = LOWER(%s))", ...$query_args), ARRAY_A);
 
                 foreach ($rows as $row) {
                     if (!isset($unreg_map_by_uniq[ $row['uniq_id'] ])) {
@@ -2660,7 +2712,7 @@ class Cashback_API_Client {
                 $action_id_guard = $action_id_key;
                 if ($action_id_guard !== '') {
                     $transferred = $wpdb->get_row($wpdb->prepare(
-                        'SELECT id, click_id, uniq_id, order_status, comission, sum_order, api_verified
+                        'SELECT id, click_id, uniq_id, order_status, decline_reason, comission, sum_order, api_verified
                          FROM %i
                          WHERE uniq_id = %s
                            AND (partner = LOWER(%s) OR partner = LOWER(%s))
@@ -2874,6 +2926,9 @@ class Cashback_API_Client {
                 $api_cart_money        = Cashback_Money::from_db_value( $api_cart_canon );
                 $commission_changed    = ! $api_payment_money->equals( $fresh_comission_money );
                 $cart_changed          = ! $api_cart_money->equals( $fresh_sum_order_money );
+                $api_decline_reason    = $this->resolve_decline_reason($action, $field_map, $mapped_status);
+                $fresh_decline_reason  = isset($fresh['decline_reason']) ? trim((string) $fresh['decline_reason']) : '';
+                $reason_changed        = ( (string) ( $api_decline_reason ?? '' ) !== $fresh_decline_reason );
 
                 $needs_verify = empty($fresh['api_verified']);
 
@@ -2881,7 +2936,7 @@ class Cashback_API_Client {
                 $api_funds_ready   = $this->resolve_funds_ready($action, $field_map);
                 $needs_funds_ready = ( $api_funds_ready === 1 && empty($fresh['funds_ready']) );
 
-                if (! $status_changed && ! $commission_changed && ! $cart_changed && ! $needs_verify && ! $needs_funds_ready) {
+                if (! $status_changed && ! $commission_changed && ! $cart_changed && ! $reason_changed && ! $needs_verify && ! $needs_funds_ready) {
                     ++$skipped;
                     if ($owns_tx) {
                         $wpdb->query('COMMIT');
@@ -2907,6 +2962,11 @@ class Cashback_API_Client {
                     // canonical decimal-string, не float (F-8-003).
                     $update_data['sum_order'] = $api_cart_money->to_db_value();
                     $update_formats[]         = '%s';
+                }
+
+                if ($reason_changed) {
+                    $update_data['decline_reason'] = $api_decline_reason;
+                    $update_formats[]              = '%s';
                 }
 
                 // Транзакция найдена в API — помечаем как проверенную
@@ -3380,6 +3440,7 @@ class Cashback_API_Client {
 
         // 7a. funds_ready: через маппинг, fallback — адаптер
         $api_funds_ready = $this->resolve_funds_ready($action, $field_map);
+        $decline_reason  = $this->resolve_decline_reason($action, $field_map, $mapped_status);
 
         // 8. action_id и network_name обязательны (части UNIQUE KEY unique_uniq_partner)
         if ($action_id === '') {
@@ -3420,6 +3481,7 @@ class Cashback_API_Client {
             'comission'       => number_format($payment, 2, '.', ''),
             'sum_order'       => number_format($cart, 2, '.', ''),
             'order_status'    => $mapped_status,
+            'decline_reason'  => $decline_reason,
             'offer_id'        => ( $campaign_id !== null && $campaign_id !== '' && $campaign_id !== 0 ) ? (int) $campaign_id : null,
             'offer_name'      => $campaign,
             'currency'        => $currency,
@@ -3441,6 +3503,7 @@ class Cashback_API_Client {
             '%s',  // comission (money → decimal-string)
             '%s',  // sum_order (money → decimal-string)
             '%s',  // order_status
+            '%s',  // decline_reason
             '%d',  // offer_id
             '%s',  // offer_name
             '%s',  // currency

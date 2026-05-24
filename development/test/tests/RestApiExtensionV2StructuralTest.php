@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Group;
  *
  * Покрывает три фичи (план vast-pebble):
  *  - A1: /stores отдаёт cashback_value через Cashback_Cashback_Display_Calculator
- *        (формат «до X%» / «X%» — matches карточку товара), кэш-ключ bumped до _v2;
+ *        (формат «до X%» / «X%» — matches карточку товара), кэш-ключ bumped до _v3;
  *  - A2: /me возвращает поле account_url (URL личного кабинета);
  *  - A3: GET /promocodes — новый public-endpoint, формат plain DTO, кэш с
  *        version-based ключом, инвалидация через cashback_promocodes_upserted_after_cron.
@@ -41,14 +41,14 @@ final class RestApiExtensionV2StructuralTest extends TestCase
 
     // ─── A1: /stores cashback_value via Display_Calculator ───
 
-    public function test_stores_cache_key_bumped_to_v2(): void
+    public function test_stores_cache_key_bumped_to_v3(): void
     {
         $src = $this->rest_api_source();
 
         $this->assertMatchesRegularExpression(
-            '/STORES_CACHE_KEY\s*=\s*[\'"]cashback_ext_stores_cache_v2[\'"]/',
+            '/STORES_CACHE_KEY\s*=\s*[\'"]cashback_ext_stores_cache_v3[\'"]/',
             $src,
-            'STORES_CACHE_KEY должен быть bumped до _v2 для инвалидации старых entries после перехода на Display_Calculator'
+            'STORES_CACHE_KEY должен оставаться _v3: v2 инвалидировал Display_Calculator, v3 дополнительно инвалидирует entries без permalink'
         );
     }
 

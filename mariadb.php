@@ -114,6 +114,7 @@ class Mariadb_Plugin {
             // деплои с alias-слагом (Admitad='adm') остаются без
             // receiver_uniq_source.
             $instance->migrate_dedup_source_alias_v19();
+            $instance->migrate_transaction_decline_reason_v20();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -298,6 +299,7 @@ class Mariadb_Plugin {
             `offer_id` int unsigned DEFAULT NULL COMMENT 'ID партнёрской программы в CPA-сети (advcampaign_id). Стабилен, в отличие от offer_name',
             `offer_name` varchar(255) DEFAULT NULL COMMENT 'Название конкретного партнера например Алиэкспресс',
             `order_status` enum('waiting','completed','declined','hold','balance') NOT NULL DEFAULT 'waiting' COMMENT 'Статусы конверсии',
+            `decline_reason` text DEFAULT NULL COMMENT 'CPA decline reason / advertiser comment for declined transaction',
             `partner` varchar(255) DEFAULT NULL COMMENT 'Название CPA',
             `sum_order` decimal(10,2) DEFAULT NULL COMMENT 'Сумма заказа или покупки',
             `comission` decimal(10,2) DEFAULT NULL COMMENT 'Комиссия выплачиваемая за покупку',
@@ -343,6 +345,7 @@ class Mariadb_Plugin {
             `offer_id` int unsigned DEFAULT NULL COMMENT 'ID партнёрской программы в CPA-сети (advcampaign_id). Стабилен, в отличие от offer_name',
             `offer_name` varchar(255) DEFAULT NULL,
             `order_status` enum('waiting','completed','declined','hold','balance') NOT NULL DEFAULT 'waiting',
+            `decline_reason` text DEFAULT NULL COMMENT 'CPA decline reason / advertiser comment for declined transaction',
             `partner` varchar(255) DEFAULT NULL,
             `sum_order` decimal(10,2) DEFAULT NULL,
             `comission` decimal(10,2) DEFAULT NULL,
@@ -944,6 +947,7 @@ class Mariadb_Plugin {
                         'order_id'         => 'order_number',
                         'advcampaign_id'   => 'offer_id',
                         'advcampaign_name' => 'offer_name',
+                        'comment'          => 'decline_reason',
                     )),
                 ),
                 array( 'slug' => 'admitad' )
@@ -4706,6 +4710,7 @@ class Mariadb_Plugin {
             'currency'   => 'currency',
             'date'       => 'action_date',
             'clicked_at' => 'click_time',
+            'reason'     => 'decline_reason',
         ));
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot migration insert.
@@ -5324,6 +5329,85 @@ class Mariadb_Plugin {
         }
 
         update_option('cashback_db_version', 19, false);
+    }
+
+    /**
+     * Миграция v20: причина отказа транзакции из CPA API.
+     *
+     * Добавляет `decline_reason` в registered/unregistered транзакции. Поле
+     * используется только для отображения advertiser comment / cancel reason
+     * у локального статуса declined; индекса нет.
+     *
+     * Идемпотентность: INFORMATION_SCHEMA.COLUMNS per table. Fast-path по
+     * db_version работает только если обе колонки уже присутствуют, чтобы
+     * transient schema gap можно было починить повторным запуском.
+     */
+    public function migrate_transaction_decline_reason_v20(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        $safe_prefix     = $this->validate_table_prefix($wpdb->prefix);
+        $tables          = array(
+            $wpdb->prefix . 'cashback_transactions'              => "{$safe_prefix}cashback_transactions",
+            $wpdb->prefix . 'cashback_unregistered_transactions' => "{$safe_prefix}cashback_unregistered_transactions",
+        );
+
+        $missing = array();
+        foreach (array_keys($tables) as $table) {
+            $has_col = (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME   = %s
+                    AND COLUMN_NAME  = %s',
+                $table,
+                'decline_reason'
+            ));
+            if ($has_col === 0) {
+                $missing[] = $table;
+            }
+        }
+
+        if ($current_version >= 20 && $missing === array()) {
+            return;
+        }
+
+        foreach ($missing as $table) {
+            $safe_table = $tables[ $table ];
+            // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL, table names from fixed map and validated prefix.
+            $alter_base =
+                "ALTER TABLE `{$safe_table}`
+                  ADD COLUMN `decline_reason` text DEFAULT NULL
+                    COMMENT 'CPA decline reason / advertiser comment for declined transaction'
+                  AFTER `order_status`";
+            $r_alter = $wpdb->query($alter_base . ', ALGORITHM=INSTANT');
+            if ($r_alter === false && self::error_indicates_algorithm_unsupported($wpdb->last_error)) {
+                $r_alter = $wpdb->query($alter_base);
+            }
+            // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+            if ($r_alter === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v20] ADD COLUMN decline_reason failed for ' . $table . ': ' . $wpdb->last_error);
+                return;
+            }
+        }
+
+        foreach (array_keys($tables) as $table) {
+            $has_col = (int) $wpdb->get_var($wpdb->prepare(
+                'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME   = %s
+                    AND COLUMN_NAME  = %s',
+                $table,
+                'decline_reason'
+            ));
+            if ($has_col === 0) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v20] post-verify failed: decline_reason missing in ' . $table);
+                return;
+            }
+        }
+
+        update_option('cashback_db_version', 20, false);
     }
 
     /**

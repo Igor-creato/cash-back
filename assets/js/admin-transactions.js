@@ -41,6 +41,8 @@
         row.find('.edit-field[data-field="sum_order"]').text(txData.sum_order);
         row.find('.edit-field[data-field="comission"]').text(txData.comission);
         row.find('.cashback-display').text(txData.cashback);
+        var declineReason = txData.order_status === 'declined' ? String(txData.decline_reason || '').trim() : '';
+        row.find('.decline-reason-display').text(declineReason || '—').attr('title', declineReason);
     }
 
     /**

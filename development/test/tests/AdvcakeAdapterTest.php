@@ -299,6 +299,7 @@ XML;
         $this->assertSame('demo', $first['offer']);
         $this->assertSame('RUB', $first['currency']);
         $this->assertSame('balance', $first['payment_status']);
+        $this->assertSame('test order', $first['reason']);
     }
 
     /**
@@ -543,6 +544,28 @@ XML;
         $this->assertStringContainsString('update_to=2026-05-14', $url);
         // 7 дней назад от 2026-05-14 23:59:59 UTC = 2026-05-07.
         $this->assertStringContainsString('update_from=2026-05-07', $url);
+    }
+
+    public function test_status_updated_params_are_converted_to_update_window(): void
+    {
+        $this->queue_responses(array( $this->http_response(200, '<items></items>') ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $adapter->fetch_all_actions(
+            $this->default_credentials(),
+            array(
+                'status_updated_start' => '2026-05-13 00:00:00',
+                'status_updated_end'   => '2026-05-14 23:59:59',
+            ),
+            5,
+            $this->default_network_config()
+        );
+
+        $url = $GLOBALS['_cb_test_http_calls'][0]['url'];
+        $this->assertStringContainsString('update_from=2026-05-13', $url);
+        $this->assertStringContainsString('update_to=2026-05-14', $url);
+        $this->assertStringNotContainsString('status_updated_start', $url);
+        $this->assertStringNotContainsString('status_updated_end', $url);
     }
 
     public function test_window_within_7_days_is_unchanged(): void
