@@ -6,7 +6,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Cashback Plugin
  * Description: Объединенный плагин для системы кэшбэка и аффилиат-партнерства
- * Version: 4.4.44
+ * Version: 4.4.45
  * Author: Cashback
  * Author URI: https://example.com
  * Text Domain: cashback-plugin
@@ -1382,10 +1382,14 @@ class CashbackPlugin {
                     // (Admitad='adm'), которые slug-only v18 пропустил и
                     // которые fast-path '>= 18' больше не перезапустит.
                     Mariadb_Plugin::get_instance()->migrate_dedup_source_alias_v19();
+                    // v20: decline_reason в registered/unregistered транзакциях.
+                    // Нужен runtime-path для existing installs: activation-hook на
+                    // git-pull деплое не вызывается.
+                    Mariadb_Plugin::get_instance()->migrate_transaction_decline_reason_v20();
                 } catch (\Throwable $e) {
                     set_transient('cashback_migration_v14_throttle', 1, 15 * MINUTE_IN_SECONDS);
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                    error_log('[Cashback] Advcake migration v14/v15/v16/v17/v18/v19 auto-fire failed: ' . $e->getMessage());
+                    error_log('[Cashback] Advcake migration v14/v15/v16/v17/v18/v19/v20 auto-fire failed: ' . $e->getMessage());
                     set_transient('cashback_migration_failure_notice', $e->getMessage(), DAY_IN_SECONDS);
                 }
             }
