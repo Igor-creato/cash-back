@@ -3700,10 +3700,19 @@ class Cashback_API_Client {
 
         // ─── 3. Запросить API (полный диапазон, без status_updated фильтра) ───
 
-        $api_params = array(
-            'date_start' => $date_start,
-            'date_end'   => $date_end,
-        );
+        if ($this->get_adapter($slug) instanceof Cashback_Advcake_Adapter) {
+            $from = DateTime::createFromFormat('!d.m.Y', $date_start);
+            $to   = DateTime::createFromFormat('!d.m.Y', $date_end);
+            $api_params = array(
+                'date_from' => $from instanceof DateTime ? $from->format('Y-m-d') : gmdate('Y-m-d', strtotime('-7 days')),
+                'date_to'   => $to instanceof DateTime ? $to->format('Y-m-d') : gmdate('Y-m-d'),
+            );
+        } else {
+            $api_params = array(
+                'date_start' => $date_start,
+                'date_end'   => $date_end,
+            );
+        }
 
         if (!empty($config['api_website_id'])) {
             $api_params['website'] = $config['api_website_id'];
