@@ -1281,11 +1281,20 @@ if (!isset($GLOBALS['_cb_test_post_thumbnails'])) {
 if (!function_exists('media_sideload_image')) {
     function media_sideload_image(string $file, int $post_id = 0, ?string $desc = null, string $return_format = 'html'): mixed
     {
+        // Внутри `media_sideload_image()` WP-core вызывает `download_url($file, 300)`,
+        // который пропускает `$args` через фильтр `http_request_args`. Проигрываем
+        // этот контракт в стабе: пропускаем дефолтный timeout=300 через фильтр и
+        // капчуем итоговое значение. Тесты могут проверить, что importer
+        // зарегистрировал scoped-фильтр, который снижает timeout до 15с.
+        $args_after_filter = apply_filters('http_request_args', array('timeout' => 300));
         $GLOBALS['_cb_test_media_sideload_calls'][] = array(
             'url'           => $file,
             'post_id'       => $post_id,
             'desc'          => $desc,
             'return_format' => $return_format,
+            'timeout'       => is_array($args_after_filter) && isset($args_after_filter['timeout'])
+                ? (int) $args_after_filter['timeout']
+                : 300,
         );
         if (array_key_exists('_cb_test_media_sideload_return', $GLOBALS)) {
             $forced = $GLOBALS['_cb_test_media_sideload_return'];
@@ -1337,6 +1346,12 @@ if (!function_exists('download_url')) {
     function download_url(string $url, int $timeout = 300, bool $signature_verification = false): string|WP_Error
     {
         $GLOBALS['_cb_test_download_url_calls'][] = $url;
+        // Параллельный массив с timeout-аргументом — для проверки, что
+        // importer форсит короткий timeout (см. SVG-pipeline + scoped фильтр).
+        if (!isset($GLOBALS['_cb_test_download_url_timeouts'])) {
+            $GLOBALS['_cb_test_download_url_timeouts'] = array();
+        }
+        $GLOBALS['_cb_test_download_url_timeouts'][] = $timeout;
         if (array_key_exists('_cb_test_download_url_return', $GLOBALS)) {
             $forced = $GLOBALS['_cb_test_download_url_return'];
             unset($GLOBALS['_cb_test_download_url_return']);

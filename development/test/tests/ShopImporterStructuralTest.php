@@ -96,10 +96,24 @@ final class ShopImporterStructuralTest extends TestCase
         $this->assertTrue($method->isStatic());
 
         $params = $method->getParameters();
-        $this->assertCount(3, $params);
+        // network_id, run_id, offset, page_cursor, log_id. Последние два
+        // опциональны для BC старых AS-jobs и прямых 3-arg вызовов.
+        $this->assertCount(5, $params);
         $this->assertSame('network_id', $params[0]->getName());
         $this->assertSame('run_id', $params[1]->getName());
         $this->assertSame('offset', $params[2]->getName());
+        $this->assertSame('page_cursor', $params[3]->getName());
+        $this->assertTrue(
+            $params[3]->isDefaultValueAvailable(),
+            'page_cursor должен иметь default value (= 0) для BC: старый код вызывает run() с 3 args'
+        );
+        $this->assertSame(0, $params[3]->getDefaultValue());
+        $this->assertSame('log_id', $params[4]->getName());
+        $this->assertTrue(
+            $params[4]->isDefaultValueAvailable(),
+            'log_id должен иметь default value (= null) для BC: старый код вызывает run() без него'
+        );
+        $this->assertNull($params[4]->getDefaultValue());
     }
 
     public function test_init_method_exists(): void
@@ -319,8 +333,10 @@ final class ShopImporterStructuralTest extends TestCase
         $GLOBALS['_cb_test_media_sideload_calls']    = array();
         $GLOBALS['_cb_test_post_thumbnails']         = array();
         $GLOBALS['_cb_test_download_url_calls']      = array();
+        $GLOBALS['_cb_test_download_url_timeouts']   = array();
         $GLOBALS['_cb_test_handle_sideload_calls']   = array();
         $GLOBALS['_cb_test_insert_attachment_calls'] = array();
+        $GLOBALS['_cb_test_filters']                 = array();
         unset(
             $GLOBALS['_cb_test_media_sideload_return'],
             $GLOBALS['_cb_test_download_url_return'],
@@ -780,5 +796,203 @@ final class ShopImporterStructuralTest extends TestCase
 
         $this->assertSame(array(), $GLOBALS['_cb_test_object_terms']);
         $this->assertSame(array(), $GLOBALS['_cb_test_post_meta']);
+    }
+
+    // ============================================================
+    // fix/advcake-import-hang: жёсткие таймауты на download_url /
+    // media_sideload_image. Без cap'а один медленный CDN-image
+    // съедает все 300с AS-задачи (см. план 4.1).
+    // ============================================================
+
+    public function test_image_download_timeout_constant_is_15_seconds(): void
+    {
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $this->assertTrue(
+            $reflection->hasConstant('IMAGE_DOWNLOAD_TIMEOUT_SECONDS'),
+            'IMAGE_DOWNLOAD_TIMEOUT_SECONDS должен существовать (cap image-download'
+                . " timeout — главный фикс зависания Advcake-импортов на проде)."
+        );
+        $this->assertSame(
+            15,
+            $reflection->getConstant('IMAGE_DOWNLOAD_TIMEOUT_SECONDS'),
+            '15с — порог: медленный SVG/raster CDN не должен блокировать всю AS-задачу.'
+        );
+    }
+
+    public function test_safe_run_budget_constants_present(): void
+    {
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $this->assertTrue($reflection->hasConstant('SAFE_RUN_BUDGET_SECONDS'));
+        $this->assertSame(240, $reflection->getConstant('SAFE_RUN_BUDGET_SECONDS'),
+            '240с = 80% от AS failure_period 300с. До конца — буфер на финализацию + re-enqueue.');
+    }
+
+    public function test_svg_sideload_passes_short_timeout_to_download_url(): void
+    {
+        $this->reset_sideload_globals();
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method     = $reflection->getMethod('attach_featured_image_from_url');
+        $method->setAccessible(true);
+
+        $method->invoke(null, 91, 'https://cdn.example.com/x.svg', 'adm', '500');
+
+        $this->assertCount(1, $GLOBALS['_cb_test_download_url_calls']);
+        $timeouts = $GLOBALS['_cb_test_download_url_timeouts'] ?? array();
+        $this->assertCount(1, $timeouts);
+        $this->assertSame(
+            15,
+            $timeouts[0],
+            'download_url() должен вызываться со 2-м аргументом = IMAGE_DOWNLOAD_TIMEOUT_SECONDS (15с),'
+                . ' а не дефолтным 300с — иначе один зависший CDN убивает весь батч импорта.'
+        );
+    }
+
+    public function test_raster_sideload_caps_http_request_timeout_via_scoped_filter(): void
+    {
+        $this->reset_sideload_globals();
+        $GLOBALS['_cb_test_filters'] = array();
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method     = $reflection->getMethod('attach_featured_image_from_url');
+        $method->setAccessible(true);
+
+        // Raster-путь: media_sideload_image-стуб внутри прогоняет дефолтный
+        // timeout=300 через apply_filters('http_request_args', ...) — при
+        // активном scoped-фильтре он должен прийти равным 15.
+        $method->invoke(null, 33, 'https://cdn.example.com/logo.png', 'adm', '26006');
+
+        $this->assertCount(1, $GLOBALS['_cb_test_media_sideload_calls']);
+        $this->assertSame(
+            15,
+            $GLOBALS['_cb_test_media_sideload_calls'][0]['timeout'] ?? null,
+            'Importer должен добавить scoped http_request_args фильтр, режущий'
+                . ' timeout до IMAGE_DOWNLOAD_TIMEOUT_SECONDS вокруг media_sideload_image.'
+        );
+
+        $this->assertSame(
+            array(),
+            $GLOBALS['_cb_test_filters']['http_request_args'] ?? array(),
+            'Scoped-фильтр должен быть снят в finally — иначе он повлияет на'
+                . ' все последующие HTTP-запросы плагина в этом запросе/процессе.'
+        );
+    }
+
+    public function test_raster_sideload_filter_is_removed_after_wp_error(): void
+    {
+        $this->reset_sideload_globals();
+        $GLOBALS['_cb_test_filters']               = array();
+        $GLOBALS['_cb_test_media_sideload_return'] = new \WP_Error('http_request_failed', 'CDN unreachable');
+
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $method     = $reflection->getMethod('attach_featured_image_from_url');
+        $method->setAccessible(true);
+
+        $method->invoke(null, 34, 'https://cdn.example.com/logo.png', 'adm', '500');
+
+        $this->assertSame(
+            array(),
+            $GLOBALS['_cb_test_filters']['http_request_args'] ?? array(),
+            'http_request_args filter должен сниматься даже когда sideload вернул WP_Error.'
+        );
+    }
+
+    public function test_run_source_contains_time_budget_guard(): void
+    {
+        $rm   = new ReflectionMethod('Cashback_Shop_Importer', 'run');
+        $body = self::method_source($rm);
+
+        $this->assertStringContainsString(
+            'SAFE_RUN_BUDGET_SECONDS',
+            $body,
+            'run() должен использовать SAFE_RUN_BUDGET_SECONDS для time-budget guard.'
+        );
+        $this->assertMatchesRegularExpression(
+            '/microtime\s*\(\s*true\s*\)/i',
+            $body,
+            'run() должен мерить wallclock через microtime(true) — без этого нет early-break.'
+        );
+        $this->assertStringContainsString(
+            'as_enqueue_async_action',
+            $body,
+            'При превышении бюджета run() должен re-enqueue текущую страницу.'
+        );
+    }
+
+    public function test_run_source_skips_processed_offers_via_cursor(): void
+    {
+        $rm   = new ReflectionMethod('Cashback_Shop_Importer', 'run');
+        $body = self::method_source($rm);
+
+        $this->assertStringContainsString(
+            'page_cursor',
+            $body,
+            'run() должен принимать page_cursor и пропускать уже обработанные'
+                . ' офферы при re-enqueue той же страницы (forward progress).'
+        );
+    }
+
+    public function test_run_source_applies_throttle_between_offers(): void
+    {
+        $rm   = new ReflectionMethod('Cashback_Shop_Importer', 'run');
+        $body = self::method_source($rm);
+
+        $this->assertStringContainsString(
+            'get_import_throttle_ms',
+            $body,
+            'run() должен реально использовать опцию cashback_shop_import_throttle_ms.'
+        );
+        $this->assertStringContainsString(
+            'usleep',
+            $body,
+            'throttle применяется через usleep между офферами.'
+        );
+    }
+
+    public function test_budget_resume_reuses_log_row_and_leaves_it_running_until_page_complete(): void
+    {
+        $source = (string) file_get_contents(dirname(__DIR__, 3) . '/includes/shops/class-cashback-shop-importer.php');
+
+        $this->assertMatchesRegularExpression(
+            '/run\s*\([^)]*\$log_id\s*=\s*null/s',
+            $source,
+            'run() должен принимать optional log_id, чтобы resume текущей страницы не создавал новый import_log row.'
+        );
+        $this->assertMatchesRegularExpression(
+            '/array\s*\(\s*\$network_id\s*,\s*\$run_id\s*,\s*\$offset\s*,\s*\$next_page_cursor\s*,\s*\$log_id\s*\)/s',
+            $source,
+            'budget-exceeded re-enqueue должен пробрасывать тот же log_id.'
+        );
+        $this->assertMatchesRegularExpression(
+            '/if\s*\(\s*!\s*\$budget_exceeded\s*\)\s*\{[^}]*finish_page\s*\(\s*\$log_id\s*,\s*null\s*\)/s',
+            $source,
+            'finish_page(success) нельзя вызывать для partial-run: log row должен оставаться running до полного завершения страницы.'
+        );
+    }
+
+    public function test_budget_resume_uses_page_cache_and_exposes_cursor_in_result(): void
+    {
+        $source = (string) file_get_contents(dirname(__DIR__, 3) . '/includes/shops/class-cashback-shop-importer.php');
+
+        $this->assertStringContainsString(
+            'get_cached_import_page',
+            $source,
+            'resume с page_cursor > 0 должен читать уже скачанную страницу из transient-cache, а не повторять дорогой /offers?with_bids=1 fetch.'
+        );
+        $this->assertStringContainsString(
+            'set_cached_import_page',
+            $source,
+            'первый fetch страницы должен класть payload в transient-cache для следующих resume ticks.'
+        );
+        $this->assertStringContainsString(
+            'delete_cached_import_page',
+            $source,
+            'после полного завершения страницы transient-cache нужно удалить.'
+        );
+        $this->assertMatchesRegularExpression(
+            "/'page_cursor'\\s*=>\\s*\\\$next_page_cursor/s",
+            $source,
+            'budget-exceeded return должен явно отдавать page_cursor для синхронных callers/debug.'
+        );
     }
 }

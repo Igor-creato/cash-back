@@ -70,6 +70,14 @@ final class AdvcakeAdapterTest extends TestCase
             10,
             3
         );
+        // Тот же контракт для 429-retry: тесты не должны реально спать
+        // между retry-попытками rate-limited запросов.
+        add_filter(
+            'cashback_advcake_429_retry_delay_seconds',
+            static fn(): int => 0,
+            10,
+            3
+        );
 
         if (class_exists('Cashback_Outbound_HTTP_Guard')) {
             Cashback_Outbound_HTTP_Guard::invalidate_cache();
@@ -473,6 +481,83 @@ XML;
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('401', $result['error']);
         $this->assertCount(1, $GLOBALS['_cb_test_http_calls']);
+    }
+
+    // ------------------------------------------------------------------
+    // 429 Too Many Requests — rate-limit retry с backoff. Без него
+    // первый же 429 от Advcake (а это вероятно на проде с большим
+    // каталогом, см. fix/advcake-import-hang) валит весь импорт.
+    // ------------------------------------------------------------------
+
+    public function test_fetch_actions_retries_on_429_then_succeeds(): void
+    {
+        $this->queue_responses(array(
+            $this->http_response(429, 'Too Many Requests'),
+            $this->http_response(200, '<items></items>'),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_actions(
+            $this->default_credentials(),
+            array(),
+            $this->default_network_config()
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(2, $GLOBALS['_cb_test_http_calls'], '1 initial + 1 retry = 2 calls');
+    }
+
+    public function test_fetch_actions_gives_up_after_two_429_retries(): void
+    {
+        $this->queue_responses(array(
+            $this->http_response(429),
+            $this->http_response(429),
+            $this->http_response(429),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_actions(
+            $this->default_credentials(),
+            array(),
+            $this->default_network_config()
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('429', $result['error']);
+        $this->assertCount(3, $GLOBALS['_cb_test_http_calls'], '1 initial + 2 retries = 3 calls');
+    }
+
+    public function test_fetch_campaigns_retries_on_429_then_succeeds(): void
+    {
+        $this->queue_responses(array(
+            $this->http_response(429, '{"error":"rate limit"}'),
+            $this->http_response(200, $this->offers_response_body(array(
+                $this->sample_offer(array( 'id' => 9 )),
+            ))),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(1, $result['campaigns']);
+        $this->assertCount(2, $GLOBALS['_cb_test_http_calls']);
+    }
+
+    public function test_fetch_campaigns_gives_up_after_two_429_retries(): void
+    {
+        $this->queue_responses(array(
+            $this->http_response(429),
+            $this->http_response(429),
+            $this->http_response(429),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('429', $result['error']);
+        $this->assertCount(3, $GLOBALS['_cb_test_http_calls'], '1 initial + 2 retries');
     }
 
     public function test_safe_error_summary_redacts_xml_items(): void
