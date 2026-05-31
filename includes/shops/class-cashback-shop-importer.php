@@ -46,6 +46,42 @@ class Cashback_Shop_Importer {
     public const META_AVG_PAYMENT_DAYS = '_cashback_avg_payment_days';
     public const META_RATE_LOCKED   = '_rate_locked';
 
+    /**
+     * Жёсткий таймаут (секунды) на скачивание любого image при импорте
+     * (logo / favicon / featured image) — и для legacy raster-пути через
+     * `media_sideload_image()`, и для SVG-пути через `download_url()`.
+     *
+     * Проблема: WP-core `download_url()` принимает таймаут аргументом
+     * (default = 300с), и фильтр `http_request_timeout` НЕ переопределяет
+     * аргумент. `media_sideload_image()` внутри тоже использует 300с.
+     * Один медленный/недоступный CDN-image (Advcake, Admitad) при 100+
+     * офферах на странице упирался в `action_scheduler_failure_period`
+     * (= 300с) и AS убивал задачу с «неизвестная ошибка» без forward
+     * progress.
+     *
+     * 15с = баланс: достаточно для большинства CDN-pull'ов, мало чтобы
+     * один зависший image убил весь батч. Применяется через scoped
+     * `http_request_args` фильтр (см. {@see sideload_raster_attachment()}).
+     *
+     * @see https://developer.wordpress.org/reference/functions/download_url/
+     */
+    public const IMAGE_DOWNLOAD_TIMEOUT_SECONDS = 15;
+
+    /**
+     * Wallclock-бюджет одного `run()`-вызова перед early-break (секунды).
+     *
+     * 80% от Action Scheduler default `failure_period = 300с` оставляет
+     * 60с резерва на финализацию лога, re-enqueue следующей страницы
+     * и release lock'а. Без этого guard'а медленный CDN + длинная страница
+     * офферов = AS убивает задачу без сохранения прогресса.
+     *
+     * После превышения бюджета `run()` запоминает page_cursor (индекс
+     * следующего необработанного оффера в текущей странице) и re-enqueues
+     * `cashback_shops_import_run` с тем же offset + cursor → следующий
+     * tick продолжит ровно с того же места.
+     */
+    public const SAFE_RUN_BUDGET_SECONDS = 240;
+
     // Дефолты, проставляемые ТОЛЬКО при первичном импорте (insert_draft_product).
     // На update_existing_product не трогаем — админ мог изменить.
     public const DEFAULT_BUTTON_TEXT    = 'Перейти';
@@ -77,9 +113,11 @@ class Cashback_Shop_Importer {
 
         // run() возвращает массив с результатом — для прямых вызовов из тестов
         // и admin-кнопки. Action callback не должен ничего возвращать, поэтому
-        // оборачиваем в run_action() который игнорирует результат.
-        add_action(self::HOOK_RUN, array( self::class, 'run_action' ), 10, 3);
-        add_action(self::HOOK_RECURRING, array( self::class, 'enqueue_all_active' ));
+        // оборачиваем в run_action() который игнорирует результат. 4-й аргумент
+        // (page_cursor) и 5-й (log_id) опциональны — старые AS-jobs,
+        // поставленные до релиза fix/advcake-import-hang, придут с 3 args.
+        add_action(self::HOOK_RUN, array( self::class, 'run_action' ), 10, 5);
+add_action(self::HOOK_RECURRING, array( self::class, 'enqueue_all_active' ));
         add_action(self::HOOK_GROUPS_RECOMPUTE, array( self::class, 'recompute_auto_groups' ));
         add_action(self::HOOK_LOG_GC, array( self::class, 'gc_old_logs' ));
 
@@ -90,9 +128,14 @@ class Cashback_Shop_Importer {
      * Action handler-обёртка для HOOK_RUN. Action Scheduler ожидает callback
      * без возвращаемого значения; результат run() (для тестов / admin) сюда
      * не пробрасывается.
+     *
+     * @param int      $page_cursor Индекс внутри текущей страницы, с которого
+     *                              продолжить (0 для первого tick'а; > 0 если
+     *                              предыдущий tick прервался по time-budget).
+     * @param int|null $log_id      Existing import_log row для resume той же страницы.
      */
-    public static function run_action( int $network_id, string $run_id, int $offset = 0 ): void {
-        self::run($network_id, $run_id, $offset);
+    public static function run_action( int $network_id, string $run_id, int $offset = 0, int $page_cursor = 0, ?int $log_id = null ): void {
+        self::run($network_id, $run_id, $offset, $page_cursor, $log_id);
     }
 
     /**
@@ -153,7 +196,7 @@ class Cashback_Shop_Importer {
 
             as_enqueue_async_action(
                 self::HOOK_RUN,
-                array( $network_id, $run_id, 0 ),
+                array( $network_id, $run_id, 0, 0 ),
                 self::AS_GROUP
             );
         }
@@ -218,18 +261,39 @@ class Cashback_Shop_Importer {
     /**
      * Прогнать ОДНУ страницу импорта (batch=cashback_shop_import_batch_size).
      *
-     * @param int    $network_id ID сети (cashback_affiliate_networks.id).
-     * @param string $run_id     UUIDv7 запуска (общий для всех страниц одного импорта).
-     * @param int    $offset     Смещение пагинации (0 на первой странице).
-     * @return array{success: bool, fetched: int, upserted_new: int, upserted_upd: int, tariffs_synced: int, has_next: bool, next_offset: int, error: ?string}
+     * Page cursor + time-budget guard (fix/advcake-import-hang):
+     *   - $page_cursor — индекс внутри текущей страницы, с которого нужно
+     *     продолжить. На первом tick'е равен 0. Если предыдущий tick прервался
+     *     по time-budget — равен индексу следующего необработанного оффера.
+     *   - В цикле меряем `microtime(true) - $start_ts`; при превышении
+     *     {@see SAFE_RUN_BUDGET_SECONDS} re-enqueues `cashback_shops_import_run`
+     *     с ТЕМ ЖЕ `$offset` и обновлённым `$page_cursor` — следующий tick
+     *     продолжит ровно с того же места. Это даёт forward progress даже
+     *     при медленном CDN, без потери офферов и без AS-«unknown error».
+     *
+     * Throttle: реально применяется `Cashback_Shop_Options::get_import_throttle_ms()`
+     * через `usleep` между офферами — раньше опция была декларирована, но не
+     * использовалась.
+     *
+     * @param int    $network_id  ID сети (cashback_affiliate_networks.id).
+     * @param string $run_id      UUIDv7 запуска (общий для всех страниц одного импорта).
+     * @param int    $offset      Смещение пагинации (0 на первой странице).
+     * @param int      $page_cursor Индекс внутри страницы; 0 для первого tick'а.
+     * @param int|null $log_id      Existing import_log row для resume той же страницы.
+     * @return array{success: bool, fetched: int, upserted_new: int, upserted_upd: int, tariffs_synced: int, has_next: bool, next_offset: int, page_cursor: int, error: ?string}
      */
-    public static function run( int $network_id, string $run_id, int $offset = 0 ): array {
+    public static function run( int $network_id, string $run_id, int $offset = 0, int $page_cursor = 0, ?int $log_id = null ): array {
+        $start_ts    = microtime(true);
+$page_cursor = max(0, $page_cursor);
+
         $page    = (int) max(0, $offset);
         $page_no = $page > 0 && class_exists('Cashback_Shop_Options')
             ? (int) ( $offset / max(1, Cashback_Shop_Options::get_import_batch_size()) )
             : 0;
 
-        $log_id = Cashback_Shop_Import_Log::start_page($run_id, $network_id, $page_no);
+        $log_id = $log_id !== null && $log_id > 0
+            ? $log_id
+            : Cashback_Shop_Import_Log::start_page($run_id, $network_id, $page_no);
 
         $lock_key = 'cashback_shops_import_n' . $network_id;
         $locked   = self::try_lock($lock_key);
@@ -272,25 +336,47 @@ class Cashback_Shop_Importer {
                 ? Cashback_Shop_Options::get_import_batch_size()
                 : 100;
 
-            $fetched_result = $adapter->fetch_campaigns_detailed($creds, $network, $offset, $batch_size);
+            $cache_key      = self::import_page_cache_key($run_id, $network_id, $offset);
+$fetched_result = $page_cursor > 0 ? self::get_cached_import_page($cache_key) : null;
+if ($fetched_result === null) {
+$fetched_result = $adapter->fetch_campaigns_detailed($creds, $network, $offset, $batch_size);
+if (! empty($fetched_result['success'])) {
+self::set_cached_import_page($cache_key, $fetched_result);
+}
+            }
             if (empty($fetched_result['success'])) {
-                $err = (string) ( $fetched_result['error'] ?? 'fetch_campaigns_detailed failed' );
-                Cashback_Shop_Import_Log::finish_page($log_id, $err);
-                return self::error_result($err);
+$err = (string) ( $fetched_result['error'] ?? 'fetch_campaigns_detailed failed' );
+Cashback_Shop_Import_Log::finish_page($log_id, $err);
+self::delete_cached_import_page($cache_key);
+return self::error_result($err);
             }
 
             $campaigns = isset($fetched_result['campaigns']) && is_array($fetched_result['campaigns'])
                 ? $fetched_result['campaigns']
                 : array();
 
-            $stats = array(
-                'fetched'        => count($campaigns),
-                'upserted_new'   => 0,
-                'upserted_upd'   => 0,
-                'tariffs_synced' => 0,
-            );
+            $stats = array( 'fetched'        => count($campaigns), 'upserted_new'   => 0, 'upserted_upd'   => 0, 'tariffs_synced' => 0 );
+if ($page_cursor > 0) {
+$previous_stats = self::get_import_log_stats($log_id);
+if ($previous_stats !== null) {
+$stats['upserted_new']   = $previous_stats['upserted_new'];
+$stats['upserted_upd']   = $previous_stats['upserted_upd'];
+$stats['tariffs_synced'] = $previous_stats['tariffs_synced'];
+                }
+            }
 
-            foreach ($campaigns as $campaign) {
+            $throttle_ms = class_exists('Cashback_Shop_Options')
+                ? Cashback_Shop_Options::get_import_throttle_ms()
+                : 0;
+
+            $budget_exceeded   = false;
+            $next_page_cursor  = 0;
+
+            foreach ($campaigns as $idx => $campaign) {
+                // Skip уже обработанное в предыдущем sub-run'е (cursor pickup).
+                if ($idx < $page_cursor) {
+                    continue;
+                }
                 if (! is_array($campaign)) {
                     continue;
                 }
@@ -331,6 +417,24 @@ class Cashback_Shop_Importer {
                         );
                     }
                 }
+
+                // Throttle между офферами (опция cashback_shop_import_throttle_ms).
+                // Применяется ПЕРЕД time-budget guard, чтобы пауза тоже шла
+                // в счёт wallclock'а — иначе при большом throttle мы пройдём
+                // guard, но превысим бюджет на следующей паузе.
+                if ($throttle_ms > 0) {
+                    usleep($throttle_ms * 1000);
+                }
+
+                // Time-budget guard: если прошло > SAFE_RUN_BUDGET_SECONDS,
+                // прерываем цикл и re-enqueues текущую страницу с cursor =
+                // $idx + 1 (следующий tick продолжит со следующего оффера).
+                $elapsed = microtime(true) - $start_ts;
+                if ($elapsed > self::SAFE_RUN_BUDGET_SECONDS) {
+                    $budget_exceeded  = true;
+                    $next_page_cursor = $idx + 1;
+                    break;
+                }
             }
 
             Cashback_Shop_Import_Log::update_progress(
@@ -340,16 +444,41 @@ class Cashback_Shop_Importer {
                 $stats['upserted_upd'],
                 $stats['tariffs_synced']
             );
-            Cashback_Shop_Import_Log::finish_page($log_id, null);
+            if (! $budget_exceeded) {
+Cashback_Shop_Import_Log::finish_page($log_id, null);
+self::delete_cached_import_page($cache_key);
+            }
 
             $has_next    = ! empty($fetched_result['has_next']);
             $next_offset = isset($fetched_result['next_offset']) ? (int) $fetched_result['next_offset'] : ($offset + $batch_size);
 
+            if ($budget_exceeded) {
+                // Re-enqueue ТУ ЖЕ страницу с обновлённым cursor — следующий
+                // tick продолжит с $next_page_cursor. has_next в этой ветке
+                // означает «текущая страница не доедена», вместо стандартной
+                // семантики «есть следующий offset». next_offset = $offset,
+                // чтобы admin-trigger при ручном чтении лога видел правильный
+                // продолжающийся offset.
+                if (function_exists('as_enqueue_async_action')) {
+                    as_enqueue_async_action(
+                        self::HOOK_RUN, array( $network_id, $run_id, $offset, $next_page_cursor, $log_id ), self::AS_GROUP
+                    );
+                }
+                return array(
+					'success'        => true,
+					'fetched'        => $stats['fetched'],
+					'upserted_new'   => $stats['upserted_new'],
+					'upserted_upd'   => $stats['upserted_upd'],
+					'tariffs_synced' => $stats['tariffs_synced'], 'has_next'       => true, 'next_offset'    => $offset, 'page_cursor'    => $next_page_cursor, 'error'          => null,
+				);
+            }
+
             // Re-enqueue follow-up если есть ещё страницы (action scheduler).
+            // page_cursor = 0 для новой страницы (старт с первого оффера).
             if ($has_next && function_exists('as_enqueue_async_action')) {
                 as_enqueue_async_action(
                     self::HOOK_RUN,
-                    array( $network_id, $run_id, $next_offset ),
+                    array( $network_id, $run_id, $next_offset, 0 ),
                     self::AS_GROUP
                 );
             }
@@ -359,11 +488,8 @@ class Cashback_Shop_Importer {
                 'fetched'        => $stats['fetched'],
                 'upserted_new'   => $stats['upserted_new'],
                 'upserted_upd'   => $stats['upserted_upd'],
-                'tariffs_synced' => $stats['tariffs_synced'],
-                'has_next'       => $has_next,
-                'next_offset'    => $next_offset,
-                'error'          => null,
-            );
+                'tariffs_synced' => $stats['tariffs_synced'], 'has_next'       => $has_next, 'next_offset'    => $next_offset, 'page_cursor'    => 0, 'error'          => null,
+			);
         } finally {
             self::release_lock($lock_key);
         }
@@ -703,7 +829,7 @@ class Cashback_Shop_Importer {
         // (PHPStan: function.impossibleType).
         if (function_exists('wp_get_object_terms')) {
             $current  = wp_get_object_terms($product_id, 'product_type', array( 'fields' => 'slugs' ));
-            $is_empty = ! is_array($current) || $current === array();
+            $is_empty = $current === array();
             if ($is_empty) {
                 self::set_product_type_external($product_id);
             }
@@ -913,6 +1039,11 @@ class Cashback_Shop_Importer {
 
     /**
      * Legacy WP-путь: media_sideload_image для jpg/png/gif/webp.
+     *
+     * Оборачивает вызов в scoped `http_request_args` фильтр, режущий
+     * timeout до {@see IMAGE_DOWNLOAD_TIMEOUT_SECONDS} только для этого
+     * вызова. Фильтр снимается в `finally` — никаких побочных эффектов
+     * на остальные HTTP-запросы плагина в том же процессе.
      */
     private static function sideload_raster_attachment(
         string $image_url,
@@ -923,7 +1054,21 @@ class Cashback_Shop_Importer {
         if (! function_exists('media_sideload_image')) {
             return null;
         }
-        $attachment_id = media_sideload_image($image_url, $product_id, null, 'id');
+
+        $timeout_filter = static function ( $args ) {
+            if (! is_array($args)) {
+                $args = array();
+            }
+            $args['timeout'] = self::IMAGE_DOWNLOAD_TIMEOUT_SECONDS;
+            return $args;
+        };
+        // phpcs:ignore WordPressVIPMinimum.Hooks.RestrictedHooks.http_request_args -- AS-cron контекст (НЕ web-request); cap 15с снижает дефолтные 300с — ровно то, что нужно для image-sideload, чтобы не блокировать всю задачу.
+        add_filter('http_request_args', $timeout_filter, 99);
+        try {
+            $attachment_id = media_sideload_image($image_url, $product_id, null, 'id');
+        } finally {
+            remove_filter('http_request_args', $timeout_filter, 99);
+        }
         if (function_exists('is_wp_error') && is_wp_error($attachment_id)) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
             error_log(sprintf(
@@ -958,7 +1103,7 @@ class Cashback_Shop_Importer {
             return null;
         }
 
-        $tmp = download_url($image_url);
+        $tmp = download_url($image_url, self::IMAGE_DOWNLOAD_TIMEOUT_SECONDS);
         if (function_exists('is_wp_error') && is_wp_error($tmp)) {
             // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
             error_log(sprintf(
@@ -1071,8 +1216,8 @@ class Cashback_Shop_Importer {
                 remove_filter('safe_svg_current_user_can_upload', '__return_true', 99);
             }
 
-            if (! is_array($sideloaded) || isset($sideloaded['error'])) {
-                $err = is_array($sideloaded) ? (string) ($sideloaded['error'] ?? '?') : 'non-array';
+            if (isset($sideloaded['error'])) {
+                $err = (string) ($sideloaded['error'] ?? '?');
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Plugin diagnostic.
                 error_log(sprintf(
                     '[Cashback Shop Importer] SVG wp_handle_sideload failed for product=%d offer=%s slug=%s: %s',
@@ -1119,9 +1264,7 @@ class Cashback_Shop_Importer {
 
             if (function_exists('wp_generate_attachment_metadata') && function_exists('wp_update_attachment_metadata')) {
                 $meta = wp_generate_attachment_metadata($attachment_id, $final_file);
-                if (is_array($meta)) {
-                    wp_update_attachment_metadata($attachment_id, $meta);
-                }
+                wp_update_attachment_metadata($attachment_id, $meta);
             }
 
             return $attachment_id;
@@ -1283,6 +1426,7 @@ class Cashback_Shop_Importer {
         if (! method_exists('Cashback_API_Client', 'get_instance')) {
             return null;
         }
+        // phpcs:ignore Generic.Formatting.DisallowMultipleStatements.SameLine -- PHPCS false-positive on this single return after phpcbf newline normalization.
         return Cashback_API_Client::get_instance();
     }
 
@@ -1314,29 +1458,68 @@ class Cashback_Shop_Importer {
 
     private static function release_lock( string $lock_key ): void {
         global $wpdb;
-        if (! is_object($wpdb) || ! method_exists($wpdb, 'get_var') || ! method_exists($wpdb, 'prepare')) {
-            return;
+if (! is_object($wpdb) || ! method_exists($wpdb, 'get_var') || ! method_exists($wpdb, 'prepare')) {
+return;
         }
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- RELEASE_LOCK через prepare.
         $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $lock_key));
+}
+
+    private static function import_page_cache_key( string $run_id, int $network_id, int $offset ): string {
+        return 'cashback_import_page_' . md5($run_id . '|' . $network_id . '|' . $offset);
+}
+
+    private static function get_cached_import_page( string $cache_key ): ?array {
+        if (! function_exists('get_transient')) {
+return null;
+}
+        $cached = get_transient($cache_key);
+return is_array($cached) ? $cached : null;
     }
+
+    private static function set_cached_import_page( string $cache_key, array $page ): void {
+        if (function_exists('set_transient')) {
+set_transient($cache_key, $page, 15 * MINUTE_IN_SECONDS);
+}
+    }
+
+    private static function delete_cached_import_page( string $cache_key ): void {
+        if (function_exists('delete_transient')) {
+delete_transient($cache_key);
+}
+    }
+
+    /**
+     * @return array{upserted_new: int, upserted_upd: int, tariffs_synced: int}|null
+     */
+    private static function get_import_log_stats( int $log_id ): ?array {
+        if ($log_id <= 0) {
+return null;
+}
+        global $wpdb;
+if (! is_object($wpdb) || ! method_exists($wpdb, 'get_row') || ! method_exists($wpdb, 'prepare')) {
+return null;
+}
+
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                'SELECT upserted_new, upserted_upd, tariffs_synced FROM %i WHERE id = %d', $wpdb->prefix . Cashback_Shop_Import_Log::TABLE, $log_id
+            ), ARRAY_A
+        );
+if (! is_array($row)) {
+return null;
+}
+
+        return array( 'upserted_new'   => (int) ( $row['upserted_new'] ?? 0 ), 'upserted_upd'   => (int) ( $row['upserted_upd'] ?? 0 ), 'tariffs_synced' => (int) ( $row['tariffs_synced'] ?? 0 ) );
+}
 
     /**
      * Стандартный формат ошибочного результата.
      *
-     * @return array{success: bool, fetched: int, upserted_new: int, upserted_upd: int, tariffs_synced: int, has_next: bool, next_offset: int, error: ?string}
+     * @return array{success: bool, fetched: int, upserted_new: int, upserted_upd: int, tariffs_synced: int, has_next: bool, next_offset: int, page_cursor: int, error: ?string}
      */
     private static function error_result( string $error ): array {
-        return array(
-            'success'        => false,
-            'fetched'        => 0,
-            'upserted_new'   => 0,
-            'upserted_upd'   => 0,
-            'tariffs_synced' => 0,
-            'has_next'       => false,
-            'next_offset'    => 0,
-            'error'          => $error,
-        );
+        return array( 'success'        => false, 'fetched'        => 0, 'upserted_new'   => 0, 'upserted_upd'   => 0, 'tariffs_synced' => 0, 'has_next'       => false, 'next_offset'    => 0, 'page_cursor'    => 0, 'error'          => $error );
     }
 
     private static function now_mysql(): string {

@@ -155,6 +155,29 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             return $this->fetch_error("HTTP {$code}: токен Advcake отвергнут — обновите api_key в Настройках API.");
         }
 
+        // 429 Too Many Requests — Advcake rate-limit. До 2 retry с
+        // экспоненциальным backoff (2/4 сек по умолчанию; фильтр
+        // `cashback_advcake_429_retry_delay_seconds` обнуляет в тестах).
+        // Без этого первый же rate-limit валит весь импорт — наблюдалось
+        // на проде с большим каталогом (см. fix/advcake-import-hang).
+        $retry_429 = (int) ( $params['_retry_429_attempt'] ?? 0 );
+        if ($code === 429 && $retry_429 < 2) {
+            $next_attempt = $retry_429 + 1;
+            $delay        = (int) apply_filters(
+                'cashback_advcake_429_retry_delay_seconds',
+                2 << $retry_429,
+                $next_attempt,
+                $code
+            );
+            if ($delay > 0) {
+                sleep($delay);
+            }
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log("Cashback Advcake: HTTP 429 on actions, retry attempt {$next_attempt} of 2");
+            $params['_retry_429_attempt'] = $next_attempt;
+            return $this->fetch_actions($credentials, $params, $network_config);
+        }
+
         // 5xx — Advcake-side ошибка/балансер. До 2 retry с экспоненциальным
         // backoff (паттерн идентичный admitad-адаптеру).
         $retry_attempt = (int) ( $params['_retry_5xx_attempt'] ?? 0 );
@@ -678,9 +701,10 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
      * @param int    $limit         Размер страницы
      * @param int    $retry_attempt Внутренний счётчик 5xx-retry (0..2)
      * @param bool   $with_bids     Прикрепить `with_bids=1` к URL — Advcake вернёт `bids[]` инлайн в каждом offer'е. Используется detailed-веткой для построения inline_tariffs; для campaigns-fetch (только статусы) не нужно.
+     * @param int    $retry_429_attempt Внутренний счётчик 429-retry (0..2). Не пересекается с 5xx-серией.
      * @return array{success: bool, offers: array, error: string}
      */
-    private function fetch_offers_page( string $base_url, string $token, int $offset, int $limit, int $retry_attempt, bool $with_bids = false ): array {
+    private function fetch_offers_page( string $base_url, string $token, int $offset, int $limit, int $retry_attempt, bool $with_bids = false, int $retry_429_attempt = 0 ): array {
         $params = array(
             'pass'   => $token,
             'type'   => 'json',
@@ -693,7 +717,17 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
         $query = http_build_query($params);
         $url   = $base_url . '/offers?' . $query;
 
-        $response = $this->http_get($url, array());
+        // Per-request timeout: для `/offers?with_bids=1` payload может быть
+        // тяжёлым на проде (тысячи офферов × bids), и дефолтные 60с
+        // http_get не успевают. 90с с фильтром остаются ниже AS 300с-лимита
+        // и оставляют бюджет на dispatch других офферов. Для обычного
+        // /offers (только статусы) 30с — экономия RTT.
+        $timeout = (int) apply_filters(
+            'cashback_advcake_offers_request_timeout',
+            $with_bids ? 90 : 30,
+            $with_bids
+        );
+        $response = $this->http_get($url, array(), max(1, $timeout));
         if (is_wp_error($response)) {
             return array(
                 'success' => false,
@@ -711,6 +745,26 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
                 'offers'  => array(),
                 'error'   => "HTTP {$code}: токен Advcake отвергнут на /offers — обновите api_key в Настройках API.",
             );
+        }
+
+        // 429 Too Many Requests — те же 2 retry с backoff, что в fetch_actions().
+        // Симметричный фильтр `cashback_advcake_429_retry_delay_seconds`.
+        // Счётчик 429-retry хранится отдельно от 5xx (через $retry_429_attempt),
+        // чтобы две независимые серии ретраев не делили бюджет.
+        if ($code === 429 && $retry_429_attempt < 2) {
+            $next_attempt = $retry_429_attempt + 1;
+            $delay        = (int) apply_filters(
+                'cashback_advcake_429_retry_delay_seconds',
+                2 << $retry_429_attempt,
+                $next_attempt,
+                $code
+            );
+            if ($delay > 0) {
+                sleep($delay);
+            }
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+            error_log("Cashback Advcake: HTTP 429 on /offers, retry attempt {$next_attempt} of 2");
+            return $this->fetch_offers_page($base_url, $token, $offset, $limit, $retry_attempt, $with_bids, $next_attempt);
         }
 
         if ($code >= 500 && $code < 600 && $retry_attempt < 2) {

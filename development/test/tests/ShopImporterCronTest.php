@@ -148,11 +148,18 @@ final class ShopImporterCronTest extends TestCase
         // Сбрасываем счётчик. add_action stub в bootstrap возвращает true.
         Cashback_Shop_Importer::init();
 
-        // Косвенная проверка: каждый run handler должен принимать 3 аргумента
-        // (network_id, run_id, offset). Reflectionом проверим сигнатуру.
+        // Косвенная проверка: run handler принимает 5 аргументов — network_id,
+        // run_id, offset, page_cursor, log_id. page_cursor/log_id добавлены в
+        // fix/advcake-import-hang для time-budget guard + resume одной строки
+        // лога. Defaults сохраняют BC для старых AS-jobs.
         $reflection = new \ReflectionClass('Cashback_Shop_Importer');
         $run        = $reflection->getMethod('run');
-        $this->assertCount(3, $run->getParameters());
+        $params     = $run->getParameters();
+        $this->assertCount(5, $params);
+        $this->assertSame('page_cursor', $params[3]->getName());
+        $this->assertTrue($params[3]->isDefaultValueAvailable());
+        $this->assertSame('log_id', $params[4]->getName());
+        $this->assertTrue($params[4]->isDefaultValueAvailable());
 
         $enqueue = $reflection->getMethod('enqueue_all_active');
         $this->assertCount(0, $enqueue->getParameters());

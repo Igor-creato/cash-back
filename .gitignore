@@ -1,6 +1,7 @@
 # Claude settings
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+/.codex/
 
 # Composer dependencies (в development/)
 /vendor/
@@ -21,6 +22,7 @@
 /wp-plugin-tests/
 /obsidian/
 CLAUDE.md
+AGENTS.md
 .gitignore
 # PHPStan
 /.phpstan.cache/
