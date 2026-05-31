@@ -145,6 +145,25 @@ final class ShopOptionsStructuralTest extends TestCase
         );
     }
 
+    public function test_advcake_has_safe_default_batch_size(): void
+    {
+        $this->assertMatchesRegularExpression(
+            '/(public\s+)?const\s+DEFAULT_ADVCAKE_BATCH_SIZE\s*=\s*20\s*;/i',
+            self::$options_php,
+            'Advcake должен иметь отдельный безопасный default batch=20, а не общий batch=100.'
+        );
+        $this->assertMatchesRegularExpression(
+            '/public\s+static\s+function\s+get_import_batch_size_for_network\s*\(\s*array\s+\$network\s*\)\s*:\s*int/i',
+            self::$options_php,
+            'Нужен network-aware getter, чтобы Advcake не наследовал общий batch size.'
+        );
+        $this->assertMatchesRegularExpression(
+            "/slug.*advcake/s",
+            self::$options_php,
+            'Network-aware getter должен распознавать slug=advcake.'
+        );
+    }
+
     public function test_get_import_throttle_ms_method_signature(): void
     {
         $this->assertMatchesRegularExpression(
@@ -191,6 +210,11 @@ final class ShopOptionsStructuralTest extends TestCase
             '/(public\s+)?const\s+DEFAULT_BATCH_SIZE\s*=\s*100\s*;/i',
             self::$options_php,
             'DEFAULT_BATCH_SIZE = 100'
+        );
+        $this->assertMatchesRegularExpression(
+            '/(public\s+)?const\s+DEFAULT_ADVCAKE_BATCH_SIZE\s*=\s*20\s*;/i',
+            self::$options_php,
+            'DEFAULT_ADVCAKE_BATCH_SIZE = 20'
         );
         $this->assertMatchesRegularExpression(
             '/(public\s+)?const\s+DEFAULT_THROTTLE_MS\s*=\s*200\s*;/i',

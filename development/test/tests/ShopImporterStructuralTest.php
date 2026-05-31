@@ -827,6 +827,16 @@ final class ShopImporterStructuralTest extends TestCase
             '240с = 80% от AS failure_period 300с. До конца — буфер на финализацию + re-enqueue.');
     }
 
+    public function test_memory_budget_constants_present(): void
+    {
+        $reflection = new \ReflectionClass('Cashback_Shop_Importer');
+        $this->assertTrue(
+            $reflection->hasConstant('SAFE_MEMORY_USAGE_RATIO'),
+            'Импортёр должен иметь memory guard: на проде Advcake падал от cgroup OOM до завершения run().'
+        );
+        $this->assertSame(0.70, $reflection->getConstant('SAFE_MEMORY_USAGE_RATIO'));
+    }
+
     public function test_svg_sideload_passes_short_timeout_to_download_url(): void
     {
         $this->reset_sideload_globals();
@@ -919,6 +929,43 @@ final class ShopImporterStructuralTest extends TestCase
         );
     }
 
+    public function test_run_source_contains_memory_budget_guard(): void
+    {
+        $rm   = new ReflectionMethod('Cashback_Shop_Importer', 'run');
+        $body = self::method_source($rm);
+
+        $this->assertStringContainsString(
+            'memory_get_usage(true)',
+            $body,
+            'run() должен проверять реальную выделенную память перед продолжением обработки пачки.'
+        );
+        $this->assertStringContainsString(
+            'should_pause_for_memory_budget',
+            $body,
+            'Проверка памяти должна быть вынесена в helper, чтобы её можно было тестировать отдельно.'
+        );
+    }
+
+    public function test_run_updates_progress_after_each_processed_offer(): void
+    {
+        $rm   = new ReflectionMethod('Cashback_Shop_Importer', 'run');
+        $body = self::method_source($rm);
+
+        $foreach_pos = strpos($body, 'foreach ($campaigns as $idx => $campaign)');
+        $this->assertNotFalse($foreach_pos);
+
+        $budget_pos   = strpos($body, 'SAFE_RUN_BUDGET_SECONDS', $foreach_pos);
+        $progress_pos = strpos($body, 'Cashback_Shop_Import_Log::update_progress', $foreach_pos);
+
+        $this->assertNotFalse($progress_pos, 'update_progress должен вызываться внутри foreach, а не только после всей страницы.');
+        $this->assertNotFalse($budget_pos);
+        $this->assertLessThan(
+            $budget_pos,
+            $progress_pos,
+            'Прогресс нужно записывать до time/memory early-break, иначе AS/OOM оставляет fetched=0.'
+        );
+    }
+
     public function test_run_source_skips_processed_offers_via_cursor(): void
     {
         $rm   = new ReflectionMethod('Cashback_Shop_Importer', 'run');
@@ -994,5 +1041,44 @@ final class ShopImporterStructuralTest extends TestCase
             $source,
             'budget-exceeded return должен явно отдавать page_cursor для синхронных callers/debug.'
         );
+    }
+
+    public function test_run_uses_network_aware_batch_size(): void
+    {
+        $rm   = new ReflectionMethod('Cashback_Shop_Importer', 'run');
+        $body = self::method_source($rm);
+
+        $this->assertStringContainsString(
+            'get_import_batch_size_for_network',
+            $body,
+            'run() должен выбирать batch size с учётом slug сети; Advcake нельзя импортировать общим batch=100.'
+        );
+    }
+
+    public function test_tariff_side_effects_are_deferred_out_of_inner_sync(): void
+    {
+        $sync = self::method_source(new ReflectionMethod('Cashback_Shop_Importer', 'sync_tariffs_for_campaign'));
+        $run  = self::method_source(new ReflectionMethod('Cashback_Shop_Importer', 'run'));
+
+        $this->assertStringNotContainsString(
+            "do_action('cashback_tariffs_changed'",
+            $sync,
+            'sync_tariffs_for_campaign не должен дергать тяжёлые side effects на каждый offer внутри bulk import.'
+        );
+        $this->assertStringContainsString(
+            'flush_deferred_tariff_side_effects',
+            $run,
+            'run() должен сбрасывать накопленные product_id после пачки/partial-run отдельным шагом.'
+        );
+    }
+
+    public function test_importer_logs_memory_and_reschedule_diagnostics(): void
+    {
+        $source = (string) file_get_contents(dirname(__DIR__, 3) . '/includes/shops/class-cashback-shop-importer.php');
+
+        $this->assertStringContainsString('log_run_diagnostics', $source);
+        $this->assertStringContainsString('memory_before', $source);
+        $this->assertStringContainsString('memory_after', $source);
+        $this->assertStringContainsString('reschedule_reason', $source);
     }
 }

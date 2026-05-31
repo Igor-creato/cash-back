@@ -82,6 +82,19 @@ class Cashback_Shop_Importer {
      */
     public const SAFE_RUN_BUDGET_SECONDS = 240;
 
+    /**
+     * Soft memory-budget guard для одного import action.
+     *
+     * Проверяем usage после каждого обработанного offer и re-enqueue'им
+     * продолжение до того как процесс приблизится к PHP/container OOM.
+     */
+    public const SAFE_MEMORY_USAGE_RATIO = 0.70;
+
+    /**
+     * Дополнительный минимальный headroom до memory_limit.
+     */
+    public const MIN_MEMORY_HEADROOM_BYTES = 67108864; // 64 MiB.
+
     // Дефолты, проставляемые ТОЛЬКО при первичном импорте (insert_draft_product).
     // На update_existing_product не трогаем — админ мог изменить.
     public const DEFAULT_BUTTON_TEXT    = 'Перейти';
@@ -117,7 +130,7 @@ class Cashback_Shop_Importer {
         // (page_cursor) и 5-й (log_id) опциональны — старые AS-jobs,
         // поставленные до релиза fix/advcake-import-hang, придут с 3 args.
         add_action(self::HOOK_RUN, array( self::class, 'run_action' ), 10, 5);
-add_action(self::HOOK_RECURRING, array( self::class, 'enqueue_all_active' ));
+        add_action(self::HOOK_RECURRING, array( self::class, 'enqueue_all_active' ));
         add_action(self::HOOK_GROUPS_RECOMPUTE, array( self::class, 'recompute_auto_groups' ));
         add_action(self::HOOK_LOG_GC, array( self::class, 'gc_old_logs' ));
 
@@ -283,8 +296,9 @@ add_action(self::HOOK_RECURRING, array( self::class, 'enqueue_all_active' ));
      * @return array{success: bool, fetched: int, upserted_new: int, upserted_upd: int, tariffs_synced: int, has_next: bool, next_offset: int, page_cursor: int, error: ?string}
      */
     public static function run( int $network_id, string $run_id, int $offset = 0, int $page_cursor = 0, ?int $log_id = null ): array {
-        $start_ts    = microtime(true);
-$page_cursor = max(0, $page_cursor);
+        $start_ts      = microtime(true);
+        $memory_before = memory_get_usage(true);
+        $page_cursor   = max(0, $page_cursor);
 
         $page    = (int) max(0, $offset);
         $page_no = $page > 0 && class_exists('Cashback_Shop_Options')
@@ -332,36 +346,41 @@ $page_cursor = max(0, $page_cursor);
                 return self::error_result($err);
             }
 
-            $batch_size = class_exists('Cashback_Shop_Options')
-                ? Cashback_Shop_Options::get_import_batch_size()
+            $batch_size = class_exists('Cashback_Shop_Options') && method_exists('Cashback_Shop_Options', 'get_import_batch_size_for_network')
+                ? Cashback_Shop_Options::get_import_batch_size_for_network($network)
                 : 100;
 
             $cache_key      = self::import_page_cache_key($run_id, $network_id, $offset);
-$fetched_result = $page_cursor > 0 ? self::get_cached_import_page($cache_key) : null;
-if ($fetched_result === null) {
-$fetched_result = $adapter->fetch_campaigns_detailed($creds, $network, $offset, $batch_size);
-if (! empty($fetched_result['success'])) {
-self::set_cached_import_page($cache_key, $fetched_result);
-}
+            $fetched_result = $page_cursor > 0 ? self::get_cached_import_page($cache_key) : null;
+            if ($fetched_result === null) {
+                $fetched_result = $adapter->fetch_campaigns_detailed($creds, $network, $offset, $batch_size);
+                if (! empty($fetched_result['success'])) {
+                    self::set_cached_import_page($cache_key, $fetched_result);
+                }
             }
             if (empty($fetched_result['success'])) {
-$err = (string) ( $fetched_result['error'] ?? 'fetch_campaigns_detailed failed' );
-Cashback_Shop_Import_Log::finish_page($log_id, $err);
-self::delete_cached_import_page($cache_key);
-return self::error_result($err);
+                $err = (string) ( $fetched_result['error'] ?? 'fetch_campaigns_detailed failed' );
+                Cashback_Shop_Import_Log::finish_page($log_id, $err);
+                self::delete_cached_import_page($cache_key);
+                return self::error_result($err);
             }
 
             $campaigns = isset($fetched_result['campaigns']) && is_array($fetched_result['campaigns'])
                 ? $fetched_result['campaigns']
                 : array();
 
-            $stats = array( 'fetched'        => count($campaigns), 'upserted_new'   => 0, 'upserted_upd'   => 0, 'tariffs_synced' => 0 );
-if ($page_cursor > 0) {
-$previous_stats = self::get_import_log_stats($log_id);
-if ($previous_stats !== null) {
-$stats['upserted_new']   = $previous_stats['upserted_new'];
-$stats['upserted_upd']   = $previous_stats['upserted_upd'];
-$stats['tariffs_synced'] = $previous_stats['tariffs_synced'];
+            $stats = array(
+                'fetched'        => count($campaigns),
+                'upserted_new'   => 0,
+                'upserted_upd'   => 0,
+                'tariffs_synced' => 0,
+            );
+            if ($page_cursor > 0) {
+                $previous_stats = self::get_import_log_stats($log_id);
+                if ($previous_stats !== null) {
+                    $stats['upserted_new']   = $previous_stats['upserted_new'];
+                    $stats['upserted_upd']   = $previous_stats['upserted_upd'];
+                    $stats['tariffs_synced'] = $previous_stats['tariffs_synced'];
                 }
             }
 
@@ -369,8 +388,10 @@ $stats['tariffs_synced'] = $previous_stats['tariffs_synced'];
                 ? Cashback_Shop_Options::get_import_throttle_ms()
                 : 0;
 
-            $budget_exceeded   = false;
-            $next_page_cursor  = 0;
+            $budget_exceeded     = false;
+            $next_page_cursor    = 0;
+            $reschedule_reason   = null;
+            $changed_product_ids = array();
 
             foreach ($campaigns as $idx => $campaign) {
                 // Skip уже обработанное в предыдущем sub-run'е (cursor pickup).
@@ -398,13 +419,17 @@ $stats['tariffs_synced'] = $previous_stats['tariffs_synced'];
                 // Tariff sync — только если product создан/обновлён
                 // (на rate_locked product мы всё равно обновляем тарифы, чтобы видеть актуальные суммы).
                 if ($upsert['product_id'] > 0) {
-                    $stats['tariffs_synced'] += self::sync_tariffs_for_campaign(
+                    $tariff_sync = self::sync_tariffs_for_campaign(
                         $adapter,
                         $creds,
                         $network,
                         $network_id,
                         $dto
                     );
+                    $stats['tariffs_synced'] += (int) ( $tariff_sync['upserted'] ?? 0 );
+                    if (! empty($tariff_sync['changed'])) {
+                        $changed_product_ids[ (int) $upsert['product_id'] ] = (int) $upsert['product_id'];
+                    }
 
                     // Tab[1] «Условия» — рендерим ПОСЛЕ tariff sync, иначе
                     // renderer прочитает старые данные. Покрывает все ветки
@@ -426,16 +451,33 @@ $stats['tariffs_synced'] = $previous_stats['tariffs_synced'];
                     usleep($throttle_ms * 1000);
                 }
 
+                Cashback_Shop_Import_Log::update_progress(
+                    $log_id,
+                    $stats['fetched'],
+                    $stats['upserted_new'],
+                    $stats['upserted_upd'],
+                    $stats['tariffs_synced']
+                );
+                if (self::should_pause_for_memory_budget()) {
+                    $budget_exceeded   = true;
+                    $next_page_cursor  = $idx + 1;
+                    $reschedule_reason = 'memory_budget';
+                    break;
+                }
+
                 // Time-budget guard: если прошло > SAFE_RUN_BUDGET_SECONDS,
                 // прерываем цикл и re-enqueues текущую страницу с cursor =
                 // $idx + 1 (следующий tick продолжит со следующего оффера).
                 $elapsed = microtime(true) - $start_ts;
                 if ($elapsed > self::SAFE_RUN_BUDGET_SECONDS) {
-                    $budget_exceeded  = true;
-                    $next_page_cursor = $idx + 1;
+                    $budget_exceeded   = true;
+                    $next_page_cursor  = $idx + 1;
+                    $reschedule_reason = 'time_budget';
                     break;
                 }
             }
+
+            self::flush_deferred_tariff_side_effects($changed_product_ids);
 
             Cashback_Shop_Import_Log::update_progress(
                 $log_id,
@@ -445,12 +487,26 @@ $stats['tariffs_synced'] = $previous_stats['tariffs_synced'];
                 $stats['tariffs_synced']
             );
             if (! $budget_exceeded) {
-Cashback_Shop_Import_Log::finish_page($log_id, null);
-self::delete_cached_import_page($cache_key);
+                Cashback_Shop_Import_Log::finish_page($log_id, null);
+                self::delete_cached_import_page($cache_key);
             }
 
             $has_next    = ! empty($fetched_result['has_next']);
             $next_offset = isset($fetched_result['next_offset']) ? (int) $fetched_result['next_offset'] : ($offset + $batch_size);
+            self::log_run_diagnostics(
+                array(
+                    'network_slug'      => (string) ( $network['slug'] ?? '' ),
+                    'offset'            => $offset,
+                    'page_cursor'       => $page_cursor,
+                    'next_page_cursor'  => $next_page_cursor,
+                    'batch_size'        => $batch_size,
+                    'fetched'           => $stats['fetched'],
+                    'processed'         => max(0, $next_page_cursor > 0 ? $next_page_cursor : count($campaigns)) - $page_cursor,
+                    'memory_before'     => $memory_before,
+                    'memory_after'      => memory_get_usage(true),
+                    'reschedule_reason' => $reschedule_reason,
+                )
+            );
 
             if ($budget_exceeded) {
                 // Re-enqueue ТУ ЖЕ страницу с обновлённым cursor — следующий
@@ -1346,14 +1402,16 @@ self::delete_cached_import_page($cache_key);
         array $network,
         int $network_id,
         Cashback_Campaign_Detail_DTO $dto
-    ): int {
+    ): array {
         $offer_id = $dto->id;
-
         $raw_tariffs = $dto->inline_tariffs;
         if ($raw_tariffs === array()) {
             $tariff_result = $adapter->fetch_shop_tariffs($creds, $network, $offer_id);
             if (empty($tariff_result['success'])) {
-                return 0;
+                return array(
+                    'upserted' => 0,
+                    'changed'  => false,
+                );
             }
             $raw_tariffs = isset($tariff_result['tariffs']) && is_array($tariff_result['tariffs'])
                 ? $tariff_result['tariffs']
@@ -1377,24 +1435,24 @@ self::delete_cached_import_page($cache_key);
         $sync         = Cashback_Shop_Tariff_Sync::sync($network_id, $offer_id, $dtos);
         $upserted     = (int) ( $sync['upserted'] ?? 0 );
         $soft_deleted = (int) ( $sync['soft_deleted'] ?? 0 );
+        return array(
+            'upserted' => $upserted,
+            'changed'  => ( $upserted > 0 || $soft_deleted > 0 ),
+        );
+    }
 
-        // Тарифы пишутся в кастомную таблицу cashback_shop_tariffs — стандартные
-        // WP-хуки её не отлавливают. Триггерим явный action для nginx-purger'а
-        // (Cashback_Nginx_Cache_Hooks::on_tariffs_changed) + group preferred
-        // recompute (Cashback_Shop_Group_Resolver::on_tariffs_changed) +
-        // catalog sort meta (Cashback_Product_Sort::recompute_for_product).
-        //
-        // Срабатывает не только на upsert, но и на soft-delete: если CPA-сеть
-        // удалила все тарифы кампании, group preferred должен быть пересчитан
-        // (стейл preferred → пользователь получает обещание кэшбэка которого нет).
-        if ($upserted > 0 || $soft_deleted > 0) {
-            $product_id = self::find_product_by_offer($network_id, $offer_id);
+    /**
+     * Flush tariff-change side effects once per processed batch/partial-run.
+     *
+     * @param array<int, int> $product_ids Product IDs keyed by ID for dedupe.
+     */
+    private static function flush_deferred_tariff_side_effects( array $product_ids ): void {
+        foreach ($product_ids as $product_id) {
+            $product_id = (int) $product_id;
             if ($product_id > 0) {
                 do_action('cashback_tariffs_changed', $product_id);
             }
         }
-
-        return $upserted;
     }
 
     /**
@@ -1405,11 +1463,14 @@ self::delete_cached_import_page($cache_key);
      */
     private static function get_network_row( int $network_id ): ?array {
         global $wpdb;
-        $row = $wpdb->get_row($wpdb->prepare(
-            'SELECT * FROM %i WHERE id = %d AND is_active = 1',
-            $wpdb->prefix . 'cashback_affiliate_networks',
-            $network_id
-        ), ARRAY_A);
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                'SELECT * FROM %i WHERE id = %d AND is_active = 1',
+                $wpdb->prefix . 'cashback_affiliate_networks',
+                $network_id
+            ),
+            ARRAY_A
+        );
         return is_array($row) ? $row : null;
     }
 
@@ -1458,35 +1519,35 @@ self::delete_cached_import_page($cache_key);
 
     private static function release_lock( string $lock_key ): void {
         global $wpdb;
-if (! is_object($wpdb) || ! method_exists($wpdb, 'get_var') || ! method_exists($wpdb, 'prepare')) {
-return;
+        if (! is_object($wpdb) || ! method_exists($wpdb, 'get_var') || ! method_exists($wpdb, 'prepare')) {
+            return;
         }
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- RELEASE_LOCK через prepare.
         $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $lock_key));
-}
+    }
 
     private static function import_page_cache_key( string $run_id, int $network_id, int $offset ): string {
         return 'cashback_import_page_' . md5($run_id . '|' . $network_id . '|' . $offset);
-}
+    }
 
     private static function get_cached_import_page( string $cache_key ): ?array {
         if (! function_exists('get_transient')) {
-return null;
-}
+            return null;
+        }
         $cached = get_transient($cache_key);
-return is_array($cached) ? $cached : null;
+        return is_array($cached) ? $cached : null;
     }
 
     private static function set_cached_import_page( string $cache_key, array $page ): void {
         if (function_exists('set_transient')) {
-set_transient($cache_key, $page, 15 * MINUTE_IN_SECONDS);
-}
+            set_transient($cache_key, $page, 15 * MINUTE_IN_SECONDS);
+        }
     }
 
     private static function delete_cached_import_page( string $cache_key ): void {
         if (function_exists('delete_transient')) {
-delete_transient($cache_key);
-}
+            delete_transient($cache_key);
+        }
     }
 
     /**
@@ -1494,24 +1555,88 @@ delete_transient($cache_key);
      */
     private static function get_import_log_stats( int $log_id ): ?array {
         if ($log_id <= 0) {
-return null;
-}
+            return null;
+        }
         global $wpdb;
-if (! is_object($wpdb) || ! method_exists($wpdb, 'get_row') || ! method_exists($wpdb, 'prepare')) {
-return null;
-}
+        if (! is_object($wpdb) || ! method_exists($wpdb, 'get_row') || ! method_exists($wpdb, 'prepare')) {
+            return null;
+        }
 
         $row = $wpdb->get_row(
             $wpdb->prepare(
-                'SELECT upserted_new, upserted_upd, tariffs_synced FROM %i WHERE id = %d', $wpdb->prefix . Cashback_Shop_Import_Log::TABLE, $log_id
-            ), ARRAY_A
+                'SELECT upserted_new, upserted_upd, tariffs_synced FROM %i WHERE id = %d',
+                $wpdb->prefix . Cashback_Shop_Import_Log::TABLE,
+                $log_id
+            ),
+            ARRAY_A
         );
-if (! is_array($row)) {
-return null;
-}
+        if (! is_array($row)) {
+            return null;
+        }
 
-        return array( 'upserted_new'   => (int) ( $row['upserted_new'] ?? 0 ), 'upserted_upd'   => (int) ( $row['upserted_upd'] ?? 0 ), 'tariffs_synced' => (int) ( $row['tariffs_synced'] ?? 0 ) );
-}
+        return array(
+            'upserted_new'   => (int) ( $row['upserted_new'] ?? 0 ),
+            'upserted_upd'   => (int) ( $row['upserted_upd'] ?? 0 ),
+            'tariffs_synced' => (int) ( $row['tariffs_synced'] ?? 0 ),
+        );
+    }
+
+    private static function should_pause_for_memory_budget(): bool {
+        $limit = self::get_memory_limit_bytes();
+        if ($limit <= 0) {
+            return false;
+        }
+
+        $usage    = memory_get_usage(true);
+        $headroom = $limit - $usage;
+        return $usage >= (int) floor($limit * self::SAFE_MEMORY_USAGE_RATIO)
+            || $headroom <= self::MIN_MEMORY_HEADROOM_BYTES;
+    }
+
+    private static function get_memory_limit_bytes(): int {
+        $raw = ini_get('memory_limit');
+        if (! is_string($raw) || $raw === '') {
+            return 0;
+        }
+
+        $raw = trim($raw);
+        if ($raw === '-1') {
+            return 0;
+        }
+
+        $unit  = strtolower(substr($raw, -1));
+        $value = (float) $raw;
+        if ($value <= 0) {
+            return 0;
+        }
+
+        switch ($unit) {
+            case 'g':
+                $value *= 1024;
+                // no break.
+            case 'm':
+                $value *= 1024;
+                // no break.
+            case 'k':
+                $value *= 1024;
+                break;
+        }
+
+        return (int) $value;
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     */
+    private static function log_run_diagnostics( array $context ): void {
+        $slug = (string) ( $context['network_slug'] ?? '' );
+        if ($slug !== 'advcake' && empty($context['reschedule_reason'])) {
+            return;
+        }
+
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Import diagnostics for production OOM investigation.
+        error_log('[Cashback Shop Importer] run diagnostics: ' . wp_json_encode($context));
+    }
 
     /**
      * Стандартный формат ошибочного результата.

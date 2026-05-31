@@ -62,6 +62,15 @@ class Cashback_Shop_Options {
     public const DEFAULT_BATCH_SIZE = 100;
 
     /**
+     * Safe default для Advcake import.
+     *
+     * На проде Advcake отдаёт страницу 100 офферов с inline bids/images; один
+     * PHP-FPM worker раздувался до cgroup OOM до завершения Action Scheduler
+     * action. Держим Advcake меньше общего batch, остальные сети не трогаем.
+     */
+    public const DEFAULT_ADVCAKE_BATCH_SIZE = 20;
+
+    /**
      * Default value для OPT_IMPORT_THROTTLE_MS.
      */
     public const DEFAULT_THROTTLE_MS = 200;
@@ -102,6 +111,29 @@ class Cashback_Shop_Options {
         $raw   = get_option(self::OPT_IMPORT_BATCH_SIZE, self::DEFAULT_BATCH_SIZE);
         $value = is_numeric($raw) ? (int) $raw : self::DEFAULT_BATCH_SIZE;
         return max(10, min(500, $value));
+    }
+
+    /**
+     * Размер batch с учётом конкретной CPA-сети.
+     *
+     * Общая опция остаётся глобальной, но Advcake дополнительно clamp'ится
+     * до 20, чтобы старое значение 100 не могло снова привести к OOM.
+     *
+     * @param array<string, mixed> $network Row из cashback_affiliate_networks.
+     */
+    public static function get_import_batch_size_for_network( array $network ): int {
+        $slug = strtolower((string) ( $network['slug'] ?? '' ));
+        if ($slug !== 'advcake') {
+            return self::get_import_batch_size();
+        }
+
+        $raw = get_option(self::OPT_IMPORT_BATCH_SIZE, null);
+        if ($raw === null || $raw === false || $raw === '') {
+            return self::DEFAULT_ADVCAKE_BATCH_SIZE;
+        }
+
+        $value = is_numeric($raw) ? (int) $raw : self::DEFAULT_ADVCAKE_BATCH_SIZE;
+        return max(10, min(self::DEFAULT_ADVCAKE_BATCH_SIZE, $value));
     }
 
     /**
