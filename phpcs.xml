@@ -10,6 +10,7 @@
     <exclude-pattern>*/obsidian/*</exclude-pattern>
     <exclude-pattern>*/context/*</exclude-pattern>
     <exclude-pattern>*/development/*</exclude-pattern>
+    <exclude-pattern>*/artefacts/*</exclude-pattern>
     <exclude-pattern>*/languages/*</exclude-pattern>
 
     <arg name="extensions" value="php"/>

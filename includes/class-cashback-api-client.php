@@ -364,17 +364,17 @@ class Cashback_API_Client {
      */
     private const ALLOWED_LOCAL_COLUMNS = array(
         'comission',
-		'sum_order',
-		'uniq_id',
-		'order_number',
+        'sum_order',
+        'uniq_id',
+        'order_number',
         'offer_id',
-		'offer_name',
-		'currency',
-		'action_date',
+        'offer_name',
+        'currency',
+        'action_date',
         'click_time',
-		'action_type',
-		'website_id',
-		'funds_ready',
+        'action_type',
+        'website_id',
+        'funds_ready',
         'decline_reason',
     );
 
@@ -643,7 +643,6 @@ class Cashback_API_Client {
         $candidate_fields[] = 'comment';
         $candidate_fields[] = 'reason';
         $candidate_fields   = array_values(array_unique($candidate_fields));
-
         foreach ($candidate_fields as $field) {
             if (!array_key_exists($field, $action)) {
                 continue;
@@ -663,7 +662,6 @@ class Cashback_API_Client {
      */
     private function build_background_sync_params( string $slug, array $config, string $date_start_dmy, string $date_end_dmy ): array {
         $adapter = $this->get_adapter($slug);
-
         if ($adapter instanceof Cashback_Advcake_Adapter) {
             $from = DateTime::createFromFormat('!d.m.Y', $date_start_dmy);
             $to   = DateTime::createFromFormat('!d.m.Y', $date_end_dmy);
@@ -2929,8 +2927,7 @@ class Cashback_API_Client {
                 $api_decline_reason    = $this->resolve_decline_reason($action, $field_map, $mapped_status);
                 $fresh_decline_reason  = isset($fresh['decline_reason']) ? trim((string) $fresh['decline_reason']) : '';
                 $reason_changed        = ( (string) ( $api_decline_reason ?? '' ) !== $fresh_decline_reason );
-
-                $needs_verify = empty($fresh['api_verified']);
+                $needs_verify          = empty($fresh['api_verified']);
 
                 // funds_ready: определяется через маппинг, fallback — прямое чтение из адаптера
                 $api_funds_ready   = $this->resolve_funds_ready($action, $field_map);

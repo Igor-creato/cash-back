@@ -13,6 +13,7 @@ parameters:
         - obsidian (?)
         - context (?)
         - development (?)
+        - artefacts (?)
         - languages (?)
     bootstrapFiles:
         - vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php

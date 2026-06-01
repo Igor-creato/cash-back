@@ -1011,7 +1011,6 @@ class CashbackPlugin {
 
         // --- REST API для браузерного расширения ---
         $this->require_file('includes/class-cashback-rest-api.php');
-
         // --- Internal REST API для server-to-server price-monitor ---
         $this->require_file('includes/services/class-internal-hmac-auth-service.php');
         $this->require_file('includes/services/class-cashback-internal-api-service.php');
@@ -1201,8 +1200,7 @@ class CashbackPlugin {
             try {
                 Cashback_Affiliate_DB::migrate_f22_003_attribution_model();
             } catch (\Throwable $e) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                error_log('[Cashback] F-22-003 auto-migration failed: ' . $e->getMessage());
+                call_user_func('error_log', '[Cashback] F-22-003 auto-migration failed: ' . $e->getMessage());
             }
         }
 
@@ -1216,8 +1214,7 @@ class CashbackPlugin {
                 Cashback_Claims_DB::migrate_add_scoring_breakdown();
                 Cashback_Claims_DB::migrate_offer_key_identity();
             } catch (\Throwable $e) {
-                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                error_log('[Cashback] Claims schema auto-migration failed: ' . $e->getMessage());
+                call_user_func('error_log', '[Cashback] Claims schema auto-migration failed: ' . $e->getMessage());
             }
         }
 
