@@ -139,12 +139,14 @@ final class Cashback_Click_Session_Service {
 
         $network_id  = (int) get_post_meta($product_id, '_affiliate_network_id', true);
         $cpa_network = self::get_network_slug_by_id($network_id);
+        $offer_id    = (string) get_post_meta($product_id, '_offer_id', true);
 
         return self::do_activate(array(
             'source'            => 'wc_product',
             'product_id'        => $product_id,
             'network_id'        => $network_id,
             'cpa_network'       => $cpa_network,
+            'offer_id'          => $offer_id,
             'base_url'          => $base_url,
             'user_id'           => $user_id,
             'ip_address'        => $ip_address,
@@ -207,12 +209,14 @@ final class Cashback_Click_Session_Service {
         }
 
         $cpa_network = self::get_network_slug_by_id($network_id);
+        $offer_id    = (string) get_post_meta($product_id, '_offer_id', true);
 
         return self::do_activate(array(
             'source'            => 'promocode',
             'product_id'        => $product_id,
             'network_id'        => $network_id,
             'cpa_network'       => $cpa_network,
+            'offer_id'          => $offer_id,
             'base_url'          => $goto_link,
             'user_id'           => $user_id,
             'ip_address'        => $ip_address,
@@ -232,6 +236,7 @@ final class Cashback_Click_Session_Service {
      *   product_id: int,
      *   network_id: int,
      *   cpa_network: ?string,
+     *   offer_id: string,
      *   base_url: string,
      *   user_id: int,
      *   ip_address: string,
@@ -248,6 +253,10 @@ final class Cashback_Click_Session_Service {
         $product_id        = (int) $ctx['product_id'];
         $network_id        = (int) $ctx['network_id'];
         $cpa_network       = $ctx['cpa_network'];
+        $offer_id          = trim((string) ($ctx['offer_id'] ?? ''));
+        $offer_key         = class_exists('Cashback_Offer_Key') && is_string($cpa_network)
+            ? Cashback_Offer_Key::from_parts($cpa_network, $offer_id)
+            : null;
         $base_url          = (string) $ctx['base_url'];
         $user_id           = (int) $ctx['user_id'];
         $ip_address        = (string) $ctx['ip_address'];
@@ -436,6 +445,8 @@ final class Cashback_Click_Session_Service {
                 'user_id'            => $user_id,
                 'product_id'         => $product_id,
                 'cpa_network'        => $cpa_network,
+                'offer_id'           => $offer_id,
+                'offer_key'          => $offer_key,
                 'affiliate_url'      => $affiliate_url,
                 'ip_address'         => $ip_address,
                 'user_agent'         => $user_agent,
@@ -685,6 +696,8 @@ final class Cashback_Click_Session_Service {
             'user_id'            => (int) $data['user_id'],
             'product_id'         => (int) $data['product_id'],
             'cpa_network'        => (string) ( $data['cpa_network'] ?? '' ),
+            'offer_id'           => (string) ( $data['offer_id'] ?? '' ),
+            'offer_key'          => (string) ( $data['offer_key'] ?? '' ),
             'affiliate_url'      => (string) ( $data['affiliate_url'] ?? '' ),
             'ip_address'         => (string) ( $data['ip_address'] ?? '' ),
             'user_agent'         => (string) ( $data['user_agent'] ?? '' ),
@@ -692,7 +705,7 @@ final class Cashback_Click_Session_Service {
             'spam_click'         => (int) ( $data['spam_click'] ?? 0 ),
             'created_at'         => $created_at,
         );
-        $fmt = array( '%s', '%d', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s' );
+        $fmt = array( '%s', '%d', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s' );
 
         // promocode_id (v10) — опциональное поле, передаём только при наличии чтобы
         // INSERT не падал на старых БД до миграции v10.

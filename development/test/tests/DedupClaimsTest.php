@@ -9,12 +9,12 @@ use PHPUnit\Framework\Attributes\Group;
  * Unit-тесты для Cashback_Dedup_Claims_Strategy (Группа 6, шаг 1).
  *
  * Правила:
- *   - ключ дедупа:     (merchant_id, order_id);
+ *   - ключ дедупа:     (merchant_key, order_id);
  *   - canonical row:   status-priority approved > sent_to_network > submitted > declined > draft;
  *                      tiebreak — MIN(created_at), затем MIN(claim_id);
  *   - merge canonical: comment/evidence канонической не трогаем (пользовательские поля);
  *   - relink FK:       cashback_claim_events.claim_id → canonical claim_id;
- *   - NULL merchant_id: не объединяется (NULL != NULL в UNIQUE MySQL).
+ *   - пустой merchant_key: не объединяется.
  */
 #[Group('dedup')]
 final class DedupClaimsTest extends TestCase
@@ -36,33 +36,33 @@ final class DedupClaimsTest extends TestCase
     // find_groups()
     // ────────────────────────────────────────────────────────────
 
-    public function test_find_groups_groups_by_merchant_and_order(): void
+    public function test_find_groups_groups_by_merchant_key_and_order(): void
     {
         $this->wpdb->seed_claims([
-            ['claim_id' => 1, 'user_id' => 10, 'merchant_id' => 100, 'order_id' => 'ORDER-A', 'status' => 'approved',  'created_at' => '2026-04-20 10:00:00'],
-            ['claim_id' => 2, 'user_id' => 11, 'merchant_id' => 100, 'order_id' => 'ORDER-A', 'status' => 'submitted', 'created_at' => '2026-04-20 11:00:00'],
-            // другой мерчант — отдельная (unique) запись
-            ['claim_id' => 3, 'user_id' => 10, 'merchant_id' => 200, 'order_id' => 'ORDER-A', 'status' => 'approved',  'created_at' => '2026-04-20 10:00:00'],
+            ['claim_id' => 1, 'user_id' => 10, 'merchant_key' => 'admitad:100', 'merchant_id' => 100, 'order_id' => 'ORDER-A', 'status' => 'approved',  'created_at' => '2026-04-20 10:00:00'],
+            ['claim_id' => 2, 'user_id' => 11, 'merchant_key' => 'admitad:100', 'merchant_id' => 100, 'order_id' => 'ORDER-A', 'status' => 'submitted', 'created_at' => '2026-04-20 11:00:00'],
+            // та же raw offer_id в другой сети — отдельная запись
+            ['claim_id' => 3, 'user_id' => 10, 'merchant_key' => 'epn:100',     'merchant_id' => 100, 'order_id' => 'ORDER-A', 'status' => 'approved',  'created_at' => '2026-04-20 10:00:00'],
             // другой order_id — отдельная
-            ['claim_id' => 4, 'user_id' => 11, 'merchant_id' => 100, 'order_id' => 'ORDER-B', 'status' => 'submitted', 'created_at' => '2026-04-20 11:00:00'],
+            ['claim_id' => 4, 'user_id' => 11, 'merchant_key' => 'admitad:100', 'merchant_id' => 100, 'order_id' => 'ORDER-B', 'status' => 'submitted', 'created_at' => '2026-04-20 11:00:00'],
         ]);
 
         $groups = (new Cashback_Dedup_Claims_Strategy())->find_groups($this->wpdb, 0);
 
-        $this->assertCount(1, $groups, 'Только (merchant_id=100, order_id=ORDER-A) имеет дубль');
+        $this->assertCount(1, $groups, 'Только (merchant_key=admitad:100, order_id=ORDER-A) имеет дубль');
         $this->assertEqualsCanonicalizing([1, 2], $groups[0]['ids']);
     }
 
-    public function test_find_groups_skips_null_merchant_id(): void
+    public function test_find_groups_skips_empty_merchant_key(): void
     {
         $this->wpdb->seed_claims([
-            ['claim_id' => 1, 'user_id' => 10, 'merchant_id' => null, 'order_id' => 'ORDER-A', 'status' => 'submitted', 'created_at' => '2026-04-20 10:00:00'],
-            ['claim_id' => 2, 'user_id' => 11, 'merchant_id' => null, 'order_id' => 'ORDER-A', 'status' => 'submitted', 'created_at' => '2026-04-20 11:00:00'],
+            ['claim_id' => 1, 'user_id' => 10, 'merchant_key' => null, 'merchant_id' => 100, 'order_id' => 'ORDER-A', 'status' => 'submitted', 'created_at' => '2026-04-20 10:00:00'],
+            ['claim_id' => 2, 'user_id' => 11, 'merchant_key' => '',   'merchant_id' => 100, 'order_id' => 'ORDER-A', 'status' => 'submitted', 'created_at' => '2026-04-20 11:00:00'],
         ]);
 
         $groups = (new Cashback_Dedup_Claims_Strategy())->find_groups($this->wpdb, 0);
 
-        $this->assertCount(0, $groups, 'NULL merchant_id → группировка не применяется');
+        $this->assertCount(0, $groups, 'Пустой merchant_key не группируется');
     }
 
     // ────────────────────────────────────────────────────────────
@@ -139,8 +139,8 @@ final class DedupClaimsTest extends TestCase
     public function test_relink_children_updates_claim_events_claim_id(): void
     {
         $this->wpdb->seed_claims([
-            ['claim_id' => 1, 'user_id' => 10, 'merchant_id' => 100, 'order_id' => 'O', 'status' => 'approved', 'created_at' => '2026-04-20 10:00:00'],
-            ['claim_id' => 2, 'user_id' => 10, 'merchant_id' => 100, 'order_id' => 'O', 'status' => 'submitted', 'created_at' => '2026-04-20 11:00:00'],
+            ['claim_id' => 1, 'user_id' => 10, 'merchant_key' => 'admitad:100', 'merchant_id' => 100, 'order_id' => 'O', 'status' => 'approved', 'created_at' => '2026-04-20 10:00:00'],
+            ['claim_id' => 2, 'user_id' => 10, 'merchant_key' => 'admitad:100', 'merchant_id' => 100, 'order_id' => 'O', 'status' => 'submitted', 'created_at' => '2026-04-20 11:00:00'],
         ]);
         $this->wpdb->seed_claim_events([
             ['event_id' => 1, 'claim_id' => 1, 'status' => 'approved'],
@@ -164,8 +164,8 @@ final class DedupClaimsTest extends TestCase
     public function test_delete_duplicates_removes_only_non_canonical(): void
     {
         $this->wpdb->seed_claims([
-            ['claim_id' => 1, 'user_id' => 10, 'merchant_id' => 100, 'order_id' => 'O', 'status' => 'approved',  'created_at' => '2026-04-20 10:00:00'],
-            ['claim_id' => 2, 'user_id' => 10, 'merchant_id' => 100, 'order_id' => 'O', 'status' => 'submitted', 'created_at' => '2026-04-20 11:00:00'],
+            ['claim_id' => 1, 'user_id' => 10, 'merchant_key' => 'admitad:100', 'merchant_id' => 100, 'order_id' => 'O', 'status' => 'approved',  'created_at' => '2026-04-20 10:00:00'],
+            ['claim_id' => 2, 'user_id' => 10, 'merchant_key' => 'admitad:100', 'merchant_id' => 100, 'order_id' => 'O', 'status' => 'submitted', 'created_at' => '2026-04-20 11:00:00'],
         ]);
 
         $deleted = (new Cashback_Dedup_Claims_Strategy())->delete_duplicates($this->wpdb, [2]);
@@ -282,10 +282,10 @@ final class Dedup_Claims_Wpdb_Stub
     {
         $groups = [];
         foreach ($this->claims as $r) {
-            if ($r['merchant_id'] === null) {
+            if (!isset($r['merchant_key']) || (string) $r['merchant_key'] === '') {
                 continue;
             }
-            $key = $r['merchant_id'] . '|' . $r['order_id'];
+            $key = $r['merchant_key'] . '|' . $r['order_id'];
             $groups[$key][] = (int) $r['claim_id'];
         }
 
@@ -298,12 +298,12 @@ final class Dedup_Claims_Wpdb_Stub
 
         $result = [];
         foreach ($dupes as $key => $ids) {
-            [$merchant_id, $order_id] = explode('|', $key, 2);
+            [$merchant_key, $order_id] = explode('|', $key, 2);
             $result[] = [
-                'merchant_id' => (int) $merchant_id,
-                'order_id'    => $order_id,
-                'ids'         => implode(',', $ids),
-                'cnt'         => count($ids),
+                'merchant_key' => $merchant_key,
+                'order_id'     => $order_id,
+                'ids'          => implode(',', $ids),
+                'cnt'          => count($ids),
             ];
         }
         return $result;

@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Group;
  * Миграция добавляет UNIQUE-ключи для:
  *   - cashback_fraud_device_ids: ADD session_date DATE GENERATED + UNIQUE(user_id, session_date, device_id)
  *   - cashback_claims:           ADD idempotency_key CHAR(36) NULL + UNIQUE(user_id, idempotency_key)
- *                                + UNIQUE(merchant_id, order_id)
+ *                                + UNIQUE(merchant_key, order_id)
  *   - cashback_support_messages: ADD request_id CHAR(36) NULL + UNIQUE(request_id)
  *
  * Поведение:
@@ -48,8 +48,9 @@ final class SchemaIdempotencyMigrationTest extends TestCase
         $wpdb->existing_columns['cashback_fraud_device_ids'][] = 'session_date';
         $wpdb->existing_indexes['cashback_fraud_device_ids'][] = 'uk_user_session_device';
         $wpdb->existing_columns['cashback_claims'][]           = 'idempotency_key';
+        $wpdb->existing_columns['cashback_claims'][]           = 'merchant_key';
         $wpdb->existing_indexes['cashback_claims'][]           = 'uk_user_idempotency';
-        $wpdb->existing_indexes['cashback_claims'][]           = 'uk_merchant_order';
+        $wpdb->existing_indexes['cashback_claims'][]           = 'uk_merchant_key_order';
         $wpdb->existing_columns['cashback_support_messages'][] = 'request_id';
         $wpdb->existing_indexes['cashback_support_messages'][] = 'uk_request_id';
         return $wpdb;
@@ -104,10 +105,11 @@ final class SchemaIdempotencyMigrationTest extends TestCase
         $this->assertFalse((bool) get_option('cashback_schema_idempotency_v1_applied'));
     }
 
-    public function test_aborts_when_claims_merchant_order_has_duplicates(): void
+    public function test_aborts_when_claims_merchant_key_order_has_duplicates(): void
     {
         $wpdb = new Schema_Migration_Wpdb_Stub();
-        $wpdb->duplicate_counts['cashback_claims_merchant_order'] = 1;
+        $wpdb->existing_columns['cashback_claims'][]                  = 'merchant_key';
+        $wpdb->duplicate_counts['cashback_claims_merchant_key_order'] = 1;
 
         $migration = new Cashback_Schema_Idempotency_Migration($wpdb);
         $result    = $migration->run();
@@ -136,21 +138,22 @@ final class SchemaIdempotencyMigrationTest extends TestCase
     // DDL execution
     // ────────────────────────────────────────────────────────────
 
-    public function test_clean_run_executes_all_seven_ddl(): void
+    public function test_clean_run_executes_all_eight_ddl(): void
     {
         $wpdb = new Schema_Migration_Wpdb_Stub();
 
         $migration = new Cashback_Schema_Idempotency_Migration($wpdb);
         $migration->run();
 
-        $this->assertCount(7, $wpdb->executed_ddl);
+        $this->assertCount(8, $wpdb->executed_ddl);
 
         $joined = implode("\n", $wpdb->executed_ddl);
         $this->assertStringContainsString('ADD COLUMN `session_date`', $joined);
         $this->assertStringContainsString('ADD UNIQUE KEY `uk_user_session_device`', $joined);
         $this->assertStringContainsString('ADD COLUMN `idempotency_key`', $joined);
         $this->assertStringContainsString('ADD UNIQUE KEY `uk_user_idempotency`', $joined);
-        $this->assertStringContainsString('ADD UNIQUE KEY `uk_merchant_order`', $joined);
+        $this->assertStringContainsString('ADD COLUMN `merchant_key`', $joined);
+        $this->assertStringContainsString('ADD UNIQUE KEY `uk_merchant_key_order`', $joined);
         $this->assertStringContainsString('ADD COLUMN `request_id`', $joined);
         $this->assertStringContainsString('ADD UNIQUE KEY `uk_request_id`', $joined);
     }
@@ -171,13 +174,13 @@ final class SchemaIdempotencyMigrationTest extends TestCase
     public function test_skips_add_unique_when_already_exists(): void
     {
         $wpdb = new Schema_Migration_Wpdb_Stub();
-        $wpdb->existing_indexes['cashback_claims'][] = 'uk_merchant_order';
+        $wpdb->existing_indexes['cashback_claims'][] = 'uk_merchant_key_order';
 
         $migration = new Cashback_Schema_Idempotency_Migration($wpdb);
         $migration->run();
 
         $joined = implode("\n", $wpdb->executed_ddl);
-        $this->assertStringNotContainsString('ADD UNIQUE KEY `uk_merchant_order`', $joined);
+        $this->assertStringNotContainsString('ADD UNIQUE KEY `uk_merchant_key_order`', $joined);
     }
 
     public function test_fully_migrated_database_is_noop_without_applied_flag(): void
@@ -316,7 +319,7 @@ final class SchemaIdempotencyMigrationTest extends TestCase
 
         $second = $migration->run();
         $this->assertTrue($second['applied']);
-        $this->assertCount(7, $wpdb->executed_ddl, 'Все 7 DDL выполнены при повторном запуске');
+        $this->assertCount(8, $wpdb->executed_ddl, 'Все 8 DDL выполнены при повторном запуске');
         $this->assertTrue((bool) get_option('cashback_schema_idempotency_v1_applied'));
         $this->assertFalse(get_option('cashback_schema_idempotency_v1_blocked'));
     }
@@ -336,7 +339,7 @@ final class SchemaIdempotencyMigrationTest extends TestCase
             static function (string $sql): bool {
                 return stripos($sql, 'HAVING COUNT') !== false
                     && (stripos($sql, 'cashback_fraud_device_ids') !== false
-                        || (stripos($sql, 'cashback_claims') !== false && stripos($sql, 'merchant_id') !== false));
+                        || (stripos($sql, 'cashback_claims') !== false && stripos($sql, 'merchant_key') !== false));
             }
         );
         $this->assertEmpty($bad_queries, 'Pre-check на missing-таблицах не должен запускать SELECT COUNT');
@@ -452,8 +455,8 @@ final class Schema_Migration_Wpdb_Stub
         if (stripos($sql, 'cashback_fraud_device_ids') !== false && stripos($sql, 'HAVING COUNT') !== false) {
             return $this->duplicate_counts['cashback_fraud_device_ids'] ?? 0;
         }
-        if (stripos($sql, 'cashback_claims') !== false && stripos($sql, 'merchant_id') !== false && stripos($sql, 'HAVING COUNT') !== false) {
-            return $this->duplicate_counts['cashback_claims_merchant_order'] ?? 0;
+        if (stripos($sql, 'cashback_claims') !== false && stripos($sql, 'merchant_key') !== false && stripos($sql, 'HAVING COUNT') !== false) {
+            return $this->duplicate_counts['cashback_claims_merchant_key_order'] ?? 0;
         }
         return 0;
     }

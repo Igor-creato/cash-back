@@ -285,6 +285,6 @@ final class DedupSourceAliasV19Test extends TestCase
         $this->assertIsInt($p19, 'init-hook must auto-fire v19 (zero-downtime)');
         $this->assertGreaterThan($p18, $p19, 'init-hook v19 after v18 (same guarded try)');
         // error_log line must mention all migrations in this guarded family.
-        $this->assertStringContainsString('v14/v15/v16/v17/v18/v19/v20 auto-fire failed', $plug);
+        $this->assertStringContainsString('v14/v15/v16/v17/v18/v19/v20/v21 auto-fire failed', $plug);
     }
 }

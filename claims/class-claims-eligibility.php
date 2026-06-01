@@ -67,7 +67,8 @@ class Cashback_Claims_Eligibility {
             $reasons[] = $claim_check;
         }
 
-        $merchant_check = self::check_merchant_allows_claims((int) ( $click['offer_id'] ?? 0 ));
+        $merchant_key   = self::resolve_offer_key($click);
+        $merchant_check = self::check_merchant_allows_claims((int) ( $click['offer_id'] ?? 0 ), $merchant_key);
         if ($merchant_check !== true) {
             $reasons[] = $merchant_check;
         }
@@ -100,6 +101,7 @@ class Cashback_Claims_Eligibility {
                 'product_name'  => $product_name,
                 'click_date'    => $click['created_at'],
                 'merchant_id'   => (int) ( $click['offer_id'] ?? 0 ),
+                'merchant_key'  => $merchant_key,
                 'merchant_name' => $click['cpa_network'] ?? '',
             ),
         );
@@ -141,7 +143,7 @@ class Cashback_Claims_Eligibility {
                )";
 
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $eligible_where is a static SQL fragment with %d/%s/%i placeholders, values bound via $wpdb->prepare(); sniff can't see placeholders inside $eligible_where.
-        $clicks = $wpdb->get_results( $wpdb->prepare( "SELECT cl.click_id, cl.product_id, cl.created_at, cl.cpa_network, cl.offer_id, cl.ip_address, cl.user_agent FROM %i cl WHERE {$eligible_where} ORDER BY cl.created_at DESC LIMIT %d OFFSET %d", $click_log_table, $user_id, $cutoff_min, $cutoff_max, $tx_table, $claims_table, $per_page, $offset ), ARRAY_A );
+        $clicks = $wpdb->get_results( $wpdb->prepare( "SELECT cl.click_id, cl.product_id, cl.created_at, cl.cpa_network, cl.offer_id, cl.offer_key, cl.ip_address, cl.user_agent FROM %i cl WHERE {$eligible_where} ORDER BY cl.created_at DESC LIMIT %d OFFSET %d", $click_log_table, $user_id, $cutoff_min, $cutoff_max, $tx_table, $claims_table, $per_page, $offset ), ARRAY_A );
 
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $eligible_where is a static SQL fragment with %d/%s/%i placeholders, values bound via $wpdb->prepare(); sniff can't see placeholders inside $eligible_where.
         $total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i cl WHERE {$eligible_where}", $click_log_table, $user_id, $cutoff_min, $cutoff_max, $tx_table, $claims_table ) );
@@ -226,7 +228,7 @@ class Cashback_Claims_Eligibility {
         $tx_table        = $wpdb->prefix . 'cashback_transactions';
         $claims_table    = $wpdb->prefix . 'cashback_claims';
 
-        $select_query = "SELECT cl.click_id, cl.product_id, cl.created_at, cl.cpa_network, cl.offer_id,
+        $select_query = "SELECT cl.click_id, cl.product_id, cl.created_at, cl.cpa_network, cl.offer_id, cl.offer_key,
                     cl.ip_address, cl.user_agent, cl.spam_click,
                     CASE WHEN t.click_id IS NOT NULL THEN 1 ELSE 0 END AS has_cashback,
                     t.cashback_status AS cashback_status,
@@ -321,13 +323,15 @@ class Cashback_Claims_Eligibility {
                 }
             }
 
-            if ($offer_id > 0 && in_array($offer_id, $blocked_merchants, true)) {
+            $offer_key = self::resolve_offer_key($click);
+            if (self::is_merchant_blocked($offer_id, $offer_key, $blocked_merchants)) {
                 $reasons[] = __('Мерчант не поддерживает заявки.', 'cashback-plugin');
             }
 
             $click['can_claim']    = empty($reasons);
             $click['claim_reason'] = implode(' ', $reasons);
             $click['merchant_id']  = $offer_id;
+            $click['merchant_key'] = $offer_key;
 
             $enriched[] = $click;
         }
@@ -373,7 +377,7 @@ class Cashback_Claims_Eligibility {
 
         $click_log_table = $wpdb->prefix . 'cashback_click_log';
         $result          = $wpdb->get_row( $wpdb->prepare(
-            'SELECT click_id, user_id, product_id, offer_id, cpa_network, created_at, ip_address, user_agent
+            'SELECT click_id, user_id, product_id, offer_id, offer_key, cpa_network, created_at, ip_address, user_agent
              FROM %i
              WHERE click_id = %s AND user_id = %d',
             $click_log_table,
@@ -492,16 +496,40 @@ class Cashback_Claims_Eligibility {
      * @param int $offer_id
      * @return true|string
      */
-    private static function check_merchant_allows_claims( int $offer_id ) {
-        if ($offer_id <= 0) {
-            return true;
-        }
-
+    private static function check_merchant_allows_claims( int $offer_id, ?string $offer_key = null ) {
         $blocked = get_option('cashback_claims_blocked_merchants', array());
-        if (is_array($blocked) && in_array($offer_id, $blocked, true)) {
+        if (self::is_merchant_blocked($offer_id, $offer_key, $blocked)) {
             return __('Мерчант не поддерживает заявки на кэшбэк.', 'cashback-plugin');
         }
 
         return true;
+    }
+
+    private static function resolve_offer_key( array $click ): ?string {
+        $stored = $click['offer_key'] ?? null;
+        if (class_exists('Cashback_Offer_Key') && Cashback_Offer_Key::looks_like_key($stored)) {
+            return (string) $stored;
+        }
+
+        if (!class_exists('Cashback_Offer_Key')) {
+            return null;
+        }
+
+        return Cashback_Offer_Key::from_parts(
+            (string) ( $click['cpa_network'] ?? '' ),
+            (string) ( $click['offer_id'] ?? '' )
+        );
+    }
+
+    private static function is_merchant_blocked( int $offer_id, ?string $offer_key, mixed $blocked ): bool {
+        if (!is_array($blocked)) {
+            return false;
+        }
+
+        if ($offer_key !== null && in_array($offer_key, $blocked, true)) {
+            return true;
+        }
+
+        return $offer_id > 0 && in_array($offer_id, $blocked, true);
     }
 }

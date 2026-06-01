@@ -792,7 +792,7 @@ class Cashback_Balance_Reconciliation_Admin {
 		$tx_table     = $wpdb->prefix . 'cashback_transactions';
 
 		$claim = $wpdb->get_row( $wpdb->prepare(
-			'SELECT claim_id, user_id, click_id, merchant_id, merchant_name,
+			'SELECT claim_id, user_id, click_id, merchant_id, merchant_key, merchant_name,
 			        product_id, product_name,
 			        order_id, order_value, order_date, status, updated_at
 			 FROM %i
@@ -839,7 +839,7 @@ class Cashback_Balance_Reconciliation_Admin {
 		}
 
 		$click = $wpdb->get_row( $wpdb->prepare(
-			'SELECT cpa_network, created_at FROM %i WHERE click_id = %s LIMIT 1',
+			'SELECT cpa_network, offer_key, created_at FROM %i WHERE click_id = %s LIMIT 1',
 			$click_table,
 			$click_id
 		), ARRAY_A );
@@ -855,6 +855,7 @@ class Cashback_Balance_Reconciliation_Admin {
 			'user_id'       => $user_id,
 			'click_id'      => $click_id,
 			'merchant_id'   => isset( $claim['merchant_id'] ) ? (int) $claim['merchant_id'] : 0,
+			'merchant_key'  => (string) ( $claim['merchant_key'] ?? ( is_array( $click ) ? ( $click['offer_key'] ?? '' ) : '' ) ),
 			'merchant_name' => $shop_name,
 			'order_id'      => (string) ( $claim['order_id'] ?? '' ),
 			'order_value'   => (string) ( $claim['order_value'] ?? '' ),
@@ -1026,7 +1027,7 @@ class Cashback_Balance_Reconciliation_Admin {
 
 		try {
 			$claim = $wpdb->get_row( $wpdb->prepare(
-				'SELECT claim_id, user_id, click_id, merchant_id, merchant_name,
+				'SELECT claim_id, user_id, click_id, merchant_id, merchant_key, merchant_name,
 				        product_id, product_name,
 				        order_id, order_value, order_date, status
 				 FROM %i
@@ -1066,7 +1067,7 @@ class Cashback_Balance_Reconciliation_Admin {
 			}
 
 			$click = $wpdb->get_row( $wpdb->prepare(
-				'SELECT cpa_network, created_at FROM %i WHERE click_id = %s LIMIT 1',
+				'SELECT cpa_network, offer_key, created_at FROM %i WHERE click_id = %s LIMIT 1',
 				$click_table,
 				$click_id
 			), ARRAY_A );

@@ -117,6 +117,7 @@ class Cashback_Claims_DB {
             `user_id` bigint(20) unsigned NOT NULL,
             `click_id` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL COMMENT 'UUID клика из cashback_click_log',
             `merchant_id` int unsigned DEFAULT NULL COMMENT 'ID оффера/магазина (offer_id)',
+            `merchant_key` varchar(384) DEFAULT NULL COMMENT 'Canonical network-scoped merchant key: network_slug:offer_id',
             `merchant_name` varchar(255) DEFAULT NULL COMMENT 'Название магазина',
             `product_id` bigint(20) unsigned NOT NULL COMMENT 'ID товара WooCommerce',
             `product_name` varchar(255) DEFAULT NULL COMMENT 'Название товара',
@@ -138,10 +139,11 @@ class Cashback_Claims_DB {
             PRIMARY KEY (`claim_id`),
             UNIQUE KEY `uk_click_user` (`click_id`, `user_id`),
             UNIQUE KEY `uk_user_idempotency` (`user_id`, `idempotency_key`),
-            UNIQUE KEY `uk_merchant_order` (`merchant_id`, `order_id`),
+            UNIQUE KEY `uk_merchant_key_order` (`merchant_key`, `order_id`),
             KEY `idx_user_id` (`user_id`),
             KEY `idx_status` (`status`),
             KEY `idx_merchant_id` (`merchant_id`),
+            KEY `idx_merchant_key` (`merchant_key`),
             KEY `idx_order_id` (`order_id`),
             KEY `idx_created_at` (`created_at`),
             KEY `idx_probability` (`probability_score`),
@@ -359,6 +361,101 @@ class Cashback_Claims_DB {
 
         // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table from $wpdb->prefix, not user input.
         $col    = $wpdb->get_results( "SHOW COLUMNS FROM `{$table}` LIKE 'scoring_breakdown'" );
+        $cached = !empty($col);
+
+        return $cached;
+    }
+
+    /**
+     * Add merchant_key and switch order dedup from raw merchant_id to
+     * network-scoped merchant_key (`network_slug:offer_id`).
+     */
+    public static function migrate_offer_key_identity(): void {
+        global $wpdb;
+
+        $claims_table = $wpdb->prefix . 'cashback_claims';
+        $click_table  = $wpdb->prefix . 'cashback_click_log';
+
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL/schema migration; table names from $wpdb->prefix.
+        $col = $wpdb->get_results("SHOW COLUMNS FROM `{$claims_table}` LIKE 'merchant_key'");
+        if (empty($col)) {
+            $wpdb->query("ALTER TABLE `{$claims_table}` ADD COLUMN `merchant_key` varchar(384) DEFAULT NULL COMMENT 'Canonical network-scoped merchant key: network_slug:offer_id' AFTER `merchant_id`");
+            if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
+                self::report_migration_error('migrate_offer_key_identity:add_column', $wpdb->last_error);
+                return;
+            }
+        }
+
+        $wpdb->query(
+            "UPDATE `{$claims_table}` c
+              INNER JOIN `{$click_table}` cl ON cl.click_id = c.click_id
+                 SET c.merchant_key = COALESCE(
+                    NULLIF(cl.offer_key, ''),
+                    CONCAT(LOWER(TRIM(cl.cpa_network)), ':', TRIM(cl.offer_id))
+                 )
+               WHERE (c.merchant_key IS NULL OR c.merchant_key = '')
+                 AND (
+                    (cl.offer_key IS NOT NULL AND cl.offer_key != '')
+                    OR (
+                        cl.cpa_network IS NOT NULL AND TRIM(cl.cpa_network) != ''
+                        AND cl.offer_id IS NOT NULL AND TRIM(cl.offer_id) != ''
+                    )
+                 )"
+        );
+        if ($wpdb->last_error) {
+            self::report_migration_error('migrate_offer_key_identity:backfill_from_click', $wpdb->last_error);
+        }
+
+        $wpdb->query(
+            "UPDATE `{$claims_table}`
+                SET merchant_key = CONCAT(LOWER(TRIM(merchant_name)), ':', merchant_id)
+              WHERE (merchant_key IS NULL OR merchant_key = '')
+                AND merchant_id IS NOT NULL
+                AND merchant_name REGEXP '^[A-Za-z0-9_-]+$'"
+        );
+        if ($wpdb->last_error) {
+            self::report_migration_error('migrate_offer_key_identity:backfill_fallback', $wpdb->last_error);
+        }
+
+        $new_idx = $wpdb->get_results("SHOW INDEX FROM `{$claims_table}` WHERE Key_name = 'uk_merchant_key_order'");
+        if (empty($new_idx)) {
+            $wpdb->query("ALTER TABLE `{$claims_table}` ADD UNIQUE KEY `uk_merchant_key_order` (`merchant_key`, `order_id`)");
+            if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
+                self::report_migration_error('migrate_offer_key_identity:add_unique', $wpdb->last_error);
+                return;
+            }
+        }
+
+        $merchant_key_idx = $wpdb->get_results("SHOW INDEX FROM `{$claims_table}` WHERE Key_name = 'idx_merchant_key'");
+        if (empty($merchant_key_idx)) {
+            $wpdb->query("ALTER TABLE `{$claims_table}` ADD KEY `idx_merchant_key` (`merchant_key`)");
+            if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
+                self::report_migration_error('migrate_offer_key_identity:add_key', $wpdb->last_error);
+            }
+        }
+
+        $old_idx = $wpdb->get_results("SHOW INDEX FROM `{$claims_table}` WHERE Key_name = 'uk_merchant_order'");
+        $new_idx = $wpdb->get_results("SHOW INDEX FROM `{$claims_table}` WHERE Key_name = 'uk_merchant_key_order'");
+        if (!empty($old_idx) && !empty($new_idx)) {
+            $wpdb->query("ALTER TABLE `{$claims_table}` DROP INDEX `uk_merchant_order`");
+            if ($wpdb->last_error && !self::is_known_ddl_error($wpdb->last_error)) {
+                self::report_migration_error('migrate_offer_key_identity:drop_old_unique', $wpdb->last_error);
+            }
+        }
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+    }
+
+    public static function has_merchant_key_column(): bool {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'cashback_claims';
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table from $wpdb->prefix, not user input.
+        $col    = $wpdb->get_results("SHOW COLUMNS FROM `{$table}` LIKE 'merchant_key'");
         $cached = !empty($col);
 
         return $cached;
