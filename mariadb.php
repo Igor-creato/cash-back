@@ -5449,17 +5449,25 @@ class Mariadb_Plugin {
         }
 
         if ($has_col === 0) {
-            // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL, table name from validated prefix.
-            $alter_base =
-                "ALTER TABLE `{$safe_table}`
+            // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL on plugin table.
+            $r_alter = $wpdb->query($wpdb->prepare(
+                "ALTER TABLE %i
                   ADD COLUMN `offer_key` varchar(384) DEFAULT NULL
                     COMMENT 'Canonical network-scoped offer key: network_slug:offer_id'
-                  AFTER `offer_id`";
-            $r_alter = $wpdb->query($alter_base . ', ALGORITHM=INSTANT');
+                  AFTER `offer_id`,
+                  ALGORITHM=INSTANT",
+                $safe_table
+            ));
             if ($r_alter === false && self::error_indicates_algorithm_unsupported($wpdb->last_error)) {
-                $r_alter = $wpdb->query($alter_base);
+                $r_alter = $wpdb->query($wpdb->prepare(
+                    "ALTER TABLE %i
+                      ADD COLUMN `offer_key` varchar(384) DEFAULT NULL
+                        COMMENT 'Canonical network-scoped offer key: network_slug:offer_id'
+                      AFTER `offer_id`",
+                    $safe_table
+                ));
             }
-            // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+            // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
             if ($r_alter === false) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback Migration v21] ADD COLUMN offer_key failed: ' . $wpdb->last_error);
@@ -5467,13 +5475,16 @@ class Mariadb_Plugin {
             }
         }
 
-        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- one-shot data backfill on plugin table.
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- one-shot data backfill on plugin table.
         $wpdb->query(
-            "UPDATE `{$safe_table}`
+            $wpdb->prepare(
+                "UPDATE %i
                 SET offer_key = CONCAT(LOWER(TRIM(cpa_network)), ':', TRIM(offer_id))
               WHERE (offer_key IS NULL OR offer_key = '')
                 AND cpa_network IS NOT NULL AND TRIM(cpa_network) != ''
-                AND offer_id IS NOT NULL AND TRIM(offer_id) != ''"
+                AND offer_id IS NOT NULL AND TRIM(offer_id) != ''",
+                $safe_table
+            )
         );
 
         $has_idx = (int) $wpdb->get_var($wpdb->prepare(
@@ -5485,8 +5496,11 @@ class Mariadb_Plugin {
             'idx_offer_key'
         ));
         if ($has_idx === 0) {
-            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL, table name from validated prefix.
-            $idx_ok = $wpdb->query("ALTER TABLE `{$safe_table}` ADD KEY `idx_offer_key` (`offer_key`)");
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL on plugin table.
+            $idx_ok = $wpdb->query($wpdb->prepare(
+                'ALTER TABLE %i ADD KEY `idx_offer_key` (`offer_key`)',
+                $safe_table
+            ));
             if ($idx_ok === false) {
                 // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
                 error_log('[Cashback Migration v21] ADD INDEX idx_offer_key failed: ' . $wpdb->last_error);
