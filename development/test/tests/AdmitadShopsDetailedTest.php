@@ -334,6 +334,55 @@ final class AdmitadShopsDetailedTest extends TestCase
         $this->assertFalse($result['has_next']);
     }
 
+    public function test_fetch_campaigns_detailed_retries_429_with_admitad_body_delay(): void
+    {
+        add_filter('cashback_admitad_429_retry_delay_seconds', static fn() => 0);
+        $this->queue_responses(array(
+            $this->http_response(429, '{"error":"Запрос был проигнорирован. Expected available in 14 seconds."}'),
+            $this->http_response(200, $this->fixture_campaigns_payload()),
+        ));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(2, $GLOBALS['_cb_test_http_calls'], '429 должен дать повторный запрос');
+        $this->assertCount(2, $result['campaigns']);
+    }
+
+    public function test_fetch_campaigns_detailed_returns_429_after_two_retries(): void
+    {
+        add_filter('cashback_admitad_429_retry_delay_seconds', static fn() => 0);
+        $this->queue_responses(array(
+            $this->http_response(429, '{"error":"available in 5 seconds"}'),
+            $this->http_response(429, '{"error":"available in 5 seconds"}'),
+            $this->http_response(429, '{"error":"available in 5 seconds"}'),
+        ));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns_detailed($this->default_credentials(), $this->default_network_config(), 0, 100);
+
+        $this->assertFalse($result['success']);
+        $this->assertCount(3, $GLOBALS['_cb_test_http_calls'], 'первый запрос + 2 retry');
+        $this->assertStringContainsString('HTTP 429', (string) $result['error']);
+    }
+
+    public function test_fetch_campaigns_legacy_retries_429_with_admitad_body_delay(): void
+    {
+        add_filter('cashback_admitad_429_retry_delay_seconds', static fn() => 0);
+        $this->queue_responses(array(
+            $this->http_response(429, '{"error":"Запрос был проигнорирован. Expected available in 11 seconds."}'),
+            $this->http_response(200, $this->fixture_campaigns_payload()),
+        ));
+
+        $adapter = $this->make_adapter_with_token();
+        $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(2, $GLOBALS['_cb_test_http_calls'], 'legacy fetch_campaigns тоже должен ретраить 429');
+        $this->assertCount(2, $result['campaigns']);
+    }
+
     public function test_returns_error_when_token_unavailable(): void
     {
         $adapter = $this->make_adapter_with_token('');

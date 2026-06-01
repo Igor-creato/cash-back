@@ -123,12 +123,31 @@ final class RateOfApproveRefresherSaveSentinelTest extends TestCase
         $args = $GLOBALS['_cb_test_wpdb_last_prepare_args'] ?? null;
         $this->assertIsArray($args, 'wpdb->prepare должен быть вызван');
         // Сигнатура: [meta_network_id, meta_offer_id, meta_fetched_at, meta_rate,
-        //             network_id, cycle_started_at, cooldown_threshold, limit].
-        $this->assertCount(8, $args, 'prepare() должен получить 8 аргументов после добавления mr + cooldown');
-        $cooldown_threshold = (int) $args[6];
+        //             network_id, cycle_started_at, stale_threshold, cooldown_threshold, limit].
+        $this->assertCount(9, $args, 'prepare() должен получить stale + cooldown thresholds');
+        $stale_threshold = (int) $args[6];
+        $this->assertGreaterThanOrEqual($before - DAY_IN_SECONDS, $stale_threshold);
+        $this->assertLessThanOrEqual($after - DAY_IN_SECONDS, $stale_threshold);
+        $cooldown_threshold = (int) $args[7];
         $this->assertGreaterThanOrEqual($before - 604800, $cooldown_threshold);
         $this->assertLessThanOrEqual($after - 604800, $cooldown_threshold);
-        $this->assertSame(30, (int) $args[7], 'limit передаётся последним');
+        $this->assertSame(30, (int) $args[8], 'limit передаётся последним');
+    }
+
+    public function test_query_respects_stale_after_filter(): void
+    {
+        add_filter('cashback_shop_rate_of_approve_stale_after_seconds', static fn() => 3600);
+
+        $this->install_wpdb_stub();
+        $before = time();
+        $this->invoke_query(network_id: 1, cycle_started_at: $before, limit: 30);
+        $after  = time();
+
+        $args = $GLOBALS['_cb_test_wpdb_last_prepare_args'] ?? null;
+        $this->assertIsArray($args);
+        $stale_threshold = (int) $args[6];
+        $this->assertGreaterThanOrEqual($before - 3600, $stale_threshold);
+        $this->assertLessThanOrEqual($after - 3600, $stale_threshold);
     }
 
     /**
@@ -147,7 +166,7 @@ final class RateOfApproveRefresherSaveSentinelTest extends TestCase
 
         $args = $GLOBALS['_cb_test_wpdb_last_prepare_args'] ?? null;
         $this->assertIsArray($args);
-        $cooldown_threshold = (int) $args[6];
+        $cooldown_threshold = (int) $args[7];
         $this->assertGreaterThanOrEqual($before - 60, $cooldown_threshold);
         $this->assertLessThanOrEqual($after - 60, $cooldown_threshold);
     }
@@ -167,7 +186,7 @@ final class RateOfApproveRefresherSaveSentinelTest extends TestCase
 
         $args = $GLOBALS['_cb_test_wpdb_last_prepare_args'] ?? null;
         $this->assertIsArray($args);
-        $cooldown_threshold = (int) $args[6];
+        $cooldown_threshold = (int) $args[7];
         $this->assertGreaterThanOrEqual($before - 604800, $cooldown_threshold);
         $this->assertLessThanOrEqual($after - 604800, $cooldown_threshold);
     }
@@ -176,6 +195,11 @@ final class RateOfApproveRefresherSaveSentinelTest extends TestCase
     public function test_cooldown_constant_is_seven_days(): void
     {
         $this->assertSame(7 * 86400, Cashback_Shop_Rate_Of_Approve_Refresher::NULL_RESULT_COOLDOWN_SECONDS);
+    }
+
+    public function test_stale_after_constant_is_one_day(): void
+    {
+        $this->assertSame(DAY_IN_SECONDS, Cashback_Shop_Rate_Of_Approve_Refresher::STALE_AFTER_SECONDS);
     }
 
     /**
@@ -207,6 +231,54 @@ final class RateOfApproveRefresherSaveSentinelTest extends TestCase
             $sql,
             'cooldown-clause должен явно ловить META_RATE наличие; rate=0 НЕ считается null-результатом'
         );
+
+        $this->assertMatchesRegularExpression(
+            '/AND\s*\(\s*mf\.meta_value\s+IS\s+NULL\s+OR\s+CAST\(mf\.meta_value\s+AS\s+UNSIGNED\)\s*<\s*%d\s*\)/i',
+            $sql,
+            'fresh fetched_at должен исключать товар из 2h refresh'
+        );
+    }
+
+    public function test_run_batch_yields_when_shop_import_lock_is_busy(): void
+    {
+        $GLOBALS['_cb_test_as_scheduled'] = false;
+        $GLOBALS['wpdb'] = new class {
+            public string $prefix   = 'wp_';
+            public string $posts    = 'wp_posts';
+            public string $postmeta = 'wp_postmeta';
+            public array $lock_sqls = array();
+
+            public function prepare(string $sql, mixed ...$args): string
+            {
+                foreach ($args as $arg) {
+                    $sql = preg_replace('/%[ds]|%i/', (string) $arg, $sql, 1) ?? $sql;
+                }
+                return $sql;
+            }
+
+            public function get_var(string $sql): mixed
+            {
+                $this->lock_sqls[] = $sql;
+                if (str_contains($sql, 'cashback_rate_of_approve_n1')) {
+                    return 1;
+                }
+                if (str_contains($sql, 'cashback_shops_import_n1')) {
+                    return 0;
+                }
+                return 1;
+            }
+        };
+
+        $result = Cashback_Shop_Rate_Of_Approve_Refresher::run_batch(1, 123456);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame(0, $result['processed'], 'busy import lock => no API work');
+        $this->assertSame(0, $result['errors']);
+        $scheduled = $GLOBALS['_cb_test_as_scheduled'];
+        $this->assertIsArray($scheduled, 'batch should be re-enqueued');
+        $this->assertSame(Cashback_Shop_Rate_Of_Approve_Refresher::HOOK_BATCH, $scheduled['hook']);
+        $this->assertSame(array(1, 123456), $scheduled['args']);
+        $this->assertGreaterThanOrEqual(time() + 299, (int) $scheduled['timestamp']);
     }
 
     /**

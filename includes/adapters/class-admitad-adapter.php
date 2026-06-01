@@ -338,7 +338,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             $query['offset'] = $page * 500;
             $full_url        = $url . '?' . http_build_query($query);
 
-            $response = $this->http_get($full_url, $auth_headers);
+            $response = $this->http_get_with_429_retry($full_url, $auth_headers, 'advcampaigns/website');
 
             if (is_wp_error($response)) {
                 return array(
@@ -483,7 +483,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             'offset' => $effective_offset,
         ));
 
-        $response = $this->http_get($url, $auth_headers);
+        $response = $this->http_get_with_429_retry($url, $auth_headers, 'advcampaigns/website');
 
         if (is_wp_error($response)) {
             return $this->detailed_error('HTTP error: ' . $response->get_error_message());
@@ -498,7 +498,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             if (!$auth_headers) {
                 return $this->detailed_error('Token refresh failed after 401');
             }
-            $response = $this->http_get($url, $auth_headers);
+            $response = $this->http_get_with_429_retry($url, $auth_headers, 'advcampaigns/website');
             if (is_wp_error($response)) {
                 return $this->detailed_error('HTTP error after retry: ' . $response->get_error_message());
             }
@@ -517,7 +517,7 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
                 if (!$auth_headers) {
                     return $this->detailed_error('Token refresh failed after 403 insufficient_scope');
                 }
-                $response = $this->http_get($url, $auth_headers);
+                $response = $this->http_get_with_429_retry($url, $auth_headers, 'advcampaigns/website');
                 if (is_wp_error($response)) {
                     return $this->detailed_error('HTTP error after 403 retry: ' . $response->get_error_message());
                 }
@@ -905,6 +905,41 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
         }
 
         return 5;
+    }
+
+    /**
+     * GET with bounded Admitad 429 retry for website-scoped import endpoints.
+     *
+     * @param array<string, string> $auth_headers
+     * @return array<string, mixed>|\WP_Error
+     */
+    private function http_get_with_429_retry( string $url, array $auth_headers, string $context, int $retry_429_attempt = 0 ) {
+        $response = $this->http_get($url, $auth_headers);
+        if (is_wp_error($response)) {
+            return $response;
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        if ($code !== 429 || $retry_429_attempt >= 2) {
+            return $response;
+        }
+
+        $body_text   = (string) wp_remote_retrieve_body($response);
+        $delay       = $this->parse_429_retry_after($body_text, $response);
+        $delay_clamp = max(1, min(60, $delay));
+        $delay_filt  = (int) apply_filters(
+            'cashback_admitad_429_retry_delay_seconds',
+            $delay_clamp,
+            $retry_429_attempt + 1,
+            $body_text
+        );
+        if ($delay_filt > 0) {
+            sleep($delay_filt);
+        }
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+        error_log("Cashback Admitad: HTTP 429 on {$context}, sleeping {$delay_filt}s, retry attempt " . ( $retry_429_attempt + 1 ) . ' of 2');
+
+        return $this->http_get_with_429_retry($url, $auth_headers, $context, $retry_429_attempt + 1);
     }
 
     /**

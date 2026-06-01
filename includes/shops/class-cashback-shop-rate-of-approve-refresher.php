@@ -49,6 +49,12 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
     public const PER_REQUEST_PAUSE_US = 1_000_000;
 
     /**
+     * Успешно обновлённый rate считаем свежим сутки, чтобы не сжигать
+     * Admitad лимиты каждые 2 часа.
+     */
+    public const STALE_AFTER_SECONDS = DAY_IN_SECONDS;
+
+    /**
      * Cooldown для товаров, у которых CPA-сеть вернула «нет данных»
      * (success=true + campaign=null, типично 404 — удалённая кампания).
      * После такого ответа товар выпадает из cron-выборки на этот срок,
@@ -195,6 +201,18 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
         }
 
         try {
+            if (self::is_shop_import_lock_busy($network_id)) {
+                self::reschedule_batch($network_id, $cycle_started_at);
+                return array(
+                    'success'   => true,
+                    'processed' => 0,
+                    'updated'   => 0,
+                    'errors'    => 0,
+                    'has_next'  => true,
+                    'error'     => null,
+                );
+            }
+
             $network = self::get_network_row($network_id);
             if ($network === null) {
                 return self::error_result("Сеть #{$network_id} не найдена или неактивна");
@@ -429,6 +447,15 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
         }
         $cooldown_threshold = time() - $cooldown;
 
+        $stale_after = (int) apply_filters(
+            'cashback_shop_rate_of_approve_stale_after_seconds',
+            self::STALE_AFTER_SECONDS
+        );
+        if ($stale_after < 300) {
+            $stale_after = self::STALE_AFTER_SECONDS;
+        }
+        $stale_threshold = time() - $stale_after;
+
         $sql = "SELECT p.ID
                 FROM {$wpdb->posts} p
                 INNER JOIN {$wpdb->postmeta} mn ON mn.post_id = p.ID AND mn.meta_key = %s
@@ -440,6 +467,7 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
                   AND mn.meta_value = %d
                   AND mo.meta_value <> ''
                   AND " . $cutoff_clause
+                . ' AND (mf.meta_value IS NULL OR CAST(mf.meta_value AS UNSIGNED) < %d)'
                 . ' AND (mr.meta_id IS NOT NULL OR mf.meta_value IS NULL OR CAST(mf.meta_value AS UNSIGNED) < %d)
                 ORDER BY (mf.meta_value IS NULL) DESC, CAST(mf.meta_value AS UNSIGNED) ASC, p.ID ASC
                 LIMIT %d';
@@ -453,6 +481,7 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
             self::META_RATE,
             $network_id,
             $cycle_started_at,
+            $stale_threshold,
             $cooldown_threshold,
             $limit
         ));
@@ -505,6 +534,47 @@ class Cashback_Shop_Rate_Of_Approve_Refresher {
         }
         // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- advisory-lock.
         $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $lock_key));
+    }
+
+    private static function is_shop_import_lock_busy( int $network_id ): bool {
+        global $wpdb;
+        if (! is_object($wpdb) || ! method_exists($wpdb, 'get_var') || ! method_exists($wpdb, 'prepare')) {
+            return false;
+        }
+
+        $lock_key = 'cashback_shops_import_n' . $network_id;
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- advisory-lock probe.
+        $result = $wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, %d)', $lock_key, 0));
+        if ((int) $result === 1) {
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- advisory-lock probe.
+            $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $lock_key));
+            return false;
+        }
+
+        return (int) $result === 0;
+    }
+
+    /**
+     * Re-enqueue approval-rate batch after shop import releases network lock.
+     */
+    private static function reschedule_batch( int $network_id, int $cycle_started_at ): void {
+        if (function_exists('as_schedule_single_action')) {
+            as_schedule_single_action(
+                time() + 5 * MINUTE_IN_SECONDS,
+                self::HOOK_BATCH,
+                array( $network_id, $cycle_started_at ),
+                self::AS_GROUP
+            );
+            return;
+        }
+
+        if (function_exists('as_enqueue_async_action')) {
+            as_enqueue_async_action(
+                self::HOOK_BATCH,
+                array( $network_id, $cycle_started_at ),
+                self::AS_GROUP
+            );
+        }
     }
 
     /**
