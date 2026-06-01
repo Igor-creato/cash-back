@@ -6,7 +6,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Cashback Plugin
  * Description: Объединенный плагин для системы кэшбэка и аффилиат-партнерства
- * Version: 4.4.51
+ * Version: 4.4.52
  * Author: Cashback
  * Author URI: https://example.com
  * Text Domain: cashback-plugin
@@ -1012,6 +1012,11 @@ class CashbackPlugin {
         // --- REST API для браузерного расширения ---
         $this->require_file('includes/class-cashback-rest-api.php');
 
+        // --- Internal REST API для server-to-server price-monitor ---
+        $this->require_file('includes/services/class-internal-hmac-auth-service.php');
+        $this->require_file('includes/services/class-cashback-internal-api-service.php');
+        $this->require_file('includes/rest/class-cashback-internal-rest-controller.php');
+
         // Шорткоды (доступны на фронтенде и в превью редактора)
         $this->require_file('includes/class-cashback-shortcodes.php');
 
@@ -1874,6 +1879,11 @@ class CashbackPlugin {
         // --- REST API для браузерного расширения ---
         if (class_exists('Cashback_REST_API')) {
             Cashback_REST_API::get_instance();
+        }
+
+        // --- Internal REST API для server-to-server price-monitor ---
+        if (class_exists('Savello_Cashback_Internal_REST_Controller')) {
+            Savello_Cashback_Internal_REST_Controller::init();
         }
 
         // Шорткоды

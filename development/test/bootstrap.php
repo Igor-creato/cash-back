@@ -100,6 +100,128 @@ if (!function_exists('wp_json_encode')) {
     }
 }
 
+if (!isset($GLOBALS['_cb_test_rest_routes'])) {
+    $GLOBALS['_cb_test_rest_routes'] = array();
+}
+
+if (!class_exists('WP_REST_Server')) {
+    class WP_REST_Server
+    {
+        public const READABLE = 'GET';
+        public const CREATABLE = 'POST';
+    }
+}
+
+if (!class_exists('WP_REST_Request')) {
+    class WP_REST_Request
+    {
+        private string $method;
+        private string $route;
+        private array $headers = array();
+        private array $params = array();
+        private string $body = '';
+
+        public function __construct(string $method = 'GET', string $route = '')
+        {
+            $this->method = strtoupper($method);
+            $this->route  = $route;
+        }
+
+        public function get_method(): string
+        {
+            return $this->method;
+        }
+
+        public function get_route(): string
+        {
+            return $this->route;
+        }
+
+        public function set_header(string $key, string $value): void
+        {
+            $this->headers[ strtolower($key) ] = $value;
+        }
+
+        public function get_header(string $key): string
+        {
+            return (string) ( $this->headers[ strtolower($key) ] ?? '' );
+        }
+
+        public function set_param(string $key, mixed $value): void
+        {
+            $this->params[ $key ] = $value;
+        }
+
+        public function get_param(string $key): mixed
+        {
+            return $this->params[ $key ] ?? null;
+        }
+
+        public function get_params(): array
+        {
+            return $this->params;
+        }
+
+        public function set_body(string $body): void
+        {
+            $this->body = $body;
+        }
+
+        public function get_body(): string
+        {
+            return $this->body;
+        }
+
+        public function set_body_params(array $params): void
+        {
+            $this->params = array_merge($this->params, $params);
+        }
+
+        public function get_json_params(): array
+        {
+            $decoded = json_decode($this->body, true);
+            return is_array($decoded) ? $decoded : array();
+        }
+    }
+}
+
+if (!class_exists('WP_REST_Response')) {
+    class WP_REST_Response
+    {
+        private mixed $data;
+        private int $status;
+
+        public function __construct(mixed $data = null, int $status = 200)
+        {
+            $this->data   = $data;
+            $this->status = $status;
+        }
+
+        public function get_data(): mixed
+        {
+            return $this->data;
+        }
+
+        public function get_status(): int
+        {
+            return $this->status;
+        }
+    }
+}
+
+if (!function_exists('register_rest_route')) {
+    function register_rest_route(string $namespace, string $route, array $args = array(), bool $override = false): bool
+    {
+        unset($override);
+        $GLOBALS['_cb_test_rest_routes'][ $namespace . $route ] = array(
+            'namespace' => $namespace,
+            'route'     => $route,
+            'args'      => $args,
+        );
+        return true;
+    }
+}
+
 if (!function_exists('esc_html')) {
     function esc_html(string $text): string
     {
@@ -111,6 +233,28 @@ if (!function_exists('esc_attr')) {
     function esc_attr(string $text): string
     {
         return htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+    }
+}
+
+if (!function_exists('esc_url_raw')) {
+    function esc_url_raw(string $url): string
+    {
+        $url = trim($url);
+        return filter_var($url, FILTER_VALIDATE_URL) !== false ? $url : '';
+    }
+}
+
+if (!function_exists('home_url')) {
+    function home_url(string $path = ''): string
+    {
+        return 'https://savelloclub.test' . $path;
+    }
+}
+
+if (!function_exists('site_url')) {
+    function site_url(string $path = ''): string
+    {
+        return 'https://savelloclub.test' . $path;
     }
 }
 
