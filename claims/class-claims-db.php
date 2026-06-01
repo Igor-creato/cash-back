@@ -386,22 +386,34 @@ class Cashback_Claims_DB {
             }
         }
 
-        $wpdb->query(
-            "UPDATE `{$claims_table}` c
-              INNER JOIN `{$click_table}` cl ON cl.click_id = c.click_id
-                 SET c.merchant_key = COALESCE(
-                    NULLIF(cl.offer_key, ''),
-                    CONCAT(LOWER(TRIM(cl.cpa_network)), ':', TRIM(cl.offer_id))
-                 )
-               WHERE (c.merchant_key IS NULL OR c.merchant_key = '')
-                 AND (
-                    (cl.offer_key IS NOT NULL AND cl.offer_key != '')
-                    OR (
-                        cl.cpa_network IS NOT NULL AND TRIM(cl.cpa_network) != ''
-                        AND cl.offer_id IS NOT NULL AND TRIM(cl.offer_id) != ''
-                    )
-                 )"
-        );
+        $click_offer_key_col = $wpdb->get_results("SHOW COLUMNS FROM `{$click_table}` LIKE 'offer_key'");
+        if (empty($click_offer_key_col)) {
+            $wpdb->query(
+                "UPDATE `{$claims_table}` c
+                  INNER JOIN `{$click_table}` cl ON cl.click_id = c.click_id
+                     SET c.merchant_key = CONCAT(LOWER(TRIM(cl.cpa_network)), ':', TRIM(cl.offer_id))
+                   WHERE (c.merchant_key IS NULL OR c.merchant_key = '')
+                     AND cl.cpa_network IS NOT NULL AND TRIM(cl.cpa_network) != ''
+                     AND cl.offer_id IS NOT NULL AND TRIM(cl.offer_id) != ''"
+            );
+        } else {
+            $wpdb->query(
+                "UPDATE `{$claims_table}` c
+                  INNER JOIN `{$click_table}` cl ON cl.click_id = c.click_id
+                     SET c.merchant_key = COALESCE(
+                        NULLIF(cl.offer_key, ''),
+                        CONCAT(LOWER(TRIM(cl.cpa_network)), ':', TRIM(cl.offer_id))
+                     )
+                   WHERE (c.merchant_key IS NULL OR c.merchant_key = '')
+                     AND (
+                        (cl.offer_key IS NOT NULL AND cl.offer_key != '')
+                        OR (
+                            cl.cpa_network IS NOT NULL AND TRIM(cl.cpa_network) != ''
+                            AND cl.offer_id IS NOT NULL AND TRIM(cl.offer_id) != ''
+                        )
+                     )"
+            );
+        }
         if ($wpdb->last_error) {
             self::report_migration_error('migrate_offer_key_identity:backfill_from_click', $wpdb->last_error);
         }

@@ -85,6 +85,41 @@ final class OfferKeyCollisionTest extends TestCase
         self::assertSame('duplicate_order', Cashback_Claims_Manager::classify_insert_error($err));
     }
 
+    public function test_claims_migration_tolerates_missing_click_log_offer_key_column(): void
+    {
+        $source = (string) file_get_contents(dirname(__DIR__, 3) . '/claims/class-claims-db.php');
+
+        self::assertStringContainsString("SHOW COLUMNS FROM `{\$click_table}` LIKE 'offer_key'", $source);
+        self::assertStringContainsString('if (empty($click_offer_key_col))', $source);
+
+        $fallback_start = strpos($source, 'if (empty($click_offer_key_col))');
+        $fallback_end   = strpos($source, '} else {', (int) $fallback_start);
+        self::assertIsInt($fallback_start);
+        self::assertIsInt($fallback_end);
+
+        $fallback_sql = substr($source, (int) $fallback_start, (int) $fallback_end - (int) $fallback_start);
+        self::assertStringContainsString('CONCAT(LOWER(TRIM(cl.cpa_network))', $fallback_sql);
+        self::assertStringNotContainsString('cl.offer_key', $fallback_sql);
+    }
+
+    public function test_runtime_migration_runs_click_offer_key_before_claims_identity(): void
+    {
+        $source = (string) file_get_contents(dirname(__DIR__, 3) . '/cashback-plugin.php');
+        $start  = strpos($source, 'private function maybe_run_migrations');
+        self::assertIsInt($start);
+
+        $body_start = (int) $start;
+        $body_end   = strpos($source, '// Группа 14:', $body_start);
+        self::assertIsInt($body_end);
+        $body = substr($source, $body_start, (int) $body_end - $body_start);
+
+        $click_pos  = strpos($body, 'migrate_offer_key_v21();');
+        $claims_pos = strpos($body, 'migrate_offer_key_identity();');
+        self::assertIsInt($click_pos);
+        self::assertIsInt($claims_pos);
+        self::assertLessThan($claims_pos, $click_pos);
+    }
+
     public function test_blocked_merchant_key_is_network_scoped(): void
     {
         $method = new ReflectionMethod('Cashback_Claims_Eligibility', 'check_merchant_allows_claims');

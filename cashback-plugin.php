@@ -6,7 +6,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Cashback Plugin
  * Description: Объединенный плагин для системы кэшбэка и аффилиат-партнерства
- * Version: 4.4.50
+ * Version: 4.4.51
  * Author: Cashback
  * Author URI: https://example.com
  * Text Domain: cashback-plugin
@@ -1205,6 +1205,9 @@ class CashbackPlugin {
         // SHOW COLUMNS guard + is_known_ddl_error — идемпотентно для existing installs.
         if (class_exists('Cashback_Claims_DB')) {
             try {
+                if (class_exists('Mariadb_Plugin')) {
+                    Mariadb_Plugin::get_instance()->migrate_offer_key_v21();
+                }
                 Cashback_Claims_DB::migrate_add_scoring_breakdown();
                 Cashback_Claims_DB::migrate_offer_key_identity();
             } catch (\Throwable $e) {
