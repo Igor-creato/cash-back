@@ -2,7 +2,7 @@
 /**
  * Dedup strategy для cashback_claims (Группа 6 ADR, шаг 1).
  *
- * Ключ:      (merchant_id, order_id) — per-network UNIQUE.
+ * Ключ:      (merchant_key, order_id) — per-network UNIQUE.
  * Canonical: приоритет статусов approved > sent_to_network > submitted > declined > draft;
  *            tiebreak — MIN(created_at), затем MIN(claim_id).
  * Merge:     user-поля не трогаем (no-op).
@@ -36,11 +36,13 @@ if (!class_exists('Cashback_Dedup_Claims_Strategy')) {
 
         public function find_groups( object $wpdb, int $limit ): array {
             $table = $wpdb->prefix . 'cashback_claims';
-            $sql   = 'SELECT merchant_id, order_id, GROUP_CONCAT(claim_id) AS ids, COUNT(*) AS cnt '
-                . 'FROM %i '
-                . 'WHERE merchant_id IS NOT NULL '
-                . 'GROUP BY merchant_id, order_id '
-                . 'HAVING COUNT(*) > 1';
+            $sql   = <<<'SQL'
+SELECT merchant_key, order_id, GROUP_CONCAT(claim_id) AS ids, COUNT(*) AS cnt
+FROM %i
+WHERE merchant_key IS NOT NULL AND merchant_key != ''
+GROUP BY merchant_key, order_id
+HAVING COUNT(*) > 1
+SQL;
 
             if ($limit > 0) {
                 $sql .= ' LIMIT %d';
@@ -58,7 +60,7 @@ if (!class_exists('Cashback_Dedup_Claims_Strategy')) {
                     continue;
                 }
                 $groups[] = array(
-                    'key'  => sprintf('%s|%s', (string) $row['merchant_id'], (string) $row['order_id']),
+                    'key'  => sprintf( '%s|%s', (string) $row['merchant_key'], (string) $row['order_id'] ),
                     'ids'  => $ids,
                     'rows' => $this->load_rows($wpdb, $ids),
                 );

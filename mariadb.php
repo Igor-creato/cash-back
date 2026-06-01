@@ -115,6 +115,7 @@ class Mariadb_Plugin {
             // receiver_uniq_source.
             $instance->migrate_dedup_source_alias_v19();
             $instance->migrate_transaction_decline_reason_v20();
+            $instance->migrate_offer_key_v21();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -449,6 +450,7 @@ class Mariadb_Plugin {
             `product_id` bigint(20) unsigned NOT NULL COMMENT 'ID товара WooCommerce',
             `cpa_network` varchar(100) DEFAULT NULL COMMENT 'Название CPA-сети',
             `offer_id` varchar(255) DEFAULT NULL COMMENT 'ID оффера в сети',
+            `offer_key` varchar(384) DEFAULT NULL COMMENT 'Canonical network-scoped offer key: network_slug:offer_id',
             `affiliate_url` text NOT NULL COMMENT 'Полный URL с подставленными параметрами',
             `ip_address` varchar(45) NOT NULL COMMENT 'IPv4/IPv6 адрес',
             `user_agent` text DEFAULT NULL COMMENT 'User-Agent браузера',
@@ -466,6 +468,7 @@ class Mariadb_Plugin {
             KEY `idx_user_id` (`user_id`),
             KEY `idx_product_id` (`product_id`),
             KEY `idx_cpa_network` (`cpa_network`),
+            KEY `idx_offer_key` (`offer_key`),
             KEY `idx_created_at` (`created_at`),
             KEY `idx_ip_address` (`ip_address`),
             KEY `idx_session_id` (`session_id`),
@@ -5408,6 +5411,90 @@ class Mariadb_Plugin {
         }
 
         update_option('cashback_db_version', 20, false);
+    }
+
+    /**
+     * v21: add network-scoped offer_key to click log.
+     *
+     * Raw offer_id is only unique inside a CPA network; offer_key is
+     * `network_slug:offer_id` and is used by claims dedup/scoring/blocklists.
+     */
+    public function migrate_offer_key_v21(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        $safe_prefix     = $this->validate_table_prefix($wpdb->prefix);
+        $table           = $wpdb->prefix . 'cashback_click_log';
+        $safe_table      = "{$safe_prefix}cashback_click_log";
+
+        $has_col = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = %s
+                AND COLUMN_NAME  = %s',
+            $table,
+            'offer_key'
+        ));
+        $has_idx = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = %s
+                AND INDEX_NAME   = %s',
+            $table,
+            'idx_offer_key'
+        ));
+
+        if ($current_version >= 21 && $has_col > 0 && $has_idx > 0) {
+            return;
+        }
+
+        if ($has_col === 0) {
+            // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL, table name from validated prefix.
+            $alter_base =
+                "ALTER TABLE `{$safe_table}`
+                  ADD COLUMN `offer_key` varchar(384) DEFAULT NULL
+                    COMMENT 'Canonical network-scoped offer key: network_slug:offer_id'
+                  AFTER `offer_id`";
+            $r_alter = $wpdb->query($alter_base . ', ALGORITHM=INSTANT');
+            if ($r_alter === false && self::error_indicates_algorithm_unsupported($wpdb->last_error)) {
+                $r_alter = $wpdb->query($alter_base);
+            }
+            // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+            if ($r_alter === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v21] ADD COLUMN offer_key failed: ' . $wpdb->last_error);
+                return;
+            }
+        }
+
+        // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- one-shot data backfill on plugin table.
+        $wpdb->query(
+            "UPDATE `{$safe_table}`
+                SET offer_key = CONCAT(LOWER(TRIM(cpa_network)), ':', TRIM(offer_id))
+              WHERE (offer_key IS NULL OR offer_key = '')
+                AND cpa_network IS NOT NULL AND TRIM(cpa_network) != ''
+                AND offer_id IS NOT NULL AND TRIM(offer_id) != ''"
+        );
+
+        $has_idx = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = %s
+                AND INDEX_NAME   = %s',
+            $table,
+            'idx_offer_key'
+        ));
+        if ($has_idx === 0) {
+            // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL, table name from validated prefix.
+            $idx_ok = $wpdb->query("ALTER TABLE `{$safe_table}` ADD KEY `idx_offer_key` (`offer_key`)");
+            if ($idx_ok === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v21] ADD INDEX idx_offer_key failed: ' . $wpdb->last_error);
+                return;
+            }
+        }
+
+        update_option('cashback_db_version', 21, false);
     }
 
     /**

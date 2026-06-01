@@ -4,7 +4,7 @@
  *
  * Накладывает UNIQUE-ключи на 3 таблицы:
  *   - cashback_fraud_device_ids: ADD session_date DATE GENERATED + UNIQUE(user_id, session_date, device_id)
- *   - cashback_claims:           ADD idempotency_key CHAR(36) + UNIQUE(user_id, idempotency_key) + UNIQUE(merchant_id, order_id)
+ *   - cashback_claims:           ADD idempotency_key CHAR(36) + UNIQUE(user_id, idempotency_key) + UNIQUE(merchant_key, order_id)
  *   - cashback_support_messages: ADD request_id CHAR(36) + UNIQUE(request_id)
  *
  * Flow:
@@ -149,14 +149,14 @@ if (!class_exists('Cashback_Schema_Idempotency_Migration')) {
             }
 
             $claims_count = 0;
-            if ($this->table_exists('cashback_claims')) {
+            if ($this->table_exists('cashback_claims') && $this->column_exists('cashback_claims', 'merchant_key')) {
                 // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- DDL-миграция: literal имя таблицы в backticks, без user-input.
-                $claims_count = (int) $this->wpdb->get_var( "SELECT COUNT(*) FROM (SELECT 1 FROM `{$claims_table}` WHERE merchant_id IS NOT NULL GROUP BY merchant_id, order_id HAVING COUNT(*) > 1) t" );
+                $claims_count = (int) $this->wpdb->get_var( "SELECT COUNT(*) FROM (SELECT 1 FROM `{$claims_table}` WHERE merchant_key IS NOT NULL GROUP BY merchant_key, order_id HAVING COUNT(*) > 1) t" );
             }
 
             return array(
-                'cashback_fraud_device_ids'      => $fraud_count,
-                'cashback_claims_merchant_order' => $claims_count,
+                'cashback_fraud_device_ids'          => $fraud_count,
+                'cashback_claims_merchant_key_order' => $claims_count,
             );
         }
 
@@ -266,9 +266,15 @@ if (!class_exists('Cashback_Schema_Idempotency_Migration')) {
                 ),
                 array(
                     'table' => 'cashback_claims',
+                    'type'  => 'column',
+                    'name'  => 'merchant_key',
+                    'ddl'   => 'ADD COLUMN `merchant_key` varchar(384) DEFAULT NULL COMMENT \'Canonical network-scoped merchant key: network_slug:offer_id\' AFTER `merchant_id`',
+                ),
+                array(
+                    'table' => 'cashback_claims',
                     'type'  => 'index',
-                    'name'  => 'uk_merchant_order',
-                    'ddl'   => 'ADD UNIQUE KEY `uk_merchant_order` (`merchant_id`, `order_id`)',
+                    'name'  => 'uk_merchant_key_order',
+                    'ddl'   => 'ADD UNIQUE KEY `uk_merchant_key_order` (`merchant_key`, `order_id`)',
                 ),
                 array(
                     'table' => 'cashback_support_messages',

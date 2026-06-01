@@ -63,6 +63,7 @@ class Cashback_Claims_Manager {
             'order_date'  => $data['order_date'],
             'order_value' => $data['order_value'],
             'merchant_id' => $eligibility['data']['merchant_id'] ?? 0,
+            'merchant_key' => $eligibility['data']['merchant_key'] ?? null,
             'comment'     => $data['comment'] ?? '',
         ));
 
@@ -103,6 +104,12 @@ class Cashback_Claims_Manager {
         if ($merchant_id > 0) {
             $insert_data['merchant_id'] = $merchant_id;
             $insert_format[]            = '%d';
+        }
+
+        $merchant_key = $eligibility['data']['merchant_key'] ?? null;
+        if (is_string($merchant_key) && $merchant_key !== '' && Cashback_Claims_DB::has_merchant_key_column()) {
+            $insert_data['merchant_key'] = $merchant_key;
+            $insert_format[]             = '%s';
         }
 
         $merchant_name = $eligibility['data']['merchant_name'] ?? '';
@@ -673,7 +680,7 @@ class Cashback_Claims_Manager {
         if (false !== strpos($last_error, "'uk_user_idempotency'")) {
             return 'duplicate_idempotency';
         }
-        if (false !== strpos($last_error, "'uk_merchant_order'")) {
+        if (false !== strpos($last_error, "'uk_merchant_order'") || false !== strpos($last_error, "'uk_merchant_key_order'")) {
             return 'duplicate_order';
         }
         return 'other';

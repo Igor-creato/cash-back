@@ -118,17 +118,27 @@ final class DedupSchemaIntegrationTest extends TestCase
         $this->assertSame('duplicate_idempotency', Cashback_Claims_Manager::classify_insert_error($err));
     }
 
-    public function test_uk_merchant_order_violation_classified_as_duplicate_order(): void
+    public function test_uk_merchant_key_order_violation_classified_as_duplicate_order(): void
     {
         $this->assertNotNull($this->pdo);
-        $this->pdo->exec("INSERT INTO cb_test_claims (user_id, click_id, product_id, merchant_id, order_id, order_value, order_date, status, probability_score, is_suspicious, ip_address, user_agent) VALUES (42, 'CLK-X', 1, 100, 'ORDER-SHARED', 100.00, NOW(), 'submitted', 0.5, 0, '1.1.1.1', 'ua')");
+        $this->pdo->exec("INSERT INTO cb_test_claims (user_id, click_id, product_id, merchant_id, merchant_key, order_id, order_value, order_date, status, probability_score, is_suspicious, ip_address, user_agent) VALUES (42, 'CLK-X', 1, 100, 'admitad:100', 'ORDER-SHARED', 100.00, NOW(), 'submitted', 0.5, 0, '1.1.1.1', 'ua')");
 
         $err = $this->provoke_duplicate(
-            "INSERT INTO cb_test_claims (user_id, click_id, product_id, merchant_id, order_id, order_value, order_date, status, probability_score, is_suspicious, ip_address, user_agent) VALUES (43, 'CLK-Y', 1, 100, 'ORDER-SHARED', 100.00, NOW(), 'submitted', 0.5, 0, '1.1.1.1', 'ua')"
+            "INSERT INTO cb_test_claims (user_id, click_id, product_id, merchant_id, merchant_key, order_id, order_value, order_date, status, probability_score, is_suspicious, ip_address, user_agent) VALUES (43, 'CLK-Y', 1, 100, 'admitad:100', 'ORDER-SHARED', 100.00, NOW(), 'submitted', 0.5, 0, '1.1.1.1', 'ua')"
         );
 
         $this->assertStringContainsString('Duplicate entry', $err);
         $this->assertSame('duplicate_order', Cashback_Claims_Manager::classify_insert_error($err));
+    }
+
+    public function test_same_raw_offer_and_order_allowed_for_different_network_keys(): void
+    {
+        $this->assertNotNull($this->pdo);
+        $this->pdo->exec("INSERT INTO cb_test_claims (user_id, click_id, product_id, merchant_id, merchant_key, order_id, order_value, order_date, status, probability_score, is_suspicious, ip_address, user_agent) VALUES (42, 'CLK-N1', 1, 100, 'admitad:100', 'ORDER-SHARED', 100.00, NOW(), 'submitted', 0.5, 0, '1.1.1.1', 'ua')");
+        $this->pdo->exec("INSERT INTO cb_test_claims (user_id, click_id, product_id, merchant_id, merchant_key, order_id, order_value, order_date, status, probability_score, is_suspicious, ip_address, user_agent) VALUES (43, 'CLK-N2', 1, 100, 'epn:100', 'ORDER-SHARED', 100.00, NOW(), 'submitted', 0.5, 0, '1.1.1.1', 'ua')");
+
+        $count = (int) $this->pdo->query("SELECT COUNT(*) FROM cb_test_claims WHERE order_id = 'ORDER-SHARED'")->fetchColumn();
+        $this->assertSame(2, $count);
     }
 
     public function test_uk_user_session_device_violation_classified(): void
@@ -209,6 +219,7 @@ final class DedupSchemaIntegrationTest extends TestCase
                 user_id bigint(20) unsigned NOT NULL,
                 click_id char(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
                 merchant_id int unsigned DEFAULT NULL,
+                merchant_key varchar(384) DEFAULT NULL,
                 product_id bigint(20) unsigned NOT NULL,
                 order_id varchar(255) NOT NULL,
                 order_value decimal(10,2) NOT NULL,
@@ -223,7 +234,7 @@ final class DedupSchemaIntegrationTest extends TestCase
                 PRIMARY KEY (claim_id),
                 UNIQUE KEY uk_click_user (click_id, user_id),
                 UNIQUE KEY uk_user_idempotency (user_id, idempotency_key),
-                UNIQUE KEY uk_merchant_order (merchant_id, order_id)
+                UNIQUE KEY uk_merchant_key_order (merchant_key, order_id)
             ) ENGINE=InnoDB'
         );
 

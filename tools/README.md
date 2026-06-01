@@ -30,7 +30,7 @@ wp eval-file .../dedup-rows-fraud-device-ids.php --confirm=yes --limit=500
 | Скрипт | Таблица | Ключ дедупа | Финальный UNIQUE (шаг 2 Группы 6) |
 |---|---|---|---|
 | `dedup-rows-fraud-device-ids.php` | `cashback_fraud_device_ids` | `(user_id, DATE(first_seen), device_id)` | `UNIQUE(user_id, session_date, device_id)` |
-| `dedup-rows-claims.php` | `cashback_claims` | `(merchant_id, order_id)` | `UNIQUE(merchant_id, order_id)` |
+| `dedup-rows-claims.php` | `cashback_claims` | `(merchant_key, order_id)` | `UNIQUE(merchant_key, order_id)` |
 | `dedup-rows-affiliate-networks.php` | `cashback_affiliate_networks` | `slug` | UNIQUE уже существует; скрипт — legacy safety net |
 
 ## Безопасность

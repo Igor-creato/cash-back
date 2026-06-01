@@ -51,9 +51,12 @@ class Cashback_Claims_Scoring {
         $order_date  = $claim_data['order_date'] ?? '';
         $order_value = (float) ( $claim_data['order_value'] ?? 0 );
         $merchant_id = (int) ( $claim_data['merchant_id'] ?? 0 );
+        $merchant_key = isset($claim_data['merchant_key']) && is_string($claim_data['merchant_key'])
+            ? $claim_data['merchant_key']
+            : null;
 
         $time_score        = self::score_time_factor($click_id, $order_date);
-        $merchant_score    = self::score_merchant_factor($merchant_id);
+        $merchant_score    = self::score_merchant_factor($merchant_id, $merchant_key);
         $user_score        = self::score_user_factor($user_id);
         $consistency_score = self::score_consistency_factor($claim_data);
         $risk_score        = self::score_risk_factor($user_id);
@@ -160,8 +163,28 @@ class Cashback_Claims_Scoring {
      * @param int $merchant_id
      * @return float 0–1
      */
-    private static function score_merchant_factor( int $merchant_id ): float {
+    private static function score_merchant_factor( int $merchant_id, ?string $merchant_key = null ): float {
         global $wpdb;
+
+        $merchant_key = is_string($merchant_key) ? trim($merchant_key) : '';
+        if ($merchant_key !== '') {
+            $stats = $wpdb->get_row($wpdb->prepare(
+                "SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved
+                 FROM `{$wpdb->prefix}cashback_claims`
+                 WHERE merchant_key = %s AND status IN ('approved', 'declined')",
+                $merchant_key
+            ), ARRAY_A);
+
+            if (!$stats || (int) $stats['total'] < 3) {
+                return 0.5;
+            }
+
+            $rate = (float) $stats['approved'] / (float) $stats['total'];
+
+            return max(0.1, min(1.0, $rate));
+        }
 
         if ($merchant_id <= 0) {
             return 0.5;

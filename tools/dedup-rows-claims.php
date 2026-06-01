@@ -1,6 +1,6 @@
 <?php
 /**
- * WP-CLI entry: дедупликация wp_cashback_claims перед UNIQUE(merchant_id, order_id).
+ * WP-CLI entry: дедупликация wp_cashback_claims перед UNIQUE(merchant_key, order_id).
  *
  * Запуск: wp eval-file tools/dedup-rows-claims.php [--confirm=yes] [--limit=N]
  * По умолчанию — dry-run. См. tools/README.md.
