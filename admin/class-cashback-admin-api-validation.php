@@ -130,13 +130,15 @@ class Cashback_Admin_API_Validation {
             'cashback-api-validation',
             plugin_dir_url(__DIR__) . 'admin/js/api-validation.js',
             array( 'jquery', 'cashback-pagination' ),
-            '5.4.0',
+            '5.4.1',
             true
         );
 
         wp_localize_script('cashback-api-validation', 'cashbackApiValidation', array(
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('cashback_api_validation'),
+            'statusCorrectionNonce' => wp_create_nonce('cashback_correct_transaction_status_nonce'),
+            'minStatusCorrectionReasonLength' => 20,
             'i18n'    => array(
                 'validating'              => 'Проверка...',
                 'validate'                => 'Проверить',
@@ -167,7 +169,7 @@ class Cashback_Admin_API_Validation {
             'cashback-api-validation',
             plugin_dir_url(__DIR__) . 'admin/css/api-validation.css',
             array(),
-            '5.4.0'
+            '5.4.1'
         );
     }
 

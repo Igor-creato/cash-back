@@ -1312,6 +1312,64 @@
         });
     });
 
+    $(document).on('click', '.cashback-correct-status-btn', function () {
+        const $btn = $(this);
+        const $row = $btn.closest('tr');
+        const localId = $row.data('local-id');
+        const userId = parseInt($('#cashback-validate-user-id').val(), 10) || 0;
+        const minLen = parseInt(config.minStatusCorrectionReasonLength || 20, 10);
+        let reason = window.prompt(
+            'Укажите причину возврата транзакции #' + localId + ' в статус "В ожидании".' +
+            '\nНапример: проверено в кабинете Advcake, заказ не отклонён.'
+        );
+
+        if (reason === null) {
+            return;
+        }
+
+        reason = String(reason).trim();
+        if (reason.length < minLen) {
+            alert('Причина должна быть минимум ' + minLen + ' символов.');
+            return;
+        }
+
+        if (!window.confirm('Вернуть транзакцию #' + localId + ' из "Отклонена" в "В ожидании"?')) {
+            return;
+        }
+
+        $btn.prop('disabled', true).text('Коррекция...');
+
+        $.ajax({
+            url: config.ajaxUrl,
+            method: 'POST',
+            data: {
+                action: 'cashback_correct_declined_transaction_status',
+                nonce: config.statusCorrectionNonce,
+                transaction_id: localId,
+                tab: userId === 0 ? 'unregistered' : 'registered',
+                correction_reason: reason,
+            },
+            success: function (response) {
+                if (response.success) {
+                    const tx = response.data.transaction_data || {};
+                    $row.find('.editable-cell[data-field="order_status"]')
+                        .data('value', tx.order_status || 'waiting')
+                        .html(escHtml(tx.order_status || 'waiting'));
+                    $row.find('.decline-reason-display').text('—').attr('title', '');
+                    $btn.remove();
+                    flashRow($row, '#dff0d8');
+                } else {
+                    alert(response.data?.message || 'Ошибка корректировки');
+                    $btn.prop('disabled', false).text('Вернуть в ожидание');
+                }
+            },
+            error: function () {
+                alert('Ошибка сети');
+                $btn.prop('disabled', false).text('Вернуть в ожидание');
+            },
+        });
+    });
+
     // --- Добавление транзакции из API (таблица «Есть в API, нет на сайте») ---
 
     $(document).on('click', '.cashback-add-tx-btn', function () {
@@ -1513,8 +1571,12 @@
             + adminCell
             + '<td class="validation-actions">'
             + '<button type="button" class="button button-small cashback-edit-tx-btn"'
-            + ' data-local-id="' + m.local_id + '">Редактировать</button>'
-            + '</td></tr>';
+            + ' data-local-id="' + m.local_id + '">Редактировать</button>';
+        if (m.status === 'declined') {
+            row += ' <button type="button" class="button button-small cashback-correct-status-btn"'
+                + ' data-local-id="' + m.local_id + '">Вернуть в ожидание</button>';
+        }
+        row += '</td></tr>';
         return row;
     }
 

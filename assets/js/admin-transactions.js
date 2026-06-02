@@ -38,11 +38,15 @@
 
     function updateRowData(row, txData) {
         row.find('.edit-field[data-field="order_status"]').text(statusLabels[txData.order_status] || txData.order_status);
+        row.attr('data-order-status', txData.order_status || '');
         row.find('.edit-field[data-field="sum_order"]').text(txData.sum_order);
         row.find('.edit-field[data-field="comission"]').text(txData.comission);
         row.find('.cashback-display').text(txData.cashback);
         var declineReason = txData.order_status === 'declined' ? String(txData.decline_reason || '').trim() : '';
         row.find('.decline-reason-display').text(declineReason || '—').attr('title', declineReason);
+        if (txData.order_status !== 'declined') {
+            row.find('.correct-status-btn').remove();
+        }
     }
 
     /**
@@ -231,6 +235,62 @@
                 e.preventDefault();
                 $('#filter-submit').click();
             }
+        });
+
+        // --- Safe correction: declined -> waiting ---
+        $(document).on('click', '.correct-status-btn', function () {
+            var $btn = $(this);
+            var row = $btn.closest('tr');
+            var transactionId = $btn.data('transaction-id') || row.data('transaction-id');
+            var tab = row.data('tab');
+            var minLen = parseInt(cashbackTransactionsData.minStatusCorrectionReasonLength || 20, 10);
+            var reason = window.prompt(
+                'Укажите причину возврата транзакции #' + transactionId + ' в статус "В ожидании".' +
+                '\nНапример: проверено в кабинете Advcake, заказ не отклонён.'
+            );
+
+            if (reason === null) {
+                return;
+            }
+
+            reason = String(reason).trim();
+            if (reason.length < minLen) {
+                alert('Причина должна быть минимум ' + minLen + ' символов.');
+                return;
+            }
+
+            if (!window.confirm('Вернуть транзакцию #' + transactionId + ' из "Отклонена" в "В ожидании"?')) {
+                return;
+            }
+
+            $btn.prop('disabled', true).text('Коррекция...');
+
+            $.post(ajaxurl, {
+                action: 'cashback_correct_declined_transaction_status',
+                transaction_id: transactionId,
+                tab: tab,
+                correction_reason: reason,
+                nonce: cashbackTransactionsData.statusCorrectionNonce
+            }, function (response) {
+                if (response.success) {
+                    updateRowData(row, response.data.transaction_data);
+                    showSuccessNotice(response.data.message || 'Статус транзакции обновлён.');
+                } else {
+                    alert('Ошибка: ' + (response.data.message || 'Неизвестная ошибка'));
+                }
+            }).fail(function (jqXHR) {
+                var errorMsg = 'Ошибка соединения';
+                if (jqXHR.status === 403) {
+                    errorMsg = 'Доступ запрещён. Обновите страницу.';
+                } else if (jqXHR.status === 500) {
+                    errorMsg = 'Ошибка сервера.';
+                } else if (jqXHR.status) {
+                    errorMsg = 'Ошибка соединения: HTTP ' + jqXHR.status;
+                }
+                alert(errorMsg);
+            }).always(function () {
+                $btn.prop('disabled', false).text('Вернуть в ожидание');
+            });
         });
 
         // --- Edit ---

@@ -125,7 +125,7 @@ final class DedupSelftestTest extends TestCase
         );
         // Версия ассета поднята (новый JS-обработчик подцепится).
         $this->assertStringNotContainsString("'5.2.0'", self::$admin_src, 'asset ver must be bumped from 5.2.0');
-        $this->assertSame(2, substr_count(self::$admin_src, "'5.4.0'"), 'js + css ver = 5.4.0');
+        $this->assertSame(2, substr_count(self::$admin_src, "'5.4.1'"), 'js + css ver = 5.4.1');
         $this->assertStringContainsString('cashback-dedup-selftest-btn', self::$admin_src);
         // JS: обработчик + новый action.
         $this->assertStringContainsString("action: 'cashback_dedup_selftest'", self::$js_src);

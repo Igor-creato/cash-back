@@ -1130,7 +1130,9 @@ class Mariadb_Plugin {
                 END IF;
 
                 -- 2. Возврат в waiting запрещён из любого состояния
-                IF NEW.order_status = 'waiting' AND OLD.order_status != 'waiting' THEN
+                IF NEW.order_status = 'waiting'
+                    AND OLD.order_status != 'waiting'
+                    AND COALESCE(@cashback_allow_declined_to_waiting_tx_id, 0) != OLD.id THEN
                     SIGNAL SQLSTATE '45000'
                     SET MESSAGE_TEXT = 'Понижение статуса до waiting запрещено.';
                 END IF;
@@ -1150,7 +1152,8 @@ class Mariadb_Plugin {
                 -- 5. Из declined — только в completed (апелляция через Потерянные заказы)
                 IF OLD.order_status = 'declined' 
                     AND NEW.order_status != 'completed' 
-                    AND NEW.order_status != 'declined' THEN
+                    AND NEW.order_status != 'declined'
+                    AND COALESCE(@cashback_allow_declined_to_waiting_tx_id, 0) != OLD.id THEN
                     SIGNAL SQLSTATE '45000'
                     SET MESSAGE_TEXT = 'Из declined возможен переход только в completed.';
                 END IF;
@@ -1165,7 +1168,9 @@ class Mariadb_Plugin {
                     SET MESSAGE_TEXT = 'Изменение запрещено: запись с финальным статусом не может быть изменена.';
                 END IF;
 
-                IF NEW.order_status = 'waiting' AND OLD.order_status != 'waiting' THEN
+                IF NEW.order_status = 'waiting'
+                    AND OLD.order_status != 'waiting'
+                    AND COALESCE(@cashback_allow_declined_to_waiting_tx_id, 0) != OLD.id THEN
                     SIGNAL SQLSTATE '45000'
                     SET MESSAGE_TEXT = 'Понижение статуса до waiting запрещено.';
                 END IF;
@@ -1182,7 +1187,8 @@ class Mariadb_Plugin {
 
                 IF OLD.order_status = 'declined' 
                     AND NEW.order_status != 'completed' 
-                    AND NEW.order_status != 'declined' THEN
+                    AND NEW.order_status != 'declined'
+                    AND COALESCE(@cashback_allow_declined_to_waiting_tx_id, 0) != OLD.id THEN
                     SIGNAL SQLSTATE '45000'
                     SET MESSAGE_TEXT = 'Из declined возможен переход только в completed.';
                 END IF;

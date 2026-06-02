@@ -8,6 +8,8 @@ if (!defined('ABSPATH')) {
 
 class Cashback_Transactions_Admin {
 
+    private const MIN_STATUS_CORRECTION_REASON_LENGTH = 20;
+
     private string $registered_table;
     private string $unregistered_table;
     private int $per_page = 20;
@@ -21,6 +23,7 @@ class Cashback_Transactions_Admin {
         add_action('wp_ajax_update_transaction', array( $this, 'handle_update_transaction' ));
         add_action('wp_ajax_get_transaction', array( $this, 'handle_get_transaction' ));
         add_action('wp_ajax_transfer_unregistered_transaction', array( $this, 'handle_transfer_unregistered' ));
+        add_action('wp_ajax_cashback_correct_declined_transaction_status', array( $this, 'handle_correct_declined_transaction_status' ));
         add_action('admin_enqueue_scripts', array( $this, 'enqueue_admin_scripts' ));
     }
 
@@ -60,14 +63,16 @@ class Cashback_Transactions_Admin {
             'cashback-admin-transactions',
             plugins_url('../assets/js/admin-transactions.js', __FILE__),
             array( 'jquery' ),
-            '1.0.0',
+            '1.1.0',
             true
         );
 
         wp_localize_script('cashback-admin-transactions', 'cashbackTransactionsData', array(
-            'updateNonce'   => wp_create_nonce('update_transaction_nonce'),
-            'getNonce'      => wp_create_nonce('get_transaction_nonce'),
-            'transferNonce' => wp_create_nonce('transfer_unregistered_nonce'),
+            'updateNonce'           => wp_create_nonce('update_transaction_nonce'),
+            'getNonce'              => wp_create_nonce('get_transaction_nonce'),
+            'transferNonce'         => wp_create_nonce('transfer_unregistered_nonce'),
+            'statusCorrectionNonce' => wp_create_nonce('cashback_correct_transaction_status_nonce'),
+            'minStatusCorrectionReasonLength' => self::MIN_STATUS_CORRECTION_REASON_LENGTH,
         ));
 
         // Группа 15, S3: подключаем модал S2 для обработки already_accrued —
@@ -213,7 +218,7 @@ class Cashback_Transactions_Admin {
 
         // Fetch rows
         if (!empty($where_params)) {
-            $select_sql   = "SELECT id, reference_id, user_id, order_number, partner, order_status, decline_reason, sum_order, comission, cashback, click_id, created_at FROM %i{$where_clause} ORDER BY created_at DESC LIMIT %d OFFSET %d";
+            $select_sql   = "SELECT id, reference_id, user_id, order_number, partner, order_status, decline_reason, sum_order, comission, cashback, click_id, created_at, processed_at FROM %i{$where_clause} ORDER BY created_at DESC LIMIT %d OFFSET %d";
             $transactions = $wpdb->get_results(
                 // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQL.NotPrepared -- $where_clause из allowlist (order_status/partner/LIKE) с %s; значения биндятся ниже.
                 $wpdb->prepare($select_sql, $table_name, ...array_merge($where_params, array( $this->per_page, $offset ))),
@@ -222,7 +227,7 @@ class Cashback_Transactions_Admin {
         } else {
             $transactions = $wpdb->get_results(
                 $wpdb->prepare(
-                    'SELECT id, reference_id, user_id, order_number, partner, order_status, decline_reason, sum_order, comission, cashback, click_id, created_at
+                    'SELECT id, reference_id, user_id, order_number, partner, order_status, decline_reason, sum_order, comission, cashback, click_id, created_at, processed_at
                      FROM %i
                      ORDER BY created_at DESC
                      LIMIT %d OFFSET %d',
@@ -315,6 +320,7 @@ class Cashback_Transactions_Admin {
                             <?php $is_editable = ( $tx['order_status'] !== 'balance' ); ?>
                             <tr data-transaction-id="<?php echo esc_attr($tx['id']); ?>"
                                 data-user-id="<?php echo esc_attr($tx['user_id']); ?>"
+                                data-order-status="<?php echo esc_attr($tx['order_status']); ?>"
                                 data-tab="<?php echo esc_attr($current_tab); ?>">
                                 <td><?php echo esc_html($tx['id']); ?></td>
                                 <td><code><?php echo esc_html($tx['reference_id'] ?? ''); ?></code></td>
@@ -344,6 +350,13 @@ class Cashback_Transactions_Admin {
                                         <button class="button button-secondary edit-btn">Редактировать</button>
                                         <button class="button button-primary save-btn" style="display:none;">Сохранить</button>
                                         <button class="button button-default cancel-btn" style="display:none;">Отмена</button>
+                                        <?php if ($tx['order_status'] === 'declined' && empty($tx['processed_at'])) : ?>
+                                            <button class="button button-small correct-status-btn"
+                                                    style="margin-top:4px;"
+                                                    data-transaction-id="<?php echo esc_attr($tx['id']); ?>">
+                                                Вернуть в ожидание
+                                            </button>
+                                        <?php endif; ?>
                                     <?php else : ?>
                                         <span class="description">Финальный статус</span>
                                     <?php endif; ?>
@@ -618,6 +631,213 @@ class Cashback_Transactions_Admin {
         }
 
         wp_send_json_success($response_data);
+    }
+
+    public function handle_correct_declined_transaction_status(): void {
+        if (!isset($_POST['nonce']) || !wp_verify_nonce(
+            sanitize_text_field(wp_unslash($_POST['nonce'])),
+            'cashback_correct_transaction_status_nonce'
+        )) {
+            wp_send_json_error(array( 'message' => 'Неверный токен безопасности.' ));
+            return;
+        }
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array( 'message' => 'Недостаточно прав.' ));
+            return;
+        }
+
+        global $wpdb;
+
+        $transaction_id = absint($_POST['transaction_id'] ?? 0);
+        if ($transaction_id < 1) {
+            wp_send_json_error(array( 'message' => 'Некорректный ID транзакции.' ));
+            return;
+        }
+
+        $tab = sanitize_text_field(wp_unslash($_POST['tab'] ?? 'registered'));
+        if (!in_array($tab, array( 'registered', 'unregistered' ), true)) {
+            wp_send_json_error(array( 'message' => 'Некорректная таблица транзакций.' ));
+            return;
+        }
+
+        $reason = isset($_POST['correction_reason'])
+            ? trim(sanitize_textarea_field(wp_unslash($_POST['correction_reason'])))
+            : '';
+        if (mb_strlen($reason) < self::MIN_STATUS_CORRECTION_REASON_LENGTH) {
+            wp_send_json_error(array(
+                'message' => sprintf(
+                    'Укажите причину корректировки минимум %d символов.',
+                    self::MIN_STATUS_CORRECTION_REASON_LENGTH
+                ),
+            ));
+            return;
+        }
+
+        $is_unregistered = ( $tab === 'unregistered' );
+        $table_name      = $is_unregistered ? $this->unregistered_table : $this->registered_table;
+        $entity_type     = $is_unregistered ? 'unregistered_transaction' : 'transaction';
+
+        // Ensure the trigger supports the session-scoped repair flag. CREATE OR
+        // REPLACE is atomic in MariaDB and keeps the guard enabled for all other
+        // sessions/transactions.
+        $this->recreate_status_transition_trigger($is_unregistered);
+        if ($wpdb->last_error) {
+            wp_send_json_error(array( 'message' => 'Не удалось подготовить status-trigger для безопасной корректировки.' ));
+            return;
+        }
+
+        $current = null;
+        $fresh   = null;
+        $error   = null;
+        $transaction_started = false;
+        $committed           = false;
+
+        try {
+            do {
+                $wpdb->query('START TRANSACTION');
+                $transaction_started = true;
+                $wpdb->query($wpdb->prepare('SET @cashback_allow_declined_to_waiting_tx_id = %d', $transaction_id));
+
+                $current = $wpdb->get_row($wpdb->prepare(
+                    'SELECT id, reference_id, user_id, order_status, processed_at, decline_reason, sum_order, comission, cashback, click_id, created_at FROM %i WHERE id = %d FOR UPDATE',
+                    $table_name,
+                    $transaction_id
+                ), ARRAY_A);
+
+                if (!$current) {
+                    $error = array( 'message' => 'Транзакция не найдена.' );
+                    break;
+                }
+
+                if ((string) $current['order_status'] !== 'declined') {
+                    $error = array( 'message' => 'Корректировка разрешена только для транзакций в статусе declined.' );
+                    break;
+                }
+
+                if (!empty($current['processed_at'])) {
+                    $error = array(
+                        'code'    => 'already_accrued',
+                        'message' => 'Транзакция уже начислена в ledger. Менять статус нельзя: используйте корректировку баланса.',
+                    );
+                    break;
+                }
+
+                $result = $wpdb->query($wpdb->prepare(
+                    'UPDATE %i SET order_status = %s, decline_reason = NULL WHERE id = %d AND order_status = %s AND processed_at IS NULL',
+                    $table_name,
+                    'waiting',
+                    $transaction_id,
+                    'declined'
+                ));
+
+                if ($result !== 1) {
+                    $error = array( 'message' => 'Не удалось применить корректировку статуса.' );
+                    break;
+                }
+
+                $fresh = $wpdb->get_row($wpdb->prepare(
+                    'SELECT id, reference_id, user_id, order_number, partner, order_status, decline_reason, sum_order, comission, cashback, click_id, created_at
+                     FROM %i WHERE id = %d',
+                    $table_name,
+                    $transaction_id
+                ), ARRAY_A);
+
+                if (!$fresh) {
+                    $error = array( 'message' => 'Статус изменён, но не удалось перечитать транзакцию.' );
+                    break;
+                }
+
+                $commit_result = $wpdb->query('COMMIT');
+                if ($commit_result === false) {
+                    $error = array( 'message' => 'Не удалось завершить корректировку статуса.' );
+                    break;
+                }
+                $committed = true;
+            } while (false);
+        } finally {
+            $wpdb->query('SET @cashback_allow_declined_to_waiting_tx_id = NULL');
+            if ($transaction_started && !$committed) {
+                $wpdb->query('ROLLBACK');
+            }
+        }
+
+        if ($error !== null) {
+            wp_send_json_error($error);
+            return;
+        }
+
+        if (class_exists('Cashback_Encryption')) {
+            Cashback_Encryption::write_audit_log(
+                'transaction_status_correction',
+                get_current_user_id(),
+                $entity_type,
+                $transaction_id,
+                array(
+                    'old_status' => 'declined',
+                    'new_status' => 'waiting',
+                    'reason'     => $reason,
+                    'reference_id' => $current['reference_id'] ?? '',
+                    'user_id'    => $current['user_id'] ?? 0,
+                )
+            );
+        }
+
+        wp_send_json_success(array(
+            'message'          => 'Статус транзакции возвращён в ожидание.',
+            'transaction_data' => $fresh,
+        ));
+    }
+
+    /**
+     * Пересоздаёт только status-transition trigger с session-scoped repair flag.
+     *
+     * @param bool $is_unregistered Таблица незарегистрированных транзакций.
+     */
+    private function recreate_status_transition_trigger( bool $is_unregistered ): void {
+        global $wpdb;
+
+        $trigger_name = $wpdb->prefix . ( $is_unregistered ? 'cashback_tr_validate_status_transition_unregistered' : 'cashback_tr_validate_status_transition' );
+        $table_name   = $is_unregistered ? $this->unregistered_table : $this->registered_table;
+
+        $wpdb->query($wpdb->prepare(
+            "CREATE OR REPLACE TRIGGER %i
+            BEFORE UPDATE ON %i
+            FOR EACH ROW
+            BEGIN
+                IF OLD.order_status = 'balance' THEN
+                    SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'Финальный статус balance нельзя изменить.';
+                END IF;
+
+                IF NEW.order_status = 'waiting'
+                    AND OLD.order_status != 'waiting'
+                    AND COALESCE(@cashback_allow_declined_to_waiting_tx_id, 0) != OLD.id THEN
+                    SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'Понижение статуса до waiting запрещено.';
+                END IF;
+
+                IF NEW.order_status = 'balance' AND OLD.order_status != 'completed' THEN
+                    SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'Перевод в balance возможен только из completed.';
+                END IF;
+
+                IF NEW.order_status = 'hold' AND OLD.order_status != 'completed' THEN
+                    SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'Перевод в hold возможен только из completed.';
+                END IF;
+
+                IF OLD.order_status = 'declined'
+                    AND NEW.order_status != 'completed'
+                    AND NEW.order_status != 'declined'
+                    AND COALESCE(@cashback_allow_declined_to_waiting_tx_id, 0) != OLD.id THEN
+                    SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'Из declined возможен переход только в completed.';
+                END IF;
+            END",
+            $trigger_name,
+            $table_name
+        ));
     }
 
     public function handle_get_transaction(): void {
