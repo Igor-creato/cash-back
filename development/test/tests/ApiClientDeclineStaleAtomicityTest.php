@@ -221,6 +221,21 @@ final class ApiClientDeclineStaleAtomicityTest extends TestCase
         }
     }
 
+    public function test_decline_stale_skips_advcake_window_limited_api(): void
+    {
+        $body = $this->extract_method_body($this->read_source(), 'decline_stale_missing_transactions');
+
+        $guard_pos  = strpos($body, 'instanceof Cashback_Advcake_Adapter');
+        $reason_pos = strpos($body, "'advcake_window_limited_api'");
+        $return_pos = $reason_pos === false ? false : strpos($body, 'return $result;', $reason_pos);
+
+        $this->assertIsInt($guard_pos, 'Advcake guard должен явно проверять Cashback_Advcake_Adapter.');
+        $this->assertIsInt($reason_pos, 'Guard должен отдавать skipped_reason=advcake_window_limited_api.');
+        $this->assertIsInt($return_pos, 'Guard должен возвращать $result до API stale-check.');
+        $this->assertLessThan($reason_pos, $guard_pos);
+        $this->assertLessThan($return_pos, $reason_pos);
+    }
+
     // ════════════════════════════════════════════════════════════════
     // 7. Pagination-protection сохранён
     // ════════════════════════════════════════════════════════════════

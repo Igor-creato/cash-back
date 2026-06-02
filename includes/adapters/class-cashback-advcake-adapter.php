@@ -55,6 +55,15 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
     private const OFFERS_MAX_PAGES  = 20;
 
     /**
+     * Лёгкая страница для `/offers` в campaign-status check.
+     *
+     * На проде Advcake может не успевать отдать 500 offer'ов за 30 секунд
+     * даже без `with_bids=1`; для catch-up статуса магазинов важнее короткий
+     * HTTP-запрос, чем минимальное число страниц.
+     */
+    private const CAMPAIGN_STATUS_PAGE_LIMIT = 100;
+
+    /**
      * {@inheritdoc}
      */
     public function get_slug(): string {
@@ -290,7 +299,7 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
         $offset        = 0;
 
         while ($page < self::OFFERS_MAX_PAGES) {
-            $page_result = $this->fetch_offers_page($base_url, $token, $offset, self::OFFERS_PAGE_LIMIT, 0);
+            $page_result = $this->fetch_offers_page($base_url, $token, $offset, self::CAMPAIGN_STATUS_PAGE_LIMIT, 0);
             if (!$page_result['success']) {
                 return $this->campaigns_error($page_result['error']);
             }
@@ -305,11 +314,11 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             ++$page;
 
             // Останов: страница неполная — больше офферов нет.
-            if (count($page_result['offers']) < self::OFFERS_PAGE_LIMIT) {
+            if (count($page_result['offers']) < self::CAMPAIGN_STATUS_PAGE_LIMIT) {
                 break;
             }
 
-            $offset += self::OFFERS_PAGE_LIMIT;
+            $offset += self::CAMPAIGN_STATUS_PAGE_LIMIT;
         }
 
         return array(

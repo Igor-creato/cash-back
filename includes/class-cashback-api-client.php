@@ -3632,10 +3632,20 @@ class Cashback_API_Client {
             'declined_unregistered' => 0,
             'checked'               => 0,
             'skipped_foreign_website' => 0,
+            'skipped_reason'        => null,
             'error'                 => null,
         );
 
         if (empty($config['credentials'])) {
+            return $result;
+        }
+
+        $adapter = $this->get_adapter($slug);
+        if ($adapter instanceof Cashback_Advcake_Adapter) {
+            // Advcake XML API жёстко ограничивает окно 7 днями. Auto-decline
+            // требует доказать отсутствие заказа в полном диапазоне stale-tx;
+            // сжатое окно даёт false decline для реальных старых заказов.
+            $result['skipped_reason'] = 'advcake_window_limited_api';
             return $result;
         }
 
@@ -3697,19 +3707,10 @@ class Cashback_API_Client {
 
         // ─── 3. Запросить API (полный диапазон, без status_updated фильтра) ───
 
-        if ($this->get_adapter($slug) instanceof Cashback_Advcake_Adapter) {
-            $from = DateTime::createFromFormat('!d.m.Y', $date_start);
-            $to   = DateTime::createFromFormat('!d.m.Y', $date_end);
-            $api_params = array(
-                'date_from' => $from instanceof DateTime ? $from->format('Y-m-d') : gmdate('Y-m-d', strtotime('-7 days')),
-                'date_to'   => $to instanceof DateTime ? $to->format('Y-m-d') : gmdate('Y-m-d'),
-            );
-        } else {
-            $api_params = array(
-                'date_start' => $date_start,
-                'date_end'   => $date_end,
-            );
-        }
+        $api_params = array(
+            'date_start' => $date_start,
+            'date_end'   => $date_end,
+        );
 
         if (!empty($config['api_website_id'])) {
             $api_params['website'] = $config['api_website_id'];

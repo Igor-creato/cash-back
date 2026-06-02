@@ -791,30 +791,31 @@ XML;
 
     public function test_fetch_campaigns_paginates_via_offset_until_data_less_than_limit(): void
     {
-        // limit по умолчанию = 500. Симулируем 2 страницы: первая полная, вторая короткая → стоп.
+        // Для status-check /offers берём небольшие страницы: на проде
+        // limit=500 таймаутился за 30 секунд даже без with_bids.
         $page1 = array();
-        for ($i = 1; $i <= 500; $i++) {
+        for ($i = 1; $i <= 100; $i++) {
             $page1[] = $this->sample_offer(array( 'id' => $i, 'name' => 'shop-' . $i ));
         }
         $page2 = array(
-            $this->sample_offer(array( 'id' => 501, 'name' => 'shop-501' )),
+            $this->sample_offer(array( 'id' => 101, 'name' => 'shop-101' )),
         );
 
         $this->queue_responses(array(
-            $this->http_response(200, $this->offers_response_body($page1, 501)),
-            $this->http_response(200, $this->offers_response_body($page2, 501)),
+            $this->http_response(200, $this->offers_response_body($page1, 101)),
+            $this->http_response(200, $this->offers_response_body($page2, 101)),
         ));
 
         $adapter = new Cashback_Advcake_Adapter();
         $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
 
         $this->assertTrue($result['success']);
-        $this->assertSame(501, count($result['campaigns']));
+        $this->assertSame(101, count($result['campaigns']));
         $this->assertCount(2, $GLOBALS['_cb_test_http_calls']);
 
         $this->assertStringContainsString('offset=0', $GLOBALS['_cb_test_http_calls'][0]['url']);
-        $this->assertStringContainsString('limit=500', $GLOBALS['_cb_test_http_calls'][0]['url']);
-        $this->assertStringContainsString('offset=500', $GLOBALS['_cb_test_http_calls'][1]['url']);
+        $this->assertStringContainsString('limit=100', $GLOBALS['_cb_test_http_calls'][0]['url']);
+        $this->assertStringContainsString('offset=100', $GLOBALS['_cb_test_http_calls'][1]['url']);
     }
 
     public function test_fetch_campaigns_stops_at_max_pages_safety_cap(): void
@@ -822,7 +823,7 @@ XML;
         // Безопасная остановка: имитируем «бесконечный» поток full-pages, адаптер
         // не должен сделать больше 20 запросов (max_pages по образцу Admitad).
         $full_page = array();
-        for ($i = 1; $i <= 500; $i++) {
+        for ($i = 1; $i <= 100; $i++) {
             $full_page[] = $this->sample_offer(array( 'id' => $i ));
         }
         $forever_full = $this->offers_response_body($full_page, 999999);
