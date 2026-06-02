@@ -45,6 +45,7 @@ class Cashback_Admin_API_Validation {
         add_action('wp_ajax_cashback_validate_user', array( $this, 'ajax_validate_user' ));
         add_action('wp_ajax_cashback_save_api_credentials', array( $this, 'ajax_save_credentials' ));
         add_action('wp_ajax_cashback_manual_sync', array( $this, 'ajax_manual_sync' ));
+        add_action('wp_ajax_cashback_manual_sync_status', array( $this, 'ajax_manual_sync_status' ));
         add_action('wp_ajax_cashback_get_sync_log', array( $this, 'ajax_get_sync_log' ));
         add_action('wp_ajax_cashback_get_validation_status', array( $this, 'ajax_get_validation_status' ));
         add_action('wp_ajax_cashback_save_sync_window', array( $this, 'ajax_save_sync_window' ));
@@ -129,7 +130,7 @@ class Cashback_Admin_API_Validation {
             'cashback-api-validation',
             plugin_dir_url(__DIR__) . 'admin/js/api-validation.js',
             array( 'jquery', 'cashback-pagination' ),
-            '5.3.0',
+            '5.4.0',
             true
         );
 
@@ -143,7 +144,10 @@ class Cashback_Admin_API_Validation {
                 'mismatch'                => '⚠️ Обнаружены расхождения',
                 'error'                   => '❌ Ошибка проверки',
                 'syncing'                 => 'Синхронизация...',
+                'sync_queued'             => 'Синхронизация запущена...',
+                'sync_running'            => 'Синхронизация выполняется...',
                 'sync_complete'           => 'Синхронизация завершена',
+                'sync_status_unavailable' => 'Синхронизация запущена, но статус временно недоступен. Обновите страницу через минуту.',
                 'saving'                  => 'Сохранение...',
                 'saved'                   => 'Сохранено',
                 'confirm_sync'            => 'Запустить синхронизацию статусов?',
@@ -163,7 +167,7 @@ class Cashback_Admin_API_Validation {
             'cashback-api-validation',
             plugin_dir_url(__DIR__) . 'admin/css/api-validation.css',
             array(),
-            '5.3.0'
+            '5.4.0'
         );
     }
 
@@ -1350,10 +1354,16 @@ echo 'style="display:none"';}
         set_transient($rate_key, $rate_count + 1, 5 * MINUTE_IN_SECONDS);
 
         try {
-            $result = Cashback_API_Cron::manual_sync();
+            $result = Cashback_API_Cron::start_manual_sync_async();
 
             if (!empty($result['locked'])) {
-                wp_send_json_error(array( 'message' => 'Синхронизация уже выполняется. Попробуйте через несколько секунд.' ));
+                wp_send_json_error(array(
+                    'message' => $result['message'] ?? 'Синхронизация уже выполняется. Попробуйте через несколько секунд.',
+                ));
+            }
+
+            if (!isset($result['async']) || empty($result['run_id'])) {
+                $result['async'] = false;
             }
 
             $this->log_audit('manual_sync', 0, $result);
@@ -1366,6 +1376,29 @@ echo 'style="display:none"';}
             }
             wp_send_json_error(array( 'message' => 'Ошибка ручной синхронизации. Подробности записаны в журнал.' ));
         }
+    }
+
+    /**
+     * AJAX: Статус ручной async-синхронизации.
+     */
+    public function ajax_manual_sync_status(): void {
+        check_ajax_referer('cashback_api_validation', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array( 'message' => 'Недостаточно прав' ));
+        }
+
+        $run_id = isset($_POST['run_id'])
+            ? sanitize_text_field(wp_unslash($_POST['run_id']))
+            : '';
+
+        $status = Cashback_API_Cron::get_manual_sync_status($run_id);
+
+        if (($status['status'] ?? '') === 'unknown') {
+            wp_send_json_error($status);
+        }
+
+        wp_send_json_success($status);
     }
 
     /**

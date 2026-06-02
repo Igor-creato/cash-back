@@ -22,6 +22,9 @@ class Cashback_API_Cron {
     /** @var string Имя хука Action Scheduler */
     const HOOK_NAME = 'cashback_api_sync_statuses';
 
+    /** @var string Имя async-хука ручной синхронизации */
+    const MANUAL_HOOK_NAME = 'cashback_api_manual_sync';
+
     /** @var string Группа действий в Action Scheduler (для UI/фильтрации) */
     const AS_GROUP = 'cashback';
 
@@ -34,6 +37,7 @@ class Cashback_API_Cron {
     public static function init(): void {
         // Регистрация обработчика
         add_action(self::HOOK_NAME, array( self::class, 'run_sync' ));
+        add_action(self::MANUAL_HOOK_NAME, array( self::class, 'run_manual_sync_async' ), 10, 1);
 
         // Планирование через Action Scheduler на init (после загрузки WooCommerce).
         add_action('init', array( self::class, 'maybe_schedule' ));
@@ -67,7 +71,7 @@ class Cashback_API_Cron {
      *
      * Вызывается WP Cron или вручную из админки.
      */
-    public static function run_sync(): void {
+    public static function run_sync( ?string $run_id = null ): void {
         $start = microtime(true);
 
         // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
@@ -85,7 +89,7 @@ class Cashback_API_Cron {
         }
 
         // Единый run_id на все 5 этапов — для checkpoint-истории (Group 8 Step 3, F-8-005).
-        $run_id = Cashback_Cron_State::begin_run();
+        $run_id = $run_id ?: Cashback_Cron_State::begin_run();
 
         try {
             $client = Cashback_API_Client::get_instance();
@@ -296,6 +300,7 @@ class Cashback_API_Cron {
     public static function deactivate(): void {
         if (function_exists('as_unschedule_all_actions')) {
             as_unschedule_all_actions(self::HOOK_NAME, array(), self::AS_GROUP);
+            as_unschedule_all_actions(self::MANUAL_HOOK_NAME, array(), self::AS_GROUP);
         }
 
         $timestamp = wp_next_scheduled(self::HOOK_NAME);
@@ -303,6 +308,139 @@ class Cashback_API_Cron {
             wp_unschedule_event($timestamp, self::HOOK_NAME);
         }
         wp_clear_scheduled_hook(self::HOOK_NAME);
+        wp_clear_scheduled_hook(self::MANUAL_HOOK_NAME);
+    }
+
+    /**
+     * Поставить ручную синхронизацию в async-очередь и сразу вернуть run_id для polling.
+     *
+     * @return array{async?:bool,queued?:bool,run_id?:string,action_id?:int,locked?:bool,message:string}
+     */
+    public static function start_manual_sync_async(): array {
+        if (Cashback_Lock::is_lock_active()) {
+            return array(
+                'locked'  => true,
+                'message' => 'Синхронизация уже выполняется',
+            );
+        }
+
+        if (!function_exists('as_enqueue_async_action')) {
+            return array(
+                'locked'  => true,
+                'message' => 'Очередь Action Scheduler недоступна — синхронизация не запущена',
+            );
+        }
+
+        $run_id    = cashback_generate_uuid7(false);
+        $action_id = as_enqueue_async_action(
+            self::MANUAL_HOOK_NAME,
+            array( $run_id ),
+            self::AS_GROUP
+        );
+
+        if (!$action_id) {
+            return array(
+                'locked'  => true,
+                'message' => 'Не удалось поставить синхронизацию в очередь — повторите попытку',
+            );
+        }
+
+        return array(
+            'async'     => true,
+            'queued'    => true,
+            'run_id'    => $run_id,
+            'action_id' => (int) $action_id,
+            'message'   => 'Синхронизация запущена',
+        );
+    }
+
+    /**
+     * Action Scheduler callback для async ручной синхронизации.
+     */
+    public static function run_manual_sync_async( string $run_id ): void {
+        if (!preg_match('/^[a-f0-9]{32}$/i', $run_id)) {
+            $run_id = cashback_generate_uuid7(false);
+        }
+
+        self::run_sync(strtolower($run_id));
+    }
+
+    /**
+     * Получить состояние async ручной синхронизации по run_id.
+     *
+     * @return array<string,mixed>
+     */
+    public static function get_manual_sync_status( string $run_id ): array {
+        $run_id = strtolower(trim($run_id));
+
+        if (!preg_match('/^[a-f0-9]{32}$/', $run_id)) {
+            return array(
+                'status'  => 'unknown',
+                'run_id'  => $run_id,
+                'message' => 'Некорректный идентификатор синхронизации',
+            );
+        }
+
+        global $wpdb;
+
+        $table = $wpdb->prefix . Cashback_Cron_State::TABLE;
+        $rows  = $wpdb->get_results($wpdb->prepare(
+            'SELECT stage, status, started_at, finished_at, duration_ms, error_message
+             FROM %i
+             WHERE run_id = %s
+             ORDER BY id ASC',
+            $table,
+            $run_id
+        ), ARRAY_A);
+
+        $stages = is_array($rows) ? $rows : array();
+        $result = get_option('cashback_last_sync_result', array());
+        $result = is_array($result) ? $result : array();
+
+        if (!empty($result['run_id']) && strtolower((string) $result['run_id']) === $run_id) {
+            $has_failed = false;
+            foreach ($stages as $stage) {
+                if (($stage['status'] ?? '') === 'failed') {
+                    $has_failed = true;
+                    break;
+                }
+            }
+
+            return array(
+                'status'  => $has_failed ? 'completed_with_errors' : 'completed',
+                'run_id'  => $run_id,
+                'stages'  => $stages,
+                'result'  => $result,
+                'message' => $has_failed ? 'Синхронизация завершена с ошибками' : 'Синхронизация завершена',
+            );
+        }
+
+        if (empty($stages)) {
+            return array(
+                'status'  => 'queued',
+                'run_id'  => $run_id,
+                'stages'  => array(),
+                'message' => 'Синхронизация ожидает запуска',
+            );
+        }
+
+        foreach ($stages as $stage) {
+            if (($stage['status'] ?? '') === 'running') {
+                return array(
+                    'status'  => 'running',
+                    'run_id'  => $run_id,
+                    'stages'  => $stages,
+                    'message' => 'Синхронизация выполняется',
+                );
+            }
+        }
+
+        return array(
+            'status'  => Cashback_Lock::is_lock_active() ? 'running' : 'queued',
+            'run_id'  => $run_id,
+            'stages'  => $stages,
+            'message' => 'Ожидаем завершения синхронизации',
+        );
     }
 
     /**

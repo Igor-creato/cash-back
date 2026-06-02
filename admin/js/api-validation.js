@@ -948,14 +948,91 @@
     // Ручная синхронизация
     // =========================================================================
 
+    let manualSyncPollTimer = null;
+
+    function clearManualSyncPolling() {
+        if (manualSyncPollTimer) {
+            clearTimeout(manualSyncPollTimer);
+            manualSyncPollTimer = null;
+        }
+    }
+
+    function startManualSyncPolling(runId, $btn, originalText, $status) {
+        clearManualSyncPolling();
+        pollManualSyncStatus(runId, $btn, originalText, $status, 0);
+    }
+
+    function pollManualSyncStatus(runId, $btn, originalText, $status, errors) {
+        $.ajax({
+            url: config.ajaxUrl,
+            method: 'POST',
+            data: {
+                action: 'cashback_manual_sync_status',
+                nonce: config.nonce,
+                run_id: runId,
+            },
+            timeout: 15000,
+            success: function (response) {
+                if (!response.success || !response.data) {
+                    $btn.prop('disabled', false).text(originalText);
+                    $status.text('❌ ' + (response.data?.message || 'Не удалось получить статус синхронизации')).css('color', 'red');
+                    return;
+                }
+
+                const status = response.data.status || 'queued';
+                if (status === 'completed' || status === 'completed_with_errors') {
+                    $btn.prop('disabled', false).text(originalText);
+                    const color = status === 'completed' ? 'green' : '#b26a00';
+                    const icon = status === 'completed' ? '✅ ' : '⚠️ ';
+                    const message = status === 'completed'
+                        ? (i18n.sync_complete || response.data.message || 'Синхронизация завершена')
+                        : (response.data.message || 'Синхронизация завершена с ошибками');
+                    $status.text(icon + message).css('color', color);
+                    setTimeout(function () {
+                        location.reload();
+                    }, 1500);
+                    return;
+                }
+
+                if (status === 'failed') {
+                    $btn.prop('disabled', false).text(originalText);
+                    $status.text('❌ ' + (response.data.message || 'Синхронизация завершилась ошибкой')).css('color', 'red');
+                    return;
+                }
+
+                const message = status === 'running'
+                    ? (i18n.sync_running || response.data.message || 'Синхронизация выполняется...')
+                    : (i18n.sync_queued || response.data.message || 'Синхронизация запущена...');
+                $status.text(message).css('color', '#666');
+                manualSyncPollTimer = setTimeout(function () {
+                    pollManualSyncStatus(runId, $btn, originalText, $status, 0);
+                }, 3000);
+            },
+            error: function () {
+                if (errors < 2) {
+                    $status.text(i18n.sync_running || 'Синхронизация запущена, проверяю статус...').css('color', '#666');
+                    manualSyncPollTimer = setTimeout(function () {
+                        pollManualSyncStatus(runId, $btn, originalText, $status, errors + 1);
+                    }, 5000);
+                    return;
+                }
+
+                $btn.prop('disabled', false).text(originalText);
+                $status.text(i18n.sync_status_unavailable || 'Синхронизация запущена, но статус временно недоступен. Обновите страницу через минуту.').css('color', '#b26a00');
+            },
+        });
+    }
+
     $(document).on('click', '#cashback-manual-sync-btn', function () {
         const $btn = $(this);
         const $status = $('#cashback-sync-status');
+        const originalText = $btn.text();
 
         if (!confirm(i18n.confirm_sync || 'Запустить синхронизацию статусов?')) {
             return;
         }
 
+        clearManualSyncPolling();
         $btn.prop('disabled', true);
         $status.text(i18n.syncing || 'Синхронизация...').css('color', '#666');
 
@@ -966,22 +1043,28 @@
                 action: 'cashback_manual_sync',
                 nonce: config.nonce,
             },
-            timeout: 120000, // 2 минуты таймаут
+            timeout: 30000,
             success: function (response) {
-                $btn.prop('disabled', false);
                 if (response.success) {
+                    if (response.data?.async && response.data?.run_id) {
+                        $status.text(i18n.sync_queued || response.data.message || 'Синхронизация запущена...').css('color', '#666');
+                        startManualSyncPolling(response.data.run_id, $btn, originalText, $status);
+                        return;
+                    }
+
+                    $btn.prop('disabled', false).text(originalText);
                     $status.text('✅ ' + (i18n.sync_complete || 'Завершено')).css('color', 'green');
-                    // Перезагружаем страницу для обновления блока статистики
                     setTimeout(function () {
                         location.reload();
                     }, 1500);
                 } else {
+                    $btn.prop('disabled', false).text(originalText);
                     $status.text('❌ ' + (response.data?.message || 'Ошибка')).css('color', 'red');
                 }
             },
-            error: function (xhr) {
-                $btn.prop('disabled', false);
-                $status.text('❌ Таймаут или ошибка сети').css('color', 'red');
+            error: function () {
+                $btn.prop('disabled', false).text(originalText);
+                $status.text('❌ Не удалось запустить синхронизацию. Проверьте соединение и повторите.').css('color', 'red');
             },
         });
     });
