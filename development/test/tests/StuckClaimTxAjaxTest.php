@@ -345,16 +345,21 @@ final class StuckClaimTxAjaxTest extends TestCase
     public function test_api_client_passes_created_by_admin_in_missing_api(): void
     {
         $src = $this->source('includes/class-cashback-api-client.php');
-        // Поле должно появиться в обоих местах построения $missing_api[]
-        // (registered + unregistered ветки).
+        $this->assertMatchesRegularExpression(
+            "/private function validation_local_tx_payload[\s\S]+?'created_by_admin'\s*=>\s*isset\(\s*\\\$tx\['created_by_admin'\]\s*\)/",
+            $src,
+            'общий payload helper должен передавать created_by_admin'
+        );
+
+        // Обе ветки (registered + unregistered) должны строить missing_api через общий payload.
         $count = preg_match_all(
-            "/'created_by_admin'\s*=>\s*isset\(\s*\\\$tx\['created_by_admin'\]\s*\)/",
+            '/\$payload\s*=\s*\$this->validation_local_tx_payload\(\$tx\);[\s\S]{0,500}?\$missing_api\[\]\s*=\s*\$payload;/',
             $src
         );
         $this->assertGreaterThanOrEqual(
             2,
             $count,
-            'оба missing_api builders должны передавать created_by_admin (registered + unregistered)'
+            'оба missing_api builders должны использовать payload с created_by_admin (registered + unregistered)'
         );
     }
 

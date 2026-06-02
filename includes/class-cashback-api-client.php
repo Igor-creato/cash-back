@@ -681,6 +681,85 @@ class Cashback_API_Client {
         );
     }
 
+    /**
+     * Построить параметры ручной пользовательской сверки под конкретную CPA-сеть.
+     *
+     * Для Advcake используем update_from/update_to: XML API ограничен 7 днями,
+     * но status-window ловит свежие изменения старых заказов по dateChange.
+     */
+    private function build_validation_api_params( string $slug, string $user_field, string $user_value, string $date_start_dmy, string $date_end_dmy ): array {
+        $adapter = $this->get_adapter($slug);
+        if ($adapter instanceof Cashback_Advcake_Adapter) {
+            $from = DateTime::createFromFormat('!d.m.Y', $date_start_dmy);
+            $to   = DateTime::createFromFormat('!d.m.Y', $date_end_dmy);
+
+            return array(
+                $user_field   => $user_value,
+                'update_from' => $from instanceof DateTime ? $from->format('Y-m-d') : gmdate('Y-m-d', strtotime('-7 days')),
+                'update_to'   => $to instanceof DateTime ? $to->format('Y-m-d') : gmdate('Y-m-d'),
+            );
+        }
+
+        return array(
+            $user_field  => $user_value,
+            'date_start' => $date_start_dmy,
+            'date_end'   => $date_end_dmy,
+        );
+    }
+
+    /**
+     * Единый payload для локальных строк из reverse-check результата.
+     *
+     * @param array $tx
+     * @return array
+     */
+    private function validation_local_tx_payload( array $tx ): array {
+        return array(
+            'local_id'         => $tx['id'],
+            'uniq_id'          => $tx['uniq_id'] ?? '',
+            'click_id'         => $tx['click_id'],
+            'order_number'     => $tx['order_number'],
+            'status'           => $tx['order_status'],
+            'commission'       => (float) $tx['comission'],
+            'sum_order'        => (float) ( $tx['sum_order'] ?? 0 ),
+            'created'          => $tx['created_at'],
+            'updated'          => $tx['updated_at'] ?? '',
+            'created_by_admin' => isset( $tx['created_by_admin'] ) ? (int) $tx['created_by_admin'] : 0,
+        );
+    }
+
+    /**
+     * Advcake: отсутствие старой строки в сжатом XML-окне не доказывает её
+     * отсутствие в CPA. Такие строки показываем отдельно, без status=mismatch.
+     *
+     * @param array $tx
+     * @param array $api_result
+     * @return bool
+     */
+    private function is_window_limited_local_tx( array $tx, array $api_result ): bool {
+        if (
+            empty($api_result['window_limited'])
+            || empty($api_result['effective_params'])
+            || !is_array($api_result['effective_params'])
+        ) {
+            return false;
+        }
+
+        $effective = $api_result['effective_params'];
+        $from      = (string) ( $effective['update_from'] ?? $effective['date_from'] ?? '' );
+        if ($from === '') {
+            return false;
+        }
+
+        $cutoff_ts  = strtotime($from . ' 00:00:00 UTC');
+        $created_ts = strtotime((string) ( $tx['created_at'] ?? '' ) . ' UTC');
+        if ($cutoff_ts === false || $created_ts === false) {
+            return false;
+        }
+
+        return $created_ts < $cutoff_ts;
+    }
+
     // =========================================================================
     // Website (площадка) scoping — defense-in-depth поверх API-параметра website
     // =========================================================================
@@ -1241,11 +1320,7 @@ class Cashback_API_Client {
         $partner_token  = Mariadb_Plugin::get_partner_token($user_id);
         $api_user_value = $partner_token !== null ? $partner_token : (string) $user_id;
 
-        $api_params = array(
-            $user_field  => $api_user_value,
-            'date_start' => $date_start,
-            'date_end'   => $date_end,
-        );
+        $api_params = $this->build_validation_api_params($network_slug, $user_field, $api_user_value, $date_start, $date_end);
 
         if (!empty($network['api_website_id'])) {
             $api_params['website'] = $network['api_website_id'];
@@ -1354,7 +1429,7 @@ class Cashback_API_Client {
 
         // Множество click_id локальных транзакций, найденных в API (совпавших или расходящихся)
         // Используется в обратной проверке missing_api, чтобы не дублировать mismatched
-        $api_matched_local_click_ids = array();
+        $api_matched_local_uniq_ids = array();
 
         // Debug: логируем только ключи первого action из API для диагностики маппинга
         // Данные не логируем — могут содержать PII (email, имя, телефон)
@@ -1411,8 +1486,8 @@ class Cashback_API_Client {
             }
 
             // Запоминаем что эта локальная транзакция найдена в API (независимо от расхождений)
-            if (!empty($local_tx['click_id'])) {
-                $api_matched_local_click_ids[ $local_tx['click_id'] ] = true;
+            if (!empty($local_tx['uniq_id'])) {
+                $api_matched_local_uniq_ids[ $local_tx['uniq_id'] ] = true;
             }
 
             // Запоминаем что эта локальная транзакция сматчена
@@ -1500,10 +1575,11 @@ class Cashback_API_Client {
         }
 
         // ─── Обратная проверка: транзакции есть у нас, но нет в API ───
-        $missing_api = array();
+        $missing_api          = array();
+        $window_limited_local = array();
         foreach ($local_transactions as $tx) {
             // Пропускаем если транзакция найдена в API (полное совпадение или расхождение — неважно)
-            if (!empty($tx['click_id']) && isset($api_matched_local_click_ids[ $tx['click_id'] ])) {
+            if (!empty($tx['uniq_id']) && isset($api_matched_local_uniq_ids[ $tx['uniq_id'] ])) {
                 continue;
             }
             // Пропускаем balance — финализировано, может быть за пределами API
@@ -1515,20 +1591,15 @@ class Cashback_API_Client {
                 continue;
             }
 
-            $missing_api[] = array(
-                'local_id'         => $tx['id'],
-                'uniq_id'          => $tx['uniq_id'] ?? '',
-                'click_id'         => $tx['click_id'],
-                'order_number'     => $tx['order_number'],
-                'status'           => $tx['order_status'],
-                'commission'       => (float) $tx['comission'],
-                'sum_order'        => (float) ( $tx['sum_order'] ?? 0 ),
-                'created'          => $tx['created_at'],
-                // 1 = транзакция создана админом вручную (Сверка баланса → зависший claim).
-                // Такая запись отсутствует в API by design — UI рендерит «Да» в столбце
-                // «Добавлена админом», чтобы админ не искал причину «расхождения».
-                'created_by_admin' => isset( $tx['created_by_admin'] ) ? (int) $tx['created_by_admin'] : 0,
-            );
+            $payload = $this->validation_local_tx_payload($tx);
+            if ($this->is_window_limited_local_tx($tx, $api_result)) {
+                $payload['reason']           = 'advcake_window_limited_api';
+                $payload['effective_params'] = $api_result['effective_params'] ?? array();
+                $window_limited_local[]      = $payload;
+                continue;
+            }
+
+            $missing_api[] = $payload;
         }
 
         // ─── Дополнительная проверка для перенесённых из unregistered транзакций ───
@@ -1638,9 +1709,9 @@ class Cashback_API_Client {
             'network'        => $network_slug,
             'status'         => $validation_status,
             'date_range'     => array(
-				'start' => $date_start,
-				'end'   => $date_end,
-			),
+                'start' => $date_start,
+                'end'   => $date_end,
+            ),
             'api_total'      => $total_checked,
             'local_total'    => count($local_transactions),
             'matched_count'  => count($matched),
@@ -1648,6 +1719,7 @@ class Cashback_API_Client {
             'skipped_foreign_website' => $skipped_foreign_website,
             'missing_local'  => $missing_local,
             'missing_api'    => $missing_api,
+            'window_limited_local'    => $window_limited_local,
             'mismatched'     => $mismatched,
             'sums'           => array(
                 'api_approved'   => $api_sums['approved'],
@@ -2117,9 +2189,9 @@ class Cashback_API_Client {
                 'network'        => $network_slug,
                 'status'         => 'match',
                 'date_range'     => array(
-					'start' => $date_start,
-					'end'   => $date_end,
-				),
+                    'start' => $date_start,
+                    'end'   => $date_end,
+                ),
                 'api_total'      => 0,
                 'local_total'    => 0,
                 'matched_count'  => 0,
@@ -2127,14 +2199,15 @@ class Cashback_API_Client {
                 'skipped_foreign_website' => 0,
                 'missing_local'  => array(),
                 'missing_api'    => array(),
+                'window_limited_local'    => array(),
                 'mismatched'     => array(),
                 'sums'           => array(
                     'api_approved'   => 0,
-					'api_pending'    => 0,
-					'api_declined'   => 0,
+                    'api_pending'    => 0,
+                    'api_declined'   => 0,
                     'local_approved' => 0,
-					'local_pending'  => 0,
-					'local_declined' => 0,
+                    'local_pending'  => 0,
+                    'local_declined' => 0,
                     'discrepancy'    => 0,
                 ),
             );
@@ -2158,11 +2231,7 @@ class Cashback_API_Client {
         // Запрашиваем API с subid = 'unregistered' (литеральное значение из партнёрской ссылки).
         $user_field = $network['api_user_field'] ?? 'subid2';
 
-        $api_params = array(
-            $user_field  => 'unregistered',
-            'date_start' => $date_start,
-            'date_end'   => $date_end,
-        );
+        $api_params = $this->build_validation_api_params($network_slug, $user_field, 'unregistered', $date_start, $date_end);
 
         if (!empty($network['api_website_id'])) {
             $api_params['website'] = $network['api_website_id'];
@@ -2211,18 +2280,18 @@ class Cashback_API_Client {
         $missing_local = array();
 
         $api_sums   = array(
-			'approved' => 0.0,
-			'pending'  => 0.0,
-			'declined' => 0.0,
-		);
+            'approved' => 0.0,
+            'pending'  => 0.0,
+            'declined' => 0.0,
+        );
         $local_sums = array(
-			'approved' => 0.0,
-			'pending'  => 0.0,
-			'declined' => 0.0,
-		);
+            'approved' => 0.0,
+            'pending'  => 0.0,
+            'declined' => 0.0,
+        );
 
-        $matched_click_ids           = array();
-        $api_matched_local_click_ids = array();
+        $matched_click_ids          = array();
+        $api_matched_local_uniq_ids = array();
 
         foreach ($api_actions as $action) {
             $api_click_id  = (string) ( $action[ $click_field ] ?? '' );
@@ -2271,8 +2340,8 @@ class Cashback_API_Client {
             }
 
             // Запоминаем что эта локальная транзакция найдена в API (независимо от расхождений)
-            if (!empty($local_tx['click_id'])) {
-                $api_matched_local_click_ids[ $local_tx['click_id'] ] = true;
+            if (!empty($local_tx['uniq_id'])) {
+                $api_matched_local_uniq_ids[ $local_tx['uniq_id'] ] = true;
             }
 
             // Запоминаем что эта локальная транзакция сматчена
@@ -2355,10 +2424,11 @@ class Cashback_API_Client {
         }
 
         // ─── Обратная проверка: транзакции есть у нас, но нет в API ───
-        $missing_api = array();
+        $missing_api          = array();
+        $window_limited_local = array();
         foreach ($local_transactions as $tx) {
             // Пропускаем если транзакция найдена в API (полное совпадение или расхождение — неважно)
-            if (!empty($tx['click_id']) && isset($api_matched_local_click_ids[ $tx['click_id'] ])) {
+            if (!empty($tx['uniq_id']) && isset($api_matched_local_uniq_ids[ $tx['uniq_id'] ])) {
                 continue;
             }
             if ($tx['order_status'] === 'balance') {
@@ -2368,20 +2438,15 @@ class Cashback_API_Client {
                 continue;
             }
 
-            $missing_api[] = array(
-                'local_id'         => $tx['id'],
-                'uniq_id'          => $tx['uniq_id'] ?? '',
-                'click_id'         => $tx['click_id'],
-                'order_number'     => $tx['order_number'],
-                'status'           => $tx['order_status'],
-                'commission'       => (float) $tx['comission'],
-                'sum_order'        => (float) ( $tx['sum_order'] ?? 0 ),
-                'created'          => $tx['created_at'],
-                // 1 = транзакция создана админом вручную (Сверка баланса → зависший claim).
-                // Такая запись отсутствует в API by design — UI рендерит «Да» в столбце
-                // «Добавлена админом», чтобы админ не искал причину «расхождения».
-                'created_by_admin' => isset( $tx['created_by_admin'] ) ? (int) $tx['created_by_admin'] : 0,
-            );
+            $payload = $this->validation_local_tx_payload($tx);
+            if ($this->is_window_limited_local_tx($tx, $api_result)) {
+                $payload['reason']           = 'advcake_window_limited_api';
+                $payload['effective_params'] = $api_result['effective_params'] ?? array();
+                $window_limited_local[]      = $payload;
+                continue;
+            }
+
+            $missing_api[] = $payload;
         }
 
         // ─── Обновляем api_verified для всех сматченных транзакций ───
@@ -2425,9 +2490,9 @@ class Cashback_API_Client {
             'network'        => $network_slug,
             'status'         => $validation_status,
             'date_range'     => array(
-				'start' => $date_start,
-				'end'   => $date_end,
-			),
+                'start' => $date_start,
+                'end'   => $date_end,
+            ),
             'api_total'      => $total_checked,
             'local_total'    => count($local_transactions),
             'matched_count'  => count($matched),
@@ -2435,6 +2500,7 @@ class Cashback_API_Client {
             'skipped_foreign_website' => $skipped_foreign_website,
             'missing_local'  => $missing_local,
             'missing_api'    => $missing_api,
+            'window_limited_local'    => $window_limited_local,
             'mismatched'     => $mismatched,
             'sums'           => array(
                 'api_approved'   => $api_sums['approved'],

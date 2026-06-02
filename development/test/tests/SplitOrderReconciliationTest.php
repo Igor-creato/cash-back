@@ -227,6 +227,35 @@ final class SplitOrderReconciliationTest extends TestCase
         );
     }
 
+    #[\PHPUnit\Framework\Attributes\DataProvider('auditMethodProvider')]
+    public function test_advcake_window_limited_rows_are_not_missing_api_issues(string $method): void
+    {
+        $body = $this->extract_method_body($this->read_source(), $method);
+
+        $this->assertStringContainsString(
+            '$window_limited_local',
+            $body,
+            "{$method}() должен выносить локальные строки вне доказуемого окна API в отдельный массив."
+        );
+        $this->assertStringContainsString(
+            "'window_limited_local'",
+            $body,
+            "{$method}() должен возвращать window_limited_local в JSON-ответе админки."
+        );
+
+        $has_issues_pos = strpos($body, '$has_issues');
+        $window_pos     = strpos($body, '$window_limited_local');
+        $this->assertIsInt($has_issues_pos, "{$method}() должен вычислять общий статус проверки.");
+        $this->assertIsInt($window_pos, "{$method}() должен иметь window_limited_local.");
+
+        $has_issues_expr = substr($body, $has_issues_pos, 220);
+        $this->assertStringNotContainsString(
+            'window_limited_local',
+            $has_issues_expr,
+            "{$method}() не должен делать status=mismatch только из-за window-limited Advcake строк."
+        );
+    }
+
     // ════════════════════════════════════════════════════════════════
     // C1 — admin claim→tx guard: ignores declined siblings
     // ════════════════════════════════════════════════════════════════

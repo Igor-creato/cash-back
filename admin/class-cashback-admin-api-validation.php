@@ -914,6 +914,7 @@ echo 'style="display:none"';}
             'mismatch_count' => 0,
             'missing_local'  => array(),
             'missing_api'    => array(),
+            'window_limited_local' => array(),
             'mismatched'     => array(),
             'sums'           => array(
                 'api_approved'   => 0,
@@ -972,6 +973,10 @@ echo 'style="display:none"';}
             foreach ($result['missing_api'] ?? array() as $item) {
                 $item['network']         = $slug;
                 $totals['missing_api'][] = $item;
+            }
+            foreach ($result['window_limited_local'] ?? array() as $item) {
+                $item['network']                  = $slug;
+                $totals['window_limited_local'][] = $item;
             }
         }
 

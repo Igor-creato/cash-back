@@ -236,8 +236,8 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
     public function fetch_all_actions( array $credentials, array $params, int $max_pages, array $network_config ): array {
         unset( $max_pages ); // Advcake не пагинирует — параметр оставлен только для совместимости с интерфейсом.
 
-        $params  = $this->normalize_update_window_params($params);
-        $clamped = $this->clamp_window_params($params);
+        $requested = $this->normalize_update_window_params($params);
+        $clamped   = $this->clamp_window_params($requested);
 
         $result = $this->fetch_actions($credentials, $clamped, $network_config);
 
@@ -258,11 +258,36 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
         }
 
         return array(
-            'success' => true,
-            'actions' => array_values($by_id),
-            'total'   => count($by_id),
-            'error'   => null,
+            'success'          => true,
+            'actions'          => array_values($by_id),
+            'total'            => count($by_id),
+            'error'            => null,
+            'requested_params' => $requested,
+            'effective_params' => $clamped,
+            'window_limited'   => $this->window_was_clamped($requested, $clamped),
+            'window_limit_days' => self::MAX_WINDOW_DAYS,
         );
+    }
+
+    /**
+     * Было ли окно фактически сжато из-за 7-дневного лимита Advcake.
+     *
+     * @param array $requested
+     * @param array $effective
+     * @return bool
+     */
+    private function window_was_clamped( array $requested, array $effective ): bool {
+        foreach (array( 'date_from', 'update_from' ) as $key) {
+            if (
+                array_key_exists($key, $requested)
+                && array_key_exists($key, $effective)
+                && (string) $requested[ $key ] !== (string) $effective[ $key ]
+            ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

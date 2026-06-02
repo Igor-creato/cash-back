@@ -303,19 +303,31 @@
         const mismatchedCount = (data.mismatched || []).length;
         const missingLocalCount = (data.missing_local || []).length;
         const missingApiCount = (data.missing_api || []).length;
+        const windowLimitedCount = (data.window_limited_local || []).length;
         const totalIssues = mismatchedCount + missingLocalCount + missingApiCount;
+        const totalRows = totalIssues + windowLimitedCount;
         const showNetCol = data._isMultiNetwork;
 
-        if (totalIssues > 0) {
+        if (windowLimitedCount > 0) {
+            html += `<div class="notice notice-warning" style="margin-top:15px;padding:10px 15px;">
+                <p><strong>Не проверены из-за ограничения API Advcake 7 дней</strong></p>
+                <p>Эти локальные транзакции старше доказуемого окна XML API. Отсутствие их в ответе не считается расхождением.</p>
+            </div>`;
+        }
+
+        if (totalRows > 0) {
+            const defaultTab = totalIssues > 0 ? 'tab-mismatched' : 'tab-window-limited';
+
             // Навигация вкладок
             html += '<nav class="validation-result-tabs nav-tab-wrapper" style="margin-top:20px;">';
-            html += `<a href="#" class="nav-tab nav-tab-active" data-tab="tab-mismatched">Расхождения <span class="tab-badge${mismatchedCount > 0 ? ' badge-red' : ''}">${mismatchedCount}</span></a>`;
-            html += `<a href="#" class="nav-tab" data-tab="tab-missing-local">Есть в API, нет на сайте <span class="tab-badge${missingLocalCount > 0 ? ' badge-red' : ''}">${missingLocalCount}</span></a>`;
-            html += `<a href="#" class="nav-tab" data-tab="tab-missing-api">Есть на сайте, нет в API <span class="tab-badge${missingApiCount > 0 ? ' badge-red' : ''}">${missingApiCount}</span></a>`;
+            html += `<a href="#" class="nav-tab${defaultTab === 'tab-mismatched' ? ' nav-tab-active' : ''}" data-tab="tab-mismatched">Расхождения <span class="tab-badge${mismatchedCount > 0 ? ' badge-red' : ''}">${mismatchedCount}</span></a>`;
+            html += `<a href="#" class="nav-tab${defaultTab === 'tab-missing-local' ? ' nav-tab-active' : ''}" data-tab="tab-missing-local">Есть в API, нет на сайте <span class="tab-badge${missingLocalCount > 0 ? ' badge-red' : ''}">${missingLocalCount}</span></a>`;
+            html += `<a href="#" class="nav-tab${defaultTab === 'tab-missing-api' ? ' nav-tab-active' : ''}" data-tab="tab-missing-api">Есть на сайте, нет в API <span class="tab-badge${missingApiCount > 0 ? ' badge-red' : ''}">${missingApiCount}</span></a>`;
+            html += `<a href="#" class="nav-tab${defaultTab === 'tab-window-limited' ? ' nav-tab-active' : ''}" data-tab="tab-window-limited">Не проверены <span class="tab-badge">${windowLimitedCount}</span></a>`;
             html += '</nav>';
 
             // Вкладка 1: Расхождения
-            html += '<div class="validation-tab-content" id="tab-mismatched">';
+            html += `<div class="validation-tab-content" id="tab-mismatched"${defaultTab === 'tab-mismatched' ? '' : ' style="display:none;"'}>`;
             {
                 let thead = '<tr>';
                 if (showNetCol) thead += '<th>Сеть</th>';
@@ -341,6 +353,16 @@
                 if (showNetCol) thead += '<th>Сеть</th>';
                 thead += '<th>Local ID</th><th>Uniq ID</th><th>Click ID</th><th>Статус</th><th>Комиссия</th><th>Сумма заказа</th><th>Создано</th><th>Добавлена админом</th><th>Действия</th></tr>';
                 html += setupPaginatedTable('tab-missing-api', data.missing_api || [], thead, renderMissingApiRow, showNetCol, 'Все локальные транзакции найдены в API.');
+            }
+            html += '</div>';
+
+            // Вкладка 4: локальные строки вне доказуемого окна API
+            html += `<div class="validation-tab-content" id="tab-window-limited"${defaultTab === 'tab-window-limited' ? '' : ' style="display:none;"'}>`;
+            {
+                let thead = '<tr>';
+                if (showNetCol) thead += '<th>Сеть</th>';
+                thead += '<th>Local ID</th><th>Uniq ID</th><th>Click ID</th><th>Статус</th><th>Комиссия</th><th>Сумма заказа</th><th>Создано</th><th>Обновлено</th><th>Причина</th></tr>';
+                html += setupPaginatedTable('tab-window-limited', data.window_limited_local || [], thead, renderWindowLimitedRow, showNetCol, 'Нет локальных транзакций вне доказуемого окна API.');
             }
             html += '</div>';
         }
@@ -369,6 +391,7 @@
             mismatched: t.mismatched || [],
             missing_local: t.missing_local || [],
             missing_api: t.missing_api || [],
+            window_limited_local: t.window_limited_local || [],
         };
     }
 
@@ -1492,6 +1515,28 @@
             + '<button type="button" class="button button-small cashback-edit-tx-btn"'
             + ' data-local-id="' + m.local_id + '">Редактировать</button>'
             + '</td></tr>';
+        return row;
+    }
+
+    function renderWindowLimitedRow(m, showNetCol) {
+        let row = '<tr data-local-id="' + m.local_id + '">';
+        if (showNetCol) row += '<td>' + escHtml(m.network || '') + '</td>';
+
+        const effective = m.effective_params || {};
+        const from = effective.update_from || effective.date_from || '';
+        const reason = from
+            ? 'API проверил только изменения с ' + from
+            : 'Строка вне доказуемого окна API';
+
+        row += '<td>#' + m.local_id + '</td>'
+            + '<td><code>' + escHtml(m.uniq_id || '\u2014') + '</code></td>'
+            + '<td><code>' + escHtml(m.click_id || '\u2014') + '</code></td>'
+            + '<td>' + escHtml(m.status || '') + '</td>'
+            + '<td>' + formatMoney(m.commission) + '</td>'
+            + '<td>' + formatMoney(m.sum_order) + '</td>'
+            + '<td>' + escHtml(m.created || '') + '</td>'
+            + '<td>' + escHtml(m.updated || '') + '</td>'
+            + '<td>' + escHtml(reason) + '</td></tr>';
         return row;
     }
 

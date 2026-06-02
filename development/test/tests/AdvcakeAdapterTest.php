@@ -932,6 +932,28 @@ XML;
         $this->assertNull($result['error']);
     }
 
+    public function test_fetch_all_actions_reports_effective_window_after_clamp(): void
+    {
+        $this->queue_responses(array( $this->http_response(200, '<items></items>') ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_all_actions(
+            $this->default_credentials(),
+            array(
+                'date_from' => '2026-05-01',
+                'date_to'   => '2026-06-02',
+            ),
+            20,
+            $this->default_network_config()
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertTrue($result['window_limited']);
+        $this->assertSame('2026-05-26', $result['effective_params']['date_from']);
+        $this->assertSame('2026-06-02', $result['effective_params']['date_to']);
+        $this->assertSame('2026-05-01', $result['requested_params']['date_from']);
+    }
+
     public function test_fetch_campaigns_empty_token_returns_error_no_http_call(): void
     {
         $adapter = new Cashback_Advcake_Adapter();
