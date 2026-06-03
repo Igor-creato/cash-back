@@ -200,7 +200,16 @@ class Cashback_Advcake_Partner_Status_Sync {
                 continue;
             }
 
-            $new_status = $status === 'active' ? 'publish' : 'draft';
+            if ($status === 'active') {
+                // `active` webhook не несёт поле `available`/статус сотрудничества.
+                // Возврат в publish делает только pull-сверка `/offers`, где есть
+                // оба сигнала: program status и webmaster availability.
+                self::mark_row($row_id, 'ok');
+                ++$stats['ok'];
+                continue;
+            }
+
+            $new_status = 'draft';
 
             // wp_update_post сам не падает если post_status уже такой же, но
             // мы дополнительно избегаем лишних updated_at-флапов и post-meta-revisions.

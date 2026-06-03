@@ -789,6 +789,50 @@ XML;
         );
     }
 
+    public function test_fetch_campaigns_status_stopped_overrides_active_flag(): void
+    {
+        $body = $this->offers_response_body(array(
+            $this->sample_offer(array(
+                'id'        => 43,
+                'active'    => true,
+                'available' => true,
+                'status'    => 'stopped',
+            )),
+        ));
+        $this->queue_responses(array( $this->http_response(200, $body) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertTrue($result['success']);
+        $campaign = $result['campaigns'][0];
+        $this->assertFalse($campaign['is_active']);
+        $this->assertSame('stopped', $campaign['status']);
+        $this->assertSame('available', $campaign['connection_status']);
+    }
+
+    public function test_fetch_campaigns_available_false_overrides_status_active(): void
+    {
+        $body = $this->offers_response_body(array(
+            $this->sample_offer(array(
+                'id'        => 44,
+                'active'    => true,
+                'available' => false,
+                'status'    => 'active',
+            )),
+        ));
+        $this->queue_responses(array( $this->http_response(200, $body) ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->fetch_campaigns($this->default_credentials(), $this->default_network_config());
+
+        $this->assertTrue($result['success']);
+        $campaign = $result['campaigns'][0];
+        $this->assertFalse($campaign['is_active']);
+        $this->assertSame('active', $campaign['status']);
+        $this->assertSame('unavailable', $campaign['connection_status']);
+    }
+
     public function test_fetch_campaigns_paginates_via_offset_until_data_less_than_limit(): void
     {
         // Для status-check /offers берём небольшие страницы: на проде

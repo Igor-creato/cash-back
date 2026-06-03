@@ -259,10 +259,10 @@ final class AdvcakePartnerStatusSyncTest extends TestCase
     }
 
     // ------------------------------------------------------------------
-    // 2. active → publish (восстановление магазина).
+    // 2. active-webhook не публикует без подтверждения /offers API.
     // ------------------------------------------------------------------
 
-    public function test_active_status_flips_post_to_publish(): void
+    public function test_active_status_marks_row_ok_without_publishing_product(): void
     {
         $this->make_post(777, 'draft');
 
@@ -282,7 +282,12 @@ final class AdvcakePartnerStatusSyncTest extends TestCase
         $stats = Cashback_Advcake_Partner_Status_Sync::process_batch();
 
         $this->assertSame(1, $stats['ok']);
-        $this->assertSame('publish', $GLOBALS['_cb_test_posts'][777]->post_status);
+        $this->assertSame(
+            'draft',
+            $GLOBALS['_cb_test_posts'][777]->post_status,
+            'partner_status=active не доказывает available/сотрудничество; publish делает только /offers API check.'
+        );
+        $this->assertSame('ok', $wpdb->rows[0]['marker']);
     }
 
     // ------------------------------------------------------------------

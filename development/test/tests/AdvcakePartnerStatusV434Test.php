@@ -196,7 +196,7 @@ final class AdvcakePartnerStatusV434Test extends TestCase
         $this->assertNotEmpty((string) get_post_meta($product_id, '_cashback_auto_deactivated_at', true));
     }
 
-    public function test_meta_cleared_on_publish_flip(): void
+    public function test_active_postback_does_not_publish_or_clear_meta(): void
     {
         $product_id = $this->register_post('draft');
         update_post_meta($product_id, '_cashback_auto_deactivated', '1');
@@ -207,11 +207,12 @@ final class AdvcakePartnerStatusV434Test extends TestCase
             'products' => array( array( 'offer_id' => '403', 'product_id' => $product_id ) ),
         ));
 
-        Cashback_Advcake_Partner_Status_Sync::process_batch();
+        $stats = Cashback_Advcake_Partner_Status_Sync::process_batch();
 
-        $this->assertSame('publish', $GLOBALS['_cb_test_posts'][ $product_id ]->post_status);
-        $this->assertSame('', (string) get_post_meta($product_id, '_cashback_auto_deactivated', true), 'meta cleared');
-        $this->assertSame('', (string) get_post_meta($product_id, '_cashback_auto_deactivated_source', true));
+        $this->assertSame(1, $stats['ok']);
+        $this->assertSame('draft', $GLOBALS['_cb_test_posts'][ $product_id ]->post_status);
+        $this->assertSame('1', (string) get_post_meta($product_id, '_cashback_auto_deactivated', true));
+        $this->assertSame('check_campaign_statuses', (string) get_post_meta($product_id, '_cashback_auto_deactivated_source', true));
     }
 
     public function test_same_status_no_meta_change(): void

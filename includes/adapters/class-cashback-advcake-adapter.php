@@ -909,8 +909,7 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             return null;
         }
 
-        $active    = !empty($offer['active']);
-        $available = !empty($offer['available']);
+        $state = $this->normalize_offer_state($offer);
 
         $regions = array();
         if (isset($offer['geos']) && is_array($offer['geos'])) {
@@ -951,9 +950,9 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             'site_url'          => isset($offer['website_url']) && is_scalar($offer['website_url']) ? trim((string) $offer['website_url']) : '',
             'image_url'         => isset($offer['thumbnail']) && is_scalar($offer['thumbnail']) ? trim((string) $offer['thumbnail']) : '',
             'description'       => isset($offer['description']) && is_scalar($offer['description']) ? (string) $offer['description'] : '',
-            'status_raw'        => $active ? 'active' : 'stopped',
-            'is_active'         => ( $active && $available ),
-            'connection_status' => $available ? 'available' : 'unavailable',
+            'status_raw'        => $state['status'],
+            'is_active'         => $state['is_active'],
+            'connection_status' => $state['connection_status'],
             'regions'           => $regions,
             'categories'        => $categories,
             'currency'          => isset($offer['currency']) && is_scalar($offer['currency']) ? strtoupper(trim((string) $offer['currency'])) : 'RUB',
@@ -1129,8 +1128,8 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
      * Совместимость с {@see Cashback_Network_Adapter_Interface::fetch_campaigns()}:
      *   - 'id'                — string (offer.id, кастится из int)
      *   - 'name'              — string
-     *   - 'is_active'         — bool (active && available)
-     *   - 'status'            — 'active' | 'stopped' (по offer.active)
+     *   - 'is_active'         — bool (status/active && available)
+     *   - 'status'            — 'active' | 'stopped' (по offer.status, fallback offer.active)
      *   - 'connection_status' — 'available' | 'unavailable' (по offer.available)
      *
      * @param array<string, mixed> $offer
@@ -1143,17 +1142,49 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             return null;
         }
 
-        $active    = !empty($offer['active']);
-        $available = !empty($offer['available']);
+        $state = $this->normalize_offer_state($offer);
 
         return array(
             'id'                => $id,
             'name'              => isset($offer['name']) && is_scalar($offer['name']) ? trim((string) $offer['name']) : '',
-            'is_active'         => ( $active && $available ),
-            'status'            => $active ? 'active' : 'stopped',
+            'is_active'         => $state['is_active'],
+            'status'            => $state['status'],
+            'connection_status' => $state['connection_status'],
+        );
+    }
+
+    /**
+     * Нормализовать состояние Advcake offer из `/offers`.
+     *
+     * Advcake отдаёт и строковый `status`, и булевы `active`/`available`.
+     * `status=stopped` — более точный сигнал остановленной программы; `available`
+     * отражает подключено ли сотрудничество у вебмастера.
+     *
+     * @param array<string, mixed> $offer
+     * @return array{status:string,is_active:bool,connection_status:string}
+     */
+    private function normalize_offer_state( array $offer ): array {
+        $raw_status = isset($offer['status']) && is_scalar($offer['status'])
+            ? strtolower(trim((string) $offer['status']))
+            : '';
+
+        if ($raw_status === 'active' || $raw_status === 'stopped') {
+            $program_active = ( $raw_status === 'active' );
+            $status         = $raw_status;
+        } else {
+            $program_active = !empty($offer['active']);
+            $status         = $program_active ? 'active' : 'stopped';
+        }
+
+        $available = !empty($offer['available']);
+
+        return array(
+            'status'            => $status,
+            'is_active'         => ( $program_active && $available ),
             'connection_status' => $available ? 'available' : 'unavailable',
         );
     }
+
     /**
      * Формирует безопасное summary тела ответа Advcake для строк ошибок.
      *
