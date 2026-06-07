@@ -3,6 +3,15 @@
 .claude/scheduled_tasks.lock
 /.codex/
 
+# Local AI/agent tooling state
+/.agents/
+/.claude-flow/
+/.specify/
+/.swarm/
+/agentdb.rvf
+/agentdb.rvf.lock
+/ruvector.db
+
 # Composer dependencies (в development/)
 /vendor/
 /development/vendor/
