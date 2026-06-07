@@ -257,4 +257,53 @@ final class AdmitadStatusPostbackSyncTest extends TestCase {
 		$this->assertSame('active', (string) get_post_meta(506, '_cashback_admitad_program_status', true));
 		$this->assertSame('accepted', (string) get_post_meta(506, '_cashback_admitad_partnership_status', true));
 	}
+
+	public function test_repeated_program_status_transitions_are_processed_in_order(): void {
+		self::assertTrue(class_exists('Cashback_Admitad_Status_Postback_Sync'));
+		$this->register_post(507, 'publish');
+		update_post_meta(507, '_cashback_auto_deactivated', '1');
+		update_post_meta(507, '_cashback_auto_publish_enabled', '1');
+		update_post_meta(507, '_cashback_admitad_partnership_status', 'accepted');
+
+		$GLOBALS['wpdb'] = $this->wpdb_mock(
+			array(
+				array('id' => 7, 'payload' => 'offer_id=2381&offer_status=disabled', 'event_type' => 'program_status', 'marker' => null),
+				array('id' => 8, 'payload' => 'offer_id=2381&offer_status=active', 'event_type' => 'program_status', 'marker' => null),
+				array('id' => 9, 'payload' => 'offer_id=2381&offer_status=disabled', 'event_type' => 'program_status', 'marker' => null),
+				array('id' => 10, 'payload' => 'offer_id=2381&offer_status=active', 'event_type' => 'program_status', 'marker' => null),
+			),
+			array(array('network_id' => 77, 'offer_id' => '2381', 'product_id' => 507))
+		);
+
+		$stats = Cashback_Admitad_Status_Postback_Sync::process_batch();
+
+		$this->assertSame(4, $stats['ok']);
+		$this->assertSame('publish', $GLOBALS['_cb_test_posts'][507]->post_status);
+		$this->assertSame('active', (string) get_post_meta(507, '_cashback_admitad_program_status', true));
+		foreach ($GLOBALS['wpdb']->rows as $row) {
+			$this->assertSame('ok', $row['marker']);
+		}
+	}
+
+	public function test_immediate_duplicate_same_status_is_harmless_noop(): void {
+		self::assertTrue(class_exists('Cashback_Admitad_Status_Postback_Sync'));
+		$this->register_post(508, 'publish');
+
+		$GLOBALS['wpdb'] = $this->wpdb_mock(
+			array(
+				array('id' => 11, 'payload' => 'offer_id=2381&offer_status=disabled', 'event_type' => 'program_status', 'marker' => null),
+				array('id' => 12, 'payload' => 'offer_id=2381&offer_status=disabled', 'event_type' => 'program_status', 'marker' => null),
+			),
+			array(array('network_id' => 77, 'offer_id' => '2381', 'product_id' => 508))
+		);
+
+		$stats = Cashback_Admitad_Status_Postback_Sync::process_batch();
+
+		$this->assertSame(2, $stats['ok']);
+		$this->assertSame('draft', $GLOBALS['_cb_test_posts'][508]->post_status);
+		$this->assertSame('disabled', (string) get_post_meta(508, '_cashback_admitad_program_status', true));
+		foreach ($GLOBALS['wpdb']->rows as $row) {
+			$this->assertSame('ok', $row['marker']);
+		}
+	}
 }

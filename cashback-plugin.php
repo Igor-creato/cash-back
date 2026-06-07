@@ -6,7 +6,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Cashback Plugin
  * Description: Объединенный плагин для системы кэшбэка и аффилиат-партнерства
- * Version: 4.4.60
+ * Version: 4.4.61
  * Author: Cashback
  * Author URI: https://example.com
  * Text Domain: cashback-plugin
@@ -1217,6 +1217,7 @@ class CashbackPlugin {
             try {
                 if (class_exists('Mariadb_Plugin')) {
                     Mariadb_Plugin::get_instance()->migrate_offer_key_v21();
+                    Mariadb_Plugin::get_instance()->migrate_webhook_dedup_key_v22();
                 }
                 Cashback_Claims_DB::migrate_add_scoring_breakdown();
                 Cashback_Claims_DB::migrate_offer_key_identity();
@@ -1411,10 +1412,13 @@ class CashbackPlugin {
                     // v21: network-scoped offer_key в cashback_click_log для
                     // claims/dedup при совпадающих raw offer_id между CPA.
                     Mariadb_Plugin::get_instance()->migrate_offer_key_v21();
+                    // v22: status webhooks are event-log rows; transaction dedup
+                    // moves from payload_hash to nullable dedup_key.
+                    Mariadb_Plugin::get_instance()->migrate_webhook_dedup_key_v22();
                 } catch (\Throwable $e) {
                     set_transient('cashback_migration_v14_throttle', 1, 15 * MINUTE_IN_SECONDS);
                     // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-                    error_log('[Cashback] Advcake migration v14/v15/v16/v17/v18/v19/v20/v21 auto-fire failed: ' . $e->getMessage());
+                    error_log('[Cashback] Advcake migration v14/v15/v16/v17/v18/v19/v20/v21/v22 auto-fire failed: ' . $e->getMessage());
                     set_transient('cashback_migration_failure_notice', $e->getMessage(), DAY_IN_SECONDS);
                 }
             }

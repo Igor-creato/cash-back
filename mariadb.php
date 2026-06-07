@@ -116,6 +116,7 @@ class Mariadb_Plugin {
             $instance->migrate_dedup_source_alias_v19();
             $instance->migrate_transaction_decline_reason_v20();
             $instance->migrate_offer_key_v21();
+            $instance->migrate_webhook_dedup_key_v22();
 
             ob_end_clean();
         } catch (\Throwable $e) {
@@ -398,12 +399,16 @@ class Mariadb_Plugin {
             `received_at` datetime(6) NOT NULL DEFAULT current_timestamp(6),
             `payload` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
             `network_slug` varchar(64) DEFAULT NULL,
-            `payload_hash` char(64) DEFAULT NULL COMMENT 'SHA-256 хеш payload для дедупликации',
+            `event_type` VARCHAR(32) NOT NULL DEFAULT 'transaction' COMMENT 'Тип webhook-события: transaction (default) | partner_status/program_status/partnership_status',
+            `payload_hash` char(64) DEFAULT NULL COMMENT 'SHA-256 хеш payload для аудита/поиска',
+            `dedup_key` char(64) DEFAULT NULL COMMENT 'Дедупликация только transaction webhooks; NULL для статусных событий',
             `processing_status` enum('ok','click_not_found','user_mismatch','error') DEFAULT NULL COMMENT 'Результат проверки click_id webhook-receiver воркером',
             PRIMARY KEY (`id`),
-            UNIQUE KEY `uk_payload_hash` (`payload_hash`),
+            UNIQUE KEY `uk_webhook_dedup_key` (`dedup_key`),
             KEY `idx_received_at` (`received_at`),
             KEY `idx_network_slug` (`network_slug`),
+            KEY `idx_payload_hash` (`payload_hash`),
+            KEY `idx_event_type_status` (`event_type`,`processing_status`),
             KEY `idx_processing_status` (`processing_status`)
         ) ENGINE=InnoDB {$charset_collate} COMMENT='Сырые уникальные webhooks';";
 
@@ -1047,6 +1052,39 @@ class Mariadb_Plugin {
         // Валидация префикса таблицы для безопасности
         $safe_prefix = $this->validate_table_prefix($wpdb->prefix);
 
+        // Runtime migrations can recreate triggers before v22 adds `dedup_key`.
+        // Use the legacy webhook trigger until the column exists; v22 recreates it
+        // with transaction-only `dedup_key` handling after the ALTERs complete.
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- INFORMATION_SCHEMA guard for migration-safe DDL.
+        $webhook_dedup_key_exists = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = %s
+                AND COLUMN_NAME  = %s',
+            $wpdb->prefix . 'cashback_webhooks',
+            'dedup_key'
+        ));
+        $webhook_payload_hash_trigger = $webhook_dedup_key_exists > 0
+            ? "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_webhook_payload_hash`
+            BEFORE INSERT ON `{$safe_prefix}cashback_webhooks`
+            FOR EACH ROW
+            BEGIN
+                IF NEW.payload_hash IS NULL THEN
+                    SET NEW.payload_hash = SHA2(NEW.payload, 256);
+                END IF;
+                IF NEW.dedup_key IS NULL AND NEW.event_type = 'transaction' THEN
+                    SET NEW.dedup_key = SHA2(NEW.payload, 256);
+                END IF;
+            END;"
+            : "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_webhook_payload_hash`
+            BEFORE INSERT ON `{$safe_prefix}cashback_webhooks`
+            FOR EACH ROW
+            BEGIN
+                IF NEW.payload_hash IS NULL THEN
+                    SET NEW.payload_hash = SHA2(NEW.payload, 256);
+                END IF;
+            END;";
+
         $triggers = array(
             "CREATE OR REPLACE TRIGGER `{$safe_prefix}calculate_cashback_before_insert`
             BEFORE INSERT ON `{$safe_prefix}cashback_transactions`
@@ -1330,16 +1368,9 @@ class Mariadb_Plugin {
             // Триггеры tr_notify_transaction_insert/update удалены: они скрывали логику,
             // срабатывали на каждый INSERT/UPDATE (включая служебные), и усложняли отладку.
 
-            // Автоматический расчёт payload_hash при INSERT в cashback_webhooks
+            // Автоматический расчёт payload_hash/dedup_key при INSERT в cashback_webhooks
             // Заменяет GENERATED ALWAYS AS (SHA2(payload, 256)) STORED, убранный для совместимости
-            "CREATE OR REPLACE TRIGGER `{$safe_prefix}tr_webhook_payload_hash`
-            BEFORE INSERT ON `{$safe_prefix}cashback_webhooks`
-            FOR EACH ROW
-            BEGIN
-                IF NEW.payload_hash IS NULL THEN
-                    SET NEW.payload_hash = SHA2(NEW.payload, 256);
-                END IF;
-            END;",
+            $webhook_payload_hash_trigger,
         );
 
         $failed_triggers = array();
@@ -5515,6 +5546,168 @@ class Mariadb_Plugin {
         }
 
         update_option('cashback_db_version', 21, false);
+    }
+
+    /**
+     * v22: split raw webhook payload hash from transaction dedup key.
+     *
+     * `payload_hash` remains an informational/audit hash. `dedup_key` is UNIQUE
+     * only for transaction webhooks; status events keep NULL and can repeat as
+     * a legitimate event log (disabled → active → disabled → active).
+     */
+    public function migrate_webhook_dedup_key_v22(): void {
+        global $wpdb;
+
+        $current_version = (int) get_option('cashback_db_version', 0);
+        $safe_prefix     = $this->validate_table_prefix($wpdb->prefix);
+        $table           = $wpdb->prefix . 'cashback_webhooks';
+        $safe_table      = "{$safe_prefix}cashback_webhooks";
+
+        $has_event_type = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = %s
+                AND COLUMN_NAME  = %s',
+            $table,
+            'event_type'
+        ));
+        $has_dedup_key = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = %s
+                AND COLUMN_NAME  = %s',
+            $table,
+            'dedup_key'
+        ));
+        $has_old_unique = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = %s
+                AND INDEX_NAME   = %s
+                AND NON_UNIQUE   = 0',
+            $table,
+            'uk_payload_hash'
+        ));
+        $has_payload_idx = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = %s
+                AND INDEX_NAME   = %s',
+            $table,
+            'idx_payload_hash'
+        ));
+        $has_dedup_unique = (int) $wpdb->get_var($wpdb->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME   = %s
+                AND INDEX_NAME   = %s
+                AND NON_UNIQUE   = 0',
+            $table,
+            'uk_webhook_dedup_key'
+        ));
+
+        if ($current_version >= 22
+            && $has_event_type > 0
+            && $has_dedup_key > 0
+            && $has_old_unique === 0
+            && $has_payload_idx > 0
+            && $has_dedup_unique > 0
+        ) {
+            return;
+        }
+
+        if ($has_event_type === 0) {
+            $alter_base =
+                "ALTER TABLE `{$safe_table}`
+                  ADD COLUMN `event_type` VARCHAR(32) NOT NULL DEFAULT 'transaction'
+                    COMMENT 'Тип webhook-события: transaction (default) | partner_status/program_status/partnership_status'
+                  AFTER `network_slug`,
+                  ADD KEY `idx_event_type_status` (`event_type`,`processing_status`)";
+            // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL, safe prefix validated.
+            $r_alter = $wpdb->query($alter_base . ', ALGORITHM=INSTANT');
+            if ($r_alter === false && self::error_indicates_algorithm_unsupported($wpdb->last_error)) {
+                $r_alter = $wpdb->query($alter_base);
+            }
+            // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+            if ($r_alter === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v22] ADD COLUMN event_type failed: ' . $wpdb->last_error);
+                return;
+            }
+        }
+
+        if ($has_dedup_key === 0) {
+            $alter_base =
+                "ALTER TABLE `{$safe_table}`
+                  ADD COLUMN `dedup_key` char(64) DEFAULT NULL
+                    COMMENT 'Дедупликация только transaction webhooks; NULL для статусных событий'
+                  AFTER `payload_hash`";
+            // phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- static DDL, safe prefix validated.
+            $r_alter = $wpdb->query($alter_base . ', ALGORITHM=INSTANT');
+            if ($r_alter === false && self::error_indicates_algorithm_unsupported($wpdb->last_error)) {
+                $r_alter = $wpdb->query($alter_base);
+            }
+            // phpcs:enable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+            if ($r_alter === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v22] ADD COLUMN dedup_key failed: ' . $wpdb->last_error);
+                return;
+            }
+        }
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot backfill on plugin audit table.
+        $wpdb->query($wpdb->prepare(
+            "UPDATE %i
+                SET dedup_key = payload_hash
+              WHERE event_type = 'transaction'
+                AND payload_hash IS NOT NULL
+                AND (dedup_key IS NULL OR dedup_key = '')",
+            $safe_table
+        ));
+
+        if ($has_old_unique > 0) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot DDL migration.
+            $drop_ok = $wpdb->query($wpdb->prepare(
+                'ALTER TABLE %i DROP INDEX `uk_payload_hash`',
+                $safe_table
+            ));
+            if ($drop_ok === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v22] DROP INDEX uk_payload_hash failed: ' . $wpdb->last_error);
+                return;
+            }
+            $has_payload_idx = 0;
+        }
+
+        if ($has_payload_idx === 0) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot DDL migration.
+            $idx_ok = $wpdb->query($wpdb->prepare(
+                'ALTER TABLE %i ADD KEY `idx_payload_hash` (`payload_hash`)',
+                $safe_table
+            ));
+            if ($idx_ok === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v22] ADD INDEX idx_payload_hash failed: ' . $wpdb->last_error);
+                return;
+            }
+        }
+
+        if ($has_dedup_unique === 0) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- One-shot DDL migration.
+            $unique_ok = $wpdb->query($wpdb->prepare(
+                'ALTER TABLE %i ADD UNIQUE KEY `uk_webhook_dedup_key` (`dedup_key`)',
+                $safe_table
+            ));
+            if ($unique_ok === false) {
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
+                error_log('[Cashback Migration v22] ADD UNIQUE uk_webhook_dedup_key failed: ' . $wpdb->last_error);
+                return;
+            }
+        }
+
+        $this->create_triggers();
+
+        update_option('cashback_db_version', 22, false);
     }
 
     /**
