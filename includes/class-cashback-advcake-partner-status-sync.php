@@ -209,39 +209,22 @@ class Cashback_Advcake_Partner_Status_Sync {
                 continue;
             }
 
-            $new_status = 'draft';
-
-            // wp_update_post сам не падает если post_status уже такой же, но
-            // мы дополнительно избегаем лишних updated_at-флапов и post-meta-revisions.
-            $current_post = get_post($product_id);
-            if ($current_post instanceof WP_Post && $current_post->post_status !== $new_status) {
-                $update = wp_update_post(array(
-                    'ID'          => $product_id,
-                    'post_status' => $new_status,
-                ), true);
-
-                if (is_wp_error($update) || (int) $update === 0) {
-                    self::mark_row($row_id, 'error');
-                    ++$stats['error'];
-                    continue;
-                }
-
-                // C-1 sub (meta-coordination): синхронизируем флаг
-                // `_cashback_auto_deactivated` с реальным `post_status` после
-                // успешного flip'а. Это закрывает 3-writer race на post_status
-                // (partner_status_sync + check_campaign_statuses + shop_importer):
-                // любой источник, который двигает status, должен поддерживать
-                // ту же meta-семантику, чтобы reactivate-cron не оставался в
-                // confusing-state «published но auto-deactivated».
-                if ($new_status === 'publish') {
-                    delete_post_meta($product_id, '_cashback_auto_deactivated');
-                    delete_post_meta($product_id, '_cashback_auto_deactivated_at');
-                    delete_post_meta($product_id, '_cashback_auto_deactivated_source');
-                } else {
-                    update_post_meta($product_id, '_cashback_auto_deactivated', '1');
-                    update_post_meta($product_id, '_cashback_auto_deactivated_at', current_time('mysql', true));
-                    update_post_meta($product_id, '_cashback_auto_deactivated_source', 'advcake_partner_status');
-                }
+            $reason = sprintf(
+                'Партнёрская программа Advcake остановлена (offer_id: %s, status: %s)',
+                $offer_id,
+                $status
+            );
+            $ok     = Cashback_Product_Cpa_Status_Service::deactivate_product(
+                $product_id,
+                'advcake',
+                $offer_id,
+                $reason,
+                'advcake_partner_status'
+            );
+            if (!$ok) {
+                self::mark_row($row_id, 'error');
+                ++$stats['error'];
+                continue;
             }
 
             self::mark_row($row_id, 'ok');

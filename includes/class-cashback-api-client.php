@@ -4577,13 +4577,16 @@ class Cashback_API_Client {
 
                 if ($campaign === null) {
                     // Кампания не найдена в API — возможно удалена
-                    $this->deactivate_product(
+                    $deactivated_ok = Cashback_Product_Cpa_Status_Service::deactivate_product(
                         $product_id,
                         $slug,
                         $product_offer_id,
-                        'Кампания не найдена в API CPA-сети'
+                        'Кампания не найдена в API CPA-сети',
+                        'check_campaign_statuses'
                     );
-                    ++$deactivated;
+                    if ($deactivated_ok) {
+                        ++$deactivated;
+                    }
                     continue;
                 }
 
@@ -4595,8 +4598,16 @@ class Cashback_API_Client {
                         $campaign['status'],
                         $campaign['connection_status']
                     );
-                    $this->deactivate_product($product_id, $slug, $product_offer_id, $reason);
-                    ++$deactivated;
+                    $deactivated_ok = Cashback_Product_Cpa_Status_Service::deactivate_product(
+                        $product_id,
+                        $slug,
+                        $product_offer_id,
+                        $reason,
+                        'check_campaign_statuses'
+                    );
+                    if ($deactivated_ok) {
+                        ++$deactivated;
+                    }
                 }
             }
 
@@ -4635,8 +4646,15 @@ class Cashback_API_Client {
                 $campaign = $campaign_map[ $product_offer_id ] ?? null;
 
                 if ($campaign !== null && $campaign['is_active']) {
-                    $this->reactivate_product($product_id, $slug, $product_offer_id, $campaign['name']);
-                    ++$reactivated;
+                    $reactivated_ok = Cashback_Product_Cpa_Status_Service::reactivate_product_if_autopublish_enabled(
+                        $product_id,
+                        $slug,
+                        $product_offer_id,
+                        (string) $campaign['name']
+                    );
+                    if ($reactivated_ok) {
+                        ++$reactivated;
+                    }
                 }
             }
 
@@ -4678,98 +4696,6 @@ class Cashback_API_Client {
         }
 
         return $results;
-    }
-
-    /**
-     * Деактивировать товар WooCommerce (перевести в draft) из-за отключения кампании
-     *
-     * @param int    $product_id  ID товара
-     * @param string $network_slug Slug CPA-сети
-     * @param string $offer_id    ID кампании/оффера
-     * @param string $reason      Причина деактивации
-     */
-    private function deactivate_product( int $product_id, string $network_slug, string $offer_id, string $reason ): void {
-        // Проверяем: не деактивирован ли уже
-        if (get_post_meta($product_id, '_cashback_auto_deactivated', true) === '1') {
-            return;
-        }
-
-        wp_update_post(array(
-            'ID'          => $product_id,
-            'post_status' => 'draft',
-        ));
-
-        update_post_meta($product_id, '_cashback_auto_deactivated', '1');
-        update_post_meta($product_id, '_cashback_deactivation_reason', $reason);
-        update_post_meta($product_id, '_cashback_deactivated_at', Cashback_Time::now_mysql());
-        update_post_meta($product_id, '_cashback_deactivated_network', $network_slug);
-
-        // Аудит-лог
-        if (class_exists('Cashback_Encryption')) {
-            Cashback_Encryption::write_audit_log(
-                'store_auto_deactivated',
-                0,
-                'product',
-                $product_id,
-                array(
-                    'network_slug' => $network_slug,
-                    'offer_id'     => $offer_id,
-                    'reason'       => $reason,
-                )
-            );
-        }
-
-        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-        error_log(sprintf(
-            'Cashback Campaign Check: Product #%d deactivated (network: %s, offer: %s) — %s',
-            $product_id,
-            $network_slug,
-            $offer_id,
-            $reason
-        ));
-    }
-
-    /**
-     * Реактивировать ранее автоматически деактивированный товар
-     *
-     * @param int    $product_id    ID товара
-     * @param string $network_slug  Slug CPA-сети
-     * @param string $offer_id      ID кампании/оффера
-     * @param string $campaign_name Название кампании
-     */
-    private function reactivate_product( int $product_id, string $network_slug, string $offer_id, string $campaign_name ): void {
-        wp_update_post(array(
-            'ID'          => $product_id,
-            'post_status' => 'publish',
-        ));
-
-        delete_post_meta($product_id, '_cashback_auto_deactivated');
-        delete_post_meta($product_id, '_cashback_deactivation_reason');
-        delete_post_meta($product_id, '_cashback_deactivated_at');
-        delete_post_meta($product_id, '_cashback_deactivated_network');
-
-        // Аудит-лог
-        if (class_exists('Cashback_Encryption')) {
-            Cashback_Encryption::write_audit_log(
-                'store_auto_reactivated',
-                0,
-                'product',
-                $product_id,
-                array(
-                    'network_slug'  => $network_slug,
-                    'offer_id'      => $offer_id,
-                    'campaign_name' => $campaign_name,
-                )
-            );
-        }
-
-        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional plugin diagnostic logging.
-        error_log(sprintf(
-            'Cashback Campaign Check: Product #%d reactivated (network: %s, campaign: %s)',
-            $product_id,
-            $network_slug,
-            $campaign_name
-        ));
     }
 
     /**

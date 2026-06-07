@@ -6,7 +6,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Cashback Plugin
  * Description: Объединенный плагин для системы кэшбэка и аффилиат-партнерства
- * Version: 4.4.59
+ * Version: 4.4.60
  * Author: Cashback
  * Author URI: https://example.com
  * Text Domain: cashback-plugin
@@ -586,12 +586,15 @@ class CashbackPlugin {
         // инвариант удаления именно этого hook при деактивации.
         wp_clear_scheduled_hook('cashback_affiliate_auto_promote');
 
-        // Action Scheduler хуки (переведены на AS в рамках миграции планировщика)
+        // Action Scheduler хуки (переведены на AS в рамках миграции планировщика).
+        // Включает API sync, уведомления, рассылки, retention и CPA status postbacks.
         $as_hooks = array(
-            'cashback_api_sync_statuses',          // API Валидация: фоновая синхронизация
-            'cashback_notification_process_queue', // Обработка очереди уведомлений
-            'cashback_broadcast_process',          // Обработка очереди массовых рассылок
-            'cashback_logs_retention',             // Retention 11 лог/аудит/очередь-таблиц
+            'cashback_api_sync_statuses',
+            'cashback_notification_process_queue',
+            'cashback_broadcast_process',
+            'cashback_logs_retention',
+            'cashback_advcake_partner_status_sync',
+            'cashback_admitad_status_postback_sync',
         );
 
         foreach ($as_hooks as $hook) {
@@ -963,6 +966,9 @@ class CashbackPlugin {
         // INNER JOIN в SQL реактивации Cashback_API_Client::check_campaign_statuses,
         // очистка маркеров деактивации при ручной публикации.
         $this->require_file('includes/shops/class-cashback-product-autopublish.php');
+        // Единый writer post_status/meta для CPA-driven деактивации/реактивации
+        // магазинов (API-сверка, postback-статусы Admitad/Advcake, manual clear).
+        $this->require_file('includes/shops/class-cashback-product-cpa-status-service.php');
         // Draft-модель дедупа: enforcement post_status (preferred=publish,
         // остальные=draft) на cashback_group_preferred_changed + маркеры
         // _cashback_dup_* + only-demote backfill.
@@ -974,6 +980,7 @@ class CashbackPlugin {
         $this->require_file('includes/class-cashback-api-client.php');
         $this->require_file('includes/class-cashback-api-cron.php');
         $this->require_file('includes/class-cashback-advcake-partner-status-sync.php');
+        $this->require_file('includes/class-cashback-admitad-status-postback-sync.php');
         $this->require_file('includes/class-cashback-advcake-stuck-monitor.php');
         $this->require_file('includes/class-cashback-stuck-transactions-monitor.php');
         $this->require_file('includes/class-cashback-webhooks-retention.php');
@@ -1818,6 +1825,11 @@ class CashbackPlugin {
         // --- Advcake: фоновая обработка partner-status постбэков ---
         if (class_exists('Cashback_Advcake_Partner_Status_Sync')) {
             Cashback_Advcake_Partner_Status_Sync::init();
+        }
+
+        // --- Admitad: фоновая обработка program/partnership status постбэков ---
+        if (class_exists('Cashback_Admitad_Status_Postback_Sync')) {
+            Cashback_Admitad_Status_Postback_Sync::init();
         }
 
         // --- Advcake: мониторинг застрявших транзакций (F-1/F-2) ---

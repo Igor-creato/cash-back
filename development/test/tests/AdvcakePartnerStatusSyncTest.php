@@ -74,6 +74,7 @@ final class AdvcakePartnerStatusSyncTest extends TestCase
 
         $files = array(
             '/includes/shops/class-cashback-shop-importer.php',
+            '/includes/shops/class-cashback-product-cpa-status-service.php',
             '/includes/class-cashback-advcake-partner-status-sync.php',
         );
         foreach ($files as $rel) {

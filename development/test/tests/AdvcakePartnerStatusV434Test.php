@@ -31,6 +31,9 @@ final class AdvcakePartnerStatusV434Test extends TestCase
         if (!class_exists('Cashback_Shop_Importer')) {
             require_once self::$plugin_root . '/includes/shops/class-cashback-shop-importer.php';
         }
+        if (!class_exists('Cashback_Product_Cpa_Status_Service')) {
+            require_once self::$plugin_root . '/includes/shops/class-cashback-product-cpa-status-service.php';
+        }
         if (!class_exists('Cashback_Advcake_Partner_Status_Sync')) {
             require_once self::$plugin_root . '/includes/class-cashback-advcake-partner-status-sync.php';
         }
@@ -192,15 +195,18 @@ final class AdvcakePartnerStatusV434Test extends TestCase
 
         $this->assertSame('draft', $GLOBALS['_cb_test_posts'][ $product_id ]->post_status);
         $this->assertSame('1', (string) get_post_meta($product_id, '_cashback_auto_deactivated', true));
-        $this->assertSame('advcake_partner_status', (string) get_post_meta($product_id, '_cashback_auto_deactivated_source', true));
-        $this->assertNotEmpty((string) get_post_meta($product_id, '_cashback_auto_deactivated_at', true));
+        $this->assertSame('advcake', (string) get_post_meta($product_id, '_cashback_deactivated_network', true));
+        $this->assertSame('advcake_partner_status', (string) get_post_meta($product_id, '_cashback_deactivated_source', true));
+        $this->assertNotEmpty((string) get_post_meta($product_id, '_cashback_deactivated_at', true));
+        $this->assertSame('', (string) get_post_meta($product_id, '_cashback_auto_deactivated_source', true));
+        $this->assertSame('', (string) get_post_meta($product_id, '_cashback_auto_deactivated_at', true));
     }
 
     public function test_active_postback_does_not_publish_or_clear_meta(): void
     {
         $product_id = $this->register_post('draft');
         update_post_meta($product_id, '_cashback_auto_deactivated', '1');
-        update_post_meta($product_id, '_cashback_auto_deactivated_source', 'check_campaign_statuses');
+        update_post_meta($product_id, '_cashback_deactivated_source', 'check_campaign_statuses');
 
         $GLOBALS['wpdb'] = $this->wpdb_mock(array(
             'rows'     => array( array( 'id' => 12, 'payload' => 'offer_id=403&status=active' ) ),
@@ -212,7 +218,7 @@ final class AdvcakePartnerStatusV434Test extends TestCase
         $this->assertSame(1, $stats['ok']);
         $this->assertSame('draft', $GLOBALS['_cb_test_posts'][ $product_id ]->post_status);
         $this->assertSame('1', (string) get_post_meta($product_id, '_cashback_auto_deactivated', true));
-        $this->assertSame('check_campaign_statuses', (string) get_post_meta($product_id, '_cashback_auto_deactivated_source', true));
+        $this->assertSame('check_campaign_statuses', (string) get_post_meta($product_id, '_cashback_deactivated_source', true));
     }
 
     public function test_same_status_no_meta_change(): void

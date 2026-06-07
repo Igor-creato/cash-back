@@ -261,25 +261,15 @@ final class ProductAutopublishStructuralTest extends TestCase
         $this->assertStringContainsString('wp_is_post_autosave', $body);
     }
 
-    public function test_on_transition_clears_all_four_deactivation_markers(): void
+    public function test_on_transition_uses_shared_cpa_status_marker_clear(): void
     {
         $body = $this->extract_method_body('on_transition_clear_markers');
-        $this->assertMatchesRegularExpression(
-            "/delete_post_meta\s*\(\s*\\\$post_id\s*,\s*'_cashback_auto_deactivated'\s*\)/",
-            $body
-        );
-        $this->assertMatchesRegularExpression(
-            "/delete_post_meta\s*\(\s*\\\$post_id\s*,\s*'_cashback_deactivation_reason'\s*\)/",
-            $body
-        );
-        $this->assertMatchesRegularExpression(
-            "/delete_post_meta\s*\(\s*\\\$post_id\s*,\s*'_cashback_deactivated_at'\s*\)/",
-            $body
-        );
-        $this->assertMatchesRegularExpression(
-            "/delete_post_meta\s*\(\s*\\\$post_id\s*,\s*'_cashback_deactivated_network'\s*\)/",
-            $body
-        );
+        $this->assertStringContainsString('Cashback_Product_Cpa_Status_Service::clear_deactivation_markers', $body);
+        $this->assertStringContainsString('_cashback_auto_deactivated', $body);
+        $this->assertStringContainsString('_cashback_deactivation_reason', $body);
+        $this->assertStringContainsString('_cashback_deactivated_at', $body);
+        $this->assertStringContainsString('_cashback_deactivated_network', $body);
+        $this->assertStringContainsString('_cashback_auto_deactivated_source', $body);
     }
 
     // ============================================================

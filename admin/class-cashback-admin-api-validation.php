@@ -2599,10 +2599,14 @@ echo 'style="display:none"';}
         update_post_meta($product_id, '_cashback_auto_publish_enabled', '1');
 
         update_post_meta($product_id, '_cashback_admin_override', '1');
-        delete_post_meta($product_id, '_cashback_auto_deactivated');
-        delete_post_meta($product_id, '_cashback_deactivation_reason');
-        delete_post_meta($product_id, '_cashback_deactivated_at');
-        delete_post_meta($product_id, '_cashback_deactivated_network');
+        if (class_exists('Cashback_Product_Cpa_Status_Service')) {
+            Cashback_Product_Cpa_Status_Service::clear_deactivation_markers($product_id);
+        } else {
+            delete_post_meta($product_id, '_cashback_auto_deactivated');
+            delete_post_meta($product_id, '_cashback_deactivation_reason');
+            delete_post_meta($product_id, '_cashback_deactivated_at');
+            delete_post_meta($product_id, '_cashback_deactivated_network');
+        }
 
         if (class_exists('Cashback_Encryption')) {
             Cashback_Encryption::write_audit_log(

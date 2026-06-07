@@ -216,14 +216,25 @@ class Cashback_Product_Autopublish {
         if (function_exists('wp_is_post_autosave') && wp_is_post_autosave($post_id)) {
             return;
         }
+        if (class_exists('Cashback_Product_Cpa_Status_Service')) {
+            Cashback_Product_Cpa_Status_Service::clear_deactivation_markers($post_id);
+            return;
+        }
         if (! function_exists('delete_post_meta')) {
             return;
         }
 
-        delete_post_meta($post_id, '_cashback_auto_deactivated');
-        delete_post_meta($post_id, '_cashback_deactivation_reason');
-        delete_post_meta($post_id, '_cashback_deactivated_at');
-        delete_post_meta($post_id, '_cashback_deactivated_network');
+        foreach (array(
+            '_cashback_auto_deactivated',
+            '_cashback_deactivation_reason',
+            '_cashback_deactivated_at',
+            '_cashback_deactivated_network',
+            '_cashback_deactivated_source',
+            '_cashback_auto_deactivated_at',
+            '_cashback_auto_deactivated_source',
+        ) as $key) {
+            delete_post_meta($post_id, $key);
+        }
     }
 
     /**
