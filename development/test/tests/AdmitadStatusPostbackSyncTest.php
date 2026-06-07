@@ -151,6 +151,26 @@ final class AdmitadStatusPostbackSyncTest extends TestCase {
 		$this->assertSame('admitad', (string) get_post_meta(501, '_cashback_deactivated_network', true));
 	}
 
+	public function test_any_negative_program_status_deactivates_product(): void {
+		self::assertTrue(class_exists('Cashback_Admitad_Status_Postback_Sync'));
+
+		foreach (array('denied', 'disabled', 'dead') as $idx => $status) {
+			$product_id = 520 + $idx;
+			$row_id     = 20 + $idx;
+			$this->register_post($product_id, 'publish');
+			$GLOBALS['wpdb'] = $this->wpdb_mock(
+				array(array('id' => $row_id, 'payload' => 'offer_id=2381&offer_status=' . $status, 'event_type' => 'program_status', 'marker' => null)),
+				array(array('network_id' => 77, 'offer_id' => '2381', 'product_id' => $product_id))
+			);
+
+			$stats = Cashback_Admitad_Status_Postback_Sync::process_batch();
+
+			$this->assertSame(1, $stats['ok'], 'program_status=' . $status);
+			$this->assertSame('draft', $GLOBALS['_cb_test_posts'][ $product_id ]->post_status, 'program_status=' . $status);
+			$this->assertSame($status, (string) get_post_meta($product_id, '_cashback_admitad_program_status', true));
+		}
+	}
+
 	public function test_partnership_denied_deactivates_product(): void {
 		self::assertTrue(class_exists('Cashback_Admitad_Status_Postback_Sync'));
 		$this->register_post(502, 'publish');
@@ -182,6 +202,25 @@ final class AdmitadStatusPostbackSyncTest extends TestCase {
 
 		$this->assertSame(1, $stats['ok']);
 		$this->assertSame('draft', $GLOBALS['_cb_test_posts'][503]->post_status);
+	}
+
+	public function test_accepted_partnership_does_not_publish_when_program_is_disabled(): void {
+		self::assertTrue(class_exists('Cashback_Admitad_Status_Postback_Sync'));
+		$this->register_post(509, 'draft');
+		update_post_meta(509, '_cashback_auto_deactivated', '1');
+		update_post_meta(509, '_cashback_auto_publish_enabled', '1');
+		update_post_meta(509, '_cashback_admitad_program_status', 'disabled');
+
+		$GLOBALS['wpdb'] = $this->wpdb_mock(
+			array(array('id' => 13, 'payload' => 'offer_id=2381&partnership_status=accepted', 'event_type' => 'partnership_status', 'marker' => null)),
+			array(array('network_id' => 77, 'offer_id' => '2381', 'product_id' => 509))
+		);
+
+		$stats = Cashback_Admitad_Status_Postback_Sync::process_batch();
+
+		$this->assertSame(1, $stats['ok']);
+		$this->assertSame('draft', $GLOBALS['_cb_test_posts'][509]->post_status);
+		$this->assertSame('accepted', (string) get_post_meta(509, '_cashback_admitad_partnership_status', true));
 	}
 
 	public function test_positive_signals_reactivate_only_when_autopublish_enabled(): void {

@@ -21,7 +21,7 @@ if (!class_exists('WP_Post')) {
  * Покрытие:
  *  - decode JSON и URL-encoded payload'ов;
  *  - matchинг WC-product через find_product_by_offer;
- *  - flip post_status (active → publish, stopped → draft);
+ *  - stopped → draft; active → API verification, publish only when active && available;
  *  - mark row processing_status=ok / click_not_found / error;
  *  - идемпотентность (повторный запуск не двинет уже помеченные rows);
  *  - graceful skip когда сети нет или колонка event_type отсутствует.
@@ -89,7 +89,19 @@ final class AdvcakePartnerStatusSyncTest extends TestCase
     {
         $GLOBALS['_cb_test_options'] = array();
         $GLOBALS['_cb_test_posts']   = array();
-        $GLOBALS['_cb_test_postmeta'] = array();
+        $GLOBALS['_cb_test_post_meta'] = array();
+        $GLOBALS['_cb_test_meta']      = array();
+        if (class_exists('Cashback_Advcake_Partner_Status_Sync')) {
+            Cashback_Advcake_Partner_Status_Sync::set_test_campaign_resolver(null);
+        }
+    }
+
+    protected function tearDown(): void
+    {
+        if (class_exists('Cashback_Advcake_Partner_Status_Sync')) {
+            Cashback_Advcake_Partner_Status_Sync::set_test_campaign_resolver(null);
+        }
+        parent::tearDown();
     }
 
     /**
@@ -260,12 +272,29 @@ final class AdvcakePartnerStatusSyncTest extends TestCase
     }
 
     // ------------------------------------------------------------------
-    // 2. active-webhook не публикует без подтверждения /offers API.
+    // 2. active-webhook публикует только после подтверждения /offers API.
     // ------------------------------------------------------------------
 
-    public function test_active_status_marks_row_ok_without_publishing_product(): void
+    public function test_active_status_reactivates_only_when_api_confirms_active_and_available(): void
     {
         $this->make_post(777, 'draft');
+        update_post_meta(777, '_cashback_auto_deactivated', '1');
+        update_post_meta(777, '_cashback_auto_publish_enabled', '1');
+        $resolver_called = false;
+        Cashback_Advcake_Partner_Status_Sync::set_test_campaign_resolver(static function () use (&$resolver_called) {
+            $resolver_called = true;
+            return array(
+                'success'  => true,
+                'active'   => true,
+                'campaign' => array(
+                    'id'                => '99',
+                    'name'              => 'Advcake Example',
+                    'status'            => 'active',
+                    'connection_status' => 'available',
+                    'is_active'         => true,
+                ),
+            );
+        });
 
         $rows = array(
             array(
@@ -283,12 +312,81 @@ final class AdvcakePartnerStatusSyncTest extends TestCase
         $stats = Cashback_Advcake_Partner_Status_Sync::process_batch();
 
         $this->assertSame(1, $stats['ok']);
+        $this->assertTrue($resolver_called);
         $this->assertSame(
-            'draft',
+            'publish',
             $GLOBALS['_cb_test_posts'][777]->post_status,
-            'partner_status=active не доказывает available/сотрудничество; publish делает только /offers API check.'
+            'partner_status=active публикует только после /offers active && available.'
         );
         $this->assertSame('ok', $wpdb->rows[0]['marker']);
+    }
+
+    public function test_active_status_stays_draft_when_api_says_unavailable(): void
+    {
+        $this->make_post(778, 'draft');
+        update_post_meta(778, '_cashback_auto_deactivated', '1');
+        update_post_meta(778, '_cashback_auto_publish_enabled', '1');
+        Cashback_Advcake_Partner_Status_Sync::set_test_campaign_resolver(static function () {
+            return array(
+                'success'  => true,
+                'active'   => false,
+                'campaign' => array(
+                    'id'                => '100',
+                    'name'              => 'Unavailable',
+                    'status'            => 'active',
+                    'connection_status' => 'unavailable',
+                    'is_active'         => false,
+                ),
+            );
+        });
+
+        $rows = array(
+            array(
+                'id'      => 22,
+                'payload' => 'offer_id=100&status=active',
+                'marker'  => null,
+            ),
+        );
+        $products = array(
+            array( 'network_id' => 42, 'offer_id' => '100', 'product_id' => 778 ),
+        );
+        $wpdb     = $this->make_wpdb_mock(42, $rows, $products);
+        $GLOBALS['wpdb'] = $wpdb;
+
+        $stats = Cashback_Advcake_Partner_Status_Sync::process_batch();
+
+        $this->assertSame(1, $stats['ok']);
+        $this->assertSame('draft', $GLOBALS['_cb_test_posts'][778]->post_status);
+        $this->assertSame('ok', $wpdb->rows[0]['marker']);
+    }
+
+    public function test_active_status_api_error_leaves_row_retryable(): void
+    {
+        $this->make_post(779, 'draft');
+        update_post_meta(779, '_cashback_auto_deactivated', '1');
+        update_post_meta(779, '_cashback_auto_publish_enabled', '1');
+        Cashback_Advcake_Partner_Status_Sync::set_test_campaign_resolver(static function () {
+            return array('success' => false, 'error' => 'HTTP 500');
+        });
+
+        $rows = array(
+            array(
+                'id'      => 23,
+                'payload' => 'offer_id=101&status=active',
+                'marker'  => null,
+            ),
+        );
+        $products = array(
+            array( 'network_id' => 42, 'offer_id' => '101', 'product_id' => 779 ),
+        );
+        $wpdb     = $this->make_wpdb_mock(42, $rows, $products);
+        $GLOBALS['wpdb'] = $wpdb;
+
+        $stats = Cashback_Advcake_Partner_Status_Sync::process_batch();
+
+        $this->assertSame(1, $stats['error']);
+        $this->assertNull($wpdb->rows[0]['marker'], 'API error leaves row retryable');
+        $this->assertSame('draft', $GLOBALS['_cb_test_posts'][779]->post_status);
     }
 
     // ------------------------------------------------------------------

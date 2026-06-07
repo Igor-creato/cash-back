@@ -12,8 +12,10 @@
  * Этот класс — фоновая обработка таких rows: Action Scheduler hook раз в
  * 5 минут берёт до 200 необработанных rows, для каждой по `offer_id` ищет
  * WC-product через `Cashback_Shop_Importer::find_product_by_offer()` и
- * флипает `post_status` (`active`→`publish`, `stopped`→`draft`). Помечает
- * row `processing_status='ok'` / `'click_not_found'` (если продукт не нашёлся).
+ * применяет состояние: `stopped` сразу деактивирует, а `active` публикует
+ * только после подтверждения `/offers`, что оффер и активен, и доступен
+ * вебмастеру. Помечает row `processing_status='ok'` / `'click_not_found'`
+ * (если продукт не нашёлся).
  *
  * Идемпотентность: Action Scheduler гарантирует один live-instance hook'а
  * одновременно. Каждая row помечается СРАЗУ после успешной обработки —
@@ -42,6 +44,22 @@ class Cashback_Advcake_Partner_Status_Sync {
 
     /** @var int Сколько rows обрабатываем за один запуск (защита от long-running job) */
     private const BATCH_LIMIT = 200;
+
+    /**
+     * Test-only resolver for active-status API verification.
+     *
+     * @var callable|null
+     */
+    private static $test_campaign_resolver = null;
+
+    /**
+     * Подменить resolver кампании в тестах.
+     *
+     * @param callable|null $resolver Возвращает array{success:bool,campaign?:array<string,mixed>|null,error?:string}.
+     */
+    public static function set_test_campaign_resolver( ?callable $resolver ): void {
+        self::$test_campaign_resolver = $resolver;
+    }
 
     /**
      * Регистрация хуков. Вызывается из bootstrap'а плагина.
@@ -201,9 +219,26 @@ class Cashback_Advcake_Partner_Status_Sync {
             }
 
             if ($status === 'active') {
-                // `active` webhook не несёт поле `available`/статус сотрудничества.
-                // Возврат в publish делает только pull-сверка `/offers`, где есть
-                // оба сигнала: program status и webmaster availability.
+                // `active` webhook сам по себе не несёт поле `available`.
+                // Перед publish сверяем `/offers`: Adv.Cake отдаёт два сигнала
+                // (`active` и `available`), и публиковать можно только при AND.
+                $state = self::resolve_effective_state($offer_id);
+                if (!($state['success'] ?? false)) {
+                    ++$stats['error'];
+                    continue;
+                }
+                if (($state['active'] ?? false) === true) {
+                    $campaign = $state['campaign'] ?? array();
+                    $name     = is_array($campaign) && isset($campaign['name'])
+                        ? (string) $campaign['name']
+                        : ('Advcake offer ' . $offer_id);
+                    Cashback_Product_Cpa_Status_Service::reactivate_product_if_autopublish_enabled(
+                        $product_id,
+                        'advcake',
+                        $offer_id,
+                        $name
+                    );
+                }
                 self::mark_row($row_id, 'ok');
                 ++$stats['ok'];
                 continue;
@@ -232,6 +267,63 @@ class Cashback_Advcake_Partner_Status_Sync {
         }
 
         return $stats;
+    }
+
+    /**
+     * Проверить effective-state оффера через `/offers`.
+     *
+     * @return array{success:bool,active?:bool,campaign?:array<string,mixed>|null,error?:string}
+     */
+    private static function resolve_effective_state( string $offer_id ): array {
+        if (self::$test_campaign_resolver !== null) {
+            return (array) call_user_func(self::$test_campaign_resolver, $offer_id);
+        }
+
+        if (!class_exists('Cashback_API_Client')) {
+            return array( 'success' => false, 'error' => 'Cashback_API_Client unavailable' );
+        }
+
+        $client = Cashback_API_Client::get_instance();
+        foreach (array( 'advcake', 'adv' ) as $slug) {
+            $config = $client->get_network_config($slug);
+            if (!is_array($config) || empty($config['credentials'])) {
+                continue;
+            }
+
+            $adapter = $client->get_adapter($slug);
+            if (!$adapter instanceof Cashback_Network_Adapter_Interface) {
+                continue;
+            }
+
+            $result = $adapter->fetch_campaigns($config['credentials'], $config);
+            if (empty($result['success'])) {
+                return array(
+                    'success' => false,
+                    'error'   => (string) ($result['error'] ?? 'Advcake /offers verification failed'),
+                );
+            }
+
+            $campaigns = isset($result['campaigns'])
+                ? $result['campaigns']
+                : array();
+            foreach ($campaigns as $campaign) {
+                if (!is_array($campaign)) {
+                    continue;
+                }
+                if ((string) ($campaign['id'] ?? '') !== $offer_id) {
+                    continue;
+                }
+                return array(
+                    'success'  => true,
+                    'active'   => !empty($campaign['is_active']),
+                    'campaign' => $campaign,
+                );
+            }
+
+            return array( 'success' => true, 'active' => false, 'campaign' => null );
+        }
+
+        return array( 'success' => false, 'error' => 'Advcake credentials unavailable' );
     }
 
     /**
