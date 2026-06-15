@@ -552,6 +552,7 @@ class CashbackPlugin {
         add_rewrite_endpoint('cashback-affiliate', EP_ROOT | EP_PAGES);
         add_rewrite_endpoint('cashback_lost_cashback', EP_ROOT | EP_PAGES);
         add_rewrite_endpoint('cashback-notifications', EP_ROOT | EP_PAGES);
+        add_rewrite_endpoint('price-assistant', EP_ROOT | EP_PAGES);
 
         // Сбрасываем переписывание URL
         flush_rewrite_rules();
@@ -1021,6 +1022,7 @@ class CashbackPlugin {
 // --- Price Assistant WordPress proxy + consent metadata ---
         $this->require_file('includes/services/class-price-assistant-proxy-client.php');
 $this->require_file('includes/rest/class-price-assistant-rest-controller.php');
+$this->require_file('includes/class-price-assistant-account.php');
 // --- Internal REST API для server-to-server price-monitor ---
         $this->require_file('includes/services/class-internal-hmac-auth-service.php');
 $this->require_file('includes/services/class-cashback-internal-api-service.php');
@@ -1901,6 +1903,10 @@ Cashback_REST_API::get_instance();
 
         if (class_exists('Cashback_Price_Assistant_REST_Controller')) {
 Cashback_Price_Assistant_REST_Controller::init();
+}
+
+        if (class_exists('Cashback_Price_Assistant_Account')) {
+Cashback_Price_Assistant_Account::init();
 }
 
         // --- Internal REST API для server-to-server price-monitor ---

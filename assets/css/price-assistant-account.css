@@ -1,0 +1,44 @@
+.cashback-price-assistant {
+  display: grid;
+  gap: 18px;
+}
+
+.cashback-price-assistant__header h2 {
+  margin: 0 0 8px;
+}
+
+.cashback-price-assistant__header p {
+  margin: 0;
+  max-width: 720px;
+}
+
+.cashback-price-assistant__statuses,
+.cashback-price-assistant__marketplaces,
+.cashback-price-assistant__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.cashback-price-assistant__status {
+  border: 1px solid #dcdcde;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.cashback-price-assistant__marketplace {
+  border: 1px solid #dcdcde;
+  border-radius: 8px;
+  padding: 16px;
+  width: min(100%, 300px);
+}
+
+.cashback-price-assistant__marketplace h3,
+.cashback-price-assistant__state {
+  margin: 0 0 12px;
+}
+
+.cashback-price-assistant__state {
+  font-weight: 600;
+}

@@ -15,6 +15,28 @@ final class Cashback_Price_Assistant_REST_Controller {
         'wildberries'   => 'Wildberries',
         'yandex_market' => 'Yandex Market',
     );
+    private const MARKETPLACE_PAGE_URLS = array(
+        'ozon'          => array(
+            'login'     => 'https://www.ozon.ru/my/main',
+            'cart'      => 'https://www.ozon.ru/cart',
+            'favorites' => 'https://www.ozon.ru/my/favorites',
+        ),
+        'wildberries'   => array(
+            'login'     => 'https://www.wildberries.ru/lk',
+            'cart'      => 'https://www.wildberries.ru/lk/basket',
+            'favorites' => 'https://www.wildberries.ru/lk/favorites',
+        ),
+        'yandex_market' => array(
+            'login'     => 'https://market.yandex.ru/my/orders',
+            'cart'      => 'https://market.yandex.ru/my/cart',
+            'favorites' => 'https://market.yandex.ru/my/wishlist',
+        ),
+    );
+    private const MARKETPLACE_HOST_PERMISSIONS = array(
+        'ozon'          => array( 'https://*.ozon.ru/*' ),
+        'wildberries'   => array( 'https://*.wildberries.ru/*' ),
+        'yandex_market' => array( 'https://market.yandex.ru/*', 'https://*.market.yandex.ru/*' ),
+    );
 
     private Cashback_Price_Assistant_Proxy_Client $client;
 
@@ -51,6 +73,12 @@ final class Cashback_Price_Assistant_REST_Controller {
         register_rest_route(self::NAMESPACE, '/price-assistant/connections/(?P<connection_id>\d+)/session-bundle', array(
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => array( $this, 'upload_session_bundle' ),
+            'permission_callback' => array( $this, 'check_write_permission' ),
+        ));
+
+        register_rest_route(self::NAMESPACE, '/price-assistant/connections/(?P<connection_id>\d+)/immediate-import', array(
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => array( $this, 'immediate_import' ),
             'permission_callback' => array( $this, 'check_write_permission' ),
         ));
 
@@ -100,6 +128,11 @@ final class Cashback_Price_Assistant_REST_Controller {
             'consent_version' => self::CONSENT_VERSION,
             'text'            => 'Мы сохраним технический токен доступа к корзине/избранному. Логин и пароль не сохраняются',
             'scope'           => array( 'cart_read', 'favorites_read' ),
+            'connector'       => array(
+                'mode'               => 'browser_cookies_api_after_explicit_consent',
+                'session_bundle_url' => '/connections/{connection_id}/session-bundle',
+                'immediate_import_url' => '/connections/{connection_id}/immediate-import',
+            ),
             'marketplaces'    => $this->enabled_marketplaces(),
         ), 200);
     }
@@ -176,6 +209,90 @@ final class Cashback_Price_Assistant_REST_Controller {
         ));
     }
 
+    public function immediate_import( WP_REST_Request $request ): WP_REST_Response {
+        $connection_id = absint($request->get_param('connection_id'));
+        if ($connection_id <= 0) {
+            return $this->error_response('invalid_connection_id', 400);
+        }
+
+        if (! (bool) $request->get_param('consent')) {
+            return $this->error_response('consent_required', 400);
+        }
+
+        $marketplace = $this->marketplace_from_request($request);
+        if ($marketplace === '') {
+            return $this->error_response('invalid_marketplace', 400);
+        }
+        if (! $this->marketplace_enabled($marketplace)) {
+            return $this->error_response('marketplace_disabled', 423);
+        }
+
+        $collection_type = sanitize_key((string) $request->get_param('collection_type'));
+        if (! in_array($collection_type, array( 'cart', 'favorites' ), true)) {
+            return $this->error_response('invalid_collection_type', 400);
+        }
+
+        $items = $request->get_param('items');
+        if (! is_array($items)) {
+            return $this->error_response('invalid_items', 400);
+        }
+        $sanitized_items = array_values(array_filter(array_map(array( $this, 'sanitize_import_item' ), $items)));
+
+        $captured_at = $this->string_param($request, 'captured_at', gmdate('Y-m-d\TH:i:s\Z'));
+        $session = $this->client->request(
+            'POST',
+            '/v1/sync-sessions',
+            $this->owner_payload(array(
+                'connection_id'   => $connection_id,
+                'marketplace'     => $marketplace,
+                'collection_type' => $collection_type,
+                'mode'            => 'immediate_import',
+                'started_at'      => $captured_at,
+            )),
+            array(),
+            'sync-session-' . $connection_id . '-' . $collection_type . '-' . $this->external_user_id()
+        );
+        if ((int) ( $session['status'] ?? 502 ) < 200 || (int) ( $session['status'] ?? 502 ) >= 300) {
+            return $this->proxy_result($session);
+        }
+
+        $sync_session_id = $this->sync_session_id($session);
+        if ($sync_session_id <= 0) {
+            return $this->error_response('invalid_sync_session', 502);
+        }
+
+        $items_result = $this->client->request(
+            'POST',
+            '/v1/sync-sessions/' . $sync_session_id . '/items',
+            $this->owner_payload(array(
+                'connection_id'   => $connection_id,
+                'marketplace'     => $marketplace,
+                'collection_type' => $collection_type,
+                'items'           => $sanitized_items,
+                'captured_at'     => $captured_at,
+            )),
+            array(),
+            'sync-items-' . $sync_session_id . '-' . $this->external_user_id()
+        );
+        if ((int) ( $items_result['status'] ?? 502 ) < 200 || (int) ( $items_result['status'] ?? 502 ) >= 300) {
+            return $this->proxy_result($items_result);
+        }
+
+        return $this->proxy_result($this->client->request(
+            'POST',
+            '/v1/sync-sessions/' . $sync_session_id . '/finish',
+            $this->owner_payload(array(
+                'connection_id'   => $connection_id,
+                'marketplace'     => $marketplace,
+                'collection_type' => $collection_type,
+                'status'          => 'sync ok',
+                'finished_at'     => gmdate('Y-m-d\TH:i:s\Z'),
+            )),
+            array(),
+            'sync-finish-' . $sync_session_id . '-' . $this->external_user_id()
+        ));
+    }
+
     public function disconnect( WP_REST_Request $request ): WP_REST_Response {
         $connection_id = absint($request->get_param('connection_id'));
         if ($connection_id <= 0) {
@@ -238,6 +355,24 @@ final class Cashback_Price_Assistant_REST_Controller {
 
     public static function marketplaces(): array {
         return self::MARKETPLACES;
+    }
+
+    public static function connector_marketplaces(): array {
+        $marketplaces = array();
+        foreach (self::MARKETPLACES as $code => $label) {
+            $marketplaces[] = array(
+                'code'             => $code,
+                'label'            => $label,
+                'enabled'          => (int) get_option(self::marketplace_option_name($code), 0) === 1,
+                'page_urls'        => self::MARKETPLACE_PAGE_URLS[ $code ],
+                'host_permissions' => self::MARKETPLACE_HOST_PERMISSIONS[ $code ],
+                'allowlist'        => array(
+                    'cookies' => array(),
+                    'tokens'  => array(),
+                ),
+            );
+        }
+        return $marketplaces;
     }
 
     private function proxy_get( string $path ): WP_REST_Response {
@@ -308,15 +443,7 @@ final class Cashback_Price_Assistant_REST_Controller {
     }
 
     private function enabled_marketplaces(): array {
-        $enabled = array();
-        foreach (self::MARKETPLACES as $code => $label) {
-            $enabled[] = array(
-                'code'    => $code,
-                'label'   => $label,
-                'enabled' => $this->marketplace_enabled($code),
-            );
-        }
-        return $enabled;
+        return self::connector_marketplaces();
     }
 
     private function scope_param( WP_REST_Request $request ): array {
@@ -337,6 +464,51 @@ final class Cashback_Price_Assistant_REST_Controller {
         }
         $value = sanitize_text_field((string) $value);
         return $value === '' ? $fallback : $value;
+    }
+
+    private function sanitize_import_item( mixed $item ): array {
+        if (! is_array($item)) {
+            return array();
+        }
+
+        $sanitized = array();
+        foreach (array( 'source_item_id', 'product_id', 'sku', 'title', 'availability', 'collected_at' ) as $key) {
+            if (isset($item[ $key ]) && is_scalar($item[ $key ])) {
+                $value = sanitize_text_field((string) $item[ $key ]);
+                if ($value !== '') {
+                    $sanitized[ $key ] = substr($value, 0, 512);
+                }
+            }
+        }
+
+        foreach (array( 'url', 'image_url', 'source_url' ) as $key) {
+            if (isset($item[ $key ]) && is_scalar($item[ $key ])) {
+                $url = esc_url_raw((string) $item[ $key ]);
+                if ($url !== '') {
+                    $sanitized[ $key ] = $url;
+                }
+            }
+        }
+
+        if (isset($item['price']) && is_numeric($item['price'])) {
+            $sanitized['price'] = (float) $item['price'];
+        }
+        if (isset($item['currency']) && is_scalar($item['currency'])) {
+            $currency = strtoupper(sanitize_key((string) $item['currency']));
+            if ($currency !== '') {
+                $sanitized['currency'] = substr($currency, 0, 8);
+            }
+        }
+        if (isset($item['quantity']) && is_numeric($item['quantity'])) {
+            $sanitized['quantity'] = max(1, absint($item['quantity']));
+        }
+
+        return $sanitized;
+    }
+
+    private function sync_session_id( array $result ): int {
+        $data = is_array($result['data'] ?? null) ? $result['data'] : array();
+        return absint($data['sync_session_id'] ?? $data['id'] ?? 0);
     }
 
     private function site_id(): string {
