@@ -109,6 +109,7 @@ if (!class_exists('WP_REST_Server')) {
     {
         public const READABLE = 'GET';
         public const CREATABLE = 'POST';
+        public const DELETABLE = 'DELETE';
     }
 }
 
@@ -1124,6 +1125,22 @@ if (!function_exists('wp_remote_post')) {
     {
         $GLOBALS['_cb_test_http_calls'][] = array(
             'method' => 'POST',
+            'url'    => $url,
+            'args'   => $args,
+        );
+        $cb = $GLOBALS['_cb_test_http_response_callback'] ?? null;
+        if ($cb instanceof Closure) {
+            return $cb($url, $args);
+        }
+        return $GLOBALS['_cb_test_http_response'];
+    }
+}
+
+if (!function_exists('wp_remote_request')) {
+    function wp_remote_request(string $url, array $args = array()): array|WP_Error
+    {
+        $GLOBALS['_cb_test_http_calls'][] = array(
+            'method' => (string) ($args['method'] ?? 'GET'),
             'url'    => $url,
             'args'   => $args,
         );

@@ -96,7 +96,7 @@ class Cashback_Rate_Limiter {
         'cashback_fraud_fingerprint'                => 'read',
         // Промокоды (v8): click-tracking при copy/goto. read tier 30/мин per-user
         // достаточно для UX (пользователь не делает >30 кликов/мин в норме).
-        'cashback_promocode_click'                  => 'read',
+        'cashback_promocode_click' => 'read', 'cashback_price_assistant_read' => 'read',
 
         // --- Admin ---
         'update_payout_request'                     => 'admin',
@@ -154,8 +154,7 @@ class Cashback_Rate_Limiter {
         'get_network_params'                        => 'admin',
         'delete_network_param'                      => 'admin',
         'update_network_param'                      => 'admin',
-        'cashback_admin_save_notification_settings' => 'admin',
-        'fraud_save_bot_settings'                   => 'admin',
+        'cashback_admin_save_notification_settings' => 'admin', 'fraud_save_bot_settings' => 'admin', 'cashback_price_assistant_write' => 'write',
 
         // F-22-003 (Группа 12): referral entry-points. Не admin-AJAX, но проходят
         // через Cashback_Rate_Limiter::check() на handle_referral_visit и
