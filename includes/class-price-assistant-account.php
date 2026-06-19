@@ -15,17 +15,17 @@ final class Cashback_Price_Assistant_Account {
     public static function init(): void {
         $account = new self();
 
-        add_action('init', [$account, 'register_endpoint']);
-        add_action('wp_enqueue_scripts', [$account, 'enqueue_assets']);
-        add_filter('woocommerce_account_menu_items', [$account, 'add_menu_item']);
-        add_action('woocommerce_account_' . self::ENDPOINT . '_endpoint', [$account, 'render_endpoint']);
+        add_action('init', array( $account, 'register_endpoint' ));
+        add_action('wp_enqueue_scripts', array( $account, 'enqueue_assets' ));
+        add_filter('woocommerce_account_menu_items', array( $account, 'add_menu_item' ));
+        add_action('woocommerce_account_' . self::ENDPOINT . '_endpoint', array( $account, 'render_endpoint' ));
     }
 
     public function register_endpoint(): void {
         add_rewrite_endpoint(self::ENDPOINT, EP_ROOT | EP_PAGES);
     }
 
-    public function add_menu_item(array $items): array {
+    public function add_menu_item( array $items ): array {
         $label = __('Price Assistant', 'cashback');
         if ( isset( $items['customer-logout'] ) ) {
             $logout = $items['customer-logout'];
@@ -47,26 +47,28 @@ final class Cashback_Price_Assistant_Account {
         wp_enqueue_style(
             'cashback-price-assistant-account',
             cashback_asset_url('assets/css/price-assistant-account.css'),
-            [],
+            array(),
+            // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
             null
         );
         wp_enqueue_script(
             self::SCRIPT_HANDLE,
             cashback_asset_url('assets/js/price-assistant-account.js'),
-            [],
+            array(),
+            // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
             null,
             true
         );
 
-        wp_localize_script(self::SCRIPT_HANDLE, 'CashbackPriceAssistantAccount', [
+        wp_localize_script(self::SCRIPT_HANDLE, 'CashbackPriceAssistantAccount', array(
             'restBase'        => rtrim(home_url('/wp-json/cashback/v1/price-assistant'), '/'),
             'nonce'           => wp_create_nonce('wp_rest'),
             'consentVersion'  => 'price-assistant-session-v1',
-            'scope'           => ['cart_read', 'favorites_read'],
+            'scope'           => array( 'cart_read', 'favorites_read' ),
             'connectorAction' => 'cashbackPriceAssistant.captureSession',
             'marketplaces'    => $this->marketplaces_by_code(),
             'statuses'        => $this->statuses(),
-        ]);
+        ));
     }
 
     public function render_endpoint(): void {
@@ -143,7 +145,7 @@ final class Cashback_Price_Assistant_Account {
     }
 
     private function marketplaces_by_code(): array {
-        $by_code = [];
+        $by_code = array();
         foreach ( Cashback_Price_Assistant_REST_Controller::connector_marketplaces() as $marketplace ) {
             $by_code[ (string) $marketplace['code'] ] = $marketplace;
         }
@@ -151,11 +153,11 @@ final class Cashback_Price_Assistant_Account {
     }
 
     private function statuses(): array {
-        return [
+        return array(
             'connected'          => __('connected', 'cashback'),
             'sync ok'            => __('sync ok', 'cashback'),
             'reconnect_required' => __('reconnect required', 'cashback'),
             'disconnected'       => __('disconnected', 'cashback'),
-        ];
+        );
     }
 }
