@@ -153,6 +153,88 @@ final class PriceAssistantProxyTest extends TestCase
         self::assertSame('session-bundle-10-wp:savelloclub.test:77', $GLOBALS['_cb_test_http_calls'][0]['args']['headers']['Idempotency-Key']);
     }
 
+    public function test_immediate_import_proxies_only_sanitized_items_through_sync_session_flow(): void
+    {
+        $responses = array(
+            array(
+                'body' => '{"sync_session_id":501,"status":"started"}',
+                'response' => array('code' => 201, 'message' => 'Created'),
+                'headers' => array(),
+            ),
+            array(
+                'body' => '{"accepted":1}',
+                'response' => array('code' => 202, 'message' => 'Accepted'),
+                'headers' => array(),
+            ),
+            array(
+                'body' => '{"sync_session_id":501,"status":"sync ok"}',
+                'response' => array('code' => 200, 'message' => 'OK'),
+                'headers' => array(),
+            ),
+        );
+        $GLOBALS['_cb_test_http_response_callback'] = static function () use (&$responses): array {
+            return array_shift($responses);
+        };
+
+        $controller = new Cashback_Price_Assistant_REST_Controller(
+            new Cashback_Price_Assistant_Proxy_Client(static fn(): int => 1781516800)
+        );
+        self::assertTrue(
+            method_exists($controller, 'immediate_import'),
+            'Price Assistant REST controller must expose immediate_import().'
+        );
+
+        $request = $this->request(
+            'POST',
+            '/cashback/v1/price-assistant/connections/10/immediate-import',
+            array(
+                'marketplace' => 'ozon',
+                'consent' => true,
+                'collection_type' => 'cart',
+                'captured_at' => '2026-06-15T10:00:00Z',
+                'items' => array(
+                    array(
+                        'source_item_id' => 'sku-1',
+                        'title' => 'Phone',
+                        'url' => 'https://www.ozon.ru/product/phone-1/',
+                        'price' => 19990,
+                        'currency' => 'RUB',
+                        'quantity' => 2,
+                        'raw_html' => '<html>secret</html>',
+                        'localStorage' => array('secret' => 'drop'),
+                        'sessionStorage' => array('secret' => 'drop'),
+                        'password' => 'drop',
+                        'cookies' => array(array('name' => 'drop', 'value' => 'secret')),
+                    ),
+                ),
+            )
+        );
+        $request->set_param('connection_id', 10);
+
+        $response = $controller->immediate_import($request);
+
+        self::assertSame(200, $response->get_status());
+        self::assertCount(3, $GLOBALS['_cb_test_http_calls']);
+        self::assertSame('https://price-monitor.test/v1/sync-sessions', $GLOBALS['_cb_test_http_calls'][0]['url']);
+        self::assertSame('https://price-monitor.test/v1/sync-sessions/501/items', $GLOBALS['_cb_test_http_calls'][1]['url']);
+        self::assertSame('https://price-monitor.test/v1/sync-sessions/501/finish', $GLOBALS['_cb_test_http_calls'][2]['url']);
+
+        $session_body = json_decode((string) $GLOBALS['_cb_test_http_calls'][0]['args']['body'], true);
+        $items_body = json_decode((string) $GLOBALS['_cb_test_http_calls'][1]['args']['body'], true);
+        $encoded_items = wp_json_encode($items_body);
+
+        self::assertSame('wp:savelloclub.test:77', $session_body['external_user_id']);
+        self::assertSame(10, $session_body['connection_id']);
+        self::assertSame('cart', $session_body['collection_type']);
+        self::assertSame('sku-1', $items_body['items'][0]['source_item_id']);
+        self::assertSame('Phone', $items_body['items'][0]['title']);
+        self::assertStringNotContainsString('raw_html', $encoded_items);
+        self::assertStringNotContainsString('localStorage', $encoded_items);
+        self::assertStringNotContainsString('sessionStorage', $encoded_items);
+        self::assertStringNotContainsString('password', $encoded_items);
+        self::assertStringNotContainsString('cookies', $encoded_items);
+    }
+
     public function test_connection_requests_are_scoped_to_current_wordpress_user(): void
     {
         $controller = new Cashback_Price_Assistant_REST_Controller(
@@ -301,6 +383,18 @@ final class PriceAssistantProxyTest extends TestCase
         );
         self::assertArrayNotHasKey('price_monitor_base_url', $data);
         self::assertArrayNotHasKey('hmac_secret', $data);
+        self::assertArrayHasKey('connector', $data);
+        self::assertSame('browser_cookies_api_after_explicit_consent', $data['connector']['mode']);
+
+        foreach ($data['marketplaces'] as $marketplace) {
+            self::assertArrayHasKey('page_urls', $marketplace);
+            self::assertArrayHasKey('login', $marketplace['page_urls']);
+            self::assertArrayHasKey('cart', $marketplace['page_urls']);
+            self::assertArrayHasKey('favorites', $marketplace['page_urls']);
+            self::assertArrayHasKey('allowlist', $marketplace);
+            self::assertSame(array(), $marketplace['allowlist']['cookies']);
+            self::assertSame(array(), $marketplace['allowlist']['tokens']);
+        }
     }
 
     private function request(string $method, string $route, array $body = array()): WP_REST_Request
