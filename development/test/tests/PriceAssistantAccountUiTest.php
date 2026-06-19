@@ -47,7 +47,18 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('data-price-assistant-status="sync ok"', $html);
         self::assertStringContainsString('data-price-assistant-status="reconnect_required"', $html);
         self::assertStringContainsString('data-price-assistant-status="disconnected"', $html);
-        self::assertStringNotContainsString('<input', $html);
+        self::assertStringContainsString('data-price-assistant-add-form', $html);
+        self::assertStringContainsString('data-price-assistant-region-form', $html);
+        self::assertStringContainsString('data-price-assistant-manual-list', $html);
+        self::assertStringContainsString('data-price-assistant-collection-list="cart"', $html);
+        self::assertStringContainsString('data-price-assistant-collection-list="favorites"', $html);
+        self::assertStringContainsString('data-price-assistant-chart', $html);
+        self::assertStringContainsString('data-price-assistant-compare', $html);
+        self::assertStringContainsString('data-price-assistant-target-price', $html);
+        self::assertStringContainsString('data-price-assistant-target-effective-price', $html);
+        self::assertStringContainsString('data-price-assistant-disconnect', $html);
+        self::assertStringContainsString('data-price-assistant-delete-import', $html);
+        self::assertStringNotContainsString('type="password"', strtolower($html));
         self::assertStringNotContainsString('password', strtolower($html));
     }
 
@@ -74,5 +85,8 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertArrayHasKey('favorites', $config['marketplaces']['ozon']['page_urls']);
         self::assertArrayNotHasKey('hmac_secret', $config);
         self::assertArrayNotHasKey('price_monitor_base_url', $config);
+        self::assertArrayNotHasKey('cookies', $config);
+        self::assertArrayNotHasKey('tokens', $config);
+        self::assertArrayNotHasKey('ciphertext', $config);
     }
 }

@@ -226,8 +226,19 @@ final class PriceAssistantProxyTest extends TestCase
         self::assertSame('wp:savelloclub.test:77', $session_body['external_user_id']);
         self::assertSame(10, $session_body['connection_id']);
         self::assertSame('cart', $session_body['collection_type']);
-        self::assertSame('sku-1', $items_body['items'][0]['source_item_id']);
+        self::assertArrayNotHasKey('marketplace', $session_body);
+        self::assertArrayNotHasKey('mode', $session_body);
+        self::assertSame('sku-1', $items_body['items'][0]['external_item_id']);
+        self::assertSame('https://www.ozon.ru/product/phone-1/', $items_body['items'][0]['product_url']);
         self::assertSame('Phone', $items_body['items'][0]['title']);
+        self::assertArrayNotHasKey('connection_id', $items_body);
+        self::assertArrayNotHasKey('marketplace', $items_body);
+        self::assertArrayNotHasKey('collection_type', $items_body);
+        $finish_body = json_decode((string) $GLOBALS['_cb_test_http_calls'][2]['args']['body'], true);
+        self::assertSame('succeeded', $finish_body['status']);
+        self::assertArrayNotHasKey('connection_id', $finish_body);
+        self::assertArrayNotHasKey('marketplace', $finish_body);
+        self::assertArrayNotHasKey('collection_type', $finish_body);
         self::assertStringNotContainsString('raw_html', $encoded_items);
         self::assertStringNotContainsString('localStorage', $encoded_items);
         self::assertStringNotContainsString('sessionStorage', $encoded_items);
@@ -344,6 +355,108 @@ final class PriceAssistantProxyTest extends TestCase
             'https://price-monitor.test/v1/products/44/compare?site_id=savelloclub.test&external_user_id=wp%3Asavelloclub.test%3A77',
             $urls[3]
         );
+    }
+
+    public function test_user_cabinet_write_routes_proxy_owner_scoped_payloads(): void
+    {
+        $responses = array(
+            array(
+                'body' => '{"subscription_id":77,"tracked_product_id":44,"result":"created"}',
+                'response' => array('code' => 200, 'message' => 'OK'),
+                'headers' => array(),
+            ),
+            array(
+                'body' => '{"subscription_id":77,"target_price":"1200.00","target_effective_price":"1000.00"}',
+                'response' => array('code' => 200, 'message' => 'OK'),
+                'headers' => array(),
+            ),
+            array(
+                'body' => '{"cashback_url":"https:\/\/go.example\/cb","link_type":"deeplink","cashback_status":"partner_exact"}',
+                'response' => array('code' => 200, 'message' => 'OK'),
+                'headers' => array(),
+            ),
+            array(
+                'body' => '{"subscription_id":77,"is_active":false}',
+                'response' => array('code' => 200, 'message' => 'OK'),
+                'headers' => array(),
+            ),
+            array(
+                'body' => '{"region_code":"msk","country_code":"RU","is_default":true}',
+                'response' => array('code' => 200, 'message' => 'OK'),
+                'headers' => array(),
+            ),
+            array(
+                'body' => '{"collection_id":501,"status":"archived"}',
+                'response' => array('code' => 200, 'message' => 'OK'),
+                'headers' => array(),
+            ),
+        );
+        $GLOBALS['_cb_test_http_response_callback'] = static function () use (&$responses): array {
+            return array_shift($responses);
+        };
+        $controller = new Cashback_Price_Assistant_REST_Controller(
+            new Cashback_Price_Assistant_Proxy_Client(static fn(): int => 1781516800)
+        );
+
+        $create = $this->request('POST', '/cashback/v1/price-assistant/watchlist/items', array(
+            'product_url' => 'https://www.ozon.ru/product/phone-1/',
+            'target_price' => '1200.00',
+            'target_effective_price' => '1000.00',
+            'region_code' => 'msk',
+        ));
+        $patch = $this->request('PATCH', '/cashback/v1/price-assistant/watchlist/items/77', array(
+            'target_price' => '1100.00',
+            'target_effective_price' => '950.00',
+        ));
+        $patch->set_param('subscription_id', 77);
+        $cashback = $this->request('POST', '/cashback/v1/price-assistant/watchlist/items/77/cashback-link');
+        $cashback->set_param('subscription_id', 77);
+        $delete_item = $this->request('DELETE', '/cashback/v1/price-assistant/watchlist/items/77');
+        $delete_item->set_param('subscription_id', 77);
+        $region = $this->request('PATCH', '/cashback/v1/price-assistant/user-region', array(
+            'region_code' => 'msk',
+            'country_code' => 'RU',
+        ));
+        $delete_collection = $this->request('DELETE', '/cashback/v1/price-assistant/collections/501');
+        $delete_collection->set_param('collection_id', 501);
+
+        $controller->create_watchlist_item($create);
+        $controller->update_watchlist_item($patch);
+        $controller->create_cashback_link($cashback);
+        $controller->delete_watchlist_item($delete_item);
+        $controller->update_user_region($region);
+        $controller->delete_collection($delete_collection);
+
+        self::assertSame(
+            array(
+                'https://price-monitor.test/v1/watchlist/items',
+                'https://price-monitor.test/v1/watchlist/items/77?site_id=savelloclub.test&external_user_id=wp%3Asavelloclub.test%3A77',
+                'https://price-monitor.test/v1/watchlist/items/77/cashback-link',
+                'https://price-monitor.test/v1/watchlist/items/77?site_id=savelloclub.test&external_user_id=wp%3Asavelloclub.test%3A77',
+                'https://price-monitor.test/v1/user-region',
+                'https://price-monitor.test/v1/collections/501?site_id=savelloclub.test&external_user_id=wp%3Asavelloclub.test%3A77',
+            ),
+            array_column($GLOBALS['_cb_test_http_calls'], 'url')
+        );
+
+        $create_body = json_decode((string) $GLOBALS['_cb_test_http_calls'][0]['args']['body'], true);
+        $patch_body = json_decode((string) $GLOBALS['_cb_test_http_calls'][1]['args']['body'], true);
+        $cashback_body = json_decode((string) $GLOBALS['_cb_test_http_calls'][2]['args']['body'], true);
+        $region_body = json_decode((string) $GLOBALS['_cb_test_http_calls'][4]['args']['body'], true);
+
+        self::assertSame('savelloclub.test', $create_body['site_id']);
+        self::assertSame('wp:savelloclub.test:77', $create_body['external_user_id']);
+        self::assertSame('https://www.ozon.ru/product/phone-1/', $create_body['product_url']);
+        self::assertSame('1200.00', $create_body['target_price']);
+        self::assertSame('1000.00', $create_body['target_effective_price']);
+        self::assertSame('msk', $create_body['region_code']);
+        self::assertSame(array('target_price' => '1100.00', 'target_effective_price' => '950.00'), $patch_body);
+        self::assertSame(array('site_id' => 'savelloclub.test', 'external_user_id' => 'wp:savelloclub.test:77'), $cashback_body);
+        self::assertSame('msk', $region_body['region_code']);
+        self::assertSame('RU', $region_body['country_code']);
+        self::assertSame('watchlist-create-wp:savelloclub.test:77', $GLOBALS['_cb_test_http_calls'][0]['args']['headers']['Idempotency-Key']);
+        self::assertSame('watchlist-delete-77-wp:savelloclub.test:77', $GLOBALS['_cb_test_http_calls'][3]['args']['headers']['Idempotency-Key']);
+        self::assertSame('collection-delete-501-wp:savelloclub.test:77', $GLOBALS['_cb_test_http_calls'][5]['args']['headers']['Idempotency-Key']);
     }
 
     public function test_upstream_failure_returns_safe_502_without_internal_url_or_secret(): void

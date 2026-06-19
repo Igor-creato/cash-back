@@ -94,17 +94,16 @@ final class Cashback_Price_Assistant_REST_Controller {
             'permission_callback' => array( $this, 'check_read_permission' ),
         ));
 
-        register_rest_route(self::NAMESPACE, '/price-assistant/collections', array(
-            'methods'             => WP_REST_Server::READABLE,
-            'callback'            => array( $this, 'get_collections' ),
-            'permission_callback' => array( $this, 'check_read_permission' ),
-        ));
+        register_rest_route(self::NAMESPACE, '/price-assistant/collections', array( 'methods'             => WP_REST_Server::READABLE, 'callback'            => array( $this, 'get_collections' ), 'permission_callback' => array( $this, 'check_read_permission' ) ));
+register_rest_route(self::NAMESPACE, '/price-assistant/collections/(?P<collection_id>\d+)', array( 'methods'             => WP_REST_Server::DELETABLE, 'callback'            => array( $this, 'delete_collection' ), 'permission_callback' => array( $this, 'check_write_permission' ) ));
+register_rest_route(self::NAMESPACE, '/price-assistant/watchlist/items', array( array( 'methods'             => WP_REST_Server::READABLE, 'callback'            => array( $this, 'get_watchlist_items' ), 'permission_callback' => array( $this, 'check_read_permission' ) ), array( 'methods'             => WP_REST_Server::CREATABLE, 'callback'            => array( $this, 'create_watchlist_item' ), 'permission_callback' => array( $this, 'check_write_permission' ) ) ));
+register_rest_route(self::NAMESPACE, '/price-assistant/watchlist/items/(?P<subscription_id>\d+)', array( array( 'methods'             => WP_REST_Server::EDITABLE, 'callback'            => array( $this, 'update_watchlist_item' ), 'permission_callback' => array( $this, 'check_write_permission' ) ), array( 'methods'             => WP_REST_Server::DELETABLE, 'callback'            => array( $this, 'delete_watchlist_item' ), 'permission_callback' => array( $this, 'check_write_permission' ) ) ));
+register_rest_route(self::NAMESPACE, '/price-assistant/watchlist/items/(?P<subscription_id>\d+)/cashback-link', array( 'methods'             => WP_REST_Server::CREATABLE, 'callback'            => array( $this, 'create_cashback_link' ), 'permission_callback' => array( $this, 'check_write_permission' ) ));
+register_rest_route(self::NAMESPACE, '/price-assistant/user-region', array( 'methods'             => WP_REST_Server::EDITABLE, 'callback'            => array( $this, 'update_user_region' ), 'permission_callback' => array( $this, 'check_write_permission' ) ));
 
         register_rest_route(self::NAMESPACE, '/price-assistant/products/(?P<tracked_product_id>\d+)/chart', array(
-            'methods'             => WP_REST_Server::READABLE,
-            'callback'            => array( $this, 'get_chart' ),
-            'permission_callback' => array( $this, 'check_read_permission' ),
-        ));
+	'methods'             => WP_REST_Server::READABLE, 'callback'            => array( $this, 'get_chart' ), 'permission_callback' => array( $this, 'check_read_permission' ),
+));
 
         register_rest_route(self::NAMESPACE, '/price-assistant/products/(?P<tracked_product_id>\d+)/compare', array(
             'methods'             => WP_REST_Server::READABLE,
@@ -240,16 +239,7 @@ final class Cashback_Price_Assistant_REST_Controller {
 
         $captured_at = $this->string_param($request, 'captured_at', gmdate('Y-m-d\TH:i:s\Z'));
         $session = $this->client->request(
-            'POST',
-            '/v1/sync-sessions',
-            $this->owner_payload(array(
-                'connection_id'   => $connection_id,
-                'marketplace'     => $marketplace,
-                'collection_type' => $collection_type,
-                'mode'            => 'immediate_import',
-                'started_at'      => $captured_at,
-            )),
-            array(),
+            'POST', '/v1/sync-sessions', $this->owner_payload(array( 'connection_id'   => $connection_id, 'collection_type' => $collection_type, 'started_at'      => $captured_at )), array(),
             'sync-session-' . $connection_id . '-' . $collection_type . '-' . $this->external_user_id()
         );
         if ((int) ( $session['status'] ?? 502 ) < 200 || (int) ( $session['status'] ?? 502 ) >= 300) {
@@ -262,16 +252,7 @@ final class Cashback_Price_Assistant_REST_Controller {
         }
 
         $items_result = $this->client->request(
-            'POST',
-            '/v1/sync-sessions/' . $sync_session_id . '/items',
-            $this->owner_payload(array(
-                'connection_id'   => $connection_id,
-                'marketplace'     => $marketplace,
-                'collection_type' => $collection_type,
-                'items'           => $sanitized_items,
-                'captured_at'     => $captured_at,
-            )),
-            array(),
+            'POST', '/v1/sync-sessions/' . $sync_session_id . '/items', $this->owner_payload(array( 'items' => $sanitized_items )), array(),
             'sync-items-' . $sync_session_id . '-' . $this->external_user_id()
         );
         if ((int) ( $items_result['status'] ?? 502 ) < 200 || (int) ( $items_result['status'] ?? 502 ) >= 300) {
@@ -279,16 +260,7 @@ final class Cashback_Price_Assistant_REST_Controller {
         }
 
         return $this->proxy_result($this->client->request(
-            'POST',
-            '/v1/sync-sessions/' . $sync_session_id . '/finish',
-            $this->owner_payload(array(
-                'connection_id'   => $connection_id,
-                'marketplace'     => $marketplace,
-                'collection_type' => $collection_type,
-                'status'          => 'sync ok',
-                'finished_at'     => gmdate('Y-m-d\TH:i:s\Z'),
-            )),
-            array(),
+            'POST', '/v1/sync-sessions/' . $sync_session_id . '/finish', $this->owner_payload(array( 'status'      => 'succeeded', 'finished_at' => gmdate('Y-m-d\TH:i:s\Z') )), array(),
             'sync-finish-' . $sync_session_id . '-' . $this->external_user_id()
         ));
     }
@@ -310,8 +282,110 @@ final class Cashback_Price_Assistant_REST_Controller {
 
     public function get_collections( WP_REST_Request $request ): WP_REST_Response {
         unset($request);
-        return $this->proxy_get('/v1/collections');
-    }
+return $this->proxy_get('/v1/collections');
+}
+
+    public function delete_collection( WP_REST_Request $request ): WP_REST_Response {
+        $collection_id = absint($request->get_param('collection_id'));
+if ($collection_id <= 0) {
+return $this->error_response('invalid_collection_id', 400);
+}
+
+        return $this->proxy_result($this->client->request(
+            'DELETE', '/v1/collections/' . $collection_id, null, $this->owner_query(), 'collection-delete-' . $collection_id . '-' . $this->external_user_id()
+        ));
+}
+
+    public function get_watchlist_items( WP_REST_Request $request ): WP_REST_Response {
+        $query = $this->owner_query();
+foreach (array( 'active_only', 'limit' ) as $key) {
+$value = $request->get_param($key);
+if ($value !== null && $value !== '') {
+$query[ $key ] = sanitize_text_field((string) $value);
+}
+        }
+        return $this->proxy_result($this->client->request('GET', '/v1/watchlist/items', null, $query));
+}
+
+    public function create_watchlist_item( WP_REST_Request $request ): WP_REST_Response {
+        $product_url = esc_url_raw((string) $request->get_param('product_url'));
+if ($product_url === '') {
+return $this->error_response('invalid_product_url', 400);
+}
+
+        $payload = $this->owner_payload(array( 'product_url' => $product_url, 'region_code' => $this->string_param($request, 'region_code', 'default') ));
+foreach (array( 'target_price', 'target_effective_price' ) as $key) {
+$value = $this->decimal_string_param($request, $key);
+if ($value !== null) {
+$payload[ $key ] = $value;
+}
+        }
+
+        return $this->proxy_result($this->client->request(
+            'POST', '/v1/watchlist/items', $payload, array(), 'watchlist-create-' . $this->external_user_id()
+        ));
+}
+
+    public function update_watchlist_item( WP_REST_Request $request ): WP_REST_Response {
+        $subscription_id = absint($request->get_param('subscription_id'));
+if ($subscription_id <= 0) {
+return $this->error_response('invalid_subscription_id', 400);
+}
+
+        $payload = array();
+foreach (array( 'target_price', 'target_effective_price' ) as $key) {
+$value = $this->decimal_string_param($request, $key);
+if ($value !== null) {
+$payload[ $key ] = $value;
+}
+        }
+        if ($request->get_param('is_active') !== null) {
+$payload['is_active'] = (bool) $request->get_param('is_active');
+}
+
+        return $this->proxy_result($this->client->request(
+            'PATCH', '/v1/watchlist/items/' . $subscription_id, $payload, $this->owner_query(), 'watchlist-update-' . $subscription_id . '-' . $this->external_user_id()
+        ));
+}
+
+    public function delete_watchlist_item( WP_REST_Request $request ): WP_REST_Response {
+        $subscription_id = absint($request->get_param('subscription_id'));
+if ($subscription_id <= 0) {
+return $this->error_response('invalid_subscription_id', 400);
+}
+
+        return $this->proxy_result($this->client->request(
+            'DELETE', '/v1/watchlist/items/' . $subscription_id, null, $this->owner_query(), 'watchlist-delete-' . $subscription_id . '-' . $this->external_user_id()
+        ));
+}
+
+    public function create_cashback_link( WP_REST_Request $request ): WP_REST_Response {
+        $subscription_id = absint($request->get_param('subscription_id'));
+if ($subscription_id <= 0) {
+return $this->error_response('invalid_subscription_id', 400);
+}
+
+        return $this->proxy_result($this->client->request(
+            'POST', '/v1/watchlist/items/' . $subscription_id . '/cashback-link', $this->owner_payload(), array(), 'cashback-link-' . $subscription_id . '-' . $this->external_user_id()
+        ));
+}
+
+    public function update_user_region( WP_REST_Request $request ): WP_REST_Response {
+        $region_code = $this->string_param($request, 'region_code', '');
+if ($region_code === '') {
+return $this->error_response('invalid_region_code', 400);
+}
+
+        $payload = $this->owner_payload(array( 'region_code' => $region_code ));
+$country_code = $this->string_param($request, 'country_code', '');
+if ($country_code !== '') {
+$payload['country_code'] = strtoupper(substr($country_code, 0, 8));
+}
+
+        return $this->proxy_result($this->client->request(
+            'PATCH', '/v1/user-region', $payload, array(), 'user-region-' . $this->external_user_id()
+        ));
+}
 
     public function get_chart( WP_REST_Request $request ): WP_REST_Response {
         $product_id = absint($request->get_param('tracked_product_id'));
@@ -459,51 +533,85 @@ final class Cashback_Price_Assistant_REST_Controller {
 
     private function string_param( WP_REST_Request $request, string $key, string $fallback ): string {
         $value = $request->get_param($key);
-        if (! is_scalar($value)) {
-            return $fallback;
-        }
+if (! is_scalar($value)) {
+return $fallback;
+}
         $value = sanitize_text_field((string) $value);
         return $value === '' ? $fallback : $value;
-    }
+}
+
+    private function decimal_string_param( WP_REST_Request $request, string $key ): ?string {
+        $value = $request->get_param($key);
+if ($value === null || $value === '') {
+return null;
+}
+        if (! is_scalar($value) || ! is_numeric($value)) {
+return null;
+}
+        if ((float) $value < 0) {
+return null;
+}
+        return number_format((float) $value, 2, '.', '');
+}
 
     private function sanitize_import_item( mixed $item ): array {
         if (! is_array($item)) {
-            return array();
-        }
+return array();
+}
 
-        $sanitized = array();
-        foreach (array( 'source_item_id', 'product_id', 'sku', 'title', 'availability', 'collected_at' ) as $key) {
-            if (isset($item[ $key ]) && is_scalar($item[ $key ])) {
-                $value = sanitize_text_field((string) $item[ $key ]);
-                if ($value !== '') {
-                    $sanitized[ $key ] = substr($value, 0, 512);
-                }
-            }
-        }
+        $external_item_id = $this->first_text_value($item, array( 'external_item_id', 'source_item_id', 'product_id', 'sku' ), 191);
+$product_url      = $this->first_url_value($item, array( 'product_url', 'url', 'source_url' ));
+if ($external_item_id === '' || $product_url === '') {
+return array();
+}
 
-        foreach (array( 'url', 'image_url', 'source_url' ) as $key) {
-            if (isset($item[ $key ]) && is_scalar($item[ $key ])) {
-                $url = esc_url_raw((string) $item[ $key ]);
-                if ($url !== '') {
-                    $sanitized[ $key ] = $url;
-                }
-            }
-        }
-
-        if (isset($item['price']) && is_numeric($item['price'])) {
-            $sanitized['price'] = (float) $item['price'];
-        }
-        if (isset($item['currency']) && is_scalar($item['currency'])) {
-            $currency = strtoupper(sanitize_key((string) $item['currency']));
-            if ($currency !== '') {
-                $sanitized['currency'] = substr($currency, 0, 8);
-            }
-        }
+        $sanitized = array( 'external_item_id' => $external_item_id, 'product_url'      => $product_url );
+$source_product_id = $this->first_text_value($item, array( 'source_product_id', 'product_id', 'sku' ), 191);
+if ($source_product_id !== '') {
+$sanitized['source_product_id'] = $source_product_id;
+}
+        $title = $this->first_text_value($item, array( 'title' ), 512);
+if ($title !== '') {
+$sanitized['title'] = $title;
+}
         if (isset($item['quantity']) && is_numeric($item['quantity'])) {
-            $sanitized['quantity'] = max(1, absint($item['quantity']));
+$sanitized['quantity'] = max(1, absint($item['quantity']));
+}
+        $raw_json = array();
+foreach (array( 'price', 'currency', 'availability', 'image_url', 'collected_at' ) as $key) {
+if (isset($item[ $key ]) && is_scalar($item[ $key ])) {
+$raw_json[ $key ] = sanitize_text_field((string) $item[ $key ]);
+}
         }
+        if ($raw_json !== array()) {
+$sanitized['raw_json'] = $raw_json;
+}
 
         return $sanitized;
+}
+
+    private function first_text_value( array $item, array $keys, int $max_length ): string {
+        foreach ($keys as $key) {
+if (isset($item[ $key ]) && is_scalar($item[ $key ])) {
+$value = sanitize_text_field((string) $item[ $key ]);
+if ($value !== '') {
+return substr($value, 0, $max_length);
+}
+            }
+        }
+        return '';
+}
+
+    private function first_url_value( array $item, array $keys ): string {
+        foreach ($keys as $key) {
+if (isset($item[ $key ]) && is_scalar($item[ $key ])) {
+$value = esc_url_raw((string) $item[ $key ]);
+if ($value !== '') {
+return $value;
+}
+            }
+        }
+        return '';
     }
 
     private function sync_session_id( array $result ): int {
