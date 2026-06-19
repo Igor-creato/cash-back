@@ -1022,7 +1022,7 @@ class CashbackPlugin {
 // --- Price Assistant WordPress proxy + consent metadata ---
         $this->require_file('includes/services/class-price-assistant-proxy-client.php');
 $this->require_file('includes/rest/class-price-assistant-rest-controller.php');
-$this->require_file('includes/rest/class-price-assistant-admin-rest-controller.php');
+		$this->require_file('includes/rest/class-cashback-price-assistant-admin-rest-controller.php');
 $this->require_file('includes/class-price-assistant-account.php');
 $this->require_file('admin/class-cashback-price-assistant-admin.php');
 // --- Internal REST API для server-to-server price-monitor ---

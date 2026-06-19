@@ -23,11 +23,11 @@ final class PriceAssistantAdminSourcesTest extends TestCase
         }
 
         $root = dirname(__DIR__, 3);
-        self::assertFileExists($root . '/includes/rest/class-price-assistant-admin-rest-controller.php');
+		self::assertFileExists($root . '/includes/rest/class-cashback-price-assistant-admin-rest-controller.php');
         self::assertFileExists($root . '/admin/class-cashback-price-assistant-admin.php');
 
         require_once $root . '/includes/services/class-price-assistant-proxy-client.php';
-        require_once $root . '/includes/rest/class-price-assistant-admin-rest-controller.php';
+		require_once $root . '/includes/rest/class-cashback-price-assistant-admin-rest-controller.php';
         require_once $root . '/admin/class-cashback-price-assistant-admin.php';
 
         $GLOBALS['_cb_test_options'] = array();
