@@ -62,6 +62,39 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringNotContainsString('password', strtolower($html));
     }
 
+    public function test_account_menu_label_is_russian_and_preserves_logout_position(): void
+    {
+        self::assertFileExists($this->class_file, 'Price Assistant account UI class must exist.');
+        require_once $this->class_file;
+
+        $account = new Cashback_Price_Assistant_Account();
+        $items = $account->add_menu_item(array(
+            'dashboard'       => 'Dashboard',
+            'customer-logout' => 'Logout',
+        ));
+
+        self::assertSame('Мониторинг цен', $items['price-assistant']);
+        self::assertSame(array( 'dashboard', 'price-assistant', 'customer-logout' ), array_keys($items));
+    }
+
+    public function test_account_endpoint_schedules_one_shot_rewrite_flush_after_update(): void
+    {
+        self::assertFileExists($this->class_file, 'Price Assistant account UI class must exist.');
+        require_once $this->class_file;
+
+        $account = new Cashback_Price_Assistant_Account();
+
+        self::assertTrue(
+            method_exists($account, 'maybe_schedule_rewrite_flush'),
+            'Price Assistant account endpoint must schedule a one-shot rewrite flush after code updates to avoid /my-account/price-assistant/ 404.'
+        );
+
+        $account->maybe_schedule_rewrite_flush();
+
+        self::assertNotFalse(get_transient('cashback_flush_rewrite_rules'));
+        self::assertSame('price-assistant-account-v1', get_option('cashback_price_assistant_rewrite_version'));
+    }
+
     public function test_enqueue_assets_localizes_rest_and_connector_contract(): void
     {
         self::assertFileExists($this->class_file, 'Price Assistant account UI class must exist.');

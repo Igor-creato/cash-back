@@ -100,10 +100,7 @@ register_rest_route(self::NAMESPACE, '/price-assistant/watchlist/items', array( 
 register_rest_route(self::NAMESPACE, '/price-assistant/watchlist/items/(?P<subscription_id>\d+)', array( array( 'methods'             => WP_REST_Server::EDITABLE, 'callback'            => array( $this, 'update_watchlist_item' ), 'permission_callback' => array( $this, 'check_write_permission' ) ), array( 'methods'             => WP_REST_Server::DELETABLE, 'callback'            => array( $this, 'delete_watchlist_item' ), 'permission_callback' => array( $this, 'check_write_permission' ) ) ));
 register_rest_route(self::NAMESPACE, '/price-assistant/watchlist/items/(?P<subscription_id>\d+)/cashback-link', array( 'methods'             => WP_REST_Server::CREATABLE, 'callback'            => array( $this, 'create_cashback_link' ), 'permission_callback' => array( $this, 'check_write_permission' ) ));
 register_rest_route(self::NAMESPACE, '/price-assistant/user-region', array( 'methods'             => WP_REST_Server::EDITABLE, 'callback'            => array( $this, 'update_user_region' ), 'permission_callback' => array( $this, 'check_write_permission' ) ));
-
-        register_rest_route(self::NAMESPACE, '/price-assistant/products/(?P<tracked_product_id>\d+)/chart', array(
-	'methods'             => WP_REST_Server::READABLE, 'callback'            => array( $this, 'get_chart' ), 'permission_callback' => array( $this, 'check_read_permission' ),
-));
+register_rest_route(self::NAMESPACE, '/price-assistant/products/(?P<tracked_product_id>\d+)/chart', array( 'methods'             => WP_REST_Server::READABLE, 'callback'            => array( $this, 'get_chart' ), 'permission_callback' => array( $this, 'check_read_permission' ) ));
 
         register_rest_route(self::NAMESPACE, '/price-assistant/products/(?P<tracked_product_id>\d+)/compare', array(
             'methods'             => WP_REST_Server::READABLE,

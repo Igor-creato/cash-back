@@ -10,12 +10,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class Cashback_Price_Assistant_Account {
 
     private const ENDPOINT = 'price-assistant';
+    private const REWRITE_VERSION = 'price-assistant-account-v1';
+    private const REWRITE_VERSION_OPTION = 'cashback_price_assistant_rewrite_version';
     private const SCRIPT_HANDLE = 'cashback-price-assistant-account';
 
     public static function init(): void {
         $account = new self();
 
         add_action('init', array( $account, 'register_endpoint' ));
+        add_action('init', array( $account, 'maybe_schedule_rewrite_flush' ), 20);
         add_action('wp_enqueue_scripts', array( $account, 'enqueue_assets' ));
         add_filter('woocommerce_account_menu_items', array( $account, 'add_menu_item' ));
         add_action('woocommerce_account_' . self::ENDPOINT . '_endpoint', array( $account, 'render_endpoint' ));
@@ -25,8 +28,17 @@ final class Cashback_Price_Assistant_Account {
         add_rewrite_endpoint(self::ENDPOINT, EP_ROOT | EP_PAGES);
     }
 
+    public function maybe_schedule_rewrite_flush(): void {
+        if ( get_option( self::REWRITE_VERSION_OPTION, '' ) === self::REWRITE_VERSION ) {
+            return;
+        }
+
+        set_transient('cashback_flush_rewrite_rules', 1, HOUR_IN_SECONDS);
+        update_option(self::REWRITE_VERSION_OPTION, self::REWRITE_VERSION);
+    }
+
     public function add_menu_item( array $items ): array {
-        $label = __('Price Assistant', 'cashback');
+        $label = __('Мониторинг цен', 'cashback');
         if ( isset( $items['customer-logout'] ) ) {
             $logout = $items['customer-logout'];
             unset($items['customer-logout']);
@@ -76,7 +88,7 @@ final class Cashback_Price_Assistant_Account {
         ?>
         <section class="cashback-price-assistant" data-price-assistant-account>
             <header class="cashback-price-assistant__header">
-                <h2><?php echo esc_html(__('Price Assistant', 'cashback')); ?></h2>
+                <h2><?php echo esc_html(__('Мониторинг цен', 'cashback')); ?></h2>
                 <p><?php echo esc_html(__('Подключите корзину или избранное маркетплейса после входа на настоящей странице магазина и явного согласия.', 'cashback')); ?></p>
             </header>
 
