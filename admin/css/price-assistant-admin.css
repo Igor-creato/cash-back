@@ -1,0 +1,58 @@
+.cashback-price-assistant-admin .nav-tab-wrapper {
+  margin-top: 16px;
+}
+
+.cashback-price-assistant-admin .nav-tab {
+  cursor: pointer;
+}
+
+.cashback-pa-panel {
+  display: none;
+  padding-top: 16px;
+}
+
+.cashback-pa-panel.is-active {
+  display: block;
+}
+
+.cashback-pa-toolbar {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+
+.cashback-pa-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  max-width: 1100px;
+  margin: 0 0 18px;
+}
+
+.cashback-pa-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cashback-pa-grid input,
+.cashback-pa-grid select,
+.cashback-pa-grid textarea {
+  width: 100%;
+  max-width: 100%;
+}
+
+.cashback-pa-grid .cashback-pa-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.cashback-pa-grid .cashback-pa-check input {
+  width: auto;
+}
+
+.cashback-pa-table {
+  max-width: 1200px;
+  overflow-x: auto;
+}
