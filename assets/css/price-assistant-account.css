@@ -1,34 +1,130 @@
 .cashback-price-assistant {
-  --pa-ink: #1d2327;
-  --pa-muted: #646970;
-  --pa-line: #dcdcde;
-  --pa-soft: #f6f7f7;
+  --pa-ink: #1f2328;
+  --pa-muted: #68707a;
+  --pa-line: #e4e7ec;
+  --pa-soft: #f6f7f9;
+  --pa-panel: #ffffff;
+  --pa-accent: #f2c94c;
   --pa-good: #0a7f42;
-  --pa-warn: #b45309;
-  --pa-accent: #2458a6;
-  display: grid;
-  gap: 18px;
+  --pa-warn: #a15c00;
+  background: linear-gradient(180deg, #f5c84d 0, #ffffff 170px);
   color: var(--pa-ink);
+  display: grid;
+  gap: 16px;
+  margin: -12px -12px 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  padding: 22px 12px 28px;
+}
+
+.cashback-price-assistant *,
+.cashback-price-assistant *::before,
+.cashback-price-assistant *::after {
+  box-sizing: border-box;
+}
+
+.cashback-price-assistant__topbar,
+.cashback-price-assistant__header,
+.cashback-price-assistant__settings,
+.cashback-price-assistant__notice,
+.cashback-price-assistant__search-results,
+.cashback-price-assistant__statuses,
+.cashback-price-assistant__tabs,
+.cashback-price-assistant__marketplaces,
+.cashback-price-assistant__workspace {
+  margin-left: auto;
+  margin-right: auto;
+  width: min(100%, 980px);
+}
+
+.cashback-price-assistant__search {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 999px;
+  box-shadow: 0 10px 26px rgba(31, 35, 40, 0.12);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 58px;
+  padding: 8px 10px 8px 18px;
+}
+
+.cashback-price-assistant__search-icon {
+  color: #8b949e;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cashback-price-assistant__search input {
+  border: 0;
+  box-shadow: none;
+  font-size: 18px;
+  min-width: 0;
+  outline: 0;
+  width: 100%;
+}
+
+.cashback-price-assistant__header {
+  align-items: start;
+  background: var(--pa-panel);
+  border: 1px solid var(--pa-line);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 18px;
 }
 
 .cashback-price-assistant__header h2 {
+  font-size: clamp(26px, 5vw, 42px);
+  line-height: 1.08;
   margin: 0 0 8px;
 }
 
 .cashback-price-assistant__header p {
+  color: var(--pa-muted);
   margin: 0;
-  max-width: 720px;
+  max-width: 760px;
+}
+
+.cashback-price-assistant__settings-button {
+  white-space: nowrap;
+}
+
+.cashback-price-assistant__settings {
+  background: var(--pa-panel);
+  border: 1px solid var(--pa-line);
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.cashback-price-assistant__settings[hidden] {
+  display: none;
+}
+
+.cashback-price-assistant__track-options {
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin: 0;
+  padding: 0;
+}
+
+.cashback-price-assistant__track-options legend {
+  color: var(--pa-muted);
+  flex-basis: 100%;
+  font-weight: 700;
+  margin-bottom: 2px;
 }
 
 .cashback-price-assistant__toolbar,
 .cashback-price-assistant__workspace {
   display: grid;
   gap: 14px;
-}
-
-.cashback-price-assistant__toolbar {
-  grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr);
-  align-items: start;
 }
 
 .cashback-price-assistant__form {
@@ -73,24 +169,51 @@
 
 .cashback-price-assistant__statuses,
 .cashback-price-assistant__marketplaces,
-.cashback-price-assistant__actions {
+.cashback-price-assistant__actions,
+.cashback-price-assistant__tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
 
+.cashback-price-assistant__tabs {
+  border-bottom: 1px solid var(--pa-line);
+  gap: 0;
+  overflow-x: auto;
+  padding-bottom: 0;
+}
+
+.cashback-price-assistant__tabs button {
+  background: transparent;
+  border: 0;
+  border-bottom: 4px solid transparent;
+  color: var(--pa-muted);
+  cursor: pointer;
+  font-size: 17px;
+  font-weight: 700;
+  padding: 10px 18px 12px 0;
+  white-space: nowrap;
+}
+
+.cashback-price-assistant__tabs button.is-active {
+  border-bottom-color: var(--pa-ink);
+  color: var(--pa-ink);
+}
+
 .cashback-price-assistant__status {
   border: 1px solid var(--pa-line);
   border-radius: 6px;
-  padding: 6px 10px;
   font-size: 13px;
+  padding: 6px 10px;
 }
 
 .cashback-price-assistant__marketplace {
+  background: var(--pa-panel);
   border: 1px solid var(--pa-line);
   border-radius: 8px;
-  padding: 16px;
-  width: min(100%, 300px);
+  flex: 1 1 260px;
+  min-width: 0;
+  padding: 14px;
 }
 
 .cashback-price-assistant__marketplace h3,
@@ -102,45 +225,89 @@
   font-weight: 600;
 }
 
-.cashback-price-assistant__workspace {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.cashback-price-assistant__workspace,
+.cashback-price-assistant__search-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr;
 }
 
 .cashback-price-assistant__panel {
-  border-top: 2px solid var(--pa-line);
   display: grid;
   gap: 10px;
   min-width: 0;
-  padding-top: 12px;
 }
 
 .cashback-price-assistant__panel--wide {
-  grid-column: span 3;
+  background: var(--pa-panel);
+  border: 1px solid var(--pa-line);
+  border-radius: 8px;
+  padding: 14px;
 }
 
-.cashback-price-assistant__panel h3 {
-  font-size: 16px;
+.cashback-price-assistant__panel h3,
+.cashback-price-assistant__section-title {
+  font-size: 18px;
   margin: 0;
 }
 
 .cashback-price-assistant__list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   min-height: 72px;
 }
 
 .cashback-price-assistant__item {
+  background: var(--pa-panel);
   border: 1px solid var(--pa-line);
   border-radius: 8px;
   display: grid;
-  gap: 10px;
+  gap: 12px;
+  min-width: 0;
   padding: 12px;
+}
+
+.cashback-price-assistant__product-card {
+  grid-template-columns: 128px minmax(0, 1fr);
+}
+
+.cashback-price-assistant__item-media {
+  align-self: start;
+  aspect-ratio: 1;
+  background: var(--pa-soft);
+  border-radius: 8px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.cashback-price-assistant__item-media:empty::before {
+  align-items: center;
+  color: #9aa1aa;
+  content: "Фото";
+  display: flex;
+  font-size: 13px;
+  height: 100%;
+  justify-content: center;
+}
+
+.cashback-price-assistant__item-media img {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.cashback-price-assistant__item-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
 }
 
 .cashback-price-assistant__item-title {
   font-weight: 700;
   line-height: 1.35;
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .cashback-price-assistant__item-meta,
@@ -149,6 +316,7 @@
   color: var(--pa-muted);
   font-size: 13px;
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .cashback-price-assistant__error {
@@ -168,6 +336,11 @@
   min-width: 130px;
 }
 
+.cashback-price-assistant__item-actions .button {
+  border-radius: 999px;
+  min-height: 38px;
+}
+
 .cashback-price-assistant__chart svg {
   border: 1px solid var(--pa-line);
   border-radius: 8px;
@@ -178,7 +351,7 @@
 
 .cashback-price-assistant__chart-line {
   fill: none;
-  stroke: var(--pa-accent);
+  stroke: #2458a6;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 3;
@@ -202,7 +375,10 @@
 }
 
 .cashback-price-assistant__price {
-  font-weight: 700;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.1;
+  margin: 0;
 }
 
 .cashback-price-assistant__status-value--connected,
@@ -214,18 +390,43 @@
   color: var(--pa-warn);
 }
 
-@media (max-width: 900px) {
-  .cashback-price-assistant__toolbar,
-  .cashback-price-assistant__workspace {
-    grid-template-columns: 1fr;
+@media (min-width: 760px) {
+  .cashback-price-assistant {
+    border-radius: 8px;
+    margin: 0;
+    padding: 28px;
+  }
+
+  .cashback-price-assistant__workspace,
+  .cashback-price-assistant__search-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .cashback-price-assistant__panel--wide {
-    grid-column: auto;
+    grid-column: 1 / -1;
   }
+}
 
+@media (max-width: 700px) {
+  .cashback-price-assistant__header,
   .cashback-price-assistant__form,
   .cashback-price-assistant__region {
     grid-template-columns: 1fr;
+  }
+
+  .cashback-price-assistant__settings-button {
+    justify-self: start;
+  }
+
+  .cashback-price-assistant__product-card {
+    grid-template-columns: minmax(92px, 34%) minmax(0, 1fr);
+  }
+
+  .cashback-price-assistant__search {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .cashback-price-assistant__search-icon {
+    display: none;
   }
 }

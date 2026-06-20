@@ -12,9 +12,15 @@
   const state = {
     connections: {},
     regionCode: "default",
+    activeTab: "all",
   };
 
   const nodes = {
+    searchForm: root.querySelector("[data-price-assistant-search-form]"),
+    searchResults: root.querySelector("[data-price-assistant-search-results]"),
+    settings: root.querySelector("[data-price-assistant-settings]"),
+    settingsToggle: root.querySelector("[data-price-assistant-settings-toggle]"),
+    tabs: root.querySelector("[data-price-assistant-marketplace-tabs]"),
     addForm: root.querySelector("[data-price-assistant-add-form]"),
     regionForm: root.querySelector("[data-price-assistant-region-form]"),
     message: root.querySelector("[data-price-assistant-message]"),
@@ -187,6 +193,89 @@
     return String(value) + (currency ? " " + currency : "");
   }
 
+  function normalizeSource(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  }
+
+  function renderImage(parent, url, title) {
+    const media = document.createElement("div");
+    media.className = "cashback-price-assistant__item-media";
+    if (url) {
+      const image = document.createElement("img");
+      image.src = url;
+      image.alt = title || "Товар";
+      image.loading = "lazy";
+      media.appendChild(image);
+    }
+    parent.appendChild(media);
+  }
+
+  function appendProductActions(parent, item) {
+    const actions = document.createElement("div");
+    actions.className = "cashback-price-assistant__item-actions";
+
+    if (item.product_url || item.search_url) {
+      const link = document.createElement("a");
+      link.className = "button";
+      link.href = item.product_url || item.search_url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = item.is_fallback ? "Искать в магазине" : "Открыть";
+      actions.appendChild(link);
+    }
+
+    if (item.product_url) {
+      const cheaper = document.createElement("button");
+      cheaper.type = "button";
+      cheaper.className = "button";
+      cheaper.dataset.priceAssistantAction = "compare";
+      cheaper.dataset.trackedProductId = item.tracked_product_id || "";
+      cheaper.disabled = !item.tracked_product_id;
+      cheaper.textContent = "Найти дешевле";
+      actions.appendChild(cheaper);
+    }
+
+    parent.appendChild(actions);
+  }
+
+  function createProductCard(item, sourceCode) {
+    const card = document.createElement("article");
+    card.className = "cashback-price-assistant__item cashback-price-assistant__product-card";
+    card.dataset.priceAssistantSource = normalizeSource(sourceCode || item.source_code || item.source);
+    if (item.subscription_id) {
+      card.dataset.subscriptionId = item.subscription_id;
+    }
+    if (item.tracked_product_id) {
+      card.dataset.trackedProductId = item.tracked_product_id;
+    }
+
+    renderImage(card, item.image_url, item.title);
+
+    const body = document.createElement("div");
+    body.className = "cashback-price-assistant__item-body";
+    appendText(body, "p", money(item.price || item.current_price || item.last_price, item.currency), "cashback-price-assistant__price");
+    appendText(body, "p", item.title || item.product_url || item.external_item_id || "Товар", "cashback-price-assistant__item-title");
+    appendText(
+      body,
+      "p",
+      [
+        item.store_display_name || item.source_display_name || item.source || item.source_code,
+        item.match_label,
+        item.availability,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      "cashback-price-assistant__item-meta"
+    );
+    appendProductActions(body, item);
+    card.appendChild(body);
+
+    return card;
+  }
+
   function loadConnections() {
     return requestJson("/connections")
       .then(function (data) {
@@ -228,6 +317,53 @@
       });
   }
 
+  function searchProducts(event) {
+    event.preventDefault();
+    const query = formValue(nodes.searchForm, "q");
+    if (!query) {
+      setMessage("Введите название товара для поиска.", true);
+      return;
+    }
+    if (!nodes.searchResults) {
+      return;
+    }
+
+    setEmpty(nodes.searchResults, "Ищу по магазинам...");
+    const params = new URLSearchParams({
+      q: query,
+      region_code: state.regionCode || formValue(nodes.regionForm, "region_code") || "default",
+      limit: "20",
+    });
+
+    requestJson("/search?" + params.toString())
+      .then(function (data) {
+        renderSearchResults(data);
+      })
+      .catch(function (error) {
+        setEmpty(nodes.searchResults, "Не удалось выполнить поиск.");
+        setMessage(error.message || "Поиск недоступен.", true);
+      });
+  }
+
+  function renderSearchResults(data) {
+    clearNode(nodes.searchResults);
+    const items = Array.isArray(data.items) ? data.items : [];
+    const fallbacks = Array.isArray(data.fallbacks) ? data.fallbacks : [];
+    const all = items.concat(fallbacks);
+    if (!all.length) {
+      setEmpty(nodes.searchResults, "Подходящих магазинов пока нет.");
+      return;
+    }
+
+    appendText(nodes.searchResults, "h3", "Результаты поиска", "cashback-price-assistant__section-title");
+    const list = document.createElement("div");
+    list.className = "cashback-price-assistant__search-grid";
+    all.forEach(function (item) {
+      list.appendChild(createProductCard(item, item.source_code));
+    });
+    nodes.searchResults.appendChild(list);
+  }
+
   function renderWatchlist(items) {
     clearNode(nodes.manualList);
     if (!items.length) {
@@ -236,13 +372,18 @@
     }
     items.forEach(function (item) {
       const card = document.createElement("article");
-      card.className = "cashback-price-assistant__item";
+      card.className = "cashback-price-assistant__item cashback-price-assistant__product-card";
       card.dataset.subscriptionId = item.subscription_id;
       card.dataset.trackedProductId = item.tracked_product_id;
+      card.dataset.priceAssistantSource = normalizeSource(item.source || item.source_code);
 
-      appendText(card, "p", item.title || item.product_url || "Товар", "cashback-price-assistant__item-title");
+      renderImage(card, item.image_url, item.title);
+      const body = document.createElement("div");
+      body.className = "cashback-price-assistant__item-body";
+
+      appendText(body, "p", item.title || item.product_url || "Товар", "cashback-price-assistant__item-title");
       appendText(
-        card,
+        body,
         "p",
         [
           item.source_display_name || item.source,
@@ -266,7 +407,7 @@
         "Target effective",
         item.target_effective_price
       );
-      card.appendChild(targets);
+      body.appendChild(targets);
 
       const actions = document.createElement("div");
       actions.className = "cashback-price-assistant__item-actions";
@@ -275,7 +416,8 @@
       appendAction(actions, "compare", "Где дешевле");
       appendAction(actions, "cashback", "Перейти с кэшбэком");
       appendAction(actions, "remove-manual", "Удалить");
-      card.appendChild(actions);
+      body.appendChild(actions);
+      card.appendChild(body);
       nodes.manualList.appendChild(card);
     });
   }
@@ -340,37 +482,53 @@
       setEmpty(node, emptyText);
       return;
     }
+    let rendered = 0;
     collections.forEach(function (collection) {
-      const group = document.createElement("article");
-      group.className = "cashback-price-assistant__item";
-      appendText(
-        group,
-        "p",
-        (collection.source || "marketplace") + " · " + (collection.region_code || "default"),
-        "cashback-price-assistant__item-title"
-      );
-      (collection.items || []).forEach(function (item) {
+      const items = Array.isArray(collection.items) ? collection.items : [];
+      if (!items.length) {
+        return;
+      }
+      items.forEach(function (item, index) {
+        rendered += 1;
+        const card = createProductCard(
+          Object.assign({}, item, {
+            source: collection.source,
+            source_display_name: collection.source_display_name,
+            region_code: collection.region_code,
+            price: item.price || item.current_price || item.last_price,
+          }),
+          collection.source
+        );
         appendText(
-          group,
+          card.querySelector(".cashback-price-assistant__item-body") || card,
           "p",
-          (item.title || item.product_url || item.external_item_id) +
-            (item.quantity ? " × " + item.quantity : ""),
+          (collection.collection_type || "import") +
+            " · " +
+            (collection.region_code || "default") +
+            (item.quantity ? " · " + item.quantity + " шт." : ""),
           "cashback-price-assistant__item-meta"
         );
+        if (index === 0) {
+          const actions = card.querySelector(".cashback-price-assistant__item-actions");
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "button";
+          button.dataset.priceAssistantAction = "delete-import";
+          button.dataset.collectionId = collection.collection_id;
+          button.setAttribute("data-price-assistant-delete-import", "");
+          button.textContent = "Удалить историю импорта";
+          if (actions) {
+            actions.appendChild(button);
+          }
+        }
+        node.appendChild(card);
       });
-      const actions = document.createElement("div");
-      actions.className = "cashback-price-assistant__item-actions";
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "button";
-      button.dataset.priceAssistantAction = "delete-import";
-      button.dataset.collectionId = collection.collection_id;
-      button.setAttribute("data-price-assistant-delete-import", "");
-      button.textContent = "Удалить историю импорта";
-      actions.appendChild(button);
-      group.appendChild(actions);
-      node.appendChild(group);
     });
+    if (rendered === 0) {
+      setEmpty(node, emptyText);
+      return;
+    }
+    applyActiveTab();
   }
 
   function refreshCabinet() {
@@ -665,7 +823,78 @@
       });
   }
 
+  function applyActiveTab() {
+    const active = state.activeTab || "all";
+    root.querySelectorAll("[data-price-assistant-tab]").forEach(function (button) {
+      button.classList.toggle("is-active", button.getAttribute("data-price-assistant-tab") === active);
+    });
+    root.querySelectorAll("[data-price-assistant-source]").forEach(function (card) {
+      const source = normalizeSource(card.getAttribute("data-price-assistant-source"));
+      const show =
+        active === "all" ||
+        source === active ||
+        (active === "wildberries" && source === "wb") ||
+        (active === "yandex_market" && source === "yandex");
+      card.hidden = !show;
+    });
+  }
+
+  function toggleSettings() {
+    if (!nodes.settings || !nodes.settingsToggle) {
+      return;
+    }
+    const open = nodes.settings.hidden;
+    nodes.settings.hidden = !open;
+    nodes.settingsToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function loadTrackingSettings() {
+    if (!nodes.settings) {
+      return;
+    }
+    let saved = {};
+    try {
+      saved = JSON.parse(window.localStorage.getItem("cashbackPriceAssistantTracking") || "{}");
+    } catch (error) {
+      saved = {};
+    }
+    nodes.settings.querySelectorAll('input[type="checkbox"]').forEach(function (input) {
+      if (Object.prototype.hasOwnProperty.call(saved, input.name)) {
+        input.checked = Boolean(saved[input.name]);
+      }
+    });
+  }
+
+  function saveTrackingSettings(changedInput) {
+    if (!nodes.settings) {
+      return;
+    }
+    if (changedInput && changedInput.name === "track_all") {
+      nodes.settings.querySelectorAll('input[type="checkbox"]:not([name="track_all"])').forEach(function (input) {
+        input.checked = changedInput.checked;
+      });
+    }
+    const next = {};
+    nodes.settings.querySelectorAll('input[type="checkbox"]').forEach(function (input) {
+      next[input.name] = input.checked;
+    });
+    window.localStorage.setItem("cashbackPriceAssistantTracking", JSON.stringify(next));
+  }
+
   root.addEventListener("click", function (event) {
+    const settingsButton = event.target.closest("[data-price-assistant-settings-toggle]");
+    if (settingsButton) {
+      toggleSettings();
+      return;
+    }
+
+    const tabButton = event.target.closest("[data-price-assistant-tab]");
+    if (tabButton) {
+      state.activeTab = tabButton.getAttribute("data-price-assistant-tab") || "all";
+      applyActiveTab();
+      return;
+    }
+
     const actionButton = event.target.closest("[data-price-assistant-action]");
     if (actionButton) {
       handleItemAction(actionButton);
@@ -726,8 +955,19 @@
   if (nodes.addForm) {
     nodes.addForm.addEventListener("submit", addWatchlistItem);
   }
+  if (nodes.searchForm) {
+    nodes.searchForm.addEventListener("submit", searchProducts);
+  }
   if (nodes.regionForm) {
     nodes.regionForm.addEventListener("submit", updateRegion);
+  }
+  if (nodes.settings) {
+    loadTrackingSettings();
+    nodes.settings.addEventListener("change", function (event) {
+      if (event.target && event.target.matches('input[type="checkbox"]')) {
+        saveTrackingSettings(event.target);
+      }
+    });
   }
 
   window.addEventListener("message", function (event) {

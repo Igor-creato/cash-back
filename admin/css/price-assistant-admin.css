@@ -21,6 +21,10 @@
   margin: 12px 0 16px;
 }
 
+.cashback-pa-help {
+  max-width: 960px;
+}
+
 .cashback-pa-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -55,4 +59,26 @@
 .cashback-pa-table {
   max-width: 1200px;
   overflow-x: auto;
+}
+
+.cashback-pa-table tr.is-selected td {
+  background: #fff8d8;
+}
+
+.cashback-pa-source-details {
+  display: grid;
+  gap: 8px;
+  min-width: 280px;
+}
+
+.cashback-pa-source-detail {
+  border: 1px solid #dcdcde;
+  border-radius: 6px;
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+}
+
+.cashback-pa-source-detail span {
+  overflow-wrap: anywhere;
 }

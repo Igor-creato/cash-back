@@ -122,6 +122,10 @@ final class Cashback_Price_Assistant_Admin {
 			<div id="cashback-pa-admin-notice" class="notice" hidden><p></p></div>
 
 			<section class="cashback-pa-panel is-active" data-price-assistant-panel="stores">
+				<p class="description cashback-pa-help">
+					<?php echo esc_html__( 'поиск работает по включённым доменам/источникам; корзина и избранное только Ozon/Wildberries/Яндекс Маркет. Добавление credential proxy endpoints вынесено в отдельный security-этап.', 'cashback' ); ?>
+				</p>
+
 				<div class="cashback-pa-toolbar">
 					<button type="button" class="button button-primary" data-pa-action="add-store">
 						<?php echo esc_html__( 'Добавить магазин', 'cashback' ); ?>
@@ -154,6 +158,12 @@ final class Cashback_Price_Assistant_Admin {
 				</form>
 
 				<form class="cashback-pa-grid" data-pa-source-form>
+					<label>
+						<span><?php echo esc_html__( 'Магазин для источника', 'cashback' ); ?></span>
+						<select name="store_id" data-pa-store-select>
+							<option value=""><?php echo esc_html__( 'Сначала загрузите или выберите магазин', 'cashback' ); ?></option>
+						</select>
+					</label>
 					<label>
 						<span><?php echo esc_html__( 'Код источника', 'cashback' ); ?></span>
 						<input type="text" name="source_code" autocomplete="off" />

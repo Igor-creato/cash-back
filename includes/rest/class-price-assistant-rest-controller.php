@@ -88,13 +88,9 @@ final class Cashback_Price_Assistant_REST_Controller {
             'permission_callback' => array( $this, 'check_write_permission' ),
         ));
 
-        register_rest_route(self::NAMESPACE, '/price-assistant/sync-status', array(
-            'methods'             => WP_REST_Server::READABLE,
-            'callback'            => array( $this, 'list_connections' ),
-            'permission_callback' => array( $this, 'check_read_permission' ),
-        ));
-
-        register_rest_route(self::NAMESPACE, '/price-assistant/collections', array( 'methods'             => WP_REST_Server::READABLE, 'callback'            => array( $this, 'get_collections' ), 'permission_callback' => array( $this, 'check_read_permission' ) ));
+        register_rest_route(self::NAMESPACE, '/price-assistant/sync-status', array( 'methods'             => WP_REST_Server::READABLE, 'callback'            => array( $this, 'list_connections' ), 'permission_callback' => array( $this, 'check_read_permission' ) ));
+register_rest_route(self::NAMESPACE, '/price-assistant/search', array( 'methods'             => WP_REST_Server::READABLE, 'callback'            => array( $this, 'search_products' ), 'permission_callback' => array( $this, 'check_read_permission' ) ));
+register_rest_route(self::NAMESPACE, '/price-assistant/collections', array( 'methods'             => WP_REST_Server::READABLE, 'callback'            => array( $this, 'get_collections' ), 'permission_callback' => array( $this, 'check_read_permission' ) ));
 register_rest_route(self::NAMESPACE, '/price-assistant/collections/(?P<collection_id>\d+)', array( 'methods'             => WP_REST_Server::DELETABLE, 'callback'            => array( $this, 'delete_collection' ), 'permission_callback' => array( $this, 'check_write_permission' ) ));
 register_rest_route(self::NAMESPACE, '/price-assistant/watchlist/items', array( array( 'methods'             => WP_REST_Server::READABLE, 'callback'            => array( $this, 'get_watchlist_items' ), 'permission_callback' => array( $this, 'check_read_permission' ) ), array( 'methods'             => WP_REST_Server::CREATABLE, 'callback'            => array( $this, 'create_watchlist_item' ), 'permission_callback' => array( $this, 'check_write_permission' ) ) ));
 register_rest_route(self::NAMESPACE, '/price-assistant/watchlist/items/(?P<subscription_id>\d+)', array( array( 'methods'             => WP_REST_Server::EDITABLE, 'callback'            => array( $this, 'update_watchlist_item' ), 'permission_callback' => array( $this, 'check_write_permission' ) ), array( 'methods'             => WP_REST_Server::DELETABLE, 'callback'            => array( $this, 'delete_watchlist_item' ), 'permission_callback' => array( $this, 'check_write_permission' ) ) ));
@@ -257,8 +253,7 @@ register_rest_route(self::NAMESPACE, '/price-assistant/products/(?P<tracked_prod
         }
 
         return $this->proxy_result($this->client->request(
-            'POST', '/v1/sync-sessions/' . $sync_session_id . '/finish', $this->owner_payload(array( 'status'      => 'succeeded', 'finished_at' => gmdate('Y-m-d\TH:i:s\Z') )), array(),
-            'sync-finish-' . $sync_session_id . '-' . $this->external_user_id()
+            'POST', '/v1/sync-sessions/' . $sync_session_id . '/finish', $this->owner_payload(array( 'status'      => 'succeeded', 'finished_at' => gmdate('Y-m-d\TH:i:s\Z') )), array(), 'sync-finish-' . $sync_session_id . '-' . $this->external_user_id()
         ));
     }
 
@@ -281,6 +276,26 @@ register_rest_route(self::NAMESPACE, '/price-assistant/products/(?P<tracked_prod
         unset($request);
 return $this->proxy_get('/v1/collections');
 }
+
+    public function search_products( WP_REST_Request $request ): WP_REST_Response {
+        $query_text = $this->string_param($request, 'q', '');
+if ($query_text === '') {
+return $this->error_response('invalid_search_query', 400);
+}
+
+        $query = $this->owner_query();
+$query['q'] = $query_text;
+foreach (array( 'region_code', 'limit' ) as $key) {
+$value = $request->get_param($key);
+if ($value !== null && $value !== '') {
+$query[ $key ] = sanitize_text_field((string) $value);
+}
+        }
+
+        return $this->proxy_result($this->client->request(
+            'GET', '/v1/price-assistant/search', null, $query
+        ));
+    }
 
     public function delete_collection( WP_REST_Request $request ): WP_REST_Response {
         $collection_id = absint($request->get_param('collection_id'));

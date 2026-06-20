@@ -326,6 +326,12 @@ final class PriceAssistantProxyTest extends TestCase
         $controller->list_connections($this->request('GET', '/cashback/v1/price-assistant/sync-status'));
         $controller->get_collections($this->request('GET', '/cashback/v1/price-assistant/collections'));
 
+        $search = $this->request('GET', '/cashback/v1/price-assistant/search');
+        $search->set_param('q', 'смартфон iPhone 15');
+        $search->set_param('region_code', 'msk');
+        $search->set_param('limit', 10);
+        $controller->search_products($search);
+
         $chart = $this->request('GET', '/cashback/v1/price-assistant/products/44/chart');
         $chart->set_param('tracked_product_id', 44);
         $chart->set_param('days', 14);
@@ -348,12 +354,16 @@ final class PriceAssistantProxyTest extends TestCase
             $urls[1]
         );
         self::assertSame(
-            'https://price-monitor.test/v1/products/44/price-chart?site_id=savelloclub.test&external_user_id=wp%3Asavelloclub.test%3A77&days=14&granularity=daily&currency=RUB',
+            'https://price-monitor.test/v1/price-assistant/search?site_id=savelloclub.test&external_user_id=wp%3Asavelloclub.test%3A77&q=%D1%81%D0%BC%D0%B0%D1%80%D1%82%D1%84%D0%BE%D0%BD+iPhone+15&region_code=msk&limit=10',
             $urls[2]
         );
         self::assertSame(
-            'https://price-monitor.test/v1/products/44/compare?site_id=savelloclub.test&external_user_id=wp%3Asavelloclub.test%3A77',
+            'https://price-monitor.test/v1/products/44/price-chart?site_id=savelloclub.test&external_user_id=wp%3Asavelloclub.test%3A77&days=14&granularity=daily&currency=RUB',
             $urls[3]
+        );
+        self::assertSame(
+            'https://price-monitor.test/v1/products/44/compare?site_id=savelloclub.test&external_user_id=wp%3Asavelloclub.test%3A77',
+            $urls[4]
         );
     }
 

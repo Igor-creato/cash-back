@@ -43,6 +43,18 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('data-marketplace="ozon"', $html);
         self::assertStringContainsString('data-marketplace="wildberries"', $html);
         self::assertStringContainsString('data-marketplace="yandex_market"', $html);
+        self::assertStringContainsString('data-price-assistant-search-form', $html);
+        self::assertStringContainsString('data-price-assistant-search-results', $html);
+        self::assertStringContainsString('data-price-assistant-marketplace-tabs', $html);
+        self::assertStringContainsString('data-price-assistant-tab="all"', $html);
+        self::assertStringContainsString('data-price-assistant-tab="wildberries"', $html);
+        self::assertStringContainsString('data-price-assistant-tab="ozon"', $html);
+        self::assertStringContainsString('data-price-assistant-tab="yandex_market"', $html);
+        self::assertStringContainsString('data-price-assistant-settings', $html);
+        self::assertStringContainsString('name="track_cart"', $html);
+        self::assertStringContainsString('name="track_favorites"', $html);
+        self::assertStringContainsString('name="track_manual"', $html);
+        self::assertStringContainsString('name="track_all"', $html);
         self::assertStringContainsString('data-price-assistant-status="connected"', $html);
         self::assertStringContainsString('data-price-assistant-status="sync ok"', $html);
         self::assertStringContainsString('data-price-assistant-status="reconnect_required"', $html);

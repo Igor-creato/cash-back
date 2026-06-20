@@ -7,6 +7,10 @@
 
   const labels = config.labels || {};
   const notice = document.getElementById('cashback-pa-admin-notice');
+  const state = {
+    stores: [],
+    selectedStoreId: '',
+  };
 
   function showNotice(message, isError) {
     if (!notice) {
@@ -65,6 +69,11 @@
     if (!target) {
       return;
     }
+    state.stores = items;
+    if (!state.selectedStoreId && items.length > 0) {
+      state.selectedStoreId = String(items[0].store_id || '');
+    }
+    renderStoreSelect();
     if (items.length === 0) {
       target.innerHTML = '<p>' + escapeHtml(labels.empty || 'Данных пока нет.') + '</p>';
       return;
@@ -75,14 +84,47 @@
       '</tr></thead><tbody>' +
       items.map(function (store) {
         const sources = Array.isArray(store.sources) ? store.sources : [];
-        return '<tr data-store-id="' + escapeHtml(store.store_id) + '">' +
+        const selected = String(store.store_id || '') === state.selectedStoreId;
+        return '<tr data-store-id="' + escapeHtml(store.store_id) + '" class="' + (selected ? 'is-selected' : '') + '">' +
           '<td>' + escapeHtml(store.display_name || '') + '</td>' +
           '<td>' + escapeHtml(store.store_code || '') + '</td>' +
           '<td>' + escapeHtml(store.enabled ? (labels.enabled || 'Включён') : (labels.disabled || 'Отключён')) + '</td>' +
-          '<td>' + escapeHtml(String(sources.length)) + '</td>' +
+          '<td>' + renderSourceDetails(sources) + '</td>' +
           '</tr>';
       }).join('') +
       '</tbody></table>';
+  }
+
+  function renderStoreSelect() {
+    const select = root.querySelector('[data-pa-store-select]');
+    if (!select) {
+      return;
+    }
+    select.innerHTML =
+      '<option value="">Выберите магазин</option>' +
+      state.stores.map(function (store) {
+        const id = String(store.store_id || '');
+        return '<option value="' + escapeHtml(id) + '"' + (id === state.selectedStoreId ? ' selected' : '') + '>' +
+          escapeHtml((store.display_name || store.store_code || 'Магазин') + ' #' + id) +
+          '</option>';
+      }).join('');
+  }
+
+  function renderSourceDetails(sources) {
+    if (!sources.length) {
+      return '<span class="description">Источники не добавлены</span>';
+    }
+    return '<div class="cashback-pa-source-details" data-pa-source-details>' +
+      sources.map(function (source) {
+        return '<div class="cashback-pa-source-detail">' +
+          '<strong>' + escapeHtml(source.display_name || source.source_code || 'Источник') + '</strong>' +
+          '<span>' + escapeHtml(source.enabled ? (labels.enabled || 'Включён') : (labels.disabled || 'Отключён')) + '</span>' +
+          '<span>Домены: ' + escapeHtml(formatValue(source.domains || [])) + '</span>' +
+          '<span>Search: ' + escapeHtml(source.search_template || '') + '</span>' +
+          '<span>Proxy: ' + escapeHtml(source.proxy_tier_policy || 'none') + '</span>' +
+          '</div>';
+      }).join('') +
+      '</div>';
   }
 
   function loadSection(section) {
@@ -105,8 +147,11 @@
   }
 
   function activeStoreId() {
-    const row = root.querySelector('[data-store-id]');
-    return row ? row.getAttribute('data-store-id') : '';
+    const select = root.querySelector('[data-pa-store-select]');
+    if (select && select.value) {
+      state.selectedStoreId = select.value;
+    }
+    return state.selectedStoreId || '';
   }
 
   function bindTabs() {
@@ -125,6 +170,23 @@
   }
 
   function bindForms() {
+    const storeSelect = root.querySelector('[data-pa-store-select]');
+    if (storeSelect) {
+      storeSelect.addEventListener('change', function () {
+        state.selectedStoreId = storeSelect.value;
+        renderStores({ items: state.stores });
+      });
+    }
+
+    root.addEventListener('click', function (event) {
+      const row = event.target.closest('[data-store-id]');
+      if (!row) {
+        return;
+      }
+      state.selectedStoreId = row.getAttribute('data-store-id') || '';
+      renderStores({ items: state.stores });
+    });
+
     const storeForm = root.querySelector('[data-pa-store-form]');
     if (storeForm) {
       storeForm.addEventListener('submit', function (event) {
