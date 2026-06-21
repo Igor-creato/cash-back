@@ -51,11 +51,11 @@ final class PriceAssistantAccountUiTest extends TestCase
             $html,
             'Price Assistant marketplace tabs must reuse the shared account tab skin.'
         );
-        self::assertStringContainsString('data-price-assistant-tab="all"', $html);
+        self::assertStringNotContainsString('data-price-assistant-tab="all"', $html);
         self::assertMatchesRegularExpression(
-            '/<button[^>]+class="[^"]*cashback-support-tab[^"]*active[^"]*is-active[^"]*"[^>]+data-price-assistant-tab="all"/',
+            '/<button[^>]+class="[^"]*cashback-support-tab[^"]*active[^"]*is-active[^"]*"[^>]+data-price-assistant-tab="ozon"/',
             $html,
-            'The default tab must expose both shared active and legacy is-active classes.'
+            'The first enabled marketplace tab must expose both shared active and legacy is-active classes.'
         );
         self::assertStringContainsString('data-price-assistant-tab="wildberries"', $html);
         self::assertStringContainsString('data-price-assistant-tab="ozon"', $html);
@@ -68,15 +68,14 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('name="track_favorites"', $html);
         self::assertStringContainsString('name="track_manual"', $html);
         self::assertStringContainsString('name="track_all"', $html);
-        self::assertStringContainsString('data-price-assistant-status="connected"', $html);
-        self::assertStringContainsString('data-price-assistant-status="sync ok"', $html);
-        self::assertStringContainsString('data-price-assistant-status="reconnect_required"', $html);
-        self::assertStringContainsString('data-price-assistant-status="disconnected"', $html);
+        self::assertStringNotContainsString('cashback-price-assistant__statuses', $html);
+        self::assertStringNotContainsString('data-price-assistant-status=', $html);
         self::assertStringContainsString('data-price-assistant-add-form', $html);
         self::assertStringContainsString('data-price-assistant-region-form', $html);
         self::assertStringContainsString('data-price-assistant-manual-list', $html);
         self::assertStringContainsString('data-price-assistant-collection-list="cart"', $html);
         self::assertStringContainsString('data-price-assistant-collection-list="favorites"', $html);
+        self::assertStringContainsString('data-price-assistant-pagination', $html);
         self::assertStringContainsString('data-price-assistant-chart', $html);
         self::assertStringContainsString('data-price-assistant-compare', $html);
         self::assertStringContainsString('data-price-assistant-target-price', $html);
@@ -135,6 +134,11 @@ final class PriceAssistantAccountUiTest extends TestCase
             'Price Assistant CSS must load after the shared account base CSS that owns tab styles.'
         );
         self::assertArrayHasKey('cashback-price-assistant-account', $GLOBALS['_cb_test_enqueued_scripts']);
+        self::assertContains(
+            'cashback-pagination',
+            $GLOBALS['_cb_test_enqueued_scripts']['cashback-price-assistant-account']['deps'],
+            'Price Assistant account JS must reuse the shared pagination helper.'
+        );
         self::assertArrayHasKey('CashbackPriceAssistantAccount', $GLOBALS['_cb_test_localized_scripts']['cashback-price-assistant-account']);
 
         $config = $GLOBALS['_cb_test_localized_scripts']['cashback-price-assistant-account']['CashbackPriceAssistantAccount'];
@@ -163,6 +167,10 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('watchlistItems: []', $script);
         self::assertStringContainsString('collections: []', $script);
         self::assertStringContainsString('searchData: null', $script);
+        self::assertStringContainsString('activeCollectionType: "cart"', $script);
+        self::assertStringContainsString('const ITEMS_PER_PAGE = 10', $script);
+        self::assertStringContainsString('CashbackPagination.build', $script);
+        self::assertStringContainsString('.page-numbers[data-page]', $script);
         self::assertStringContainsString('function sourceMatchesActiveTab', $script);
         self::assertStringContainsString('function renderActiveWatchlist', $script);
         self::assertStringContainsString('function renderActiveCollections', $script);

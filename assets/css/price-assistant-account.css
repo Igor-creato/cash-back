@@ -23,6 +23,10 @@
   box-sizing: border-box;
 }
 
+.cashback-price-assistant [hidden] {
+  display: none !important;
+}
+
 .cashback-price-assistant__topbar,
 .cashback-price-assistant__header,
 .cashback-price-assistant__settings,
@@ -205,6 +209,22 @@
   font-weight: 600;
 }
 
+.cashback-price-assistant__actions .button,
+.cashback-price-assistant__item-actions .button {
+  align-items: center;
+  border-radius: var(--cb-radius-pill, 10px);
+  display: inline-flex;
+  justify-content: center;
+  min-height: 38px;
+}
+
+.cashback-price-assistant__actions .button.active,
+.cashback-price-assistant__actions .button.is-active {
+  background: var(--cb-accent, #4555e8);
+  border-color: var(--cb-accent, #4555e8);
+  color: var(--cb-text-on-accent, #fff);
+}
+
 .cashback-price-assistant__workspace,
 .cashback-price-assistant__search-grid {
   display: grid;
@@ -316,11 +336,6 @@
   min-width: 130px;
 }
 
-.cashback-price-assistant__item-actions .button {
-  border-radius: 999px;
-  min-height: 38px;
-}
-
 .cashback-price-assistant__chart svg {
   border: 1px solid var(--pa-line);
   border-radius: 8px;
@@ -368,6 +383,51 @@
 
 .cashback-price-assistant__status-value--reconnect-required {
   color: var(--pa-warn);
+}
+
+.cashback-price-assistant__pagination {
+  display: flex;
+  justify-content: center;
+}
+
+.cashback-price-assistant .woocommerce-pagination.cashback-price-assistant__pagination-nav {
+  margin: 2px 0 0;
+}
+
+.cashback-price-assistant .woocommerce-pagination .page-numbers {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cashback-price-assistant .woocommerce-pagination .page-numbers li {
+  margin: 0;
+}
+
+.cashback-price-assistant .woocommerce-pagination a.page-numbers,
+.cashback-price-assistant .woocommerce-pagination span.page-numbers {
+  border: 1px solid var(--cb-accent, #4555e8);
+  border-radius: var(--cb-radius-pill, 10px);
+  color: var(--cb-accent, #4555e8);
+  display: inline-flex;
+  min-width: 34px;
+  padding: 7px 10px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.cashback-price-assistant .woocommerce-pagination a.page-numbers.current,
+.cashback-price-assistant .woocommerce-pagination a.page-numbers:hover {
+  background: var(--cb-accent, #4555e8);
+  color: var(--cb-text-on-accent, #fff);
+}
+
+.cashback-price-assistant .woocommerce-pagination span.page-numbers.dots {
+  border-color: transparent;
+  color: var(--pa-muted);
 }
 
 @media (min-width: 760px) {

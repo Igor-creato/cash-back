@@ -9,10 +9,30 @@
   }
 
   const marketplaceConfig = config.marketplaces || {};
+  const ITEMS_PER_PAGE = 10;
+
+  function initialMarketplace() {
+    const configured = normalizeSource(config.initialMarketplace || "");
+    if (configured && marketplaceConfig[configured]) {
+      return configured;
+    }
+    const active = root.querySelector("[data-price-assistant-tab].is-active");
+    const fromDom = active ? normalizeSource(active.getAttribute("data-price-assistant-tab")) : "";
+    if (fromDom && marketplaceConfig[fromDom]) {
+      return fromDom;
+    }
+    return marketplaceConfig.ozon ? "ozon" : normalizeSource(Object.keys(marketplaceConfig)[0] || "");
+  }
+
   const state = {
     connections: {},
     regionCode: "default",
-    activeTab: "all",
+    activeTab: initialMarketplace(),
+    activeCollectionType: "cart",
+    collectionPages: {
+      cart: 1,
+      favorites: 1,
+    },
     watchlistItems: [],
     collections: [],
     searchData: null,
@@ -30,6 +50,10 @@
     manualList: root.querySelector("[data-price-assistant-manual-list]"),
     cartList: root.querySelector('[data-price-assistant-collection-list="cart"]'),
     favoritesList: root.querySelector('[data-price-assistant-collection-list="favorites"]'),
+    cartPanel: root.querySelector('[data-price-assistant-collection-panel="cart"]'),
+    favoritesPanel: root.querySelector('[data-price-assistant-collection-panel="favorites"]'),
+    cartPagination: root.querySelector('[data-price-assistant-pagination="cart"]'),
+    favoritesPagination: root.querySelector('[data-price-assistant-pagination="favorites"]'),
     chart: root.querySelector("[data-price-assistant-chart]"),
     compare: root.querySelector("[data-price-assistant-compare]"),
   };
@@ -101,7 +125,45 @@
     return statuses[status] || status || "disconnected";
   }
 
+  function isAuthorizedStatus(status) {
+    const normalized = String(status || "").toLowerCase().replace(/[_\s]+/g, " ");
+    return normalized === "connected" || normalized === "sync ok" || normalized === "sync_ok";
+  }
+
+  function isMarketplaceAuthorized(code) {
+    const connection = state.connections[code];
+    return Boolean(connection && connectionId(connection) && isAuthorizedStatus(connection.status));
+  }
+
+  function updateMarketplaceActions(code) {
+    const card = root.querySelector('[data-marketplace-card="' + code + '"]');
+    if (!card) {
+      return;
+    }
+    const active = normalizeSource(code) === normalizeSource(state.activeTab);
+    const authorized = isMarketplaceAuthorized(code);
+    card.hidden = !active;
+
+    card.querySelectorAll("[data-marketplace]").forEach(function (button) {
+      const page = button.getAttribute("data-marketplace-page") || "";
+      const isConnect = button.classList.contains("cashback-price-assistant__connect");
+      const isDisconnect = button.hasAttribute("data-price-assistant-disconnect");
+      const isCollection = page === "cart" || page === "favorites";
+      button.hidden =
+        !active ||
+        (authorized && isConnect) ||
+        (!authorized && (isCollection || isDisconnect));
+      if (isCollection) {
+        button.classList.toggle("active", page === state.activeCollectionType);
+        button.classList.toggle("is-active", page === state.activeCollectionType);
+      }
+    });
+  }
+
   function setState(code, status) {
+    if (state.connections[code]) {
+      state.connections[code].status = status;
+    }
     const node = root.querySelector('[data-marketplace-state="' + code + '"]');
     if (node) {
       node.textContent = statusLabel(status);
@@ -114,8 +176,9 @@
     );
     if (disconnect) {
       const connection = state.connections[code];
-      disconnect.disabled = !connection || !connection.connection_id;
+      disconnect.disabled = !connection || !connectionId(connection);
     }
+    updateMarketplaceActions(code);
   }
 
   function openMarketplacePage(marketplace, page) {
@@ -543,82 +606,106 @@
     if (!nodes.cartList || !nodes.favoritesList) {
       return;
     }
-    const collections = state.collections.filter(function (collection) {
-      return sourceMatchesActiveTab(collection.source || collection.marketplace);
-    });
-    renderCollections(collections);
-  }
-
-  function renderCollections(collections) {
-    const byType = { cart: [], favorites: [] };
-    collections.forEach(function (collection) {
-      if (byType[collection.collection_type]) {
-        byType[collection.collection_type].push(collection);
-      }
-    });
     renderCollectionType(
+      "cart",
       nodes.cartList,
-      byType.cart,
+      nodes.cartPagination,
       scopedEmptyText("Корзина пока не импортирована.", "Корзина %s пока не импортирована.")
     );
     renderCollectionType(
+      "favorites",
       nodes.favoritesList,
-      byType.favorites,
+      nodes.favoritesPagination,
       scopedEmptyText("Избранное пока не импортировано.", "Избранное %s пока не импортировано.")
     );
+    updateCollectionPanels();
   }
 
-  function renderCollectionType(node, collections, emptyText) {
+  function collectionRows(type) {
+    const rows = [];
+    state.collections.forEach(function (collection) {
+      if (
+        collection.collection_type !== type ||
+        !sourceMatchesActiveTab(collection.source || collection.marketplace)
+      ) {
+        return;
+      }
+      const items = Array.isArray(collection.items) ? collection.items : [];
+      items.forEach(function (item, index) {
+        rows.push({
+          collection: collection,
+          item: item,
+          index: index,
+        });
+      });
+    });
+    return rows;
+  }
+
+  function renderCollectionType(type, node, paginationNode, emptyText) {
     clearNode(node);
-    if (!collections.length) {
+    clearNode(paginationNode);
+    const rows = collectionRows(type);
+    if (!rows.length) {
       setEmpty(node, emptyText);
       return;
     }
-    let rendered = 0;
-    collections.forEach(function (collection) {
-      const items = Array.isArray(collection.items) ? collection.items : [];
-      if (!items.length) {
-        return;
-      }
-      items.forEach(function (item, index) {
-        rendered += 1;
-        const card = createProductCard(
-          Object.assign({}, item, {
-            source: collection.source,
-            source_display_name: collection.source_display_name,
-            region_code: collection.region_code,
-            price: item.price || item.current_price || item.last_price,
-          }),
-          collection.source
-        );
-        appendText(
-          card.querySelector(".cashback-price-assistant__item-body") || card,
-          "p",
-          (collection.collection_type || "import") +
-            " · " +
-            (collection.region_code || "default") +
-            (item.quantity ? " · " + item.quantity + " шт." : ""),
-          "cashback-price-assistant__item-meta"
-        );
-        if (index === 0) {
-          const actions = card.querySelector(".cashback-price-assistant__item-actions");
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = "button";
-          button.dataset.priceAssistantAction = "delete-import";
-          button.dataset.collectionId = collection.collection_id;
-          button.setAttribute("data-price-assistant-delete-import", "");
-          button.textContent = "Удалить историю импорта";
-          if (actions) {
-            actions.appendChild(button);
-          }
+
+    const totalPages = Math.ceil(rows.length / ITEMS_PER_PAGE);
+    const currentPage = Math.min(state.collectionPages[type] || 1, totalPages);
+    state.collectionPages[type] = currentPage;
+    const offset = (currentPage - 1) * ITEMS_PER_PAGE;
+    rows.slice(offset, offset + ITEMS_PER_PAGE).forEach(function (row) {
+      const collection = row.collection;
+      const item = row.item;
+      const card = createProductCard(
+        Object.assign({}, item, {
+          source: collection.source,
+          source_display_name: collection.source_display_name,
+          region_code: collection.region_code,
+          price: item.price || item.current_price || item.last_price,
+        }),
+        collection.source
+      );
+      appendText(
+        card.querySelector(".cashback-price-assistant__item-body") || card,
+        "p",
+        (collection.collection_type || "import") +
+          " · " +
+          (collection.region_code || "default") +
+          (item.quantity ? " · " + item.quantity + " шт." : ""),
+        "cashback-price-assistant__item-meta"
+      );
+      if (row.index === 0) {
+        const actions = card.querySelector(".cashback-price-assistant__item-actions");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "button";
+        button.dataset.priceAssistantAction = "delete-import";
+        button.dataset.collectionId = collection.collection_id;
+        button.setAttribute("data-price-assistant-delete-import", "");
+        button.textContent = "Удалить историю импорта";
+        if (actions) {
+          actions.appendChild(button);
         }
-        node.appendChild(card);
-      });
+      }
+      node.appendChild(card);
     });
-    if (rendered === 0) {
-      setEmpty(node, emptyText);
-      return;
+
+    if (paginationNode && window.CashbackPagination && totalPages > 1) {
+      paginationNode.innerHTML = window.CashbackPagination.build(currentPage, totalPages, {
+        containerClass: "woocommerce-pagination cashback-price-assistant__pagination-nav",
+      });
+    }
+  }
+
+  function updateCollectionPanels() {
+    const activeType = state.activeCollectionType;
+    if (nodes.cartPanel) {
+      nodes.cartPanel.hidden = activeType !== "cart";
+    }
+    if (nodes.favoritesPanel) {
+      nodes.favoritesPanel.hidden = activeType !== "favorites";
     }
   }
 
@@ -899,10 +986,11 @@
       return;
     }
     const connection = state.connections[marketplace.code];
-    if (!connection || !connection.connection_id) {
+    const id = connection ? connectionId(connection) : null;
+    if (!id) {
       return;
     }
-    requestJson("/connections/" + encodeURIComponent(connection.connection_id), { method: "DELETE" })
+    requestJson("/connections/" + encodeURIComponent(id), { method: "DELETE" })
       .then(function () {
         delete state.connections[marketplace.code];
         setState(marketplace.code, "disconnected");
@@ -915,7 +1003,7 @@
   }
 
   function applyActiveTab() {
-    const active = state.activeTab || "all";
+    const active = state.activeTab || initialMarketplace();
     root.querySelectorAll("[data-price-assistant-tab]").forEach(function (button) {
       const isActive = button.getAttribute("data-price-assistant-tab") === active;
       button.classList.toggle("active", isActive);
@@ -924,6 +1012,7 @@
     root.querySelectorAll("[data-price-assistant-source]").forEach(function (card) {
       card.hidden = !sourceMatchesActiveTab(card.getAttribute("data-price-assistant-source"));
     });
+    Object.keys(marketplaceConfig).forEach(updateMarketplaceActions);
     renderActiveWatchlist();
     renderActiveCollections();
     renderActiveSearchResults();
@@ -978,9 +1067,25 @@
       return;
     }
 
+    const pageLink = event.target.closest("[data-price-assistant-pagination] .page-numbers[data-page]");
+    if (pageLink) {
+      event.preventDefault();
+      const pagination = pageLink.closest("[data-price-assistant-pagination]");
+      const type = pagination ? pagination.getAttribute("data-price-assistant-pagination") : "";
+      const page = parseInt(pageLink.getAttribute("data-page") || "1", 10);
+      if ((type === "cart" || type === "favorites") && Number.isFinite(page)) {
+        state.collectionPages[type] = Math.max(1, page);
+        renderActiveCollections();
+      }
+      return;
+    }
+
     const tabButton = event.target.closest("[data-price-assistant-tab]");
     if (tabButton) {
-      state.activeTab = tabButton.getAttribute("data-price-assistant-tab") || "all";
+      state.activeTab = tabButton.getAttribute("data-price-assistant-tab") || initialMarketplace();
+      state.activeCollectionType = "cart";
+      state.collectionPages.cart = 1;
+      state.collectionPages.favorites = 1;
       applyActiveTab();
       return;
     }
@@ -1009,7 +1114,12 @@
 
     const page = button.getAttribute("data-marketplace-page") || "login";
     if (!button.classList.contains("cashback-price-assistant__connect")) {
-      openMarketplacePage(marketplace, page);
+      if (page === "cart" || page === "favorites") {
+        state.activeCollectionType = page;
+        state.collectionPages[page] = 1;
+        updateMarketplaceActions(marketplace.code);
+        renderActiveCollections();
+      }
       return;
     }
 
@@ -1093,5 +1203,6 @@
       });
   });
 
+  applyActiveTab();
   refreshCabinet();
 })();

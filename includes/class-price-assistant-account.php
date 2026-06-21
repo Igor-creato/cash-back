@@ -64,27 +64,38 @@ final class Cashback_Price_Assistant_Account {
             null
         );
         wp_enqueue_script(
-            self::SCRIPT_HANDLE,
-            cashback_asset_url('assets/js/price-assistant-account.js'),
+            'cashback-pagination',
+            cashback_asset_url('assets/js/cashback-pagination.js'),
             array(),
             // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
             null,
             true
         );
+        wp_enqueue_script(
+            self::SCRIPT_HANDLE,
+            cashback_asset_url('assets/js/price-assistant-account.js'),
+            array( 'cashback-pagination' ),
+            // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
+            null,
+            true
+        );
 
+        $marketplaces = $this->marketplaces_by_code();
         wp_localize_script(self::SCRIPT_HANDLE, 'CashbackPriceAssistantAccount', array(
             'restBase'        => rtrim(home_url('/wp-json/cashback/v1/price-assistant'), '/'),
             'nonce'           => wp_create_nonce('wp_rest'),
             'consentVersion'  => 'price-assistant-session-v1',
             'scope'           => array( 'cart_read', 'favorites_read' ),
             'connectorAction' => 'cashbackPriceAssistant.captureSession',
-            'marketplaces'    => $this->marketplaces_by_code(),
+            'marketplaces'    => $marketplaces,
+            'initialMarketplace' => $this->first_active_marketplace($marketplaces),
             'statuses'        => $this->statuses(),
         ));
     }
 
     public function render_endpoint(): void {
         $marketplaces = $this->marketplaces_by_code();
+        $active_marketplace = $this->first_active_marketplace($marketplaces);
         ?>
         <section class="cashback-price-assistant" data-price-assistant-account>
             <div class="cashback-price-assistant__topbar">
@@ -150,25 +161,19 @@ final class Cashback_Price_Assistant_Account {
 
             <section class="cashback-price-assistant__search-results" data-price-assistant-search-results aria-live="polite"></section>
 
-            <div class="cashback-price-assistant__statuses" aria-label="<?php echo esc_attr(__('Статусы синхронизации', 'cashback')); ?>">
-                <?php foreach ( $this->statuses() as $status => $label ) : ?>
-                    <span class="cashback-price-assistant__status" data-price-assistant-status="<?php echo esc_attr($status); ?>">
-                        <?php echo esc_html($label); ?>
-                    </span>
-                <?php endforeach; ?>
-            </div>
-
             <nav class="cashback-price-assistant__tabs cashback-support-tabs" data-price-assistant-marketplace-tabs aria-label="<?php echo esc_attr__('Маркетплейсы', 'cashback'); ?>">
-                <button type="button" class="cashback-support-tab active is-active" data-price-assistant-tab="all"><?php echo esc_html__('Все', 'cashback'); ?></button>
-                <button type="button" class="cashback-support-tab" data-price-assistant-tab="wildberries"><?php echo esc_html__('Wildberries', 'cashback'); ?></button>
-                <button type="button" class="cashback-support-tab" data-price-assistant-tab="ozon"><?php echo esc_html__('Ozon', 'cashback'); ?></button>
-                <button type="button" class="cashback-support-tab" data-price-assistant-tab="yandex_market"><?php echo esc_html__('Яндекс Маркет', 'cashback'); ?></button>
+                <?php foreach ( $marketplaces as $code => $marketplace ) : ?>
+                    <?php $is_active = $code === $active_marketplace; ?>
+                    <button type="button" class="cashback-support-tab<?php echo $is_active ? ' active is-active' : ''; ?>" data-price-assistant-tab="<?php echo esc_attr($code); ?>">
+                        <?php echo esc_html($this->marketplace_label($code, (string) $marketplace['label'])); ?>
+                    </button>
+                <?php endforeach; ?>
             </nav>
 
             <div class="cashback-price-assistant__marketplaces">
                 <?php foreach ( $marketplaces as $code => $marketplace ) : ?>
-                    <article class="cashback-price-assistant__marketplace" data-marketplace-card="<?php echo esc_attr($code); ?>" data-price-assistant-source="<?php echo esc_attr($code); ?>">
-                        <h3><?php echo esc_html((string) $marketplace['label']); ?></h3>
+                    <article class="cashback-price-assistant__marketplace" data-marketplace-card="<?php echo esc_attr($code); ?>" data-price-assistant-source="<?php echo esc_attr($code); ?>" <?php echo $code === $active_marketplace ? '' : 'hidden'; ?>>
+                        <h3><?php echo esc_html($this->marketplace_label($code, (string) $marketplace['label'])); ?></h3>
                         <p class="cashback-price-assistant__state" data-marketplace-state="<?php echo esc_attr($code); ?>">
                             <?php echo esc_html(__('disconnected', 'cashback')); ?>
                         </p>
@@ -187,6 +192,7 @@ final class Cashback_Price_Assistant_Account {
                                 class="button cashback-price-assistant__open"
                                 data-marketplace="<?php echo esc_attr($code); ?>"
                                 data-marketplace-page="cart"
+                                hidden
                                 <?php echo empty($marketplace['enabled']) ? 'disabled' : ''; ?>
                             >
                                 <?php echo esc_html(__('Корзина', 'cashback')); ?>
@@ -196,6 +202,7 @@ final class Cashback_Price_Assistant_Account {
                                 class="button cashback-price-assistant__open"
                                 data-marketplace="<?php echo esc_attr($code); ?>"
                                 data-marketplace-page="favorites"
+                                hidden
                                 <?php echo empty($marketplace['enabled']) ? 'disabled' : ''; ?>
                             >
                                 <?php echo esc_html(__('Избранное', 'cashback')); ?>
@@ -205,6 +212,7 @@ final class Cashback_Price_Assistant_Account {
                                 class="button cashback-price-assistant__disconnect"
                                 data-price-assistant-disconnect
                                 data-marketplace="<?php echo esc_attr($code); ?>"
+                                hidden
                                 disabled
                             >
                                 <?php echo esc_html(__('Отключить', 'cashback')); ?>
@@ -215,27 +223,29 @@ final class Cashback_Price_Assistant_Account {
             </div>
 
             <div class="cashback-price-assistant__workspace">
-                <section class="cashback-price-assistant__panel" data-price-assistant-tab-panel="all">
+                <section class="cashback-price-assistant__panel" data-price-assistant-manual-panel hidden>
                     <h3><?php echo esc_html(__('Ручные товары', 'cashback')); ?></h3>
                     <div class="cashback-price-assistant__list" data-price-assistant-manual-list></div>
                 </section>
 
-                <section class="cashback-price-assistant__panel" data-price-assistant-tab-panel="all">
+                <section class="cashback-price-assistant__panel" data-price-assistant-collection-panel="cart">
                     <h3><?php echo esc_html(__('Корзина', 'cashback')); ?></h3>
                     <div class="cashback-price-assistant__list" data-price-assistant-collection-list="cart" data-price-assistant-delete-import="cart"></div>
+                    <div class="cashback-price-assistant__pagination" data-price-assistant-pagination="cart"></div>
                 </section>
 
-                <section class="cashback-price-assistant__panel" data-price-assistant-tab-panel="all">
+                <section class="cashback-price-assistant__panel" data-price-assistant-collection-panel="favorites" hidden>
                     <h3><?php echo esc_html(__('Избранное', 'cashback')); ?></h3>
                     <div class="cashback-price-assistant__list" data-price-assistant-collection-list="favorites" data-price-assistant-delete-import="favorites"></div>
+                    <div class="cashback-price-assistant__pagination" data-price-assistant-pagination="favorites"></div>
                 </section>
 
-                <section class="cashback-price-assistant__panel cashback-price-assistant__panel--wide">
+                <section class="cashback-price-assistant__panel cashback-price-assistant__panel--wide" hidden>
                     <h3><?php echo esc_html(__('График цены', 'cashback')); ?></h3>
                     <div class="cashback-price-assistant__chart" data-price-assistant-chart></div>
                 </section>
 
-                <section class="cashback-price-assistant__panel cashback-price-assistant__panel--wide">
+                <section class="cashback-price-assistant__panel cashback-price-assistant__panel--wide" hidden>
                     <h3><?php echo esc_html(__('Где дешевле', 'cashback')); ?></h3>
                     <div class="cashback-price-assistant__compare" data-price-assistant-compare></div>
                 </section>
@@ -263,6 +273,28 @@ final class Cashback_Price_Assistant_Account {
             $by_code[ (string) $marketplace['code'] ] = $marketplace;
         }
         return $by_code;
+    }
+
+    private function first_active_marketplace( array $marketplaces ): string {
+        foreach ( $marketplaces as $code => $marketplace ) {
+            if ( ! empty($marketplace['enabled']) ) {
+                return (string) $code;
+            }
+        }
+
+        if ( isset($marketplaces['ozon']) ) {
+            return 'ozon';
+        }
+
+        return (string) array_key_first($marketplaces);
+    }
+
+    private function marketplace_label( string $code, string $fallback ): string {
+        if ( 'yandex_market' === $code ) {
+            return __('Яндекс Маркет', 'cashback');
+        }
+
+        return $fallback;
     }
 
     private function statuses(): array {
