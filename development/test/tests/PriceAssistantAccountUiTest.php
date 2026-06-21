@@ -46,10 +46,23 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('data-price-assistant-search-form', $html);
         self::assertStringContainsString('data-price-assistant-search-results', $html);
         self::assertStringContainsString('data-price-assistant-marketplace-tabs', $html);
+        self::assertMatchesRegularExpression(
+            '/<nav[^>]+class="[^"]*cashback-price-assistant__tabs[^"]*cashback-support-tabs[^"]*"/',
+            $html,
+            'Price Assistant marketplace tabs must reuse the shared account tab skin.'
+        );
         self::assertStringContainsString('data-price-assistant-tab="all"', $html);
+        self::assertMatchesRegularExpression(
+            '/<button[^>]+class="[^"]*cashback-support-tab[^"]*active[^"]*is-active[^"]*"[^>]+data-price-assistant-tab="all"/',
+            $html,
+            'The default tab must expose both shared active and legacy is-active classes.'
+        );
         self::assertStringContainsString('data-price-assistant-tab="wildberries"', $html);
         self::assertStringContainsString('data-price-assistant-tab="ozon"', $html);
         self::assertStringContainsString('data-price-assistant-tab="yandex_market"', $html);
+        self::assertStringContainsString('data-price-assistant-source="ozon"', $html);
+        self::assertStringContainsString('data-price-assistant-source="wildberries"', $html);
+        self::assertStringContainsString('data-price-assistant-source="yandex_market"', $html);
         self::assertStringContainsString('data-price-assistant-settings', $html);
         self::assertStringContainsString('name="track_cart"', $html);
         self::assertStringContainsString('name="track_favorites"', $html);
@@ -115,6 +128,12 @@ final class PriceAssistantAccountUiTest extends TestCase
         $account = new Cashback_Price_Assistant_Account();
         $account->enqueue_assets();
 
+        self::assertArrayHasKey('cashback-price-assistant-account', $GLOBALS['_cb_test_enqueued_styles']);
+        self::assertSame(
+            array( 'cashback-account-base' ),
+            $GLOBALS['_cb_test_enqueued_styles']['cashback-price-assistant-account']['deps'],
+            'Price Assistant CSS must load after the shared account base CSS that owns tab styles.'
+        );
         self::assertArrayHasKey('cashback-price-assistant-account', $GLOBALS['_cb_test_enqueued_scripts']);
         self::assertArrayHasKey('CashbackPriceAssistantAccount', $GLOBALS['_cb_test_localized_scripts']['cashback-price-assistant-account']);
 
@@ -133,5 +152,23 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertArrayNotHasKey('cookies', $config);
         self::assertArrayNotHasKey('tokens', $config);
         self::assertArrayNotHasKey('ciphertext', $config);
+    }
+
+    public function test_account_script_keeps_last_payloads_and_filters_by_active_marketplace(): void
+    {
+        $script_path = dirname(__DIR__, 3) . '/assets/js/price-assistant-account.js';
+        $script      = file_get_contents($script_path);
+
+        self::assertIsString($script, 'Price Assistant account script must be readable.');
+        self::assertStringContainsString('watchlistItems: []', $script);
+        self::assertStringContainsString('collections: []', $script);
+        self::assertStringContainsString('searchData: null', $script);
+        self::assertStringContainsString('function sourceMatchesActiveTab', $script);
+        self::assertStringContainsString('function renderActiveWatchlist', $script);
+        self::assertStringContainsString('function renderActiveCollections', $script);
+        self::assertStringContainsString('function renderActiveSearchResults', $script);
+        self::assertStringContainsString('normalizeSource(source) === "wb"', $script);
+        self::assertStringContainsString('normalizeSource(source) === "yandex"', $script);
+        self::assertStringContainsString('button.classList.toggle("active"', $script);
     }
 }

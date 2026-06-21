@@ -59,7 +59,7 @@ final class Cashback_Price_Assistant_Account {
         wp_enqueue_style(
             'cashback-price-assistant-account',
             cashback_asset_url('assets/css/price-assistant-account.css'),
-            array(),
+            array( 'cashback-account-base' ),
             // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
             null
         );
@@ -158,16 +158,16 @@ final class Cashback_Price_Assistant_Account {
                 <?php endforeach; ?>
             </div>
 
-            <nav class="cashback-price-assistant__tabs" data-price-assistant-marketplace-tabs aria-label="<?php echo esc_attr__('Маркетплейсы', 'cashback'); ?>">
-                <button type="button" class="is-active" data-price-assistant-tab="all"><?php echo esc_html__('Все', 'cashback'); ?></button>
-                <button type="button" data-price-assistant-tab="wildberries"><?php echo esc_html__('Wildberries', 'cashback'); ?></button>
-                <button type="button" data-price-assistant-tab="ozon"><?php echo esc_html__('Ozon', 'cashback'); ?></button>
-                <button type="button" data-price-assistant-tab="yandex_market"><?php echo esc_html__('Яндекс Маркет', 'cashback'); ?></button>
+            <nav class="cashback-price-assistant__tabs cashback-support-tabs" data-price-assistant-marketplace-tabs aria-label="<?php echo esc_attr__('Маркетплейсы', 'cashback'); ?>">
+                <button type="button" class="cashback-support-tab active is-active" data-price-assistant-tab="all"><?php echo esc_html__('Все', 'cashback'); ?></button>
+                <button type="button" class="cashback-support-tab" data-price-assistant-tab="wildberries"><?php echo esc_html__('Wildberries', 'cashback'); ?></button>
+                <button type="button" class="cashback-support-tab" data-price-assistant-tab="ozon"><?php echo esc_html__('Ozon', 'cashback'); ?></button>
+                <button type="button" class="cashback-support-tab" data-price-assistant-tab="yandex_market"><?php echo esc_html__('Яндекс Маркет', 'cashback'); ?></button>
             </nav>
 
             <div class="cashback-price-assistant__marketplaces">
                 <?php foreach ( $marketplaces as $code => $marketplace ) : ?>
-                    <article class="cashback-price-assistant__marketplace" data-marketplace-card="<?php echo esc_attr($code); ?>">
+                    <article class="cashback-price-assistant__marketplace" data-marketplace-card="<?php echo esc_attr($code); ?>" data-price-assistant-source="<?php echo esc_attr($code); ?>">
                         <h3><?php echo esc_html((string) $marketplace['label']); ?></h3>
                         <p class="cashback-price-assistant__state" data-marketplace-state="<?php echo esc_attr($code); ?>">
                             <?php echo esc_html(__('disconnected', 'cashback')); ?>

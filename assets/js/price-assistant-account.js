@@ -13,6 +13,9 @@
     connections: {},
     regionCode: "default",
     activeTab: "all",
+    watchlistItems: [],
+    collections: [],
+    searchData: null,
   };
 
   const nodes = {
@@ -200,6 +203,44 @@
       .replace(/^_+|_+$/g, "");
   }
 
+  function sourceMatchesActiveTab(source) {
+    const active = normalizeSource(state.activeTab || "all");
+    if (active === "all") {
+      return true;
+    }
+    return (
+      normalizeSource(source) === active ||
+      (active === "wildberries" && normalizeSource(source) === "wb") ||
+      (active === "yandex_market" && normalizeSource(source) === "yandex")
+    );
+  }
+
+  function itemSource(item) {
+    return item.source || item.source_code || item.marketplace || item.store_code || "";
+  }
+
+  function marketplaceLabel(code) {
+    const normalized = normalizeSource(code);
+    if (normalized === "all") {
+      return "";
+    }
+    if (normalized === "yandex_market") {
+      return "Яндекс Маркет";
+    }
+    if (marketplaceConfig[normalized] && marketplaceConfig[normalized].label) {
+      return marketplaceConfig[normalized].label;
+    }
+    return normalized || "";
+  }
+
+  function scopedEmptyText(allText, scopedText) {
+    const active = normalizeSource(state.activeTab || "all");
+    if (active === "all") {
+      return allText;
+    }
+    return scopedText.replace("%s", marketplaceLabel(active));
+  }
+
   function renderImage(parent, url, title) {
     const media = document.createElement("div");
     media.className = "cashback-price-assistant__item-media";
@@ -310,9 +351,11 @@
     return requestJson("/watchlist/items?limit=50")
       .then(function (data) {
         const items = Array.isArray(data) ? data : data.items || [];
-        renderWatchlist(items);
+        state.watchlistItems = items;
+        renderActiveWatchlist();
       })
       .catch(function () {
+        state.watchlistItems = [];
         setEmpty(nodes.manualList, "Не удалось загрузить ручные товары.");
       });
   }
@@ -337,21 +380,38 @@
 
     requestJson("/search?" + params.toString())
       .then(function (data) {
-        renderSearchResults(data);
+        state.searchData = data;
+        renderActiveSearchResults();
       })
       .catch(function (error) {
+        state.searchData = null;
         setEmpty(nodes.searchResults, "Не удалось выполнить поиск.");
         setMessage(error.message || "Поиск недоступен.", true);
       });
+  }
+
+  function renderActiveSearchResults() {
+    if (!state.searchData || !nodes.searchResults) {
+      return;
+    }
+    renderSearchResults(state.searchData);
   }
 
   function renderSearchResults(data) {
     clearNode(nodes.searchResults);
     const items = Array.isArray(data.items) ? data.items : [];
     const fallbacks = Array.isArray(data.fallbacks) ? data.fallbacks : [];
-    const all = items.concat(fallbacks);
+    const all = items.concat(fallbacks).filter(function (item) {
+      return sourceMatchesActiveTab(itemSource(item));
+    });
     if (!all.length) {
-      setEmpty(nodes.searchResults, "Подходящих магазинов пока нет.");
+      setEmpty(
+        nodes.searchResults,
+        scopedEmptyText(
+          "Подходящих магазинов пока нет.",
+          "Для %s подходящих результатов пока нет."
+        )
+      );
       return;
     }
 
@@ -364,10 +424,26 @@
     nodes.searchResults.appendChild(list);
   }
 
+  function renderActiveWatchlist() {
+    if (!nodes.manualList) {
+      return;
+    }
+    const items = state.watchlistItems.filter(function (item) {
+      return sourceMatchesActiveTab(itemSource(item));
+    });
+    renderWatchlist(items);
+  }
+
   function renderWatchlist(items) {
     clearNode(nodes.manualList);
     if (!items.length) {
-      setEmpty(nodes.manualList, "Добавьте первый товар по ссылке.");
+      setEmpty(
+        nodes.manualList,
+        scopedEmptyText(
+          "Добавьте первый товар по ссылке.",
+          "Для %s пока нет ручных товаров."
+        )
+      );
       return;
     }
     items.forEach(function (item) {
@@ -449,16 +525,28 @@
       if (node) {
         setEmpty(node, "Загрузка...");
       }
-    });
+      });
     return requestJson("/collections")
       .then(function (data) {
         const collections = Array.isArray(data) ? data : data.items || [];
-        renderCollections(collections);
+        state.collections = collections;
+        renderActiveCollections();
       })
       .catch(function () {
+        state.collections = [];
         setEmpty(nodes.cartList, "Не удалось загрузить корзину.");
         setEmpty(nodes.favoritesList, "Не удалось загрузить избранное.");
       });
+  }
+
+  function renderActiveCollections() {
+    if (!nodes.cartList || !nodes.favoritesList) {
+      return;
+    }
+    const collections = state.collections.filter(function (collection) {
+      return sourceMatchesActiveTab(collection.source || collection.marketplace);
+    });
+    renderCollections(collections);
   }
 
   function renderCollections(collections) {
@@ -468,11 +556,15 @@
         byType[collection.collection_type].push(collection);
       }
     });
-    renderCollectionType(nodes.cartList, byType.cart, "Корзина пока не импортирована.");
+    renderCollectionType(
+      nodes.cartList,
+      byType.cart,
+      scopedEmptyText("Корзина пока не импортирована.", "Корзина %s пока не импортирована.")
+    );
     renderCollectionType(
       nodes.favoritesList,
       byType.favorites,
-      "Избранное пока не импортировано."
+      scopedEmptyText("Избранное пока не импортировано.", "Избранное %s пока не импортировано.")
     );
   }
 
@@ -528,7 +620,6 @@
       setEmpty(node, emptyText);
       return;
     }
-    applyActiveTab();
   }
 
   function refreshCabinet() {
@@ -826,17 +917,16 @@
   function applyActiveTab() {
     const active = state.activeTab || "all";
     root.querySelectorAll("[data-price-assistant-tab]").forEach(function (button) {
-      button.classList.toggle("is-active", button.getAttribute("data-price-assistant-tab") === active);
+      const isActive = button.getAttribute("data-price-assistant-tab") === active;
+      button.classList.toggle("active", isActive);
+      button.classList.toggle("is-active", isActive);
     });
     root.querySelectorAll("[data-price-assistant-source]").forEach(function (card) {
-      const source = normalizeSource(card.getAttribute("data-price-assistant-source"));
-      const show =
-        active === "all" ||
-        source === active ||
-        (active === "wildberries" && source === "wb") ||
-        (active === "yandex_market" && source === "yandex");
-      card.hidden = !show;
+      card.hidden = !sourceMatchesActiveTab(card.getAttribute("data-price-assistant-source"));
     });
+    renderActiveWatchlist();
+    renderActiveCollections();
+    renderActiveSearchResults();
   }
 
   function toggleSettings() {
