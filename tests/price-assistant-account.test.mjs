@@ -377,7 +377,7 @@ await (async function testManualWatchlistShowsProductDataAndSingleEmptyChartMess
   assert.equal(text.includes("Недостаточно данных для графика"), false);
 })();
 
-await (async function testManualWatchlistCardKeepsStoreOnlyAboveBottomPriceAndDeleteCross() {
+await (async function testManualWatchlistCardHidesAvailableAndUsualPriceLabels() {
   const { manualList } = await runScript((url) => {
     if (url.includes("/watchlist/items?limit=50")) {
       return successResponse({
@@ -434,7 +434,61 @@ await (async function testManualWatchlistCardKeepsStoreOnlyAboveBottomPriceAndDe
   assert.equal(deleteButton.dataset.priceAssistantAction, "remove-manual");
   assert.equal(text.includes("default"), false);
   assert.ok(text.indexOf("Wildberries") < text.indexOf("1406.00 ₽"));
-  assert.match(text, /В наличии/);
+  assert.equal(text.includes("В наличии"), false);
+  assert.equal(text.includes("Сейчас обычная цена"), false);
+})();
+
+await (async function testManualWatchlistCardShowsOutOfStockLabel() {
+  const { manualList } = await runScript((url) => {
+    if (url.includes("/watchlist/items?limit=50")) {
+      return successResponse({
+        items: [
+          {
+            subscription_id: 10,
+            tracked_product_id: 20,
+            product_url: "https://www.wildberries.ru/catalog/465676229/detail.aspx",
+            source: "wildberries",
+            source_display_name: "Wildberries",
+            region_code: "default",
+            availability: false,
+            title: "Сумка рюкзак спортивная для фитнеса",
+            image_url: "https://cdn.example.test/bag.jpg",
+            last_price: "1406.00",
+            currency: "RUB",
+          },
+        ],
+      });
+    }
+    if (url.includes("/products/20/chart")) {
+      return successResponse({
+        title: "Сумка рюкзак спортивная для фитнеса",
+        labels: { headline: "Сейчас обычная цена" },
+        series: [{ ts: "2026-06-25T10:00:00Z", price: "1406.00" }],
+        summary: {
+          current_price: "1406.00",
+          min_price: "1406.00",
+          max_price: "1406.00",
+          trend: "near_average",
+        },
+        y_axis: { min: "1406.00", avg: "1406.00", max: "1406.00" },
+        currency: "RUB",
+      });
+    }
+    if (url.includes("/collections")) {
+      return successResponse({ items: [] });
+    }
+    if (url.includes("/connections")) {
+      return successResponse({ connections: [] });
+    }
+    return successResponse({});
+  });
+
+  await flushPromises();
+
+  const text = textOf(manualList);
+
+  assert.match(text, /Нет в наличии/);
+  assert.equal(text.includes("Сейчас обычная цена"), false);
 })();
 
 await (async function testSinglePriceChartDrawsFlatLineWithMinMaxMarkers() {

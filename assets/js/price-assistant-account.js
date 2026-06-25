@@ -311,13 +311,10 @@
   }
 
   function availabilityLabel(value) {
-    if (value === true) {
-      return "В наличии";
-    }
     if (value === false) {
       return "Нет в наличии";
     }
-    return value || "";
+    return "";
   }
 
   function normalizeSource(value) {
@@ -993,7 +990,10 @@
       appendText(chartNode, "p", "Нет данных для графика.", "cashback-price-assistant__empty");
       return;
     }
-    appendText(chartNode, "p", data.labels && data.labels.headline, "cashback-price-assistant__item-meta");
+    const headline = data.labels && data.labels.headline;
+    if (headline && headline !== "Сейчас обычная цена") {
+      appendText(chartNode, "p", headline, "cashback-price-assistant__item-meta");
+    }
     const values = series
       .map(function (point) {
         return Number(point.price);
