@@ -157,6 +157,18 @@ function findFirst(node, predicate) {
   return null;
 }
 
+function findAll(node, predicate) {
+  const matches = [];
+  const visit = (current) => {
+    if (predicate(current)) {
+      matches.push(current);
+    }
+    current.children.forEach(visit);
+  };
+  visit(node);
+  return matches;
+}
+
 function countText(text, needle) {
   return text.split(needle).length - 1;
 }
@@ -363,4 +375,127 @@ await (async function testManualWatchlistShowsProductDataAndSingleEmptyChartMess
   assert.match(text, /1360\.00 RUB/);
   assert.equal(countText(text, "Нет данных для графика."), 1);
   assert.equal(text.includes("Недостаточно данных для графика"), false);
+})();
+
+await (async function testManualWatchlistCardKeepsStoreOnlyAboveBottomPriceAndDeleteCross() {
+  const { manualList } = await runScript((url) => {
+    if (url.includes("/watchlist/items?limit=50")) {
+      return successResponse({
+        items: [
+          {
+            subscription_id: 10,
+            tracked_product_id: 20,
+            product_url: "https://www.wildberries.ru/catalog/465676229/detail.aspx",
+            source: "wildberries",
+            source_display_name: "Wildberries",
+            region_code: "default",
+            availability: true,
+            title: "Сумка рюкзак спортивная для фитнеса",
+            image_url: "https://cdn.example.test/bag.jpg",
+            last_price: "1406.00",
+            currency: "RUB",
+          },
+        ],
+      });
+    }
+    if (url.includes("/products/20/chart")) {
+      return successResponse({
+        title: "Сумка рюкзак спортивная для фитнеса",
+        labels: { headline: "Сейчас обычная цена" },
+        series: [{ ts: "2026-06-25T10:00:00Z", price: "1406.00" }],
+        summary: {
+          current_price: "1406.00",
+          min_price: "1406.00",
+          max_price: "1406.00",
+          trend: "near_average",
+        },
+        y_axis: { min: "1406.00", avg: "1406.00", max: "1406.00" },
+        currency: "RUB",
+      });
+    }
+    if (url.includes("/collections")) {
+      return successResponse({ items: [] });
+    }
+    if (url.includes("/connections")) {
+      return successResponse({ connections: [] });
+    }
+    return successResponse({});
+  });
+
+  await flushPromises();
+
+  const text = textOf(manualList);
+  const deleteButton = findFirst(manualList, (node) =>
+    node.classList.contains("cashback-price-assistant__delete-card")
+  );
+
+  assert.ok(deleteButton, "manual card must expose a delete control");
+  assert.equal(deleteButton.textContent, "×");
+  assert.equal(deleteButton.dataset.priceAssistantAction, "remove-manual");
+  assert.equal(text.includes("default"), false);
+  assert.ok(text.indexOf("Wildberries") < text.indexOf("1406.00 RUB"));
+  assert.match(text, /В наличии/);
+})();
+
+await (async function testSinglePriceChartDrawsFlatLineWithMinMaxMarkers() {
+  const { manualList } = await runScript((url) => {
+    if (url.includes("/watchlist/items?limit=50")) {
+      return successResponse({
+        items: [
+          {
+            subscription_id: 10,
+            tracked_product_id: 20,
+            source: "wildberries",
+            source_display_name: "Wildberries",
+            region_code: "default",
+            title: "Сумка рюкзак спортивная для фитнеса",
+            last_price: "1406.00",
+            currency: "RUB",
+          },
+        ],
+      });
+    }
+    if (url.includes("/products/20/chart")) {
+      return successResponse({
+        title: "Сумка рюкзак спортивная для фитнеса",
+        labels: { headline: "Сейчас обычная цена" },
+        series: [{ ts: "2026-06-25T10:00:00Z", price: "1406.00" }],
+        summary: {
+          current_price: "1406.00",
+          min_price: "1406.00",
+          max_price: "1406.00",
+          trend: "near_average",
+        },
+        y_axis: { min: "1406.00", avg: "1406.00", max: "1406.00" },
+        currency: "RUB",
+      });
+    }
+    if (url.includes("/collections")) {
+      return successResponse({ items: [] });
+    }
+    if (url.includes("/connections")) {
+      return successResponse({ connections: [] });
+    }
+    return successResponse({});
+  });
+
+  await flushPromises();
+
+  const polyline = findFirst(manualList, (node) =>
+    node.classList.contains("cashback-price-assistant__chart-line")
+  );
+  const markers = findAll(manualList, (node) =>
+    node.classList.contains("cashback-price-assistant__chart-extreme-label")
+  );
+  const pointPairs = (polyline && polyline.getAttribute("points")
+    ? polyline.getAttribute("points").trim().split(/\s+/)
+    : []
+  ).map((point) => point.split(",").map(Number));
+
+  assert.equal(pointPairs.length, 2);
+  assert.equal(pointPairs[0][1], pointPairs[1][1]);
+  assert.deepEqual(
+    markers.map(textOf),
+    ["Мин 1406.00 RUB", "Макс 1406.00 RUB"]
+  );
 })();

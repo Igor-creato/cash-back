@@ -334,6 +334,26 @@
     return item.source || item.source_code || item.marketplace || item.store_code || "";
   }
 
+  function sourceDisplayName(item) {
+    return (
+      firstValue(item, [
+        "store_display_name",
+        "source_display_name",
+        "marketplace_label",
+        "source_label",
+      ]) ||
+      marketplaceLabel(itemSource(item)) ||
+      itemSource(item)
+    );
+  }
+
+  function appendNonEmptyText(parent, tag, text, className) {
+    if (!text) {
+      return null;
+    }
+    return appendText(parent, tag, text, className);
+  }
+
   function marketplaceLabel(code) {
     const normalized = normalizeSource(code);
     if (normalized === "all") {
@@ -412,21 +432,29 @@
 
     const body = document.createElement("div");
     body.className = "cashback-price-assistant__item-body";
-    appendText(body, "p", productPrice(item), "cashback-price-assistant__price");
     appendText(body, "p", productTitle(item), "cashback-price-assistant__item-title");
-    appendText(
+    appendNonEmptyText(
+      body,
+      "p",
+      sourceDisplayName(item),
+      "cashback-price-assistant__item-store"
+    );
+    appendNonEmptyText(
       body,
       "p",
       [
-        item.store_display_name || item.source_display_name || item.source || item.source_code,
         item.match_label,
-        item.availability,
+        availabilityLabel(item.availability),
       ]
         .filter(Boolean)
         .join(" · "),
       "cashback-price-assistant__item-meta"
     );
-    appendProductActions(body, item);
+    const footer = document.createElement("div");
+    footer.className = "cashback-price-assistant__item-footer";
+    appendText(footer, "p", productPrice(item), "cashback-price-assistant__price");
+    appendProductActions(footer, item);
+    body.appendChild(footer);
     card.appendChild(body);
 
     return card;
@@ -567,18 +595,17 @@
       body.className = "cashback-price-assistant__item-body";
 
       appendText(body, "p", productTitle(item), "cashback-price-assistant__item-title");
-      appendText(body, "p", productPrice(item), "cashback-price-assistant__price");
-      appendText(
+      appendNonEmptyText(
         body,
         "p",
-        [
-          item.source_display_name || item.source,
-          item.region_code,
-          availabilityLabel(item.availability),
-        ]
-          .filter(Boolean)
-          .join(" · "),
-        "cashback-price-assistant__item-meta"
+        sourceDisplayName(item),
+        "cashback-price-assistant__item-store"
+      );
+      appendNonEmptyText(
+        body,
+        "p",
+        availabilityLabel(item.availability),
+        "cashback-price-assistant__item-stock"
       );
 
       if (item.target_price) {
@@ -590,15 +617,19 @@
         );
       }
 
-      const actions = document.createElement("div");
-      actions.className = "cashback-price-assistant__item-actions";
-      appendAction(actions, "buy", "Купить", "cashback-btn-primary");
-      body.appendChild(actions);
-
       const chart = document.createElement("div");
       chart.className = "cashback-price-assistant__inline-chart";
       chart.setAttribute("data-price-assistant-item-chart", "");
       body.appendChild(chart);
+
+      const footer = document.createElement("div");
+      footer.className = "cashback-price-assistant__item-footer";
+      appendText(footer, "p", productPrice(item), "cashback-price-assistant__price");
+      const actions = document.createElement("div");
+      actions.className = "cashback-price-assistant__item-actions";
+      appendAction(actions, "buy", "Купить", "cashback-btn-primary");
+      footer.appendChild(actions);
+      body.appendChild(footer);
 
       card.appendChild(body);
       nodes.manualList.appendChild(card);
@@ -712,13 +743,10 @@
         }),
         collection.source
       );
-      appendText(
+      appendNonEmptyText(
         card.querySelector(".cashback-price-assistant__item-body") || card,
         "p",
-        (collection.collection_type || "import") +
-          " · " +
-          (collection.region_code || "default") +
-          (item.quantity ? " · " + item.quantity + " шт." : ""),
+        item.quantity ? item.quantity + " шт." : "",
         "cashback-price-assistant__item-meta"
       );
       if (row.index === 0) {
@@ -957,18 +985,33 @@
       return;
     }
     appendText(chartNode, "p", data.labels && data.labels.headline, "cashback-price-assistant__item-meta");
-    const values = series.map(function (point) {
-      return Number(point.price);
-    });
+    const values = series
+      .map(function (point) {
+        return Number(point.price);
+      })
+      .filter(function (value) {
+        return Number.isFinite(value);
+      });
+    if (!values.length) {
+      appendText(chartNode, "p", "Нет данных для графика.", "cashback-price-assistant__empty");
+      return;
+    }
+    const visualValues = values.length === 1 ? [values[0], values[0]] : values;
     const min = Math.min.apply(null, values);
     const max = Math.max.apply(null, values);
     const width = 720;
     const height = 220;
     const pad = 24;
-    const span = max - min || 1;
-    const points = values.map(function (value, index) {
-      const x = pad + (index * (width - pad * 2)) / Math.max(series.length - 1, 1);
-      const y = height - pad - ((value - min) * (height - pad * 2)) / span;
+    const equalPricePad = min === max ? Math.max(Math.abs(min) * 0.02, 1) : 0;
+    const domainMin = min - equalPricePad;
+    const domainMax = max + equalPricePad;
+    const span = domainMax - domainMin || 1;
+    const yForPrice = function (value) {
+      return height - pad - ((value - domainMin) * (height - pad * 2)) / span;
+    };
+    const points = visualValues.map(function (value, index) {
+      const x = pad + (index * (width - pad * 2)) / Math.max(visualValues.length - 1, 1);
+      const y = yForPrice(value);
       return x.toFixed(1) + "," + y.toFixed(1);
     });
 
@@ -982,7 +1025,7 @@
     svg.appendChild(polyline);
     const avg = data.y_axis && data.y_axis.avg ? Number(data.y_axis.avg) : null;
     if (avg !== null && Number.isFinite(avg)) {
-      const avgY = height - pad - ((avg - min) * (height - pad * 2)) / span;
+      const avgY = yForPrice(avg);
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
       line.setAttribute("class", "cashback-price-assistant__chart-average");
       line.setAttribute("x1", String(pad));
@@ -991,6 +1034,22 @@
       line.setAttribute("y2", avgY.toFixed(1));
       svg.appendChild(line);
     }
+    addChartExtremeMarker(
+      svg,
+      "min",
+      min,
+      "Мин " + money(data.summary && data.summary.min_price, data.currency),
+      yForPrice,
+      { x: pad, anchor: "start", labelOffset: 16 }
+    );
+    addChartExtremeMarker(
+      svg,
+      "max",
+      max,
+      "Макс " + money(data.summary && data.summary.max_price, data.currency),
+      yForPrice,
+      { x: width - pad, anchor: "end", labelOffset: -8 }
+    );
     chartNode.appendChild(svg);
     appendText(
       chartNode,
@@ -1003,6 +1062,36 @@
         money(data.summary && data.summary.max_price, data.currency),
       "cashback-price-assistant__chart-summary"
     );
+  }
+
+  function addChartExtremeMarker(svg, kind, value, label, yForPrice, options) {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    const y = yForPrice(value);
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute(
+      "class",
+      "cashback-price-assistant__chart-extreme-line cashback-price-assistant__chart-extreme-line--" +
+        kind
+    );
+    line.setAttribute("x1", "24");
+    line.setAttribute("x2", "696");
+    line.setAttribute("y1", y.toFixed(1));
+    line.setAttribute("y2", y.toFixed(1));
+    svg.appendChild(line);
+
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute(
+      "class",
+      "cashback-price-assistant__chart-extreme-label cashback-price-assistant__chart-extreme-label--" +
+        kind
+    );
+    text.setAttribute("x", String(options.x));
+    text.setAttribute("y", String(Math.min(212, Math.max(14, y + options.labelOffset)).toFixed(1)));
+    text.setAttribute("text-anchor", options.anchor);
+    text.textContent = label;
+    svg.appendChild(text);
   }
 
   function loadCompare(trackedProductId) {

@@ -234,6 +234,10 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('.cashback-price-assistant__delete-card', $styles);
         self::assertStringNotContainsString('.cashback-price-assistant__primary-button', $styles);
         self::assertStringContainsString('.cashback-price-assistant__inline-chart', $styles);
+        self::assertStringContainsString('.cashback-price-assistant__item-footer', $styles);
+        self::assertStringContainsString('.cashback-price-assistant__chart-extreme-line', $styles);
+        self::assertStringContainsString('.cashback-price-assistant__chart-extreme-label', $styles);
+        self::assertStringContainsString('object-fit: contain', $styles);
         self::assertStringContainsString('cashback-price-assistant__form--link', $styles);
         self::assertStringNotContainsString('linear-gradient(180deg, #f5c84d', $styles);
     }
