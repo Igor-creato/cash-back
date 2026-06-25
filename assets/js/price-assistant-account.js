@@ -262,6 +262,43 @@
     return String(value) + (currency ? " " + currency : "");
   }
 
+  function firstValue(item, fields) {
+    for (let index = 0; index < fields.length; index++) {
+      const value = item[fields[index]];
+      if (value !== null && value !== undefined && value !== "") {
+        return value;
+      }
+    }
+    return "";
+  }
+
+  function productTitle(item) {
+    return firstValue(item, ["title", "name", "product_name"]) || item.product_url || "Товар";
+  }
+
+  function productImageUrl(item) {
+    return firstValue(item, ["image_url", "image", "picture", "thumbnail_url"]);
+  }
+
+  function productPrice(item) {
+    const value = firstValue(item, ["last_price", "current_price", "price", "price_current"]);
+    return value === "" ? "Цена обновляется" : money(value, item.currency);
+  }
+
+  function productDirectUrl(item) {
+    return firstValue(item, ["product_url", "canonical_url", "url", "search_url"]);
+  }
+
+  function availabilityLabel(value) {
+    if (value === true) {
+      return "В наличии";
+    }
+    if (value === false) {
+      return "Нет в наличии";
+    }
+    return value || "";
+  }
+
   function normalizeSource(value) {
     return String(value || "")
       .toLowerCase()
@@ -507,38 +544,49 @@
       card.dataset.subscriptionId = item.subscription_id;
       card.dataset.trackedProductId = item.tracked_product_id;
       card.dataset.priceAssistantSource = normalizeSource(item.source || item.source_code);
+      card.dataset.productUrl = productDirectUrl(item);
 
-      renderImage(card, item.image_url, item.title);
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "cashback-price-assistant__delete-card";
+      deleteButton.dataset.priceAssistantAction = "remove-manual";
+      deleteButton.setAttribute("title", "Удалить");
+      deleteButton.setAttribute("aria-label", "Удалить");
+      deleteButton.setAttribute("data-price-assistant-delete-card", "");
+      deleteButton.textContent = "×";
+      card.appendChild(deleteButton);
+
+      renderImage(card, productImageUrl(item), productTitle(item));
       const body = document.createElement("div");
       body.className = "cashback-price-assistant__item-body";
 
-      appendText(body, "p", item.title || item.product_url || "Товар", "cashback-price-assistant__item-title");
+      appendText(body, "p", productTitle(item), "cashback-price-assistant__item-title");
+      appendText(body, "p", productPrice(item), "cashback-price-assistant__price");
       appendText(
         body,
         "p",
         [
           item.source_display_name || item.source,
           item.region_code,
-          money(item.last_price || item.current_price, item.currency),
-          item.availability,
+          availabilityLabel(item.availability),
         ]
           .filter(Boolean)
           .join(" · "),
         "cashback-price-assistant__item-meta"
       );
 
-      const targets = document.createElement("div");
-      targets.className = "cashback-price-assistant__item-targets";
-      appendTargetInput(targets, "target_price", "Желаемая цена", item.target_price);
-      body.appendChild(targets);
+      if (item.target_price) {
+        appendText(
+          body,
+          "p",
+          "Желаемая цена " + money(item.target_price, item.currency),
+          "cashback-price-assistant__item-meta"
+        );
+      }
 
       const actions = document.createElement("div");
       actions.className = "cashback-price-assistant__item-actions";
-      appendAction(actions, "save-targets", "Сохранить цели");
-      appendAction(actions, "chart", "Обновить график");
-      appendAction(actions, "compare", "Где дешевле");
-      appendAction(actions, "cashback", "Перейти с кэшбэком");
-      appendAction(actions, "remove-manual", "Удалить");
+      appendAction(actions, "buy", "Купить", "cashback-btn-primary");
       body.appendChild(actions);
 
       const chart = document.createElement("div");
@@ -565,10 +613,10 @@
     parent.appendChild(wrapper);
   }
 
-  function appendAction(parent, action, label) {
+  function appendAction(parent, action, label, className) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "button";
+    button.className = className ? "button " + className : "button";
     button.dataset.priceAssistantAction = action;
     button.textContent = label;
     parent.appendChild(button);
@@ -771,8 +819,8 @@
       saveTargets(card, ids.subscriptionId);
     } else if (action === "remove-manual") {
       deleteWatchlistItem(ids.subscriptionId);
-    } else if (action === "cashback") {
-      openCashbackLink(ids.subscriptionId);
+    } else if (action === "buy") {
+      buyProduct(card, ids.subscriptionId);
     } else if (action === "chart") {
       loadChart(
         ids.trackedProductId,
@@ -808,7 +856,7 @@
   }
 
   function deleteWatchlistItem(subscriptionId) {
-    if (!subscriptionId || !window.confirm("Удалить товар из Price Assistant?")) {
+    if (!subscriptionId) {
       return;
     }
     requestJson("/watchlist/items/" + encodeURIComponent(subscriptionId), { method: "DELETE" })
@@ -821,8 +869,26 @@
       });
   }
 
-  function openCashbackLink(subscriptionId) {
+  function buyProduct(card, subscriptionId) {
+    const directUrl = card ? card.dataset.productUrl : "";
+    const popup = window.open("", "_blank", "noopener,noreferrer");
+    const openUrl = function (url) {
+      if (!url) {
+        if (popup) {
+          popup.close();
+        }
+        setMessage("Ссылка на товар недоступна.", true);
+        return;
+      }
+      if (popup) {
+        popup.location.href = url;
+      } else {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+    };
+
     if (!subscriptionId) {
+      openUrl(directUrl);
       return;
     }
     requestJson("/watchlist/items/" + encodeURIComponent(subscriptionId) + "/cashback-link", {
@@ -830,12 +896,10 @@
       body: {},
     })
       .then(function (data) {
-        if (data.cashback_url) {
-          window.open(data.cashback_url, "_blank", "noopener,noreferrer");
-        }
+        openUrl(data.cashback_url || directUrl);
       })
-      .catch(function (error) {
-        setMessage(error.message || "Кэшбэк-переход недоступен.", true);
+      .catch(function () {
+        openUrl(directUrl);
       });
   }
 

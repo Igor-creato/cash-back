@@ -103,6 +103,8 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('data-price-assistant-target-price', $html);
         self::assertStringNotContainsString('data-price-assistant-target-effective-price', $html);
         self::assertStringNotContainsString('name="target_effective_price"', $html);
+        self::assertStringContainsString('cashback-btn-primary', $html);
+        self::assertStringNotContainsString('cashback-price-assistant__primary-button', $html);
         self::assertStringContainsString('Не авторизован', $html);
         self::assertStringNotContainsString('disconnected', $html);
         self::assertStringContainsString('data-price-assistant-disconnect', $html);
@@ -203,8 +205,18 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('function renderActiveCollections', $script);
         self::assertStringContainsString('function renderActiveSearchResults', $script);
         self::assertStringContainsString('function loadInlineChart', $script);
+        self::assertStringContainsString('function productImageUrl', $script);
+        self::assertStringContainsString('function productPrice', $script);
+        self::assertStringContainsString('function buyProduct', $script);
         self::assertStringContainsString('data-price-assistant-item-chart', $script);
+        self::assertStringContainsString('data-price-assistant-delete-card', $script);
+        self::assertStringContainsString('title", "Удалить"', $script);
+        self::assertStringContainsString('appendAction(actions, "buy", "Купить", "cashback-btn-primary")', $script);
         self::assertStringContainsString('renderWatchlist(state.watchlistItems)', $script);
+        self::assertStringNotContainsString('appendAction(actions, "save-targets"', $script);
+        self::assertStringNotContainsString('appendAction(actions, "compare"', $script);
+        self::assertStringNotContainsString('appendAction(actions, "cashback"', $script);
+        self::assertStringNotContainsString('appendAction(actions, "remove-manual"', $script);
         self::assertStringContainsString('normalizeSource(source) === "wb"', $script);
         self::assertStringContainsString('normalizeSource(source) === "yandex"', $script);
         self::assertStringContainsString('button.classList.toggle("active"', $script);
@@ -214,11 +226,13 @@ final class PriceAssistantAccountUiTest extends TestCase
     {
         $style_path = dirname(__DIR__, 3) . '/assets/css/price-assistant-account.css';
         $styles     = file_get_contents($style_path);
+        $base_styles = file_get_contents(dirname(__DIR__, 3) . '/assets/css/cashback-account-base.css');
 
         self::assertIsString($styles, 'Price Assistant account styles must be readable.');
-        self::assertStringContainsString('.cashback-price-assistant__primary-button', $styles);
-        self::assertStringContainsString('var(--cb-accent', $styles);
-        self::assertStringContainsString('var(--cb-text-on-accent', $styles);
+        self::assertIsString($base_styles, 'Shared account base styles must be readable.');
+        self::assertStringContainsString('.cashback-btn-primary', $base_styles);
+        self::assertStringContainsString('.cashback-price-assistant__delete-card', $styles);
+        self::assertStringNotContainsString('.cashback-price-assistant__primary-button', $styles);
         self::assertStringContainsString('.cashback-price-assistant__inline-chart', $styles);
         self::assertStringContainsString('cashback-price-assistant__form--link', $styles);
         self::assertStringNotContainsString('linear-gradient(180deg, #f5c84d', $styles);

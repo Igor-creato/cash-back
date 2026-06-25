@@ -129,7 +129,7 @@ final class Cashback_Price_Assistant_Account {
                         <span><?php echo esc_html(__('Целевая цена', 'cashback')); ?></span>
                         <input type="number" name="target_price" min="0" step="0.01" data-price-assistant-target-price>
                     </label>
-                    <button type="submit" class="button button-primary cashback-price-assistant__primary-button"><?php echo esc_html(__('Добавить', 'cashback')); ?></button>
+                    <button type="submit" class="button cashback-btn-primary"><?php echo esc_html(__('Добавить', 'cashback')); ?></button>
                 </form>
 
                 <div class="cashback-price-assistant__workspace">
@@ -160,7 +160,7 @@ final class Cashback_Price_Assistant_Account {
                             <div class="cashback-price-assistant__actions">
                                 <button
                                     type="button"
-                                    class="button button-primary cashback-price-assistant__connect cashback-price-assistant__primary-button"
+                                    class="button cashback-btn-primary cashback-price-assistant__connect"
                                     data-marketplace="<?php echo esc_attr($code); ?>"
                                     data-marketplace-page="login"
                                     <?php echo empty($marketplace['enabled']) ? 'disabled' : ''; ?>
@@ -225,7 +225,7 @@ final class Cashback_Price_Assistant_Account {
                     </label>
                     <span class="cashback-price-assistant__search-icon" aria-hidden="true"><?php echo esc_html__('Поиск', 'cashback'); ?></span>
                     <input id="price-assistant-search-query" type="search" name="q" placeholder="<?php echo esc_attr__('смартфон iPhone 15', 'cashback'); ?>" autocomplete="off" />
-                    <button type="submit" class="button button-primary cashback-price-assistant__primary-button"><?php echo esc_html__('Найти', 'cashback'); ?></button>
+                    <button type="submit" class="button cashback-btn-primary"><?php echo esc_html__('Найти', 'cashback'); ?></button>
                 </form>
 
                 <section class="cashback-price-assistant__search-results" data-price-assistant-search-results aria-live="polite"></section>

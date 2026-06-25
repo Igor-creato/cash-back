@@ -117,6 +117,41 @@
     border-color: var(--cb-accent-hover, #4555e8) !important;
 }
 
+.cashback-btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--cb-accent, #5b6cf7) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    border: none !important;
+    padding: 11px 28px !important;
+    min-height: 2.625rem !important;
+    border-radius: var(--cb-radius-pill, 4px) !important;
+    cursor: pointer !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    font-family: inherit !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+    box-shadow: var(--cb-shadow-soft, none) !important;
+    transition: background-color 0.15s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
+}
+
+.cashback-btn-primary:hover {
+    background: var(--cb-accent-hover, #4555e8) !important;
+    color: var(--cb-text-on-accent, #fff) !important;
+    box-shadow: var(--cb-shadow-raised, none) !important;
+    transform: translateY(-1px);
+    filter: none;
+}
+
+.cashback-btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
 /* --- Shared component: data table -------------------------------------
    Единый компонент для всех табличных представлений личного кабинета:
    - История покупок (#transactions-table)

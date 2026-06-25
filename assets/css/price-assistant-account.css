@@ -183,35 +183,6 @@
   gap: 10px;
 }
 
-.cashback-price-assistant .button,
-.cashback-price-assistant button.button,
-.cashback-price-assistant a.button {
-  align-items: center;
-  border-radius: var(--cb-radius-pill, 10px);
-  display: inline-flex;
-  font-weight: 700;
-  justify-content: center;
-  min-height: 38px;
-  padding: 10px 18px;
-  text-decoration: none;
-}
-
-.cashback-price-assistant .button-primary,
-.cashback-price-assistant__primary-button {
-  background: var(--cb-accent, #4555e8);
-  border-color: var(--cb-accent, #4555e8);
-  color: var(--cb-text-on-accent, #fff);
-}
-
-.cashback-price-assistant .button-primary:hover,
-.cashback-price-assistant .button-primary:focus,
-.cashback-price-assistant__primary-button:hover,
-.cashback-price-assistant__primary-button:focus {
-  background: var(--cb-accent-hover, #3444d5);
-  border-color: var(--cb-accent-hover, #3444d5);
-  color: var(--cb-text-on-accent, #fff);
-}
-
 .cashback-price-assistant .button:disabled,
 .cashback-price-assistant .button.disabled {
   cursor: not-allowed;
@@ -295,6 +266,7 @@
   gap: 12px;
   min-width: 0;
   padding: 12px;
+  position: relative;
 }
 
 .cashback-price-assistant__product-card {
@@ -325,6 +297,30 @@
   height: 100%;
   object-fit: cover;
   width: 100%;
+}
+
+.cashback-price-assistant__delete-card {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--pa-muted);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 24px;
+  height: 32px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  position: absolute;
+  right: 10px;
+  top: 8px;
+  width: 32px;
+}
+
+.cashback-price-assistant__delete-card:hover,
+.cashback-price-assistant__delete-card:focus {
+  color: var(--cb-danger, #e5484d);
+  outline: none;
 }
 
 .cashback-price-assistant__item-body {
