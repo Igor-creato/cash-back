@@ -408,12 +408,12 @@
       card.dataset.trackedProductId = item.tracked_product_id;
     }
 
-    renderImage(card, item.image_url, item.title);
+    renderImage(card, productImageUrl(item), productTitle(item));
 
     const body = document.createElement("div");
     body.className = "cashback-price-assistant__item-body";
-    appendText(body, "p", money(item.price || item.current_price || item.last_price, item.currency), "cashback-price-assistant__price");
-    appendText(body, "p", item.title || item.product_url || item.external_item_id || "Товар", "cashback-price-assistant__item-title");
+    appendText(body, "p", productPrice(item), "cashback-price-assistant__price");
+    appendText(body, "p", productTitle(item), "cashback-price-assistant__item-title");
     appendText(
       body,
       "p",
@@ -951,12 +951,12 @@
       return;
     }
     clearNode(chartNode);
-    appendText(chartNode, "p", data.labels && data.labels.headline, "cashback-price-assistant__item-meta");
     const series = Array.isArray(data.series) ? data.series : [];
     if (series.length === 0 || (data.summary && data.summary.trend === "no_data")) {
       appendText(chartNode, "p", "Нет данных для графика.", "cashback-price-assistant__empty");
       return;
     }
+    appendText(chartNode, "p", data.labels && data.labels.headline, "cashback-price-assistant__item-meta");
     const values = series.map(function (point) {
       return Number(point.price);
     });

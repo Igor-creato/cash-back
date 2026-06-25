@@ -39,6 +39,7 @@ class FakeElement {
     this.hidden = false;
     this.disabled = false;
     this.value = "";
+    this.dataset = {};
     this._textContent = "";
     this.classList = new FakeClassList(this);
 
@@ -141,6 +142,23 @@ class FakeElement {
 
 function textOf(node) {
   return node.textContent + node.children.map(textOf).join("");
+}
+
+function findFirst(node, predicate) {
+  if (predicate(node)) {
+    return node;
+  }
+  for (const child of node.children) {
+    const found = findFirst(child, predicate);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+function countText(text, needle) {
+  return text.split(needle).length - 1;
 }
 
 function createRoot() {
@@ -294,4 +312,55 @@ await (async function testRateLimitShowsHumanReadableMessage() {
 
   assert.equal(textOf(message), "Слишком много запросов. Попробуйте позже.");
   assert.equal(fetchCalls.some((call) => call.method === "POST"), true);
+})();
+
+await (async function testManualWatchlistShowsProductDataAndSingleEmptyChartMessage() {
+  const { manualList } = await runScript((url) => {
+    if (url.includes("/watchlist/items?limit=50")) {
+      return successResponse({
+        items: [
+          {
+            subscription_id: 10,
+            tracked_product_id: 20,
+            product_url: "https://www.wildberries.ru/catalog/465676229/detail.aspx",
+            source: "wildberries",
+            source_display_name: "Wildberries",
+            region_code: "default",
+            availability: true,
+            title: "Тестовый товар",
+            image_url: "https://cdn.example.test/product.jpg",
+            last_price: "1360.00",
+            currency: "RUB",
+            target_price: "1200.00",
+          },
+        ],
+      });
+    }
+    if (url.includes("/products/20/chart")) {
+      return successResponse({
+        labels: { headline: "Недостаточно данных для графика" },
+        series: [],
+        summary: { trend: "no_data" },
+        currency: "RUB",
+      });
+    }
+    if (url.includes("/collections")) {
+      return successResponse({ items: [] });
+    }
+    if (url.includes("/connections")) {
+      return successResponse({ connections: [] });
+    }
+    return successResponse({});
+  });
+
+  await flushPromises();
+
+  const text = textOf(manualList);
+  const image = findFirst(manualList, (node) => node.tagName === "IMG");
+
+  assert.equal(image.src, "https://cdn.example.test/product.jpg");
+  assert.match(text, /Тестовый товар/);
+  assert.match(text, /1360\.00 RUB/);
+  assert.equal(countText(text, "Нет данных для графика."), 1);
+  assert.equal(text.includes("Недостаточно данных для графика"), false);
 })();

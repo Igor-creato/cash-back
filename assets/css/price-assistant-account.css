@@ -301,8 +301,11 @@
 
 .cashback-price-assistant__delete-card {
   align-items: center;
-  background: transparent;
+  appearance: none;
+  background: transparent !important;
   border: 0;
+  border-radius: 0;
+  box-shadow: none;
   color: var(--pa-muted);
   cursor: pointer;
   display: inline-flex;
@@ -315,10 +318,13 @@
   right: 10px;
   top: 8px;
   width: 32px;
+  z-index: 2;
 }
 
 .cashback-price-assistant__delete-card:hover,
 .cashback-price-assistant__delete-card:focus {
+  background: transparent !important;
+  box-shadow: none;
   color: var(--cb-danger, #e5484d);
   outline: none;
 }
