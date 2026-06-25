@@ -1047,22 +1047,24 @@
       svg,
       "min",
       min,
-      "Мин " + money(data.summary && data.summary.min_price, data.currency),
+      money(data.summary && data.summary.min_price, data.currency),
+      "Мин",
       yForPrice,
-      { x: pad, anchor: "start", labelOffset: 16 }
+      { x: pad, anchor: "start", priceY: 26, labelY: 102 }
     );
     addChartExtremeMarker(
       svg,
       "max",
       max,
-      "Макс " + money(data.summary && data.summary.max_price, data.currency),
+      money(data.summary && data.summary.max_price, data.currency),
+      "Макс",
       yForPrice,
-      { x: width - pad, anchor: "end", labelOffset: -8 }
+      { x: width - pad, anchor: "end", priceY: 26, labelY: 102 }
     );
     chartNode.appendChild(svg);
   }
 
-  function addChartExtremeMarker(svg, kind, value, label, yForPrice, options) {
+  function addChartExtremeMarker(svg, kind, value, priceLabel, axisLabel, yForPrice, options) {
     if (!Number.isFinite(value)) {
       return;
     }
@@ -1079,17 +1081,29 @@
     line.setAttribute("y2", y.toFixed(1));
     svg.appendChild(line);
 
-    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute(
+    const priceText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    priceText.setAttribute(
       "class",
-      "cashback-price-assistant__chart-extreme-label cashback-price-assistant__chart-extreme-label--" +
+      "cashback-price-assistant__chart-extreme-label cashback-price-assistant__chart-price-label cashback-price-assistant__chart-extreme-label--" +
         kind
     );
-    text.setAttribute("x", String(options.x));
-    text.setAttribute("y", String(Math.min(110, Math.max(14, y + options.labelOffset)).toFixed(1)));
-    text.setAttribute("text-anchor", options.anchor);
-    text.textContent = label;
-    svg.appendChild(text);
+    priceText.setAttribute("x", String(options.x));
+    priceText.setAttribute("y", String(options.priceY));
+    priceText.setAttribute("text-anchor", options.anchor);
+    priceText.textContent = priceLabel;
+    svg.appendChild(priceText);
+
+    const axisText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    axisText.setAttribute(
+      "class",
+      "cashback-price-assistant__chart-extreme-label cashback-price-assistant__chart-axis-label cashback-price-assistant__chart-extreme-label--" +
+        kind
+    );
+    axisText.setAttribute("x", String(options.x));
+    axisText.setAttribute("y", String(options.labelY));
+    axisText.setAttribute("text-anchor", options.anchor);
+    axisText.textContent = axisLabel;
+    svg.appendChild(axisText);
   }
 
   function loadCompare(trackedProductId) {

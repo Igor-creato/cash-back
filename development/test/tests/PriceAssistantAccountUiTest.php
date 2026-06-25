@@ -211,6 +211,8 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('data-price-assistant-item-chart', $script);
         self::assertStringContainsString('data-price-assistant-delete-card', $script);
         self::assertStringContainsString('title", "Удалить"', $script);
+        self::assertStringContainsString('cashback-price-assistant__chart-price-label', $script);
+        self::assertStringContainsString('cashback-price-assistant__chart-axis-label', $script);
         self::assertStringContainsString('appendAction(actions, "buy", "Купить", "cashback-btn-primary")', $script);
         self::assertStringContainsString('renderWatchlist(state.watchlistItems)', $script);
         self::assertStringNotContainsString('appendAction(actions, "save-targets"', $script);
@@ -237,9 +239,13 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('.cashback-price-assistant__item-footer', $styles);
         self::assertStringContainsString('.cashback-price-assistant__chart-extreme-line', $styles);
         self::assertStringContainsString('.cashback-price-assistant__chart-extreme-label', $styles);
+        self::assertStringContainsString('.cashback-price-assistant__chart-price-label', $styles);
+        self::assertStringContainsString('.cashback-price-assistant__chart-axis-label', $styles);
         self::assertStringContainsString('object-fit: contain', $styles);
-        self::assertStringContainsString('grid-template-columns: repeat(auto-fill, 264px);', $styles);
+        self::assertStringContainsString('grid-template-columns: repeat(3, 264px);', $styles);
         self::assertStringContainsString('width: 264px;', $styles);
+        self::assertStringContainsString('left: auto;', $styles);
+        self::assertStringContainsString('inset-inline-end: 10px;', $styles);
         self::assertStringContainsString('font-size: 14px;', $styles);
         self::assertStringContainsString('font-size: 16px;', $styles);
         self::assertStringContainsString('height: 118px;', $styles);
@@ -249,9 +255,14 @@ final class PriceAssistantAccountUiTest extends TestCase
             'The in-card price chart line must be thick enough to read.'
         );
         self::assertMatchesRegularExpression(
-            '/\.cashback-price-assistant__chart-extreme-label\s*\{[^}]*font-size:\s*14px;/s',
+            '/\.cashback-price-assistant__chart-extreme-label\s*\{[^}]*font-size:\s*18px;/s',
             $styles,
-            'The min/max prices inside the chart must use 14px text.'
+            'The min/max labels inside the chart must use 18px text.'
+        );
+        self::assertDoesNotMatchRegularExpression(
+            '/\.cashback-price-assistant__chart-(?:average|extreme-line)\s*\{[^}]*stroke-dasharray/s',
+            $styles,
+            'The visible chart track must be solid, not dashed.'
         );
         self::assertStringNotContainsString('max-height: 180px', $styles);
         self::assertStringContainsString('cashback-price-assistant__form--link', $styles);

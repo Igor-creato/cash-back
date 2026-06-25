@@ -487,6 +487,12 @@ await (async function testSinglePriceChartDrawsFlatLineWithMinMaxMarkers() {
   const markers = findAll(manualList, (node) =>
     node.classList.contains("cashback-price-assistant__chart-extreme-label")
   );
+  const priceLabels = findAll(manualList, (node) =>
+    node.classList.contains("cashback-price-assistant__chart-price-label")
+  );
+  const axisLabels = findAll(manualList, (node) =>
+    node.classList.contains("cashback-price-assistant__chart-axis-label")
+  );
   const chartSummary = findFirst(manualList, (node) =>
     node.classList.contains("cashback-price-assistant__chart-summary")
   );
@@ -500,7 +506,16 @@ await (async function testSinglePriceChartDrawsFlatLineWithMinMaxMarkers() {
   assert.equal(chartSummary, null);
   assert.equal(textOf(manualList).includes("Сейчас 1406.00 ₽ · минимум"), false);
   assert.deepEqual(
+    priceLabels.map(textOf),
+    ["1406.00 ₽", "1406.00 ₽"]
+  );
+  assert.deepEqual(axisLabels.map(textOf), ["Мин", "Макс"]);
+  assert.equal(
+    Number(priceLabels[0].getAttribute("y")) < Number(axisLabels[0].getAttribute("y")),
+    true
+  );
+  assert.deepEqual(
     markers.map(textOf),
-    ["Мин 1406.00 ₽", "Макс 1406.00 ₽"]
+    ["1406.00 ₽", "Мин", "1406.00 ₽", "Макс"]
   );
 })();
