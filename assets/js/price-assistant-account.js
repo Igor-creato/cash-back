@@ -271,7 +271,16 @@
     if (value === null || value === undefined || value === "") {
       return "—";
     }
-    return String(value) + (currency ? " " + currency : "");
+    const symbol = currencySymbol(currency);
+    return String(value) + (symbol ? " " + symbol : "");
+  }
+
+  function currencySymbol(currency) {
+    const normalized = String(currency || "").toUpperCase();
+    if (normalized === "RUB" || normalized === "RUR") {
+      return "₽";
+    }
+    return currency || "";
   }
 
   function firstValue(item, fields) {
@@ -999,9 +1008,9 @@
     const visualValues = values.length === 1 ? [values[0], values[0]] : values;
     const min = Math.min.apply(null, values);
     const max = Math.max.apply(null, values);
-    const width = 720;
-    const height = 220;
-    const pad = 24;
+    const width = 360;
+    const height = 118;
+    const pad = 22;
     const equalPricePad = min === max ? Math.max(Math.abs(min) * 0.02, 1) : 0;
     const domainMin = min - equalPricePad;
     const domainMax = max + equalPricePad;
@@ -1051,17 +1060,6 @@
       { x: width - pad, anchor: "end", labelOffset: -8 }
     );
     chartNode.appendChild(svg);
-    appendText(
-      chartNode,
-      "p",
-      "Сейчас " +
-        money(data.summary && data.summary.current_price, data.currency) +
-        " · минимум " +
-        money(data.summary && data.summary.min_price, data.currency) +
-        " · максимум " +
-        money(data.summary && data.summary.max_price, data.currency),
-      "cashback-price-assistant__chart-summary"
-    );
   }
 
   function addChartExtremeMarker(svg, kind, value, label, yForPrice, options) {
@@ -1075,8 +1073,8 @@
       "cashback-price-assistant__chart-extreme-line cashback-price-assistant__chart-extreme-line--" +
         kind
     );
-    line.setAttribute("x1", "24");
-    line.setAttribute("x2", "696");
+    line.setAttribute("x1", "22");
+    line.setAttribute("x2", "338");
     line.setAttribute("y1", y.toFixed(1));
     line.setAttribute("y2", y.toFixed(1));
     svg.appendChild(line);
@@ -1088,7 +1086,7 @@
         kind
     );
     text.setAttribute("x", String(options.x));
-    text.setAttribute("y", String(Math.min(212, Math.max(14, y + options.labelOffset)).toFixed(1)));
+    text.setAttribute("y", String(Math.min(110, Math.max(14, y + options.labelOffset)).toFixed(1)));
     text.setAttribute("text-anchor", options.anchor);
     text.textContent = label;
     svg.appendChild(text);

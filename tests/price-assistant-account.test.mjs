@@ -372,7 +372,7 @@ await (async function testManualWatchlistShowsProductDataAndSingleEmptyChartMess
 
   assert.equal(image.src, "https://cdn.example.test/product.jpg");
   assert.match(text, /Тестовый товар/);
-  assert.match(text, /1360\.00 RUB/);
+  assert.match(text, /1360\.00 ₽/);
   assert.equal(countText(text, "Нет данных для графика."), 1);
   assert.equal(text.includes("Недостаточно данных для графика"), false);
 })();
@@ -433,7 +433,7 @@ await (async function testManualWatchlistCardKeepsStoreOnlyAboveBottomPriceAndDe
   assert.equal(deleteButton.textContent, "×");
   assert.equal(deleteButton.dataset.priceAssistantAction, "remove-manual");
   assert.equal(text.includes("default"), false);
-  assert.ok(text.indexOf("Wildberries") < text.indexOf("1406.00 RUB"));
+  assert.ok(text.indexOf("Wildberries") < text.indexOf("1406.00 ₽"));
   assert.match(text, /В наличии/);
 })();
 
@@ -487,6 +487,9 @@ await (async function testSinglePriceChartDrawsFlatLineWithMinMaxMarkers() {
   const markers = findAll(manualList, (node) =>
     node.classList.contains("cashback-price-assistant__chart-extreme-label")
   );
+  const chartSummary = findFirst(manualList, (node) =>
+    node.classList.contains("cashback-price-assistant__chart-summary")
+  );
   const pointPairs = (polyline && polyline.getAttribute("points")
     ? polyline.getAttribute("points").trim().split(/\s+/)
     : []
@@ -494,8 +497,10 @@ await (async function testSinglePriceChartDrawsFlatLineWithMinMaxMarkers() {
 
   assert.equal(pointPairs.length, 2);
   assert.equal(pointPairs[0][1], pointPairs[1][1]);
+  assert.equal(chartSummary, null);
+  assert.equal(textOf(manualList).includes("Сейчас 1406.00 ₽ · минимум"), false);
   assert.deepEqual(
     markers.map(textOf),
-    ["Мин 1406.00 RUB", "Макс 1406.00 RUB"]
+    ["Мин 1406.00 ₽", "Макс 1406.00 ₽"]
   );
 })();

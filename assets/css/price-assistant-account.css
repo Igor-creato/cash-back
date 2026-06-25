@@ -339,16 +339,16 @@
 }
 
 .cashback-price-assistant__item-title {
-  font-size: 20px;
+  font-size: 14px;
   font-weight: 700;
-  line-height: 1.32;
+  line-height: 1.35;
   margin: 0;
   overflow-wrap: anywhere;
 }
 
 .cashback-price-assistant__item-store {
   color: #5f6673;
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 700;
   line-height: 1.25;
   margin: 0;
@@ -370,14 +370,13 @@
 }
 
 .cashback-price-assistant__item-stock {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
 }
 
 .cashback-price-assistant__item-targets,
 .cashback-price-assistant__item-actions,
-.cashback-price-assistant__compare-row,
-.cashback-price-assistant__chart-summary {
+.cashback-price-assistant__compare-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -409,16 +408,16 @@
   display: grid;
   gap: 6px;
   margin-top: 4px;
-  min-height: 72px;
+  min-height: 118px;
 }
 
 .cashback-price-assistant__inline-chart svg {
   border: 1px solid var(--pa-line);
   border-radius: 8px;
   display: block;
-  height: auto;
-  max-height: 180px;
+  height: 118px;
   max-width: 100%;
+  width: 100%;
 }
 
 .cashback-price-assistant__chart-line {
@@ -443,7 +442,7 @@
 
 .cashback-price-assistant__chart-extreme-label {
   fill: #5f6673;
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -459,7 +458,7 @@
 }
 
 .cashback-price-assistant__price {
-  font-size: 26px;
+  font-size: 16px;
   font-weight: 800;
   line-height: 1.1;
   margin: 0;
