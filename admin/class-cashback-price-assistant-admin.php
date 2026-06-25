@@ -83,7 +83,6 @@ final class Cashback_Price_Assistant_Admin {
 					'saveError'  => 'Не удалось сохранить.',
 					'saved'      => 'Сохранено.',
 					'empty'      => 'Данных пока нет.',
-					'addStore'   => 'Добавить магазин',
 					'enabled'    => 'Включён',
 					'disabled'   => 'Отключён',
 				),
@@ -124,23 +123,10 @@ final class Cashback_Price_Assistant_Admin {
 					<?php echo esc_html__( 'мониторинг работает по включённым магазинам; поиск идёт по всем подключённым магазинам. Корзина и избранное только Ozon/Wildberries/Яндекс Маркет. Добавление credential proxy endpoints вынесено в отдельный security-этап.', 'cashback' ); ?>
 				</p>
 
-				<div class="cashback-pa-toolbar">
-					<button type="button" class="button button-primary" data-pa-action="add-store">
-						<?php echo esc_html__( 'Добавить магазин', 'cashback' ); ?>
-					</button>
-					<button type="button" class="button" data-pa-action="refresh">
-						<?php echo esc_html__( 'Обновить', 'cashback' ); ?>
-					</button>
-				</div>
-
 				<form class="cashback-pa-grid" data-pa-store-form>
 					<label>
 						<span><?php echo esc_html__( 'URL главной страницы магазина', 'cashback' ); ?></span>
 						<input type="url" name="homepage_url" required autocomplete="off" placeholder="https://www.example.ru/" />
-					</label>
-					<label class="cashback-pa-check">
-						<input type="checkbox" name="enabled" checked />
-						<span><?php echo esc_html__( 'Включён', 'cashback' ); ?></span>
 					</label>
 					<button type="submit" class="button button-primary">
 						<?php echo esc_html__( 'Сохранить магазин', 'cashback' ); ?>

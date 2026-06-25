@@ -75,7 +75,7 @@
     }
     target.innerHTML =
       '<table class="widefat striped"><thead><tr>' +
-      '<th>Магазин</th><th>Код</th><th>Статус</th><th>Источники</th>' +
+      '<th>Магазин</th><th>Код</th><th>Статус</th><th>Источники</th><th>Действие</th>' +
       '</tr></thead><tbody>' +
       items.map(function (store) {
         const sources = Array.isArray(store.sources) ? store.sources : [];
@@ -84,9 +84,23 @@
           '<td>' + escapeHtml(store.store_code || '') + '</td>' +
           '<td>' + escapeHtml(store.enabled ? (labels.enabled || 'Включён') : (labels.disabled || 'Отключён')) + '</td>' +
           '<td>' + renderSourceDetails(sources) + '</td>' +
+          '<td>' + renderStoreAction(store) + '</td>' +
           '</tr>';
       }).join('') +
       '</tbody></table>';
+  }
+
+  function renderStoreAction(store) {
+    const storeId = store.store_id || '';
+    const nextEnabled = !store.enabled;
+    const label = store.enabled ? 'Деактивировать' : 'Активировать';
+    return '<button type="button" class="button" data-pa-toggle-store data-pa-store-id="' +
+      escapeHtml(storeId) +
+      '" data-pa-store-enabled="' +
+      escapeHtml(nextEnabled ? 'true' : 'false') +
+      '">' +
+      escapeHtml(label) +
+      '</button>';
   }
 
   function renderSourceDetails(sources) {
@@ -141,6 +155,28 @@
   }
 
   function bindForms() {
+    root.addEventListener('click', function (event) {
+      const toggle = event.target.closest('[data-pa-toggle-store]');
+      if (!toggle) {
+        return;
+      }
+      const storeId = toggle.getAttribute('data-pa-store-id') || '';
+      if (!storeId) {
+        return;
+      }
+      request('/stores/' + encodeURIComponent(storeId), {
+        method: 'PATCH',
+        body: JSON.stringify({
+          enabled: toggle.getAttribute('data-pa-store-enabled') === 'true',
+        }),
+      }).then(function () {
+        showNotice(labels.saved || 'Сохранено.', false);
+        loadSection('stores');
+      }).catch(function () {
+        showNotice(labels.saveError || 'Не удалось сохранить.', true);
+      });
+    });
+
     const storeForm = root.querySelector('[data-pa-store-form]');
     if (storeForm) {
       storeForm.addEventListener('submit', function (event) {
@@ -149,11 +185,12 @@
         request('/stores', {
           method: 'POST',
           body: JSON.stringify({
-            enabled: form.get('enabled') === 'on',
+            enabled: true,
             homepage_url: form.get('homepage_url') || null,
           }),
         }).then(function () {
           showNotice(labels.saved || 'Сохранено.', false);
+          storeForm.reset();
           loadSection('stores');
         }).catch(function () {
           showNotice(labels.saveError || 'Не удалось сохранить.', true);

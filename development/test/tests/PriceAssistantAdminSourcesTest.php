@@ -61,9 +61,11 @@ final class PriceAssistantAdminSourcesTest extends TestCase
         foreach ($this->expectedTabs() as $label) {
             self::assertStringContainsString($label, $html);
         }
-        self::assertStringContainsString('Добавить магазин', $html);
         self::assertStringContainsString('URL главной страницы магазина', $html);
         self::assertStringContainsString('Сохранить магазин', $html);
+        self::assertStringNotContainsString('data-pa-action="add-store"', $html);
+        self::assertStringNotContainsString('data-pa-action="refresh"', $html);
+        self::assertStringNotContainsString('type="checkbox"', $html);
         self::assertStringNotContainsString('Сохранить источник', $html);
         self::assertStringNotContainsString('data-pa-source-form', $html);
         self::assertStringNotContainsString('data-pa-store-select', $html);
