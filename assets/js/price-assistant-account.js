@@ -76,11 +76,23 @@
         const data = text ? JSON.parse(text) : {};
         if (!response.ok) {
           const code = data && data.code ? data.code : "request_failed";
-          throw new Error(code);
+          const error = new Error(errorMessage(code));
+          error.code = code;
+          throw error;
         }
         return data;
       });
     });
+  }
+
+  function errorMessage(code) {
+    const messages = {
+      price_assistant_rate_limited: "Слишком много запросов. Попробуйте позже.",
+      price_assistant_login_required: "Войдите в аккаунт, чтобы пользоваться мониторингом цен.",
+      price_assistant_nonce_required: "Сессия устарела. Обновите страницу и попробуйте снова.",
+      price_assistant_disabled: "Мониторинг цен временно недоступен.",
+    };
+    return messages[code] || code || "Запрос не выполнен.";
   }
 
   function clearNode(node) {
@@ -529,13 +541,7 @@
   function renderWatchlist(items) {
     clearNode(nodes.manualList);
     if (!items.length) {
-      setEmpty(
-        nodes.manualList,
-        scopedEmptyText(
-          "Добавьте первый товар по ссылке.",
-          "Для %s пока нет ручных товаров."
-        )
-      );
+      setEmpty(nodes.manualList, "Добавьте первый товар по ссылке.");
       return;
     }
     items.forEach(function (item) {
@@ -1227,7 +1233,7 @@
       .catch(function (error) {
         setState(
           marketplace.code,
-          error && error.message === "marketplace_disabled"
+          error && error.code === "marketplace_disabled"
             ? "disconnected"
             : "reconnect_required"
         );
