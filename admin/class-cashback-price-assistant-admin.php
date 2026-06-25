@@ -52,7 +52,6 @@ final class Cashback_Price_Assistant_Admin {
 			'toplevel_page_' . self::PAGE_SLUG,
 			'admin_page_' . self::PAGE_SLUG,
 		);
-        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin page routing guard.
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin page routing guard.
 		$current = isset( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
 		if ( ! in_array( $hook, $allowed, true ) && self::PAGE_SLUG !== $current ) {
@@ -85,7 +84,6 @@ final class Cashback_Price_Assistant_Admin {
 					'saved'      => 'Сохранено.',
 					'empty'      => 'Данных пока нет.',
 					'addStore'   => 'Добавить магазин',
-					'saveSource' => 'Сохранить источник',
 					'enabled'    => 'Включён',
 					'disabled'   => 'Отключён',
 				),
@@ -123,7 +121,7 @@ final class Cashback_Price_Assistant_Admin {
 
 			<section class="cashback-pa-panel is-active" data-price-assistant-panel="stores">
 				<p class="description cashback-pa-help">
-					<?php echo esc_html__( 'поиск работает по включённым доменам/источникам; корзина и избранное только Ozon/Wildberries/Яндекс Маркет. Добавление credential proxy endpoints вынесено в отдельный security-этап.', 'cashback' ); ?>
+					<?php echo esc_html__( 'мониторинг работает по включённым магазинам; поиск идёт по всем подключённым магазинам. Корзина и избранное только Ozon/Wildberries/Яндекс Маркет. Добавление credential proxy endpoints вынесено в отдельный security-этап.', 'cashback' ); ?>
 				</p>
 
 				<div class="cashback-pa-toolbar">
@@ -137,16 +135,8 @@ final class Cashback_Price_Assistant_Admin {
 
 				<form class="cashback-pa-grid" data-pa-store-form>
 					<label>
-						<span><?php echo esc_html__( 'Код магазина', 'cashback' ); ?></span>
-						<input type="text" name="store_code" autocomplete="off" />
-					</label>
-					<label>
-						<span><?php echo esc_html__( 'Название', 'cashback' ); ?></span>
-						<input type="text" name="display_name" autocomplete="off" />
-					</label>
-					<label>
-						<span><?php echo esc_html__( 'Домашняя страница', 'cashback' ); ?></span>
-						<input type="url" name="homepage_url" autocomplete="off" />
+						<span><?php echo esc_html__( 'URL главной страницы магазина', 'cashback' ); ?></span>
+						<input type="url" name="homepage_url" required autocomplete="off" placeholder="https://www.example.ru/" />
 					</label>
 					<label class="cashback-pa-check">
 						<input type="checkbox" name="enabled" checked />
@@ -154,75 +144,6 @@ final class Cashback_Price_Assistant_Admin {
 					</label>
 					<button type="submit" class="button button-primary">
 						<?php echo esc_html__( 'Сохранить магазин', 'cashback' ); ?>
-					</button>
-				</form>
-
-				<form class="cashback-pa-grid" data-pa-source-form>
-					<label>
-						<span><?php echo esc_html__( 'Магазин для источника', 'cashback' ); ?></span>
-						<select name="store_id" data-pa-store-select>
-							<option value=""><?php echo esc_html__( 'Сначала загрузите или выберите магазин', 'cashback' ); ?></option>
-						</select>
-					</label>
-					<label>
-						<span><?php echo esc_html__( 'Код источника', 'cashback' ); ?></span>
-						<input type="text" name="source_code" autocomplete="off" />
-					</label>
-					<label>
-						<span><?php echo esc_html__( 'Название источника', 'cashback' ); ?></span>
-						<input type="text" name="display_name" autocomplete="off" />
-					</label>
-					<label>
-						<span><?php echo esc_html__( 'Домены', 'cashback' ); ?></span>
-						<input type="text" name="domains" autocomplete="off" />
-					</label>
-					<label>
-						<span><?php echo esc_html__( 'Шаблон поиска', 'cashback' ); ?></span>
-						<input type="text" name="search_template" autocomplete="off" />
-					</label>
-					<label>
-						<span><?php echo esc_html__( 'Регионы', 'cashback' ); ?></span>
-						<input type="text" name="region_support" autocomplete="off" />
-					</label>
-					<label>
-						<span><?php echo esc_html__( 'Приоритет', 'cashback' ); ?></span>
-						<input type="number" name="priority" min="0" max="1000" value="100" />
-					</label>
-					<label>
-						<span><?php echo esc_html__( 'Режим извлечения', 'cashback' ); ?></span>
-						<select name="extraction_mode">
-							<option value="json"><?php echo esc_html__( 'JSON', 'cashback' ); ?></option>
-							<option value="css"><?php echo esc_html__( 'CSS', 'cashback' ); ?></option>
-							<option value="hybrid"><?php echo esc_html__( 'Гибридный', 'cashback' ); ?></option>
-						</select>
-					</label>
-					<label>
-						<span><?php echo esc_html__( 'Политика прокси', 'cashback' ); ?></span>
-						<select name="proxy_tier_policy">
-							<option value="none"><?php echo esc_html__( 'Без прокси', 'cashback' ); ?></option>
-							<option value="cheap_first"><?php echo esc_html__( 'Сначала дешёвые', 'cashback' ); ?></option>
-							<option value="residential_first"><?php echo esc_html__( 'Сначала резидентские', 'cashback' ); ?></option>
-							<option value="premium_only"><?php echo esc_html__( 'Только премиум', 'cashback' ); ?></option>
-						</select>
-					</label>
-					<label>
-						<span><?php echo esc_html__( 'Мин. интервал загрузки', 'cashback' ); ?></span>
-						<input type="number" name="min_fetch_interval_minutes" min="1" max="1440" value="60" />
-					</label>
-					<label>
-						<span><?php echo esc_html__( 'Порог сопоставления', 'cashback' ); ?></span>
-						<input type="number" name="matching_threshold" min="0" max="100" value="65" />
-					</label>
-					<label>
-						<span><?php echo esc_html__( 'Маппинг cashback merchant', 'cashback' ); ?></span>
-						<textarea name="cashback_merchant_mapping" rows="3"></textarea>
-					</label>
-					<label class="cashback-pa-check">
-						<input type="checkbox" name="enabled" checked />
-						<span><?php echo esc_html__( 'Источник включён', 'cashback' ); ?></span>
-					</label>
-					<button type="submit" class="button button-primary">
-						<?php echo esc_html__( 'Сохранить источник', 'cashback' ); ?>
 					</button>
 				</form>
 

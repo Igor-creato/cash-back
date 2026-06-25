@@ -62,10 +62,15 @@ final class PriceAssistantAdminSourcesTest extends TestCase
             self::assertStringContainsString($label, $html);
         }
         self::assertStringContainsString('Добавить магазин', $html);
-        self::assertStringContainsString('Сохранить источник', $html);
-        self::assertStringContainsString('data-pa-store-select', $html);
-        self::assertStringContainsString('поиск работает по включённым доменам', $html);
-        self::assertStringContainsString('корзина и избранное только Ozon/Wildberries/Яндекс Маркет', $html);
+        self::assertStringContainsString('URL главной страницы магазина', $html);
+        self::assertStringContainsString('Сохранить магазин', $html);
+        self::assertStringNotContainsString('Сохранить источник', $html);
+        self::assertStringNotContainsString('data-pa-source-form', $html);
+        self::assertStringNotContainsString('data-pa-store-select', $html);
+        self::assertStringNotContainsString('Код источника', $html);
+        self::assertStringNotContainsString('Шаблон поиска', $html);
+        self::assertStringContainsString('мониторинг работает по включённым магазинам', $html);
+        self::assertStringContainsString('Корзина и избранное только Ozon/Wildberries/Яндекс Маркет', $html);
         self::assertStringNotContainsString('price_monitor_hmac_secret', $html);
         self::assertStringNotContainsString(self::SECRET, $html);
         self::assertStringNotContainsString('https://price-monitor.test', $html);

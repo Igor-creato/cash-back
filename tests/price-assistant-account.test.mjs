@@ -290,6 +290,13 @@ function rateLimitResponse() {
   });
 }
 
+function unsupportedMonitoringStoreResponse() {
+  return Promise.resolve({
+    ok: false,
+    text: () => Promise.resolve(JSON.stringify({ detail: "unsupported_monitoring_store" })),
+  });
+}
+
 async function runScript(fetchImpl) {
   const runtime = createContext(fetchImpl);
   vm.runInContext(scriptSource, runtime.context);
@@ -324,6 +331,25 @@ await (async function testRateLimitShowsHumanReadableMessage() {
 
   assert.equal(textOf(message), "Слишком много запросов. Попробуйте позже.");
   assert.equal(fetchCalls.some((call) => call.method === "POST"), true);
+})();
+
+await (async function testUnsupportedMonitoringStoreShowsHumanReadableMessage() {
+  const { form, message } = await runScript((url, options = {}) => {
+    if ((options.method || "GET") === "POST" && url.endsWith("/watchlist/items")) {
+      return unsupportedMonitoringStoreResponse();
+    }
+    return successResponse({ items: [] });
+  });
+
+  form.querySelector('[name="product_url"]').value =
+    "https://unsupported-shop.example/product/123";
+  form.dispatchEvent({
+    type: "submit",
+    preventDefault() {},
+  });
+  await flushPromises();
+
+  assert.equal(textOf(message), "Данный магазин не поддержывается для мониторинга.");
 })();
 
 await (async function testManualWatchlistShowsProductDataAndSingleEmptyChartMessage() {

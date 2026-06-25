@@ -9,7 +9,6 @@
   const notice = document.getElementById('cashback-pa-admin-notice');
   const state = {
     stores: [],
-    selectedStoreId: '',
   };
 
   function showNotice(message, isError) {
@@ -70,10 +69,6 @@
       return;
     }
     state.stores = items;
-    if (!state.selectedStoreId && items.length > 0) {
-      state.selectedStoreId = String(items[0].store_id || '');
-    }
-    renderStoreSelect();
     if (items.length === 0) {
       target.innerHTML = '<p>' + escapeHtml(labels.empty || 'Данных пока нет.') + '</p>';
       return;
@@ -84,8 +79,7 @@
       '</tr></thead><tbody>' +
       items.map(function (store) {
         const sources = Array.isArray(store.sources) ? store.sources : [];
-        const selected = String(store.store_id || '') === state.selectedStoreId;
-        return '<tr data-store-id="' + escapeHtml(store.store_id) + '" class="' + (selected ? 'is-selected' : '') + '">' +
+        return '<tr>' +
           '<td>' + escapeHtml(store.display_name || '') + '</td>' +
           '<td>' + escapeHtml(store.store_code || '') + '</td>' +
           '<td>' + escapeHtml(store.enabled ? (labels.enabled || 'Включён') : (labels.disabled || 'Отключён')) + '</td>' +
@@ -93,21 +87,6 @@
           '</tr>';
       }).join('') +
       '</tbody></table>';
-  }
-
-  function renderStoreSelect() {
-    const select = root.querySelector('[data-pa-store-select]');
-    if (!select) {
-      return;
-    }
-    select.innerHTML =
-      '<option value="">Выберите магазин</option>' +
-      state.stores.map(function (store) {
-        const id = String(store.store_id || '');
-        return '<option value="' + escapeHtml(id) + '"' + (id === state.selectedStoreId ? ' selected' : '') + '>' +
-          escapeHtml((store.display_name || store.store_code || 'Магазин') + ' #' + id) +
-          '</option>';
-      }).join('');
   }
 
   function renderSourceDetails(sources) {
@@ -146,14 +125,6 @@
       });
   }
 
-  function activeStoreId() {
-    const select = root.querySelector('[data-pa-store-select]');
-    if (select && select.value) {
-      state.selectedStoreId = select.value;
-    }
-    return state.selectedStoreId || '';
-  }
-
   function bindTabs() {
     root.querySelectorAll('[data-price-assistant-tab]').forEach(function (tab) {
       tab.addEventListener('click', function () {
@@ -170,23 +141,6 @@
   }
 
   function bindForms() {
-    const storeSelect = root.querySelector('[data-pa-store-select]');
-    if (storeSelect) {
-      storeSelect.addEventListener('change', function () {
-        state.selectedStoreId = storeSelect.value;
-        renderStores({ items: state.stores });
-      });
-    }
-
-    root.addEventListener('click', function (event) {
-      const row = event.target.closest('[data-store-id]');
-      if (!row) {
-        return;
-      }
-      state.selectedStoreId = row.getAttribute('data-store-id') || '';
-      renderStores({ items: state.stores });
-    });
-
     const storeForm = root.querySelector('[data-pa-store-form]');
     if (storeForm) {
       storeForm.addEventListener('submit', function (event) {
@@ -195,8 +149,6 @@
         request('/stores', {
           method: 'POST',
           body: JSON.stringify({
-            store_code: form.get('store_code') || '',
-            display_name: form.get('display_name') || '',
             enabled: form.get('enabled') === 'on',
             homepage_url: form.get('homepage_url') || null,
           }),
@@ -207,60 +159,6 @@
           showNotice(labels.saveError || 'Не удалось сохранить.', true);
         });
       });
-    }
-
-    const sourceForm = root.querySelector('[data-pa-source-form]');
-    if (sourceForm) {
-      sourceForm.addEventListener('submit', function (event) {
-        event.preventDefault();
-        const storeId = activeStoreId();
-        if (!storeId) {
-          showNotice('Сначала добавьте или загрузите магазин.', true);
-          return;
-        }
-        const form = new FormData(sourceForm);
-        request('/stores/' + encodeURIComponent(storeId) + '/sources', {
-          method: 'POST',
-          body: JSON.stringify({
-            source_code: form.get('source_code') || '',
-            display_name: form.get('display_name') || '',
-            enabled: form.get('enabled') === 'on',
-            source_type: 'api',
-            domains: splitList(form.get('domains')),
-            search_template: form.get('search_template') || null,
-            region_support: splitList(form.get('region_support')),
-            priority: parseInt(form.get('priority') || '100', 10),
-            extraction_mode: form.get('extraction_mode') || 'json',
-            proxy_tier_policy: form.get('proxy_tier_policy') || 'none',
-            min_fetch_interval_minutes: parseInt(form.get('min_fetch_interval_minutes') || '60', 10),
-            matching_threshold: parseInt(form.get('matching_threshold') || '65', 10),
-            cashback_merchant_mapping: parseMapping(form.get('cashback_merchant_mapping')),
-          }),
-        }).then(function () {
-          showNotice(labels.saved || 'Сохранено.', false);
-          loadSection('stores');
-        }).catch(function () {
-          showNotice(labels.saveError || 'Не удалось сохранить.', true);
-        });
-      });
-    }
-  }
-
-  function splitList(value) {
-    return String(value || '').split(',').map(function (item) {
-      return item.trim();
-    }).filter(Boolean);
-  }
-
-  function parseMapping(value) {
-    const text = String(value || '').trim();
-    if (!text) {
-      return null;
-    }
-    try {
-      return JSON.parse(text);
-    } catch (error) {
-      return { merchant_id: text };
     }
   }
 

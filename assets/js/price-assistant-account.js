@@ -75,7 +75,7 @@
       return response.text().then(function (text) {
         const data = text ? JSON.parse(text) : {};
         if (!response.ok) {
-          const code = data && data.code ? data.code : "request_failed";
+          const code = data && (data.code || data.detail) ? data.code || data.detail : "request_failed";
           const error = new Error(errorMessage(code));
           error.code = code;
           throw error;
@@ -91,6 +91,7 @@
       price_assistant_login_required: "Войдите в аккаунт, чтобы пользоваться мониторингом цен.",
       price_assistant_nonce_required: "Сессия устарела. Обновите страницу и попробуйте снова.",
       price_assistant_disabled: "Мониторинг цен временно недоступен.",
+      unsupported_monitoring_store: "Данный магазин не поддержывается для мониторинга.",
     };
     return messages[code] || code || "Запрос не выполнен.";
   }
