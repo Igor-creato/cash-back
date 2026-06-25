@@ -238,9 +238,21 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('.cashback-price-assistant__chart-extreme-line', $styles);
         self::assertStringContainsString('.cashback-price-assistant__chart-extreme-label', $styles);
         self::assertStringContainsString('object-fit: contain', $styles);
+        self::assertStringContainsString('grid-template-columns: repeat(auto-fill, 264px);', $styles);
+        self::assertStringContainsString('width: 264px;', $styles);
         self::assertStringContainsString('font-size: 14px;', $styles);
         self::assertStringContainsString('font-size: 16px;', $styles);
         self::assertStringContainsString('height: 118px;', $styles);
+        self::assertMatchesRegularExpression(
+            '/\.cashback-price-assistant__chart-line\s*\{[^}]*stroke-width:\s*5;/s',
+            $styles,
+            'The in-card price chart line must be thick enough to read.'
+        );
+        self::assertMatchesRegularExpression(
+            '/\.cashback-price-assistant__chart-extreme-label\s*\{[^}]*font-size:\s*14px;/s',
+            $styles,
+            'The min/max prices inside the chart must use 14px text.'
+        );
         self::assertStringNotContainsString('max-height: 180px', $styles);
         self::assertStringContainsString('cashback-price-assistant__form--link', $styles);
         self::assertStringNotContainsString('linear-gradient(180deg, #f5c84d', $styles);

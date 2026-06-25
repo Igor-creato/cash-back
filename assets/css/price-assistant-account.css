@@ -255,6 +255,8 @@
 .cashback-price-assistant__list {
   display: grid;
   gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
   min-height: 72px;
 }
 
@@ -272,7 +274,9 @@
 .cashback-price-assistant__product-card {
   grid-template-columns: 1fr;
   grid-template-rows: auto minmax(0, 1fr);
+  max-width: 100%;
   min-height: 100%;
+  width: min(100%, 264px);
 }
 
 .cashback-price-assistant__item-media {
@@ -425,24 +429,24 @@
   stroke: #2458a6;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 3;
+  stroke-width: 5;
 }
 
 .cashback-price-assistant__chart-average {
   stroke: var(--pa-warn);
   stroke-dasharray: 6 6;
-  stroke-width: 1.5;
+  stroke-width: 2;
 }
 
 .cashback-price-assistant__chart-extreme-line {
   stroke: #b8bec8;
   stroke-dasharray: 4 8;
-  stroke-width: 1;
+  stroke-width: 2;
 }
 
 .cashback-price-assistant__chart-extreme-label {
   fill: #5f6673;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
 }
 
@@ -531,7 +535,11 @@
   }
 
   .cashback-price-assistant__list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, 264px);
+  }
+
+  .cashback-price-assistant__product-card {
+    width: 264px;
   }
 
   .cashback-price-assistant__panel--wide {
