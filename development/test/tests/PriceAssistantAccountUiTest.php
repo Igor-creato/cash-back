@@ -43,6 +43,28 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('data-marketplace="ozon"', $html);
         self::assertStringContainsString('data-marketplace="wildberries"', $html);
         self::assertStringContainsString('data-marketplace="yandex_market"', $html);
+        self::assertStringContainsString('data-price-assistant-view-tabs', $html);
+        self::assertStringContainsString('data-price-assistant-view="link"', $html);
+        self::assertStringContainsString('data-price-assistant-view="cart"', $html);
+        self::assertStringContainsString('data-price-assistant-view="compare"', $html);
+        self::assertStringContainsString('Мониторинг по ссылке', $html);
+        self::assertStringContainsString('Мониторинг по корзине', $html);
+        self::assertStringContainsString('Сравнение цен', $html);
+        self::assertMatchesRegularExpression(
+            '/<section[^>]+data-price-assistant-panel="link"(?![^>]*hidden)/',
+            $html,
+            'Product-link monitoring panel must be visible by default so added watchlist cards render in the cabinet.'
+        );
+        self::assertMatchesRegularExpression(
+            '/<section[^>]+data-price-assistant-panel="cart"[^>]+hidden/',
+            $html,
+            'Cart monitoring panel must be behind the second tab by default.'
+        );
+        self::assertMatchesRegularExpression(
+            '/<section[^>]+data-price-assistant-panel="compare"[^>]+hidden/',
+            $html,
+            'Comparison/search panel must be behind the third tab by default.'
+        );
         self::assertStringContainsString('data-price-assistant-search-form', $html);
         self::assertStringContainsString('data-price-assistant-search-results', $html);
         self::assertStringContainsString('data-price-assistant-marketplace-tabs', $html);
@@ -63,15 +85,15 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('data-price-assistant-source="ozon"', $html);
         self::assertStringContainsString('data-price-assistant-source="wildberries"', $html);
         self::assertStringContainsString('data-price-assistant-source="yandex_market"', $html);
-        self::assertStringContainsString('data-price-assistant-settings', $html);
-        self::assertStringContainsString('name="track_cart"', $html);
-        self::assertStringContainsString('name="track_favorites"', $html);
-        self::assertStringContainsString('name="track_manual"', $html);
-        self::assertStringContainsString('name="track_all"', $html);
+        self::assertStringNotContainsString('data-price-assistant-settings', $html);
+        self::assertStringNotContainsString('name="track_cart"', $html);
+        self::assertStringNotContainsString('name="track_favorites"', $html);
+        self::assertStringNotContainsString('name="track_manual"', $html);
+        self::assertStringNotContainsString('name="track_all"', $html);
         self::assertStringNotContainsString('cashback-price-assistant__statuses', $html);
         self::assertStringNotContainsString('data-price-assistant-status=', $html);
         self::assertStringContainsString('data-price-assistant-add-form', $html);
-        self::assertStringContainsString('data-price-assistant-region-form', $html);
+        self::assertStringNotContainsString('data-price-assistant-region-form', $html);
         self::assertStringContainsString('data-price-assistant-manual-list', $html);
         self::assertStringContainsString('data-price-assistant-collection-list="cart"', $html);
         self::assertStringContainsString('data-price-assistant-collection-list="favorites"', $html);
@@ -79,7 +101,10 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('data-price-assistant-chart', $html);
         self::assertStringContainsString('data-price-assistant-compare', $html);
         self::assertStringContainsString('data-price-assistant-target-price', $html);
-        self::assertStringContainsString('data-price-assistant-target-effective-price', $html);
+        self::assertStringNotContainsString('data-price-assistant-target-effective-price', $html);
+        self::assertStringNotContainsString('name="target_effective_price"', $html);
+        self::assertStringContainsString('Не авторизован', $html);
+        self::assertStringNotContainsString('disconnected', $html);
         self::assertStringContainsString('data-price-assistant-disconnect', $html);
         self::assertStringContainsString('data-price-assistant-delete-import', $html);
         self::assertStringNotContainsString('type="password"', strtolower($html));
@@ -165,6 +190,7 @@ final class PriceAssistantAccountUiTest extends TestCase
 
         self::assertIsString($script, 'Price Assistant account script must be readable.');
         self::assertStringContainsString('watchlistItems: []', $script);
+        self::assertStringContainsString('activeView: "link"', $script);
         self::assertStringContainsString('collections: []', $script);
         self::assertStringContainsString('searchData: null', $script);
         self::assertStringContainsString('activeCollectionType: "cart"', $script);
@@ -172,11 +198,29 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('CashbackPagination.build', $script);
         self::assertStringContainsString('.page-numbers[data-page]', $script);
         self::assertStringContainsString('function sourceMatchesActiveTab', $script);
+        self::assertStringContainsString('function applyActiveView', $script);
         self::assertStringContainsString('function renderActiveWatchlist', $script);
         self::assertStringContainsString('function renderActiveCollections', $script);
         self::assertStringContainsString('function renderActiveSearchResults', $script);
+        self::assertStringContainsString('function loadInlineChart', $script);
+        self::assertStringContainsString('data-price-assistant-item-chart', $script);
+        self::assertStringContainsString('renderWatchlist(state.watchlistItems)', $script);
         self::assertStringContainsString('normalizeSource(source) === "wb"', $script);
         self::assertStringContainsString('normalizeSource(source) === "yandex"', $script);
         self::assertStringContainsString('button.classList.toggle("active"', $script);
+    }
+
+    public function test_account_styles_use_shared_button_skin_without_yellow_search_hero(): void
+    {
+        $style_path = dirname(__DIR__, 3) . '/assets/css/price-assistant-account.css';
+        $styles     = file_get_contents($style_path);
+
+        self::assertIsString($styles, 'Price Assistant account styles must be readable.');
+        self::assertStringContainsString('.cashback-price-assistant__primary-button', $styles);
+        self::assertStringContainsString('var(--cb-accent', $styles);
+        self::assertStringContainsString('var(--cb-text-on-accent', $styles);
+        self::assertStringContainsString('.cashback-price-assistant__inline-chart', $styles);
+        self::assertStringContainsString('cashback-price-assistant__form--link', $styles);
+        self::assertStringNotContainsString('linear-gradient(180deg, #f5c84d', $styles);
     }
 }

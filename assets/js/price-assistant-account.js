@@ -27,6 +27,7 @@
   const state = {
     connections: {},
     regionCode: "default",
+    activeView: "link",
     activeTab: initialMarketplace(),
     activeCollectionType: "cart",
     collectionPages: {
@@ -39,6 +40,8 @@
   };
 
   const nodes = {
+    viewTabs: root.querySelector("[data-price-assistant-view-tabs]"),
+    viewPanels: root.querySelectorAll("[data-price-assistant-panel]"),
     searchForm: root.querySelector("[data-price-assistant-search-form]"),
     searchResults: root.querySelector("[data-price-assistant-search-results]"),
     settings: root.querySelector("[data-price-assistant-settings]"),
@@ -122,7 +125,7 @@
 
   function statusLabel(status) {
     const statuses = config.statuses || {};
-    return statuses[status] || status || "disconnected";
+    return statuses[status] || status || "Не авторизован";
   }
 
   function isAuthorizedStatus(status) {
@@ -464,17 +467,9 @@
     clearNode(nodes.searchResults);
     const items = Array.isArray(data.items) ? data.items : [];
     const fallbacks = Array.isArray(data.fallbacks) ? data.fallbacks : [];
-    const all = items.concat(fallbacks).filter(function (item) {
-      return sourceMatchesActiveTab(itemSource(item));
-    });
+    const all = items.concat(fallbacks);
     if (!all.length) {
-      setEmpty(
-        nodes.searchResults,
-        scopedEmptyText(
-          "Подходящих магазинов пока нет.",
-          "Для %s подходящих результатов пока нет."
-        )
-      );
+      setEmpty(nodes.searchResults, "Подходящих магазинов пока нет.");
       return;
     }
 
@@ -491,10 +486,7 @@
     if (!nodes.manualList) {
       return;
     }
-    const items = state.watchlistItems.filter(function (item) {
-      return sourceMatchesActiveTab(itemSource(item));
-    });
-    renderWatchlist(items);
+    renderWatchlist(state.watchlistItems);
   }
 
   function renderWatchlist(items) {
@@ -528,9 +520,7 @@
           item.source_display_name || item.source,
           item.region_code,
           money(item.last_price || item.current_price, item.currency),
-          item.cashback && item.cashback.effective_price
-            ? "effective " + money(item.cashback.effective_price, item.currency)
-            : "",
+          item.availability,
         ]
           .filter(Boolean)
           .join(" · "),
@@ -539,25 +529,26 @@
 
       const targets = document.createElement("div");
       targets.className = "cashback-price-assistant__item-targets";
-      appendTargetInput(targets, "target_price", "Target price", item.target_price);
-      appendTargetInput(
-        targets,
-        "target_effective_price",
-        "Target effective",
-        item.target_effective_price
-      );
+      appendTargetInput(targets, "target_price", "Желаемая цена", item.target_price);
       body.appendChild(targets);
 
       const actions = document.createElement("div");
       actions.className = "cashback-price-assistant__item-actions";
       appendAction(actions, "save-targets", "Сохранить цели");
-      appendAction(actions, "chart", "График");
+      appendAction(actions, "chart", "Обновить график");
       appendAction(actions, "compare", "Где дешевле");
       appendAction(actions, "cashback", "Перейти с кэшбэком");
       appendAction(actions, "remove-manual", "Удалить");
       body.appendChild(actions);
+
+      const chart = document.createElement("div");
+      chart.className = "cashback-price-assistant__inline-chart";
+      chart.setAttribute("data-price-assistant-item-chart", "");
+      body.appendChild(chart);
+
       card.appendChild(body);
       nodes.manualList.appendChild(card);
+      loadInlineChart(item.tracked_product_id, chart);
     });
   }
 
@@ -725,12 +716,8 @@
       region_code: state.regionCode || formValue(nodes.regionForm, "region_code") || "default",
     };
     const targetPrice = optionalAmount(formValue(nodes.addForm, "target_price"));
-    const targetEffective = optionalAmount(formValue(nodes.addForm, "target_effective_price"));
     if (targetPrice !== null) {
       body.target_price = targetPrice;
-    }
-    if (targetEffective !== null) {
-      body.target_effective_price = targetEffective;
     }
     requestJson("/watchlist/items", { method: "POST", body: body })
       .then(function () {
@@ -787,7 +774,10 @@
     } else if (action === "cashback") {
       openCashbackLink(ids.subscriptionId);
     } else if (action === "chart") {
-      loadChart(ids.trackedProductId);
+      loadChart(
+        ids.trackedProductId,
+        card ? card.querySelector("[data-price-assistant-item-chart]") : null
+      );
     } else if (action === "compare") {
       loadCompare(ids.trackedProductId);
     } else if (action === "delete-import") {
@@ -800,13 +790,9 @@
       return;
     }
     const targetPrice = optionalAmount(formValue(card, "target_price"));
-    const targetEffective = optionalAmount(formValue(card, "target_effective_price"));
     const body = {};
     if (targetPrice !== null) {
       body.target_price = targetPrice;
-    }
-    if (targetEffective !== null) {
-      body.target_effective_price = targetEffective;
     }
     requestJson("/watchlist/items/" + encodeURIComponent(subscriptionId), {
       method: "PATCH",
@@ -867,24 +853,38 @@
       });
   }
 
-  function loadChart(trackedProductId) {
-    if (!trackedProductId || !nodes.chart) {
+  function loadInlineChart(trackedProductId, targetNode) {
+    if (!trackedProductId || !targetNode) {
       return;
     }
-    setEmpty(nodes.chart, "Загрузка графика...");
+    loadChart(trackedProductId, targetNode);
+  }
+
+  function loadChart(trackedProductId, targetNode) {
+    const chartNode = targetNode || nodes.chart;
+    if (!trackedProductId || !chartNode) {
+      return;
+    }
+    setEmpty(chartNode, "Загрузка графика...");
     requestJson("/products/" + encodeURIComponent(trackedProductId) + "/chart?days=30&granularity=daily")
-      .then(renderChart)
+      .then(function (data) {
+        renderChart(data, chartNode);
+      })
       .catch(function () {
-        setEmpty(nodes.chart, "Не удалось загрузить график.");
+        setEmpty(chartNode, "Не удалось загрузить график.");
       });
   }
 
-  function renderChart(data) {
-    clearNode(nodes.chart);
-    appendText(nodes.chart, "p", data.labels && data.labels.headline, "cashback-price-assistant__item-meta");
+  function renderChart(data, targetNode) {
+    const chartNode = targetNode || nodes.chart;
+    if (!chartNode) {
+      return;
+    }
+    clearNode(chartNode);
+    appendText(chartNode, "p", data.labels && data.labels.headline, "cashback-price-assistant__item-meta");
     const series = Array.isArray(data.series) ? data.series : [];
     if (series.length === 0 || (data.summary && data.summary.trend === "no_data")) {
-      appendText(nodes.chart, "p", "Нет данных для графика.", "cashback-price-assistant__empty");
+      appendText(chartNode, "p", "Нет данных для графика.", "cashback-price-assistant__empty");
       return;
     }
     const values = series.map(function (point) {
@@ -921,9 +921,9 @@
       line.setAttribute("y2", avgY.toFixed(1));
       svg.appendChild(line);
     }
-    nodes.chart.appendChild(svg);
+    chartNode.appendChild(svg);
     appendText(
-      nodes.chart,
+      chartNode,
       "p",
       "Сейчас " +
         money(data.summary && data.summary.current_price, data.currency) +
@@ -1009,13 +1009,27 @@
       button.classList.toggle("active", isActive);
       button.classList.toggle("is-active", isActive);
     });
-    root.querySelectorAll("[data-price-assistant-source]").forEach(function (card) {
-      card.hidden = !sourceMatchesActiveTab(card.getAttribute("data-price-assistant-source"));
-    });
     Object.keys(marketplaceConfig).forEach(updateMarketplaceActions);
-    renderActiveWatchlist();
     renderActiveCollections();
-    renderActiveSearchResults();
+  }
+
+  function applyActiveView() {
+    const active = state.activeView || "link";
+    root.querySelectorAll("[data-price-assistant-view]").forEach(function (button) {
+      const isActive = button.getAttribute("data-price-assistant-view") === active;
+      button.classList.toggle("active", isActive);
+      button.classList.toggle("is-active", isActive);
+    });
+    nodes.viewPanels.forEach(function (panel) {
+      panel.hidden = panel.getAttribute("data-price-assistant-panel") !== active;
+    });
+    if (active === "link") {
+      renderActiveWatchlist();
+    } else if (active === "cart") {
+      applyActiveTab();
+    } else if (active === "compare") {
+      renderActiveSearchResults();
+    }
   }
 
   function toggleSettings() {
@@ -1064,6 +1078,13 @@
     const settingsButton = event.target.closest("[data-price-assistant-settings-toggle]");
     if (settingsButton) {
       toggleSettings();
+      return;
+    }
+
+    const viewButton = event.target.closest("[data-price-assistant-view]");
+    if (viewButton) {
+      state.activeView = viewButton.getAttribute("data-price-assistant-view") || "link";
+      applyActiveView();
       return;
     }
 
@@ -1203,6 +1224,7 @@
       });
   });
 
+  applyActiveView();
   applyActiveTab();
   refreshCabinet();
 })();

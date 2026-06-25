@@ -98,37 +98,29 @@ final class Cashback_Price_Assistant_Account {
         $active_marketplace = $this->first_active_marketplace($marketplaces);
         ?>
         <section class="cashback-price-assistant" data-price-assistant-account>
-            <div class="cashback-price-assistant__topbar">
-                <form class="cashback-price-assistant__search" data-price-assistant-search-form>
-                    <label class="screen-reader-text" for="price-assistant-search-query">
-                        <?php echo esc_html__('Поиск товаров по магазинам', 'cashback'); ?>
-                    </label>
-                    <span class="cashback-price-assistant__search-icon" aria-hidden="true"><?php echo esc_html__('Поиск', 'cashback'); ?></span>
-                    <input id="price-assistant-search-query" type="search" name="q" placeholder="<?php echo esc_attr__('смартфон iPhone 15', 'cashback'); ?>" autocomplete="off" />
-                    <button type="submit" class="button button-primary"><?php echo esc_html__('Найти', 'cashback'); ?></button>
-                </form>
-            </div>
-
             <header class="cashback-price-assistant__header">
                 <div>
-                    <h2><?php echo esc_html(__('Корзины и избранное', 'cashback')); ?></h2>
-                    <p><?php echo esc_html(__('Поиск идёт по всем включённым магазинам. Корзина и избранное подключаются только для Ozon, Wildberries и Яндекс Маркет после явного согласия.', 'cashback')); ?></p>
+                    <h2><?php echo esc_html(__('Мониторинг цен', 'cashback')); ?></h2>
+                    <p><?php echo esc_html(__('Отслеживайте товар по ссылке, подключайте корзины маркетплейсов и сравнивайте цены в отдельных вкладках.', 'cashback')); ?></p>
                 </div>
-                <button type="button" class="button cashback-price-assistant__settings-button" data-price-assistant-settings-toggle aria-expanded="false">
-                    <?php echo esc_html__('Настройки', 'cashback'); ?>
-                </button>
             </header>
 
-            <div class="cashback-price-assistant__settings" data-price-assistant-settings hidden>
-                <fieldset class="cashback-price-assistant__track-options">
-                    <legend><?php echo esc_html__('Что отслеживать', 'cashback'); ?></legend>
-                    <label><input type="checkbox" name="track_cart" checked /> <?php echo esc_html__('Корзина', 'cashback'); ?></label>
-                    <label><input type="checkbox" name="track_favorites" checked /> <?php echo esc_html__('Избранное', 'cashback'); ?></label>
-                    <label><input type="checkbox" name="track_manual" checked /> <?php echo esc_html__('Товар по ссылке', 'cashback'); ?></label>
-                    <label><input type="checkbox" name="track_all" checked /> <?php echo esc_html__('Все вместе', 'cashback'); ?></label>
-                </fieldset>
+            <nav class="cashback-price-assistant__view-tabs cashback-support-tabs" data-price-assistant-view-tabs aria-label="<?php echo esc_attr__('Разделы мониторинга цен', 'cashback'); ?>">
+                <button type="button" class="cashback-support-tab active is-active" data-price-assistant-view="link">
+                    <?php echo esc_html__('Мониторинг по ссылке', 'cashback'); ?>
+                </button>
+                <button type="button" class="cashback-support-tab" data-price-assistant-view="cart">
+                    <?php echo esc_html__('Мониторинг по корзине', 'cashback'); ?>
+                </button>
+                <button type="button" class="cashback-support-tab" data-price-assistant-view="compare">
+                    <?php echo esc_html__('Сравнение цен', 'cashback'); ?>
+                </button>
+            </nav>
 
-                <form class="cashback-price-assistant__form" data-price-assistant-add-form>
+            <div class="cashback-price-assistant__notice" data-price-assistant-message aria-live="polite"></div>
+
+            <section class="cashback-price-assistant__panel" data-price-assistant-panel="link">
+                <form class="cashback-price-assistant__form cashback-price-assistant__form--link" data-price-assistant-add-form>
                     <label>
                         <span><?php echo esc_html(__('Ссылка на товар', 'cashback')); ?></span>
                         <input type="url" name="product_url" required placeholder="https://..." autocomplete="off">
@@ -137,96 +129,80 @@ final class Cashback_Price_Assistant_Account {
                         <span><?php echo esc_html(__('Целевая цена', 'cashback')); ?></span>
                         <input type="number" name="target_price" min="0" step="0.01" data-price-assistant-target-price>
                     </label>
-                    <label>
-                        <span><?php echo esc_html(__('Целевая цена с кэшбэком', 'cashback')); ?></span>
-                        <input type="number" name="target_effective_price" min="0" step="0.01" data-price-assistant-target-effective-price>
-                    </label>
-                    <button type="submit" class="button button-primary"><?php echo esc_html(__('Добавить', 'cashback')); ?></button>
+                    <button type="submit" class="button button-primary cashback-price-assistant__primary-button"><?php echo esc_html(__('Добавить', 'cashback')); ?></button>
                 </form>
 
-                <form class="cashback-price-assistant__form cashback-price-assistant__region" data-price-assistant-region-form>
-                    <label>
-                        <span><?php echo esc_html(__('Регион', 'cashback')); ?></span>
-                        <input type="text" name="region_code" value="default" maxlength="64" autocomplete="off">
-                    </label>
-                    <label>
-                        <span><?php echo esc_html(__('Страна', 'cashback')); ?></span>
-                        <input type="text" name="country_code" maxlength="8" placeholder="RU" autocomplete="off">
-                    </label>
-                    <button type="submit" class="button"><?php echo esc_html(__('Сохранить регион', 'cashback')); ?></button>
-                </form>
-            </div>
-
-            <div class="cashback-price-assistant__notice" data-price-assistant-message aria-live="polite"></div>
-
-            <section class="cashback-price-assistant__search-results" data-price-assistant-search-results aria-live="polite"></section>
-
-            <nav class="cashback-price-assistant__tabs cashback-support-tabs" data-price-assistant-marketplace-tabs aria-label="<?php echo esc_attr__('Маркетплейсы', 'cashback'); ?>">
-                <?php foreach ( $marketplaces as $code => $marketplace ) : ?>
-                    <?php $is_active = $code === $active_marketplace; ?>
-                    <button type="button" class="cashback-support-tab<?php echo $is_active ? ' active is-active' : ''; ?>" data-price-assistant-tab="<?php echo esc_attr($code); ?>">
-                        <?php echo esc_html($this->marketplace_label($code, (string) $marketplace['label'])); ?>
-                    </button>
-                <?php endforeach; ?>
-            </nav>
-
-            <div class="cashback-price-assistant__marketplaces">
-                <?php foreach ( $marketplaces as $code => $marketplace ) : ?>
-                    <article class="cashback-price-assistant__marketplace" data-marketplace-card="<?php echo esc_attr($code); ?>" data-price-assistant-source="<?php echo esc_attr($code); ?>" <?php echo $code === $active_marketplace ? '' : 'hidden'; ?>>
-                        <h3><?php echo esc_html($this->marketplace_label($code, (string) $marketplace['label'])); ?></h3>
-                        <p class="cashback-price-assistant__state" data-marketplace-state="<?php echo esc_attr($code); ?>">
-                            <?php echo esc_html(__('disconnected', 'cashback')); ?>
-                        </p>
-                        <div class="cashback-price-assistant__actions">
-                            <button
-                                type="button"
-                                class="button cashback-price-assistant__connect"
-                                data-marketplace="<?php echo esc_attr($code); ?>"
-                                data-marketplace-page="login"
-                                <?php echo empty($marketplace['enabled']) ? 'disabled' : ''; ?>
-                            >
-                                <?php echo esc_html(__('Авторизоваться', 'cashback')); ?>
-                            </button>
-                            <button
-                                type="button"
-                                class="button cashback-price-assistant__open"
-                                data-marketplace="<?php echo esc_attr($code); ?>"
-                                data-marketplace-page="cart"
-                                hidden
-                                <?php echo empty($marketplace['enabled']) ? 'disabled' : ''; ?>
-                            >
-                                <?php echo esc_html(__('Корзина', 'cashback')); ?>
-                            </button>
-                            <button
-                                type="button"
-                                class="button cashback-price-assistant__open"
-                                data-marketplace="<?php echo esc_attr($code); ?>"
-                                data-marketplace-page="favorites"
-                                hidden
-                                <?php echo empty($marketplace['enabled']) ? 'disabled' : ''; ?>
-                            >
-                                <?php echo esc_html(__('Избранное', 'cashback')); ?>
-                            </button>
-                            <button
-                                type="button"
-                                class="button cashback-price-assistant__disconnect"
-                                data-price-assistant-disconnect
-                                data-marketplace="<?php echo esc_attr($code); ?>"
-                                hidden
-                                disabled
-                            >
-                                <?php echo esc_html(__('Отключить', 'cashback')); ?>
-                            </button>
-                        </div>
-                    </article>
-                <?php endforeach; ?>
-            </div>
-
-            <div class="cashback-price-assistant__workspace">
-                <section class="cashback-price-assistant__panel" data-price-assistant-manual-panel hidden>
+                <div class="cashback-price-assistant__workspace">
+                    <section class="cashback-price-assistant__panel" data-price-assistant-manual-panel>
                     <h3><?php echo esc_html(__('Ручные товары', 'cashback')); ?></h3>
                     <div class="cashback-price-assistant__list" data-price-assistant-manual-list></div>
-                </section>
+                    </section>
+                </div>
+            </section>
+
+            <section class="cashback-price-assistant__panel" data-price-assistant-panel="cart" hidden>
+                <nav class="cashback-price-assistant__tabs cashback-support-tabs" data-price-assistant-marketplace-tabs aria-label="<?php echo esc_attr__('Маркетплейсы', 'cashback'); ?>">
+                    <?php foreach ( $marketplaces as $code => $marketplace ) : ?>
+                        <?php $is_active = $code === $active_marketplace; ?>
+                        <button type="button" class="cashback-support-tab<?php echo $is_active ? ' active is-active' : ''; ?>" data-price-assistant-tab="<?php echo esc_attr($code); ?>">
+                            <?php echo esc_html($this->marketplace_label($code, (string) $marketplace['label'])); ?>
+                        </button>
+                    <?php endforeach; ?>
+                </nav>
+
+                <div class="cashback-price-assistant__marketplaces">
+                    <?php foreach ( $marketplaces as $code => $marketplace ) : ?>
+                        <article class="cashback-price-assistant__marketplace" data-marketplace-card="<?php echo esc_attr($code); ?>" data-price-assistant-source="<?php echo esc_attr($code); ?>" <?php echo $code === $active_marketplace ? '' : 'hidden'; ?>>
+                            <h3><?php echo esc_html($this->marketplace_label($code, (string) $marketplace['label'])); ?></h3>
+                            <p class="cashback-price-assistant__state" data-marketplace-state="<?php echo esc_attr($code); ?>">
+                                <?php echo esc_html(__('Не авторизован', 'cashback')); ?>
+                            </p>
+                            <div class="cashback-price-assistant__actions">
+                                <button
+                                    type="button"
+                                    class="button button-primary cashback-price-assistant__connect cashback-price-assistant__primary-button"
+                                    data-marketplace="<?php echo esc_attr($code); ?>"
+                                    data-marketplace-page="login"
+                                    <?php echo empty($marketplace['enabled']) ? 'disabled' : ''; ?>
+                                >
+                                    <?php echo esc_html(__('Авторизоваться', 'cashback')); ?>
+                                </button>
+                                <button
+                                    type="button"
+                                    class="button cashback-price-assistant__open"
+                                    data-marketplace="<?php echo esc_attr($code); ?>"
+                                    data-marketplace-page="cart"
+                                    hidden
+                                    <?php echo empty($marketplace['enabled']) ? 'disabled' : ''; ?>
+                                >
+                                    <?php echo esc_html(__('Корзина', 'cashback')); ?>
+                                </button>
+                                <button
+                                    type="button"
+                                    class="button cashback-price-assistant__open"
+                                    data-marketplace="<?php echo esc_attr($code); ?>"
+                                    data-marketplace-page="favorites"
+                                    hidden
+                                    <?php echo empty($marketplace['enabled']) ? 'disabled' : ''; ?>
+                                >
+                                    <?php echo esc_html(__('Избранное', 'cashback')); ?>
+                                </button>
+                                <button
+                                    type="button"
+                                    class="button cashback-price-assistant__disconnect"
+                                    data-price-assistant-disconnect
+                                    data-marketplace="<?php echo esc_attr($code); ?>"
+                                    hidden
+                                    disabled
+                                >
+                                    <?php echo esc_html(__('Отключить', 'cashback')); ?>
+                                </button>
+                            </div>
+                        </article>
+                    <?php endforeach; ?>
+                </div>
+
+                <div class="cashback-price-assistant__workspace">
 
                 <section class="cashback-price-assistant__panel" data-price-assistant-collection-panel="cart">
                     <h3><?php echo esc_html(__('Корзина', 'cashback')); ?></h3>
@@ -239,17 +215,31 @@ final class Cashback_Price_Assistant_Account {
                     <div class="cashback-price-assistant__list" data-price-assistant-collection-list="favorites" data-price-assistant-delete-import="favorites"></div>
                     <div class="cashback-price-assistant__pagination" data-price-assistant-pagination="favorites"></div>
                 </section>
+                </div>
+            </section>
 
-                <section class="cashback-price-assistant__panel cashback-price-assistant__panel--wide" hidden>
-                    <h3><?php echo esc_html(__('График цены', 'cashback')); ?></h3>
+            <section class="cashback-price-assistant__panel" data-price-assistant-panel="compare" hidden>
+                <form class="cashback-price-assistant__search" data-price-assistant-search-form>
+                    <label class="screen-reader-text" for="price-assistant-search-query">
+                        <?php echo esc_html__('Поиск товаров по магазинам', 'cashback'); ?>
+                    </label>
+                    <span class="cashback-price-assistant__search-icon" aria-hidden="true"><?php echo esc_html__('Поиск', 'cashback'); ?></span>
+                    <input id="price-assistant-search-query" type="search" name="q" placeholder="<?php echo esc_attr__('смартфон iPhone 15', 'cashback'); ?>" autocomplete="off" />
+                    <button type="submit" class="button button-primary cashback-price-assistant__primary-button"><?php echo esc_html__('Найти', 'cashback'); ?></button>
+                </form>
+
+                <section class="cashback-price-assistant__search-results" data-price-assistant-search-results aria-live="polite"></section>
+
+                <section class="cashback-price-assistant__panel cashback-price-assistant__panel--wide">
+                    <h3><?php echo esc_html(__('График выбранного товара', 'cashback')); ?></h3>
                     <div class="cashback-price-assistant__chart" data-price-assistant-chart></div>
                 </section>
 
-                <section class="cashback-price-assistant__panel cashback-price-assistant__panel--wide" hidden>
+                <section class="cashback-price-assistant__panel cashback-price-assistant__panel--wide">
                     <h3><?php echo esc_html(__('Где дешевле', 'cashback')); ?></h3>
                     <div class="cashback-price-assistant__compare" data-price-assistant-compare></div>
                 </section>
-            </div>
+            </section>
         </section>
         <?php
     }
@@ -299,10 +289,12 @@ final class Cashback_Price_Assistant_Account {
 
     private function statuses(): array {
         return array(
-            'connected'          => __('connected', 'cashback'),
-            'sync ok'            => __('sync ok', 'cashback'),
-            'reconnect_required' => __('reconnect required', 'cashback'),
-            'disconnected'       => __('disconnected', 'cashback'),
+            'connected'          => __('Авторизован', 'cashback'),
+            'sync ok'            => __('Синхронизировано', 'cashback'),
+            'sync_ok'            => __('Синхронизировано', 'cashback'),
+            'connecting'         => __('Подключение', 'cashback'),
+            'reconnect_required' => __('Требуется повторная авторизация', 'cashback'),
+            'disconnected'       => __('Не авторизован', 'cashback'),
         );
     }
 }

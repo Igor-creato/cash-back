@@ -4,10 +4,9 @@
   --pa-line: #e4e7ec;
   --pa-soft: #f6f7f9;
   --pa-panel: #ffffff;
-  --pa-accent: #f2c94c;
   --pa-good: #0a7f42;
   --pa-warn: #a15c00;
-  background: linear-gradient(180deg, #f5c84d 0, #ffffff 170px);
+  background: #ffffff;
   color: var(--pa-ink);
   display: grid;
   gap: 16px;
@@ -29,6 +28,7 @@
 
 .cashback-price-assistant__topbar,
 .cashback-price-assistant__header,
+.cashback-price-assistant__view-tabs,
 .cashback-price-assistant__settings,
 .cashback-price-assistant__notice,
 .cashback-price-assistant__search-results,
@@ -43,15 +43,15 @@
 
 .cashback-price-assistant__search {
   align-items: center;
-  background: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.65);
-  border-radius: 999px;
-  box-shadow: 0 10px 26px rgba(31, 35, 40, 0.12);
+  background: var(--pa-soft);
+  border: 1px solid var(--pa-line);
+  border-radius: 8px;
+  box-shadow: none;
   display: grid;
   gap: 8px;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  min-height: 58px;
-  padding: 8px 10px 8px 18px;
+  min-height: 54px;
+  padding: 12px 14px;
 }
 
 .cashback-price-assistant__search-icon {
@@ -142,6 +142,10 @@
   padding: 14px;
 }
 
+.cashback-price-assistant__form--link {
+  grid-template-columns: minmax(260px, 2fr) minmax(140px, 0.8fr) auto;
+}
+
 .cashback-price-assistant__region {
   grid-template-columns: minmax(120px, 1fr) minmax(90px, 0.7fr) auto;
 }
@@ -179,6 +183,41 @@
   gap: 10px;
 }
 
+.cashback-price-assistant .button,
+.cashback-price-assistant button.button,
+.cashback-price-assistant a.button {
+  align-items: center;
+  border-radius: var(--cb-radius-pill, 10px);
+  display: inline-flex;
+  font-weight: 700;
+  justify-content: center;
+  min-height: 38px;
+  padding: 10px 18px;
+  text-decoration: none;
+}
+
+.cashback-price-assistant .button-primary,
+.cashback-price-assistant__primary-button {
+  background: var(--cb-accent, #4555e8);
+  border-color: var(--cb-accent, #4555e8);
+  color: var(--cb-text-on-accent, #fff);
+}
+
+.cashback-price-assistant .button-primary:hover,
+.cashback-price-assistant .button-primary:focus,
+.cashback-price-assistant__primary-button:hover,
+.cashback-price-assistant__primary-button:focus {
+  background: var(--cb-accent-hover, #3444d5);
+  border-color: var(--cb-accent-hover, #3444d5);
+  color: var(--cb-text-on-accent, #fff);
+}
+
+.cashback-price-assistant .button:disabled,
+.cashback-price-assistant .button.disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .cashback-price-assistant__tabs {
   overflow-x: auto;
   padding-bottom: 2px;
@@ -207,15 +246,6 @@
 
 .cashback-price-assistant__state {
   font-weight: 600;
-}
-
-.cashback-price-assistant__actions .button,
-.cashback-price-assistant__item-actions .button {
-  align-items: center;
-  border-radius: var(--cb-radius-pill, 10px);
-  display: inline-flex;
-  justify-content: center;
-  min-height: 38px;
 }
 
 .cashback-price-assistant__actions .button.active,
@@ -341,6 +371,22 @@
   border-radius: 8px;
   display: block;
   height: auto;
+  max-width: 100%;
+}
+
+.cashback-price-assistant__inline-chart {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+  min-height: 72px;
+}
+
+.cashback-price-assistant__inline-chart svg {
+  border: 1px solid var(--pa-line);
+  border-radius: 8px;
+  display: block;
+  height: auto;
+  max-height: 180px;
   max-width: 100%;
 }
 
