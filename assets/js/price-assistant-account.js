@@ -910,9 +910,22 @@
       });
   }
 
+  function openPendingProductTab() {
+    const popup = window.open("about:blank", "_blank");
+    if (!popup) {
+      return null;
+    }
+    try {
+      popup.opener = null;
+    } catch (error) {
+      // Some browsers expose a read-only opener; the URL fallback still works.
+    }
+    return popup;
+  }
+
   function buyProduct(card, subscriptionId) {
     const directUrl = card ? card.dataset.productUrl : "";
-    const popup = window.open("", "_blank", "noopener,noreferrer");
+    const popup = openPendingProductTab();
     const openUrl = function (url) {
       if (!url) {
         if (popup) {

@@ -28,6 +28,16 @@ class FakeClassList {
   }
 }
 
+function dataAttributeName(property) {
+  return "data-" + String(property).replace(/[A-Z]/g, (letter) => "-" + letter.toLowerCase());
+}
+
+function dataPropertyName(attribute) {
+  return attribute
+    .slice(5)
+    .replace(/-([a-z])/g, (match, letter) => letter.toUpperCase());
+}
+
 class FakeElement {
   constructor(tagName, attributes = {}) {
     this.tagName = tagName.toUpperCase();
@@ -39,7 +49,16 @@ class FakeElement {
     this.hidden = false;
     this.disabled = false;
     this.value = "";
-    this.dataset = {};
+    this.dataset = new Proxy(
+      {},
+      {
+        set: (target, property, value) => {
+          target[property] = String(value);
+          this.attributes[dataAttributeName(property)] = String(value);
+          return true;
+        },
+      }
+    );
     this._textContent = "";
     this.classList = new FakeClassList(this);
 
@@ -55,6 +74,9 @@ class FakeElement {
     }
     if (name === "value") {
       this.value = String(value);
+    }
+    if (name.startsWith("data-")) {
+      this.dataset[dataPropertyName(name)] = String(value);
     }
   }
 
@@ -94,6 +116,17 @@ class FakeElement {
   dispatchEvent(event) {
     event.target = event.target || this;
     (this.eventListeners[event.type] || []).forEach((listener) => listener(event));
+  }
+
+  closest(selector) {
+    let current = this;
+    while (current) {
+      if (current.matches(selector)) {
+        return current;
+      }
+      current = current.parentNode;
+    }
+    return null;
   }
 
   reset() {
@@ -267,7 +300,7 @@ function createContext(fetchImpl) {
   };
   context.globalThis = context;
   vm.createContext(context);
-  return { context, form, manualList, message };
+  return { context, root, form, manualList, message };
 }
 
 async function flushPromises() {
@@ -294,6 +327,13 @@ function unsupportedMonitoringStoreResponse() {
   return Promise.resolve({
     ok: false,
     text: () => Promise.resolve(JSON.stringify({ detail: "unsupported_monitoring_store" })),
+  });
+}
+
+function cashbackUnavailableResponse() {
+  return Promise.resolve({
+    ok: false,
+    text: () => Promise.resolve(JSON.stringify({ detail: "Cashback is unavailable for this product" })),
   });
 }
 
@@ -598,4 +638,82 @@ await (async function testSinglePriceChartDrawsFlatLineWithMinMaxMarkers() {
     markers.map(textOf),
     ["1406.00 ₽", "Мин", "1406.00 ₽", "Макс"]
   );
+})();
+
+await (async function testBuyFallbackKeepsReservedTabWhenCashbackLinkIsUnavailable() {
+  const openedTabs = [];
+  const { context, root, manualList } = await runScript((url) => {
+    if (url.includes("/watchlist/items?limit=50")) {
+      return successResponse({
+        items: [
+          {
+            subscription_id: 10,
+            tracked_product_id: 20,
+            product_url: "https://www.wildberries.ru/catalog/465676229/detail.aspx",
+            source: "wildberries",
+            source_display_name: "Wildberries",
+            title: "Тестовый товар",
+            last_price: "1360.00",
+            currency: "RUB",
+          },
+        ],
+      });
+    }
+    if (url.includes("/watchlist/items/10/cashback-link")) {
+      return cashbackUnavailableResponse();
+    }
+    if (url.includes("/products/20/chart")) {
+      return successResponse({
+        labels: { headline: "Недостаточно данных для графика" },
+        series: [],
+        summary: { trend: "no_data" },
+        currency: "RUB",
+      });
+    }
+    if (url.includes("/collections")) {
+      return successResponse({ items: [] });
+    }
+    if (url.includes("/connections")) {
+      return successResponse({ connections: [] });
+    }
+    return successResponse({});
+  });
+  context.window.open = (url, target, features) => {
+    if (String(features || "").includes("noopener")) {
+      return null;
+    }
+    const tab = {
+      initialUrl: url,
+      target,
+      features,
+      opener: { unsafe: true },
+      closed: false,
+      close() {
+        this.closed = true;
+      },
+      location: { href: "" },
+    };
+    openedTabs.push(tab);
+    return tab;
+  };
+
+  const buyButton = findFirst(manualList, (node) => node.dataset.priceAssistantAction === "buy");
+  assert.ok(buyButton, "manual watchlist card must render a buy button");
+
+  root.dispatchEvent({
+    type: "click",
+    target: buyButton,
+  });
+  await flushPromises();
+
+  assert.equal(openedTabs.length, 1);
+  assert.equal(openedTabs[0].initialUrl, "about:blank");
+  assert.equal(openedTabs[0].target, "_blank");
+  assert.equal(openedTabs[0].features, undefined);
+  assert.equal(openedTabs[0].opener, null);
+  assert.equal(
+    openedTabs[0].location.href,
+    "https://www.wildberries.ru/catalog/465676229/detail.aspx"
+  );
+  assert.equal(openedTabs[0].closed, false);
 })();
