@@ -13,6 +13,7 @@ final class Cashback_Price_Assistant_Account {
     private const REWRITE_VERSION = 'price-assistant-account-v1';
     private const REWRITE_VERSION_OPTION = 'cashback_price_assistant_rewrite_version';
     private const SCRIPT_HANDLE = 'cashback-price-assistant-account';
+    private const PRODUCT_LINK_FORM_SCRIPT_HANDLE = 'cashback-product-link-form';
 
     public static function init(): void {
         $account = new self();
@@ -91,6 +92,8 @@ final class Cashback_Price_Assistant_Account {
             'initialMarketplace' => $this->first_active_marketplace($marketplaces),
             'statuses'        => $this->statuses(),
         ));
+
+        $this->enqueue_product_link_form_assets();
     }
 
     public function render_endpoint(): void {
@@ -131,6 +134,8 @@ final class Cashback_Price_Assistant_Account {
                     </label>
                     <button type="submit" class="button cashback-btn-primary"><?php echo esc_html(__('Добавить', 'cashback')); ?></button>
                 </form>
+
+                <?php $this->render_product_link_check_form(); ?>
 
                 <div class="cashback-price-assistant__workspace">
                     <section class="cashback-price-assistant__panel" data-price-assistant-manual-panel>
@@ -248,6 +253,49 @@ final class Cashback_Price_Assistant_Account {
             </section>
         </section>
         <?php
+    }
+
+    private function render_product_link_check_form(): void {
+        ?>
+        <section class="cashback-price-assistant__cashback-check">
+            <h3><?php echo esc_html__('Проверить кэшбэк по ссылке', 'cashback'); ?></h3>
+            <form class="cashback-product-link-form" data-cashback-product-link-form>
+                <label class="cashback-product-link-form__label">
+                    <span><?php echo esc_html__('Ссылка на товар', 'cashback'); ?></span>
+                    <input
+                        class="cashback-product-link-form__input"
+                        type="url"
+                        name="direct_url"
+                        inputmode="url"
+                        required
+                        placeholder="https://"
+                    />
+                </label>
+                <button class="cashback-product-link-form__submit button cashback-btn-primary" type="submit">
+                    <?php echo esc_html__('Проверить кэшбэк', 'cashback'); ?>
+                </button>
+                <p class="cashback-product-link-form__warning" data-cashback-product-link-warning hidden>
+                    <?php echo esc_html__('Кэшбэк не начисляется по этому товару', 'cashback'); ?>
+                </p>
+                <div class="cashback-product-link-form__result" data-cashback-product-link-result aria-live="polite"></div>
+            </form>
+        </section>
+        <?php
+    }
+
+    private function enqueue_product_link_form_assets(): void {
+        wp_enqueue_script(
+            self::PRODUCT_LINK_FORM_SCRIPT_HANDLE,
+            cashback_asset_url('assets/js/cashback-product-link-form.js'),
+            array(),
+            // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>.
+            null,
+            true
+        );
+        wp_localize_script(self::PRODUCT_LINK_FORM_SCRIPT_HANDLE, 'CashbackProductLinkForm', array(
+            'endpoint' => home_url('/wp-json/cashback/v1/product-link/resolve'),
+            'nonce'    => wp_create_nonce('wp_rest'),
+        ));
     }
 
     private function should_enqueue_assets(): bool {

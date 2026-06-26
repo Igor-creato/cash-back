@@ -93,6 +93,9 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringNotContainsString('cashback-price-assistant__statuses', $html);
         self::assertStringNotContainsString('data-price-assistant-status=', $html);
         self::assertStringContainsString('data-price-assistant-add-form', $html);
+        self::assertStringContainsString('data-cashback-product-link-form', $html);
+        self::assertStringContainsString('name="direct_url"', $html);
+        self::assertStringContainsString('Проверить кэшбэк', $html);
         self::assertStringNotContainsString('data-price-assistant-region-form', $html);
         self::assertStringContainsString('data-price-assistant-manual-list', $html);
         self::assertStringContainsString('data-price-assistant-collection-list="cart"', $html);
@@ -161,12 +164,14 @@ final class PriceAssistantAccountUiTest extends TestCase
             'Price Assistant CSS must load after the shared account base CSS that owns tab styles.'
         );
         self::assertArrayHasKey('cashback-price-assistant-account', $GLOBALS['_cb_test_enqueued_scripts']);
+        self::assertArrayHasKey('cashback-product-link-form', $GLOBALS['_cb_test_enqueued_scripts']);
         self::assertContains(
             'cashback-pagination',
             $GLOBALS['_cb_test_enqueued_scripts']['cashback-price-assistant-account']['deps'],
             'Price Assistant account JS must reuse the shared pagination helper.'
         );
         self::assertArrayHasKey('CashbackPriceAssistantAccount', $GLOBALS['_cb_test_localized_scripts']['cashback-price-assistant-account']);
+        self::assertArrayHasKey('CashbackProductLinkForm', $GLOBALS['_cb_test_localized_scripts']['cashback-product-link-form']);
 
         $config = $GLOBALS['_cb_test_localized_scripts']['cashback-price-assistant-account']['CashbackPriceAssistantAccount'];
         self::assertSame('https://savelloclub.test/wp-json/cashback/v1/price-assistant', $config['restBase']);
@@ -183,6 +188,10 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertArrayNotHasKey('cookies', $config);
         self::assertArrayNotHasKey('tokens', $config);
         self::assertArrayNotHasKey('ciphertext', $config);
+
+        $product_link_config = $GLOBALS['_cb_test_localized_scripts']['cashback-product-link-form']['CashbackProductLinkForm'];
+        self::assertSame('https://savelloclub.test/wp-json/cashback/v1/product-link/resolve', $product_link_config['endpoint']);
+        self::assertNotSame('', $product_link_config['nonce']);
     }
 
     public function test_ozon_connection_is_blocked_until_official_browser_oauth_exists(): void

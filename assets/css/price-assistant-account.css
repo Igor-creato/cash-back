@@ -170,6 +170,77 @@
   width: 100%;
 }
 
+.cashback-price-assistant__cashback-check {
+  background: var(--pa-panel);
+  border: 1px solid var(--pa-line);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.cashback-price-assistant__cashback-check h3 {
+  margin: 0;
+}
+
+.cashback-price-assistant .cashback-product-link-form {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(260px, 1fr) auto;
+}
+
+.cashback-price-assistant .cashback-product-link-form__label {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.cashback-price-assistant .cashback-product-link-form__label span {
+  color: var(--pa-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cashback-price-assistant .cashback-product-link-form__input {
+  min-height: 36px;
+  width: 100%;
+}
+
+.cashback-price-assistant .cashback-product-link-form__warning,
+.cashback-price-assistant .cashback-product-link-form__result {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.cashback-price-assistant .cashback-product-link-form__warning {
+  color: #b32d2e;
+  font-weight: 600;
+}
+
+.cashback-price-assistant .cashback-product-link-form__result {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cashback-price-assistant .cashback-product-link-form__merchant,
+.cashback-price-assistant .cashback-product-link-form__rate {
+  color: var(--pa-ink);
+  font-weight: 700;
+}
+
+.cashback-price-assistant .cashback-product-link-form__button {
+  background: var(--cb-accent, #4555e8);
+  border-radius: var(--cb-radius-pill, 10px);
+  color: var(--cb-text-on-accent, #fff);
+  display: inline-flex;
+  font-weight: 700;
+  padding: 8px 12px;
+  text-decoration: none;
+}
+
 .cashback-price-assistant__notice {
   color: var(--pa-muted);
   min-height: 20px;
@@ -584,7 +655,8 @@
 @media (max-width: 700px) {
   .cashback-price-assistant__header,
   .cashback-price-assistant__form,
-  .cashback-price-assistant__region {
+  .cashback-price-assistant__region,
+  .cashback-price-assistant .cashback-product-link-form {
     grid-template-columns: 1fr;
   }
 
