@@ -34,6 +34,8 @@ return array(
 
         // Advcake (CPA-сеть)
         'api.advcake.ru',
+        // phpcs:ignore Universal.WhiteSpace.CommaSpacing.TooMuchSpaceAfter -- Standalone Cakelink host for Adv.Cake deeplinks.
+        'cakelink.ru',
 
         // Yandex SmartCaptcha (антифрод)
         'smartcaptcha.yandexcloud.net',

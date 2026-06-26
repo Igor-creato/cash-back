@@ -48,6 +48,7 @@ class Cashback_Shortcodes {
     private function __construct() {
         add_shortcode('cashback_balance', array( $this, 'render_balance' ));
         add_shortcode('cashback_display', array( $this, 'render_cashback_display' ));
+        add_shortcode('cashback_product_link_form', array( $this, 'render_product_link_form' ));
     }
 
     /**
@@ -264,6 +265,41 @@ class Cashback_Shortcodes {
     }
 
     /**
+     * Шорткод [cashback_product_link_form].
+     *
+     * @param array<string,string>|string $atts
+     */
+    public function render_product_link_form( $atts ): string {
+        unset($atts);
+        $this->enqueue_product_link_form_assets();
+
+        ob_start();
+        ?>
+        <form class="cashback-product-link-form" data-cashback-product-link-form>
+            <label class="cashback-product-link-form__label">
+                <span><?php echo esc_html__('Ссылка на товар', 'cashback-plugin'); ?></span>
+                <input
+                    class="cashback-product-link-form__input"
+                    type="url"
+                    name="direct_url"
+                    inputmode="url"
+                    required
+                    placeholder="https://"
+                />
+            </label>
+            <button class="cashback-product-link-form__submit" type="submit">
+                <?php echo esc_html__('Проверить кэшбэк', 'cashback-plugin'); ?>
+            </button>
+            <p class="cashback-product-link-form__warning" data-cashback-product-link-warning hidden>
+                <?php echo esc_html__('Кэшбэк не начисляется по этому товару', 'cashback-plugin'); ?>
+            </p>
+            <div class="cashback-product-link-form__result" data-cashback-product-link-result aria-live="polite"></div>
+        </form>
+        <?php
+        return (string) ob_get_clean();
+    }
+
+    /**
      * Вывод для неавторизованного пользователя.
      */
     private function render_guest( string $mode ): string {
@@ -283,5 +319,25 @@ class Cashback_Shortcodes {
         return '<span class="cashback-balance__guest">' .
             esc_html__('Доступно после авторизации', 'cashback-plugin') .
             '</span>';
+    }
+
+    private function enqueue_product_link_form_assets(): void {
+        $handle = 'cashback-product-link-form';
+        $src    = function_exists('cashback_asset_url')
+            ? cashback_asset_url('assets/js/cashback-product-link-form.js')
+            : plugins_url('assets/js/cashback-product-link-form.js', dirname(__DIR__));
+
+        wp_enqueue_script(
+            $handle,
+            $src,
+            array(),
+            // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>.
+            null,
+            true
+        );
+        wp_localize_script($handle, 'CashbackProductLinkForm', array(
+            'endpoint' => home_url('/wp-json/cashback/v1/product-link/resolve'),
+            'nonce'    => wp_create_nonce('wp_rest'),
+        ));
     }
 }

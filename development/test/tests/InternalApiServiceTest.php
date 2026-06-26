@@ -21,6 +21,7 @@ final class InternalApiServiceTest extends TestCase
             'cashback_guest_display_rate' => 70,
         );
         $GLOBALS['_cb_test_post_meta'] = array();
+        $GLOBALS['_cb_test_internal_include_advcake'] = false;
         $GLOBALS['_cb_test_posts']     = array(
             101 => (object) array( 'ID' => 101, 'post_status' => 'publish', 'post_type' => 'product', 'post_title' => 'AliExpress' ),
             102 => (object) array( 'ID' => 102, 'post_status' => 'draft', 'post_type' => 'product', 'post_title' => 'Paused Shop' ),
@@ -163,6 +164,73 @@ final class InternalApiServiceTest extends TestCase
         self::assertSame('savello_internal_merchant_not_found', $missing->get_error_code());
     }
 
+    public function test_direct_product_link_returns_unified_cashback_and_fallback_payloads(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cashback-click-session-service.php';
+        $GLOBALS['_cb_test_internal_include_advcake'] = true;
+
+        $service = new Savello_Cashback_Internal_API_Service();
+
+        $cashback = $service->resolve_direct_product_link(array(
+            'direct_url' => 'https://shop.advcake.example/product/sku-1?color=red',
+            'source'     => 'microservice',
+            'user_id'    => 77,
+            'click_id'   => 'directclick123',
+        ));
+
+        self::assertSame(true, $cashback['cashback_available']);
+        self::assertSame('Активировать кэшбэк', $cashback['button_text']);
+        self::assertSame('Advcake Store', $cashback['merchant']);
+        self::assertSame('advcake', $cashback['network']);
+        self::assertSame('directclick123', $cashback['click_id']);
+        self::assertStringContainsString('dl=https%3A%2F%2Fshop.advcake.example%2Fproduct%2Fsku-1%3Fcolor%3Dred', $cashback['url']);
+        self::assertStringContainsString('sub1=directclick123', $cashback['url']);
+        self::assertSame(1, $this->wpdb->insert_count, 'cashback link must reuse click-session logging.');
+
+        $unknown = $service->resolve_direct_product_link(array(
+            'direct_url' => 'https://unknown.example/product/1',
+            'source'     => 'user',
+            'user_id'    => 77,
+        ));
+
+        self::assertSame(false, $unknown['cashback_available']);
+        self::assertSame('Перейти в магазин', $unknown['button_text']);
+        self::assertSame('https://unknown.example/product/1', $unknown['url']);
+        self::assertSame('Кэшбэк не начисляется по этому товару', $unknown['warning']);
+        self::assertSame('merchant_not_found', $unknown['reason_code']);
+
+        $inactive = $service->resolve_direct_product_link(array(
+            'direct_url' => 'https://paused.example/product/1',
+            'source'     => 'user',
+            'user_id'    => 77,
+        ));
+        self::assertSame(false, $inactive['cashback_available']);
+        self::assertSame('merchant_inactive', $inactive['reason_code']);
+
+        $disabled = $service->resolve_direct_product_link(array(
+            'direct_url' => 'https://disabled-cashback.example/product/1',
+            'source'     => 'user',
+            'user_id'    => 77,
+        ));
+        self::assertSame(false, $disabled['cashback_available']);
+        self::assertSame('cashback_disabled', $disabled['reason_code']);
+
+        $unsupported = $service->resolve_direct_product_link(array(
+            'direct_url' => 'https://no-deeplink.example/product/1',
+            'source'     => 'user',
+            'user_id'    => 77,
+        ));
+        self::assertSame(false, $unsupported['cashback_available']);
+        self::assertSame('deeplink_not_supported', $unsupported['reason_code']);
+
+        $unsafe = $service->resolve_direct_product_link(array(
+            'direct_url' => 'javascript:alert(1)',
+            'source'     => 'user',
+        ));
+        self::assertInstanceOf(WP_Error::class, $unsafe);
+        self::assertSame('savello_internal_bad_request', $unsafe->get_error_code());
+    }
+
     public function test_user_limits_return_only_limits_and_cashback_rules(): void
     {
         $service = new Savello_Cashback_Internal_API_Service();
@@ -194,6 +262,8 @@ final class Internal_Api_Wpdb_Stub
     public string $prefix = 'wp_';
     public string $posts = 'wp_posts';
     public string $postmeta = 'wp_postmeta';
+    public int $insert_id = 1001;
+    public int $insert_count = 0;
 
     public function prepare(string $query, mixed ...$args): string
     {
@@ -242,7 +312,7 @@ final class Internal_Api_Wpdb_Stub
         }
 
         if (str_contains($sql, 'posts')) {
-            return array(
+            $rows = array(
                 array(
                     'ID'           => '101',
                     'post_title'   => 'AliExpress',
@@ -274,6 +344,75 @@ final class Internal_Api_Wpdb_Stub
                     'updated_at'   => '2026-06-01 08:00:00',
                 ),
             );
+            if (!empty($GLOBALS['_cb_test_internal_include_advcake'])) {
+                $rows[] = array(
+                    'ID'           => '103',
+                    'post_title'   => 'Advcake Store',
+                    'post_status'  => 'publish',
+                    'network_id'   => '2',
+                    'network_name' => 'Adv.Cake',
+                    'network_slug' => 'advcake',
+                    'network_active' => '1',
+                    'offer_id'     => 'offer-42',
+                    'store_domain' => 'advcake.example',
+                    'currency'     => 'RUB',
+                    'status_raw'   => 'active',
+                    'product_url'  => 'https://go.advcake.example/template?dl={dl}&sub1={sub1}&sub2={sub2}',
+                    'api_base_url' => 'https://api.advcake.ru',
+                    'api_website_id' => '',
+                    'updated_at'   => '2026-06-01 09:58:00',
+                );
+                $rows[] = array(
+                    'ID'           => '104',
+                    'post_title'   => 'Cashback Disabled',
+                    'post_status'  => 'publish',
+                    'network_id'   => '2',
+                    'network_name' => 'Adv.Cake',
+                    'network_slug' => 'advcake',
+                    'network_active' => '1',
+                    'offer_id'     => 'offer-disabled',
+                    'store_domain' => 'disabled-cashback.example',
+                    'currency'     => 'RUB',
+                    'status_raw'   => 'active',
+                    'product_url'  => 'https://go.advcake.example/template?dl={dl}&sub1={sub1}',
+                    'cashback_enabled' => '0',
+                    'api_base_url' => 'https://api.advcake.ru',
+                    'api_website_id' => '',
+                    'updated_at'   => '2026-06-01 09:58:00',
+                );
+                $rows[] = array(
+                    'ID'           => '105',
+                    'post_title'   => 'No Deeplink',
+                    'post_status'  => 'publish',
+                    'network_id'   => '3',
+                    'network_name' => 'Generic Network',
+                    'network_slug' => 'generic',
+                    'network_active' => '1',
+                    'offer_id'     => 'offer-nodeep',
+                    'store_domain' => 'no-deeplink.example',
+                    'currency'     => 'RUB',
+                    'status_raw'   => 'active',
+                    'product_url'  => '',
+                    'cashback_enabled' => '1',
+                    'api_base_url' => '',
+                    'api_website_id' => '',
+                    'updated_at'   => '2026-06-01 09:58:00',
+                );
+            }
+            return $rows;
+        }
+
+        if (str_contains($sql, 'cashback_affiliate_network_params')) {
+            if (str_contains($sql, '"2"') || str_contains($sql, ',2') || str_contains($sql, '[2]')) {
+                return array(
+                    array('param_name' => 'sub1', 'param_type' => 'uuid'),
+                    array('param_name' => 'sub2', 'param_type' => 'user'),
+                );
+            }
+            return array(
+                array('param_name' => 'subid1', 'param_type' => 'uuid'),
+                array('param_name' => 'subid2', 'param_type' => 'user'),
+            );
         }
 
         return array();
@@ -294,6 +433,12 @@ final class Internal_Api_Wpdb_Stub
 
     public function get_var(string $sql): ?string
     {
+        if (str_contains($sql, 'cashback_affiliate_networks') && str_contains($sql, '"2"')) {
+            return 'advcake';
+        }
+        if (str_contains($sql, 'cashback_affiliate_networks') && str_contains($sql, '"1"')) {
+            return 'admitad';
+        }
         if (str_contains($sql, 'MAX') && str_contains($sql, 'cashback_shop_tariffs')) {
             return '2026-06-01 09:55:00';
         }
@@ -301,5 +446,19 @@ final class Internal_Api_Wpdb_Stub
             return '2026-06-01 09:50:00';
         }
         return null;
+    }
+
+    public function query(string $sql): int|bool
+    {
+        unset($sql);
+        return 1;
+    }
+
+    public function insert(string $table, array $data, array $format = array()): int|false
+    {
+        unset($table, $data, $format);
+        $this->insert_count++;
+        $this->insert_id++;
+        return 1;
     }
 }

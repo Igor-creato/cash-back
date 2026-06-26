@@ -92,7 +92,7 @@ class Cashback_Rate_Limiter {
         'cashback_fraud_fingerprint'                => 'read',
         // Промокоды (v8): click-tracking при copy/goto. read tier 30/мин per-user
         // достаточно для UX (пользователь не делает >30 кликов/мин в норме).
-        'cashback_promocode_click' => 'read', 'cashback_price_assistant_read' => 'read',
+        'cashback_promocode_click' => 'read', 'cashback_price_assistant_read' => 'read', 'cashback_product_link_resolve' => 'read',
 
         // --- Admin ---
         'update_payout_request'                     => 'admin',
