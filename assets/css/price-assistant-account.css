@@ -324,8 +324,6 @@
   padding: 0;
   position: absolute;
   right: 5px;
-  inset-inline-end: 5px;
-  inset-inline-start: auto;
   top: 5px;
   width: 32px;
   z-index: 2;

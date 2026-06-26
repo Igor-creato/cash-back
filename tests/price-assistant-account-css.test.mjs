@@ -29,10 +29,21 @@ function assertDeclaration(block, property, value) {
   );
 }
 
+function assertNoDeclaration(block, property) {
+  assert.equal(
+    block.includes(property + ":"),
+    false,
+    property + " must not be declared"
+  );
+}
+
 const itemBlock = declarationBlock(".cashback-price-assistant__item");
 assertDeclaration(itemBlock, "padding", "8px");
 
 const deleteCardBlock = declarationBlock(".cashback-price-assistant__delete-card");
+assertDeclaration(deleteCardBlock, "left", "auto");
+assertDeclaration(deleteCardBlock, "padding", "0");
 assertDeclaration(deleteCardBlock, "right", "5px");
-assertDeclaration(deleteCardBlock, "inset-inline-end", "5px");
 assertDeclaration(deleteCardBlock, "top", "5px");
+assertNoDeclaration(deleteCardBlock, "inset-inline-end");
+assertNoDeclaration(deleteCardBlock, "inset-inline-start");
