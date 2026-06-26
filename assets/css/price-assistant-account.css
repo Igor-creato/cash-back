@@ -268,7 +268,7 @@
   display: grid;
   gap: 14px;
   min-width: 0;
-  padding: 18px;
+  padding: 8px;
   position: relative;
 }
 
@@ -323,10 +323,10 @@
   left: auto;
   padding: 0;
   position: absolute;
-  right: 10px;
-  inset-inline-end: 10px;
+  right: 5px;
+  inset-inline-end: 5px;
   inset-inline-start: auto;
-  top: 8px;
+  top: 5px;
   width: 32px;
   z-index: 2;
 }
