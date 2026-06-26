@@ -164,11 +164,7 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             );
         }
 
-        if (!empty($network_config['advcake_cakelink_enabled'])) {
-            return $this->create_cakelink($credentials, $target_url, $tracking);
-        }
-
-        return $this->deeplink_error('advcake_deeplink_template_missing');
+        return $this->create_cakelink($credentials, $target_url, $tracking);
     }
 
     /**

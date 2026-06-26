@@ -78,6 +78,29 @@ final class AdvcakeDirectDeeplinkTest extends TestCase
         self::assertSame('advcake_deeplink_disabled', $disabled['reason_code']);
     }
 
+    public function test_missing_dynamic_template_uses_cakelink_by_default(): void
+    {
+        $GLOBALS['_cb_test_http_response'] = $this->http_response(200, '{"success":true,"url":"https:\/\/go.redav.online\/generated-product"}');
+
+        $result = (new Cashback_Advcake_Adapter())->create_deeplink(
+            array('api_key' => 'cakepass'),
+            array('api_base_url' => 'https://api.advcake.ru'),
+            '1111',
+            'https://mnogomebeli.com/komody/komod-lux/!komod-lux-belyy-sneg/',
+            array('sub1' => 'directclick123', 'sub2' => 'partner-token'),
+            'https://go.redav.online/20fe219674c95fc1?erid=2VfnxxEEBKF&m=31',
+            true
+        );
+
+        self::assertSame(true, $result['success']);
+        self::assertSame('cakelink', $result['link_type']);
+        self::assertSame('https://go.redav.online/generated-product', $result['url']);
+        self::assertStringContainsString('https://cakelink.ru/link?', $GLOBALS['_cb_test_http_calls'][0]['url']);
+        self::assertStringContainsString('dl=https%3A%2F%2Fmnogomebeli.com%2Fkomody%2Fkomod-lux%2F%21komod-lux-belyy-sneg%2F', $GLOBALS['_cb_test_http_calls'][0]['url']);
+        self::assertStringContainsString('sub1=directclick123', $GLOBALS['_cb_test_http_calls'][0]['url']);
+        self::assertStringContainsString('sub2=partner-token', $GLOBALS['_cb_test_http_calls'][0]['url']);
+    }
+
     private function http_response(int $code, string $body): array
     {
         return array(

@@ -1351,7 +1351,7 @@ return $this->extract_deeplink_url($body[0]);
 }
 
     private function validate_deeplink_url( string $base_url, array $auth_headers, string $deeplink ): bool|string {
-        $url      = $base_url . '/validate_links/?' . http_build_query(array( 'links' => $deeplink ));
+        $url      = $base_url . '/validate_links/?' . http_build_query(array( 'link' => $deeplink ));
 $response = $this->http_get($url, $auth_headers, 30);
 if (is_wp_error($response)) {
 return $response->get_error_message();

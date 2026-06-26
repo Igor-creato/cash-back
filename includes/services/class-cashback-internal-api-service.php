@@ -408,8 +408,9 @@ final class Savello_Cashback_Internal_API_Service {
         $network_active = (int) ( $row['network_active'] ?? 1 ) === 1;
         $status_raw     = strtolower((string) ( $row['status_raw'] ?? '' ));
         $post_status    = (string) ( $row['post_status'] ?? '' );
-        $network_slug    = (string) ( $row['network_slug'] ?? '' );
-        $status         = 'active';
+        $network_slug           = (string) ( $row['network_slug'] ?? '' );
+        $canonical_network_slug = $this->canonical_network_slug($network_slug);
+        $status                 = 'active';
         if (! $network_active || ! in_array($post_status, array( 'publish', 'draft' ), true)) {
             $status = 'disabled';
         } elseif (in_array($status_raw, array( 'paused', 'suspend', 'suspended', 'disabled', 'declined' ), true) || $post_status !== 'publish') {
@@ -423,8 +424,8 @@ final class Savello_Cashback_Internal_API_Service {
 
         $product_url       = (string) ( $row['product_url'] ?? '' );
         $cashback_enabled  = $this->truthy($row['cashback_enabled'] ?? 1);
-        $supports_deeplink = in_array($network_slug, array( 'admitad', 'advcake' ), true)
-            && ( $network_slug === 'admitad' || $product_url !== '' );
+        $supports_deeplink = in_array($canonical_network_slug, array( 'admitad', 'advcake' ), true)
+            && ( $canonical_network_slug === 'admitad' || $product_url !== '' );
 
         return array(
             'merchant_id'           => (string) $product_id,
@@ -635,7 +636,9 @@ final class Savello_Cashback_Internal_API_Service {
             $click_id
         );
 
-        if ((string) $merchant['network'] === 'admitad') {
+        $network = $this->canonical_network_slug((string) $merchant['network']);
+
+        if ($network === 'admitad') {
             $has_subid = false;
             foreach ($params as $key => $value) {
                 if (preg_match('/^subid\d?$/', $key) && $value !== '') {
@@ -648,7 +651,7 @@ final class Savello_Cashback_Internal_API_Service {
             }
         }
 
-        if ((string) $merchant['network'] === 'advcake' && empty($params['sub1'])) {
+        if ($network === 'advcake' && empty($params['sub1'])) {
             $params['sub1'] = $click_id;
         }
 
@@ -660,7 +663,7 @@ final class Savello_Cashback_Internal_API_Service {
      * @return array{success:bool,url?:string,link_type?:string,reason_code?:string,error?:string}
      */
     private function create_network_deeplink( array $merchant, string $direct_url, array $tracking, bool $validate_links ): array {
-        $network = (string) $merchant['network'];
+        $network = $this->canonical_network_slug((string) $merchant['network']);
         $config  = $this->network_config_for_merchant($merchant);
 
         if ($network === 'admitad') {
@@ -696,9 +699,11 @@ final class Savello_Cashback_Internal_API_Service {
     }
 
     private function network_config_for_merchant( array $merchant ): array {
+        $network_slug           = (string) $merchant['network'];
+        $canonical_network_slug = $this->canonical_network_slug($network_slug);
         $config = array(
             'id'                 => (int) $merchant['_network_id'],
-            'slug'               => (string) $merchant['network'],
+            'slug'               => $network_slug,
             'api_base_url'       => (string) ( $merchant['_api_base_url'] ?? '' ),
             'api_token_endpoint' => (string) ( $merchant['_api_token_endpoint'] ?? '' ),
             'api_website_id'     => (string) ( $merchant['_api_website_id'] ?? '' ),
@@ -706,7 +711,10 @@ final class Savello_Cashback_Internal_API_Service {
 
         if (class_exists('Cashback_API_Client')) {
             try {
-                $loaded = Cashback_API_Client::get_instance()->get_network_config((string) $merchant['network']);
+                $loaded = Cashback_API_Client::get_instance()->get_network_config($network_slug);
+                if (!is_array($loaded) && $canonical_network_slug !== $network_slug) {
+                    $loaded = Cashback_API_Client::get_instance()->get_network_config($canonical_network_slug);
+                }
                 if (is_array($loaded)) {
                     $config = array_merge($config, $loaded);
                 }
@@ -722,6 +730,7 @@ final class Savello_Cashback_Internal_API_Service {
         $root = dirname(__DIR__, 2);
         foreach (array(
             '/includes/class-cashback-outbound-http-guard.php',
+            '/includes/oauth/class-oauth2-client-credentials-helper.php',
             '/includes/adapters/interface-cashback-network-adapter.php',
             '/includes/adapters/abstract-cashback-network-adapter.php',
         ) as $relative) {
@@ -740,6 +749,16 @@ final class Savello_Cashback_Internal_API_Service {
         }
 
         return $network === 'admitad' ? class_exists('Cashback_Admitad_Adapter') : class_exists('Cashback_Advcake_Adapter');
+    }
+
+    private function canonical_network_slug( string $network ): string {
+        $network = strtolower(trim($network));
+
+        return match ($network) {
+            'adm' => 'admitad',
+            'adv', 'advcake.ru' => 'advcake',
+            default => $network,
+        };
     }
 
     private function cashback_rate_label( array $merchant ): ?string {

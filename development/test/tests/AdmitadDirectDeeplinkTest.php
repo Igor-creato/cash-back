@@ -79,6 +79,8 @@ final class AdmitadDirectDeeplinkTest extends TestCase
         );
         self::assertSame(false, $validate_failed['success']);
         self::assertSame('admitad_validate_failed', $validate_failed['reason_code']);
+        self::assertStringContainsString('/validate_links/?link=', $GLOBALS['_cb_test_http_calls'][2]['url']);
+        self::assertStringNotContainsString('links=', $GLOBALS['_cb_test_http_calls'][2]['url']);
     }
 
     private function adapter(): Cashback_Admitad_Adapter

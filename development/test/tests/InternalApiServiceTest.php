@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 
 #[Group('internal-rest-api')]
 final class InternalApiServiceTest extends TestCase
@@ -231,6 +233,109 @@ final class InternalApiServiceTest extends TestCase
         self::assertSame('savello_internal_bad_request', $unsafe->get_error_code());
     }
 
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    #[Group('direct-product-link')]
+    public function test_direct_product_link_generates_server_observed_admitad_alias_and_advcake_cakelink_urls(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/oauth/class-oauth2-client-credentials-helper.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cashback-click-session-service.php';
+
+        if (!class_exists('Cashback_API_Client', false)) {
+            eval('class Cashback_API_Client {
+                public static function get_instance(): self { static $i = null; if ($i === null) { $i = new self(); } return $i; }
+                public function get_network_config(string $slug): ?array {
+                    if ($slug === "adm" || $slug === "admitad") {
+                        return array(
+                            "id" => 1,
+                            "slug" => "adm",
+                            "api_base_url" => "https://api.admitad.com",
+                            "api_token_endpoint" => "/token/",
+                            "api_website_id" => "2082764",
+                            "credentials" => array("client_id" => "admitad-client", "client_secret" => "admitad-secret"),
+                        );
+                    }
+                    if ($slug === "advcake") {
+                        return array(
+                            "id" => 2,
+                            "slug" => "advcake",
+                            "api_base_url" => "https://api.advcake.ru",
+                            "credentials" => array("api_key" => "cakepass"),
+                        );
+                    }
+                    return null;
+                }
+            }');
+        }
+
+        $GLOBALS['_cb_test_internal_include_server_direct_cases'] = true;
+        $GLOBALS['_cb_test_http_calls'] = array();
+        $GLOBALS['_cb_test_http_response_callback'] = static function (string $url): array {
+            if (str_contains($url, '/token/')) {
+                return array(
+                    'body'     => '{"access_token":"admitad-token","expires_in":3600}',
+                    'response' => array('code' => 200, 'message' => 'OK'),
+                    'headers'  => array(),
+                );
+            }
+
+            if (str_contains($url, '/deeplink/2082764/advcampaign/30582/')) {
+                return array(
+                    'body'     => '{"is_affiliate_product":true,"link":"https:\/\/ad.admitad.com\/g\/ibox-generated\/"}',
+                    'response' => array('code' => 200, 'message' => 'OK'),
+                    'headers'  => array(),
+                );
+            }
+
+            if (str_contains($url, 'https://cakelink.ru/link?')) {
+                return array(
+                    'body'     => '{"success":true,"url":"https:\/\/go.redav.online\/generated-mnogomebeli"}',
+                    'response' => array('code' => 200, 'message' => 'OK'),
+                    'headers'  => array(),
+                );
+            }
+
+            return array(
+                'body'     => '{}',
+                'response' => array('code' => 500, 'message' => 'Unexpected'),
+                'headers'  => array(),
+            );
+        };
+
+        $service = new Savello_Cashback_Internal_API_Service();
+
+        $ibox = $service->resolve_direct_product_link(array(
+            'direct_url' => 'https://iboxstore.ru/catalog/kombo-ustroystva/ibox-icon-2',
+            'source'     => 'user',
+            'user_id'    => 77,
+            'click_id'   => 'iboxclick123',
+        ));
+
+        self::assertSame(true, $ibox['cashback_available']);
+        self::assertSame('https://ad.admitad.com/g/ibox-generated/', $ibox['cashback_url']);
+        self::assertSame('iBOX', $ibox['merchant']);
+        self::assertSame('iboxclick123', $ibox['click_id']);
+
+        $mnogomebeli = $service->resolve_direct_product_link(array(
+            'direct_url' => 'https://mnogomebeli.com/komody/komod-lux/!komod-lux-belyy-sneg/',
+            'source'     => 'user',
+            'user_id'    => 77,
+            'click_id'   => 'cakeclick123',
+        ));
+
+        self::assertSame(true, $mnogomebeli['cashback_available']);
+        self::assertSame('https://go.redav.online/generated-mnogomebeli', $mnogomebeli['cashback_url']);
+        self::assertSame('mnogomebeli.com', $mnogomebeli['merchant']);
+
+        $cakelink_call = array_values(array_filter(
+            $GLOBALS['_cb_test_http_calls'],
+            static fn(array $call): bool => str_contains((string) $call['url'], 'https://cakelink.ru/link?')
+        ))[0] ?? null;
+        self::assertIsArray($cakelink_call);
+        self::assertStringContainsString('dl=https%3A%2F%2Fmnogomebeli.com%2Fkomody%2Fkomod-lux%2F%21komod-lux-belyy-sneg%2F', $cakelink_call['url']);
+        self::assertStringContainsString('sub1=cakeclick123', $cakelink_call['url']);
+    }
+
     public function test_user_limits_return_only_limits_and_cashback_rules(): void
     {
         $service = new Savello_Cashback_Internal_API_Service();
@@ -397,6 +502,43 @@ final class Internal_Api_Wpdb_Stub
                     'api_base_url' => '',
                     'api_website_id' => '',
                     'updated_at'   => '2026-06-01 09:58:00',
+                );
+            }
+            if (!empty($GLOBALS['_cb_test_internal_include_server_direct_cases'])) {
+                $rows[] = array(
+                    'ID'             => '106',
+                    'post_title'     => 'iBOX',
+                    'post_status'    => 'publish',
+                    'network_id'     => '1',
+                    'network_name'   => 'Admitad',
+                    'network_slug'   => 'adm',
+                    'network_active' => '1',
+                    'offer_id'       => '30582',
+                    'store_domain'   => 'iboxstore.ru',
+                    'currency'       => 'RUB',
+                    'status_raw'     => 'active',
+                    'product_url'    => 'https://codeaven.com/g/4hh84nh1h6998b33a895e6b606b04d/?erid=5jtCeReNwxHpfQTFQwvgGrT',
+                    'api_base_url'   => 'https://api.admitad.com',
+                    'api_token_endpoint' => '/token/',
+                    'api_website_id' => '2082764',
+                    'updated_at'     => '2026-06-26 19:46:52',
+                );
+                $rows[] = array(
+                    'ID'             => '107',
+                    'post_title'     => 'mnogomebeli.com',
+                    'post_status'    => 'publish',
+                    'network_id'     => '2',
+                    'network_name'   => 'Adv.Cake',
+                    'network_slug'   => 'advcake',
+                    'network_active' => '1',
+                    'offer_id'       => '1111',
+                    'store_domain'   => 'mnogomebeli.com',
+                    'currency'       => 'RUB',
+                    'status_raw'     => 'active',
+                    'product_url'    => 'https://go.redav.online/20fe219674c95fc1?erid=2VfnxxEEBKF&m=31',
+                    'api_base_url'   => 'https://api.advcake.ru',
+                    'api_website_id' => '',
+                    'updated_at'     => '2026-06-26 19:46:52',
                 );
             }
             return $rows;
