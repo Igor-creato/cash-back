@@ -75,7 +75,7 @@ final class PriceAssistantAccountUiTest extends TestCase
         );
         self::assertStringNotContainsString('data-price-assistant-tab="all"', $html);
         self::assertMatchesRegularExpression(
-            '/<button[^>]+class="[^"]*cashback-support-tab[^"]*active[^"]*is-active[^"]*"[^>]+data-price-assistant-tab="ozon"/',
+            '/<button[^>]+class="[^"]*cashback-support-tab[^"]*active[^"]*is-active[^"]*"[^>]+data-price-assistant-tab="wildberries"/',
             $html,
             'The first enabled marketplace tab must expose both shared active and legacy is-active classes.'
         );
@@ -183,6 +183,33 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertArrayNotHasKey('cookies', $config);
         self::assertArrayNotHasKey('tokens', $config);
         self::assertArrayNotHasKey('ciphertext', $config);
+    }
+
+    public function test_ozon_connection_is_blocked_until_official_browser_oauth_exists(): void
+    {
+        self::assertFileExists($this->class_file, 'Price Assistant account UI class must exist.');
+        require_once $this->class_file;
+
+        $account = new Cashback_Price_Assistant_Account();
+        $account->enqueue_assets();
+
+        $config = $GLOBALS['_cb_test_localized_scripts']['cashback-price-assistant-account']['CashbackPriceAssistantAccount'];
+        self::assertSame('requires_official_access', $config['marketplaces']['ozon']['access_status']);
+        self::assertFalse($config['marketplaces']['ozon']['enabled']);
+        self::assertStringContainsString('официальный доступ Ozon', $config['marketplaces']['ozon']['disabled_reason']);
+
+        ob_start();
+        $account->render_endpoint();
+        $html = (string) ob_get_clean();
+
+        self::assertStringContainsString('data-marketplace-card="ozon"', $html);
+        self::assertStringContainsString('data-marketplace-access-status="requires_official_access"', $html);
+        self::assertStringContainsString('Требуется официальный доступ Ozon', $html);
+        self::assertMatchesRegularExpression(
+            '/<button[^>]+class="[^"]*cashback-price-assistant__connect[^"]*"[^>]+data-marketplace="ozon"[^>]+disabled/',
+            $html,
+            'Ozon connect button must not be usable until official consumer OAuth/API access is approved.'
+        );
     }
 
     public function test_account_script_keeps_last_payloads_and_filters_by_active_marketplace(): void

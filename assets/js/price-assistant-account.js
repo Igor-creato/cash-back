@@ -141,6 +141,15 @@
     return statuses[status] || status || "Не авторизован";
   }
 
+  function marketplaceAccessStatus(code) {
+    const marketplace = marketplaceConfig[normalizeSource(code)] || marketplaceConfig[code] || {};
+    return marketplace.access_status || "available";
+  }
+
+  function requiresOfficialAccess(code) {
+    return marketplaceAccessStatus(code) === "requires_official_access";
+  }
+
   function isAuthorizedStatus(status) {
     const normalized = String(status || "").toLowerCase().replace(/[_\s]+/g, " ");
     return normalized === "connected" || normalized === "sync ok" || normalized === "sync_ok";
@@ -158,6 +167,7 @@
     }
     const active = normalizeSource(code) === normalizeSource(state.activeTab);
     const authorized = isMarketplaceAuthorized(code);
+    const blocked = requiresOfficialAccess(code);
     card.hidden = !active;
 
     card.querySelectorAll("[data-marketplace]").forEach(function (button) {
@@ -167,8 +177,12 @@
       const isCollection = page === "cart" || page === "favorites";
       button.hidden =
         !active ||
+        (blocked && !isConnect) ||
         (authorized && isConnect) ||
         (!authorized && (isCollection || isDisconnect));
+      if (blocked) {
+        button.disabled = true;
+      }
       if (isCollection) {
         button.classList.toggle("active", page === state.activeCollectionType);
         button.classList.toggle("is-active", page === state.activeCollectionType);
@@ -511,13 +525,13 @@
         });
         Object.keys(marketplaceConfig).forEach(function (code) {
           if (!state.connections[code]) {
-            setState(code, "disconnected");
+            setState(code, requiresOfficialAccess(code) ? "requires_official_access" : "disconnected");
           }
         });
       })
       .catch(function () {
         Object.keys(marketplaceConfig).forEach(function (code) {
-          setState(code, "disconnected");
+          setState(code, requiresOfficialAccess(code) ? "requires_official_access" : "disconnected");
         });
       });
   }

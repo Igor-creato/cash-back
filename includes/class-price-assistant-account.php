@@ -152,10 +152,16 @@ final class Cashback_Price_Assistant_Account {
 
                 <div class="cashback-price-assistant__marketplaces">
                     <?php foreach ( $marketplaces as $code => $marketplace ) : ?>
-                        <article class="cashback-price-assistant__marketplace" data-marketplace-card="<?php echo esc_attr($code); ?>" data-price-assistant-source="<?php echo esc_attr($code); ?>" <?php echo $code === $active_marketplace ? '' : 'hidden'; ?>>
+                        <article
+                            class="cashback-price-assistant__marketplace"
+                            data-marketplace-card="<?php echo esc_attr($code); ?>"
+                            data-price-assistant-source="<?php echo esc_attr($code); ?>"
+                            data-marketplace-access-status="<?php echo esc_attr((string) ( $marketplace['access_status'] ?? 'available' )); ?>"
+                            <?php echo $code === $active_marketplace ? '' : 'hidden'; ?>
+                        >
                             <h3><?php echo esc_html($this->marketplace_label($code, (string) $marketplace['label'])); ?></h3>
                             <p class="cashback-price-assistant__state" data-marketplace-state="<?php echo esc_attr($code); ?>">
-                                <?php echo esc_html(__('Не авторизован', 'cashback')); ?>
+                                <?php echo esc_html($this->initial_marketplace_state($marketplace)); ?>
                             </p>
                             <div class="cashback-price-assistant__actions">
                                 <button
@@ -293,8 +299,17 @@ final class Cashback_Price_Assistant_Account {
             'sync ok'            => __('Синхронизировано', 'cashback'),
             'sync_ok'            => __('Синхронизировано', 'cashback'),
             'connecting'         => __('Подключение', 'cashback'),
+            'requires_official_access' => __('Требуется официальный доступ Ozon', 'cashback'),
             'reconnect_required' => __('Требуется повторная авторизация', 'cashback'),
             'disconnected'       => __('Не авторизован', 'cashback'),
         );
+    }
+
+    private function initial_marketplace_state( array $marketplace ): string {
+        if ( 'requires_official_access' === (string) ( $marketplace['access_status'] ?? '' ) ) {
+            return __('Требуется официальный доступ Ozon', 'cashback');
+        }
+
+        return __('Не авторизован', 'cashback');
     }
 }

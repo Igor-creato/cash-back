@@ -32,11 +32,7 @@ final class Cashback_Price_Assistant_REST_Controller {
             'favorites' => 'https://market.yandex.ru/my/wishlist',
         ),
     );
-    private const MARKETPLACE_HOST_PERMISSIONS = array(
-        'ozon'          => array( 'https://*.ozon.ru/*' ),
-        'wildberries'   => array( 'https://*.wildberries.ru/*' ),
-        'yandex_market' => array( 'https://market.yandex.ru/*', 'https://*.market.yandex.ru/*' ),
-    );
+    private const MARKETPLACE_HOST_PERMISSIONS = array( 'ozon'          => array( 'https://*.ozon.ru/*' ), 'wildberries'   => array( 'https://*.wildberries.ru/*' ), 'yandex_market' => array( 'https://market.yandex.ru/*', 'https://*.market.yandex.ru/*' ) );
 
     private Cashback_Price_Assistant_Proxy_Client $client;
 
@@ -445,19 +441,15 @@ $payload['country_code'] = strtoupper(substr($country_code, 0, 8));
 
     public static function connector_marketplaces(): array {
         $marketplaces = array();
-        foreach (self::MARKETPLACES as $code => $label) {
-            $marketplaces[] = array(
-                'code'             => $code,
-                'label'            => $label,
-                'enabled'          => (int) get_option(self::marketplace_option_name($code), 0) === 1,
-                'page_urls'        => self::MARKETPLACE_PAGE_URLS[ $code ],
-                'host_permissions' => self::MARKETPLACE_HOST_PERMISSIONS[ $code ],
-                'allowlist'        => array(
-                    'cookies' => array(),
-                    'tokens'  => array(),
-                ),
-            );
-        }
+foreach (self::MARKETPLACES as $code => $label) {
+$marketplace = array( 'code'             => $code, 'label'            => $label, 'enabled'          => (int) get_option(self::marketplace_option_name($code), 0) === 1, 'access_status'    => 'available', 'disabled_reason'  => '', 'page_urls'        => self::MARKETPLACE_PAGE_URLS[ $code ], 'host_permissions' => self::MARKETPLACE_HOST_PERMISSIONS[ $code ], 'allowlist'        => array( 'cookies' => array(), 'tokens'  => array() ) );
+if ( 'ozon' === $code ) {
+$marketplace['enabled']         = false;
+$marketplace['access_status']   = 'requires_official_access';
+$marketplace['disabled_reason'] = 'Требуется официальный доступ Ozon к consumer OAuth/API для корзины и избранного.';
+}
+            $marketplaces[] = $marketplace;
+}
         return $marketplaces;
     }
 
