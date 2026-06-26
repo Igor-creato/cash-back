@@ -671,13 +671,19 @@ final class Savello_Cashback_Internal_API_Service {
                 return array( 'success' => false, 'reason_code' => 'admitad_adapter_missing' );
             }
             $config['validate_links'] = $validate_links;
-            return (new Cashback_Admitad_Adapter())->create_deeplink(
+            $result = (new Cashback_Admitad_Adapter())->create_deeplink(
                 is_array($config['credentials'] ?? null) ? $config['credentials'] : array(),
                 $config,
                 (string) $merchant['offer_id'],
                 $direct_url,
                 $tracking
             );
+
+            if (!$this->is_admitad_generator_scope_error($result)) {
+                return $result;
+            }
+
+            return $this->create_admitad_stored_deeplink($merchant, $direct_url, $tracking);
         }
 
         if ($network === 'advcake') {
@@ -696,6 +702,58 @@ final class Savello_Cashback_Internal_API_Service {
         }
 
         return array( 'success' => false, 'reason_code' => 'network_not_supported' );
+    }
+
+    /**
+     * @param array<string,mixed> $result
+     */
+    private function is_admitad_generator_scope_error( array $result ): bool {
+        if ((string) ( $result['reason_code'] ?? '' ) !== 'admitad_api_error') {
+            return false;
+        }
+
+        $error = strtolower((string) ( $result['error'] ?? '' ));
+        return str_contains($error, 'insufficient_scope') && str_contains($error, 'deeplink_generator');
+    }
+
+    /**
+     * Build a product-level Admitad URL from the stored campaign affiliate link
+     * when the API credentials are connected but lack the deeplink_generator scope.
+     *
+     * @param array<string,mixed> $merchant
+     * @param array<string,string> $tracking
+     * @return array{success:bool,url?:string,link_type?:string,reason_code?:string}
+     */
+    private function create_admitad_stored_deeplink( array $merchant, string $direct_url, array $tracking ): array {
+        $affiliate_url = $this->sanitize_url((string) ( $merchant['_product_url'] ?? '' ));
+        if ($affiliate_url === '') {
+            return array( 'success' => false, 'reason_code' => 'admitad_stored_affiliate_url_missing' );
+        }
+
+        $affiliate_host = $this->normalize_domain((string) wp_parse_url($affiliate_url, PHP_URL_HOST));
+        $direct_host    = $this->normalize_domain((string) wp_parse_url($direct_url, PHP_URL_HOST));
+        if ($affiliate_host === '' || $affiliate_host === $direct_host) {
+            return array( 'success' => false, 'reason_code' => 'admitad_stored_affiliate_url_missing' );
+        }
+
+        $query = array( 'ulp' => $direct_url );
+        foreach ($tracking as $key => $value) {
+            if (!preg_match('/^subid\d?$/', (string) $key) || $value === '') {
+                continue;
+            }
+            $query[ (string) $key ] = (string) $value;
+        }
+
+        $url = $this->sanitize_url(add_query_arg($query, $affiliate_url));
+        if ($url === '') {
+            return array( 'success' => false, 'reason_code' => 'admitad_stored_affiliate_url_invalid' );
+        }
+
+        return array(
+            'success'   => true,
+            'url'       => $url,
+            'link_type' => 'deeplink',
+        );
     }
 
     private function network_config_for_merchant( array $merchant ): array {

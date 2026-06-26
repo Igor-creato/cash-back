@@ -289,7 +289,7 @@ final class InternalApiServiceTest extends TestCase
 
             if (str_contains($url, 'https://cakelink.ru/link?')) {
                 return array(
-                    'body'     => '{"success":true,"url":"https:\/\/go.redav.online\/generated-mnogomebeli"}',
+                    'body'     => '{"success":true,"data":{"url":"https:\/\/go.redav.online\/generated-mnogomebeli"}}',
                     'response' => array('code' => 200, 'message' => 'OK'),
                     'headers'  => array(),
                 );
@@ -315,6 +315,50 @@ final class InternalApiServiceTest extends TestCase
         self::assertSame('https://ad.admitad.com/g/ibox-generated/', $ibox['cashback_url']);
         self::assertSame('iBOX', $ibox['merchant']);
         self::assertSame('iboxclick123', $ibox['click_id']);
+
+        $GLOBALS['_cb_test_http_response_callback'] = static function (string $url): array {
+            if (str_contains($url, '/token/')) {
+                return array(
+                    'body'     => '{"access_token":"admitad-token","expires_in":3600}',
+                    'response' => array('code' => 200, 'message' => 'OK'),
+                    'headers'  => array(),
+                );
+            }
+
+            if (str_contains($url, '/deeplink/2082764/advcampaign/30582/')) {
+                return array(
+                    'body'     => '{"error":"insufficient_scope","error_description":"Access token has insufficient scope: deeplink_generator","status_code":"403"}',
+                    'response' => array('code' => 403, 'message' => 'Forbidden'),
+                    'headers'  => array(),
+                );
+            }
+
+            if (str_contains($url, 'https://cakelink.ru/link?')) {
+                return array(
+                    'body'     => '{"success":true,"data":{"url":"https:\/\/go.redav.online\/generated-mnogomebeli"}}',
+                    'response' => array('code' => 200, 'message' => 'OK'),
+                    'headers'  => array(),
+                );
+            }
+
+            return array(
+                'body'     => '{}',
+                'response' => array('code' => 500, 'message' => 'Unexpected'),
+                'headers'  => array(),
+            );
+        };
+
+        $ibox_scope_fallback = $service->resolve_direct_product_link(array(
+            'direct_url' => 'https://iboxstore.ru/catalog/kombo-ustroystva/ibox-icon-2',
+            'source'     => 'user',
+            'user_id'    => 77,
+            'click_id'   => 'iboxscope123',
+        ));
+
+        self::assertSame(true, $ibox_scope_fallback['cashback_available']);
+        self::assertStringStartsWith('https://codeaven.com/g/4hh84nh1h6998b33a895e6b606b04d/', $ibox_scope_fallback['cashback_url']);
+        self::assertStringContainsString('ulp=https%3A%2F%2Fiboxstore.ru%2Fcatalog%2Fkombo-ustroystva%2Fibox-icon-2', $ibox_scope_fallback['cashback_url']);
+        self::assertStringContainsString('subid1=iboxscope123', $ibox_scope_fallback['cashback_url']);
 
         $mnogomebeli = $service->resolve_direct_product_link(array(
             'direct_url' => 'https://mnogomebeli.com/komody/komod-lux/!komod-lux-belyy-sneg/',

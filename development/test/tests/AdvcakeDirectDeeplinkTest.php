@@ -80,7 +80,7 @@ final class AdvcakeDirectDeeplinkTest extends TestCase
 
     public function test_missing_dynamic_template_uses_cakelink_by_default(): void
     {
-        $GLOBALS['_cb_test_http_response'] = $this->http_response(200, '{"success":true,"url":"https:\/\/go.redav.online\/generated-product"}');
+        $GLOBALS['_cb_test_http_response'] = $this->http_response(200, '{"success":true,"data":{"url":"https:\/\/go.redav.online\/generated-product"}}');
 
         $result = (new Cashback_Advcake_Adapter())->create_deeplink(
             array('api_key' => 'cakepass'),

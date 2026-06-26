@@ -1313,13 +1313,7 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             return $this->deeplink_error('advcake_api_error');
         }
 
-        $deeplink = '';
-        foreach (array( 'url', 'link' ) as $key) {
-            if (!empty($body[ $key ]) && is_scalar($body[ $key ])) {
-                $deeplink = trim((string) $body[ $key ]);
-                break;
-            }
-        }
+        $deeplink = $this->extract_cakelink_deeplink_url($body);
 
         if ($deeplink === '' || !$this->is_safe_http_url($deeplink)) {
             return $this->deeplink_error('advcake_empty_deeplink');
@@ -1330,6 +1324,28 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             'url'       => $deeplink,
             'link_type' => 'cakelink',
         );
+    }
+
+    /**
+     * @param array<string,mixed> $body
+     */
+    private function extract_cakelink_deeplink_url( array $body ): string {
+        foreach (array( 'url', 'link' ) as $key) {
+            if (!empty($body[ $key ]) && is_scalar($body[ $key ])) {
+                return trim((string) $body[ $key ]);
+            }
+        }
+
+        foreach (array( 'data', 'result' ) as $key) {
+            if (!empty($body[ $key ]) && is_array($body[ $key ])) {
+                $nested = $this->extract_cakelink_deeplink_url($body[ $key ]);
+                if ($nested !== '') {
+                    return $nested;
+                }
+            }
+        }
+
+        return '';
     }
 
     /**
