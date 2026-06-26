@@ -377,7 +377,6 @@
       image.src = logo;
       image.alt = name || "Магазин";
       image.loading = "lazy";
-      nameNode.hidden = true;
       image.addEventListener("error", function () {
         image.hidden = true;
         nameNode.hidden = false;
@@ -632,12 +631,7 @@
       body.className = "cashback-price-assistant__item-body";
 
       appendText(body, "p", productTitle(item), "cashback-price-assistant__item-title");
-      appendNonEmptyText(
-        body,
-        "p",
-        sourceDisplayName(item),
-        "cashback-price-assistant__item-store"
-      );
+      renderStoreBrand(body, item);
       appendNonEmptyText(
         body,
         "p",

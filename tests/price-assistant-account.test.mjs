@@ -443,6 +443,59 @@ await (async function testManualWatchlistShowsProductDataAndSingleEmptyChartMess
   assert.equal(text.includes("Недостаточно данных для графика"), false);
 })();
 
+await (async function testManualWatchlistShowsStoreLogoBeforeVisibleName() {
+  const { manualList } = await runScript((url) => {
+    if (url.includes("/watchlist/items?limit=50")) {
+      return successResponse({
+        items: [
+          {
+            subscription_id: 10,
+            tracked_product_id: 20,
+            product_url: "https://www.dns-shop.ru/product/sku-123",
+            source: "dns_shop_ru_default",
+            source_display_name: "DNS",
+            source_logo_url: "https://cdn.example.test/dns.svg",
+            region_code: "default",
+            availability: true,
+            title: "Видеокарта RTX 5070",
+            last_price: "51081.00",
+            currency: "RUB",
+          },
+        ],
+      });
+    }
+    if (url.includes("/products/20/chart")) {
+      return successResponse({
+        labels: { headline: "Недостаточно данных для графика" },
+        series: [],
+        summary: { trend: "no_data" },
+        currency: "RUB",
+      });
+    }
+    if (url.includes("/collections")) {
+      return successResponse({ items: [] });
+    }
+    if (url.includes("/connections")) {
+      return successResponse({ connections: [] });
+    }
+    return successResponse({});
+  });
+
+  await flushPromises();
+
+  const brand = findFirst(manualList, (node) =>
+    node.classList.contains("cashback-price-assistant__item-store")
+  );
+  assert.ok(brand, "manual card must render a store brand row");
+  assert.ok(brand.children[0], "manual card must render the store logo");
+  assert.ok(brand.children[1], "manual card must render the store name");
+  assert.equal(brand.children[0].tagName, "IMG");
+  assert.equal(brand.children[0].src, "https://cdn.example.test/dns.svg");
+  assert.equal(brand.children[1].tagName, "SPAN");
+  assert.equal(brand.children[1].hidden, false);
+  assert.equal(textOf(brand.children[1]), "DNS");
+})();
+
 await (async function testManualWatchlistCardHidesAvailableAndUsualPriceLabels() {
   const { manualList } = await runScript((url) => {
     if (url.includes("/watchlist/items?limit=50")) {
