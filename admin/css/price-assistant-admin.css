@@ -39,6 +39,34 @@
   gap: 4px;
 }
 
+.cashback-pa-logo-field {
+  display: grid;
+  gap: 6px;
+}
+
+.cashback-pa-logo-actions,
+.cashback-pa-store-name {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.cashback-pa-logo-preview {
+  align-items: center;
+  border: 1px dashed #c3c4c7;
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+  padding: 6px;
+}
+
+.cashback-pa-store-logo {
+  display: block;
+  height: 32px;
+  max-width: 96px;
+  object-fit: contain;
+}
+
 .cashback-pa-grid input,
 .cashback-pa-grid select,
 .cashback-pa-grid textarea {

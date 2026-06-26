@@ -58,6 +58,7 @@ final class Cashback_Price_Assistant_Admin {
 			return;
 		}
 
+		wp_enqueue_media();
 		wp_enqueue_style(
 			'cashback-price-assistant-admin',
 			cashback_asset_url( 'admin/css/price-assistant-admin.css' ),
@@ -128,6 +129,23 @@ final class Cashback_Price_Assistant_Admin {
 						<span><?php echo esc_html__( 'URL главной страницы магазина', 'cashback' ); ?></span>
 						<input type="url" name="homepage_url" required autocomplete="off" placeholder="https://www.example.ru/" />
 					</label>
+					<label>
+						<span><?php echo esc_html__( 'Название магазина', 'cashback' ); ?></span>
+						<input type="text" name="display_name" required autocomplete="off" placeholder="<?php echo esc_attr__( 'Название в карточке', 'cashback' ); ?>" />
+					</label>
+					<div class="cashback-pa-logo-field">
+						<span><?php echo esc_html__( 'Логотип магазина', 'cashback' ); ?></span>
+						<input type="hidden" name="logo_url" value="" />
+						<div class="cashback-pa-logo-preview" data-pa-logo-preview></div>
+						<div class="cashback-pa-logo-actions">
+							<button type="button" class="button" data-pa-logo-upload>
+								<?php echo esc_html__( 'Загрузить/выбрать', 'cashback' ); ?>
+							</button>
+							<button type="button" class="button" data-pa-logo-remove hidden>
+								<?php echo esc_html__( 'Удалить', 'cashback' ); ?>
+							</button>
+						</div>
+					</div>
 					<button type="submit" class="button button-primary">
 						<?php echo esc_html__( 'Сохранить магазин', 'cashback' ); ?>
 					</button>

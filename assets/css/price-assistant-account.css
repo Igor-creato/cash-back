@@ -318,6 +318,7 @@
   display: inline-flex;
   font-size: 24px;
   height: 32px;
+  inset-inline-end: 10px;
   justify-content: center;
   line-height: 1;
   left: auto;
@@ -353,11 +354,26 @@
 }
 
 .cashback-price-assistant__item-store {
+  align-items: center;
   color: #5f6673;
+  display: flex;
   font-size: 14px;
   font-weight: 700;
+  gap: 8px;
   line-height: 1.25;
   margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.cashback-price-assistant__item-store-logo {
+  display: block;
+  height: 24px;
+  max-width: 92px;
+  object-fit: contain;
+}
+
+.cashback-price-assistant__item-store-name {
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 

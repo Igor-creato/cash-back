@@ -206,6 +206,8 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('function renderActiveSearchResults', $script);
         self::assertStringContainsString('function loadInlineChart', $script);
         self::assertStringContainsString('function productImageUrl', $script);
+        self::assertStringContainsString('function sourceLogoUrl', $script);
+        self::assertStringContainsString('function renderStoreBrand', $script);
         self::assertStringContainsString('function productPrice', $script);
         self::assertStringContainsString('function buyProduct', $script);
         self::assertStringContainsString('data-price-assistant-item-chart', $script);
@@ -213,6 +215,9 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringContainsString('title", "Удалить"', $script);
         self::assertStringContainsString('cashback-price-assistant__chart-price-label', $script);
         self::assertStringContainsString('cashback-price-assistant__chart-axis-label', $script);
+        self::assertStringContainsString('cashback-price-assistant__item-store-logo', $script);
+        self::assertStringContainsString('cashback-price-assistant__item-store-name', $script);
+        self::assertStringContainsString('image.addEventListener("error"', $script);
         self::assertStringContainsString('appendAction(actions, "buy", "Купить", "cashback-btn-primary")', $script);
         self::assertStringContainsString('renderWatchlist(state.watchlistItems)', $script);
         self::assertStringNotContainsString('appendAction(actions, "save-targets"', $script);
@@ -237,6 +242,8 @@ final class PriceAssistantAccountUiTest extends TestCase
         self::assertStringNotContainsString('.cashback-price-assistant__primary-button', $styles);
         self::assertStringContainsString('.cashback-price-assistant__inline-chart', $styles);
         self::assertStringContainsString('.cashback-price-assistant__item-footer', $styles);
+        self::assertStringContainsString('.cashback-price-assistant__item-store-logo', $styles);
+        self::assertStringContainsString('.cashback-price-assistant__item-store-name', $styles);
         self::assertStringContainsString('.cashback-price-assistant__chart-extreme-line', $styles);
         self::assertStringContainsString('.cashback-price-assistant__chart-extreme-label', $styles);
         self::assertStringContainsString('.cashback-price-assistant__chart-price-label', $styles);

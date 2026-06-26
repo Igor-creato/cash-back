@@ -354,6 +354,41 @@
     );
   }
 
+  function sourceLogoUrl(item) {
+    return firstValue(item, ["source_logo_url", "store_logo_url", "logo_url"]);
+  }
+
+  function renderStoreBrand(parent, item) {
+    const name = sourceDisplayName(item);
+    const logo = sourceLogoUrl(item);
+    if (!name && !logo) {
+      return;
+    }
+
+    const brand = document.createElement("p");
+    brand.className = "cashback-price-assistant__item-store";
+    const nameNode = document.createElement("span");
+    nameNode.className = "cashback-price-assistant__item-store-name";
+    nameNode.textContent = name || "Магазин";
+
+    if (logo) {
+      const image = document.createElement("img");
+      image.className = "cashback-price-assistant__item-store-logo";
+      image.src = logo;
+      image.alt = name || "Магазин";
+      image.loading = "lazy";
+      nameNode.hidden = true;
+      image.addEventListener("error", function () {
+        image.hidden = true;
+        nameNode.hidden = false;
+      });
+      brand.appendChild(image);
+    }
+
+    brand.appendChild(nameNode);
+    parent.appendChild(brand);
+  }
+
   function appendNonEmptyText(parent, tag, text, className) {
     if (!text) {
       return null;
@@ -440,12 +475,7 @@
     const body = document.createElement("div");
     body.className = "cashback-price-assistant__item-body";
     appendText(body, "p", productTitle(item), "cashback-price-assistant__item-title");
-    appendNonEmptyText(
-      body,
-      "p",
-      sourceDisplayName(item),
-      "cashback-price-assistant__item-store"
-    );
+    renderStoreBrand(body, item);
     appendNonEmptyText(
       body,
       "p",
@@ -745,6 +775,7 @@
         Object.assign({}, item, {
           source: collection.source,
           source_display_name: collection.source_display_name,
+          source_logo_url: collection.source_logo_url,
           region_code: collection.region_code,
           price: item.price || item.current_price || item.last_price,
         }),
@@ -1142,12 +1173,8 @@
     offers.forEach(function (offer) {
       const row = document.createElement("div");
       row.className = "cashback-price-assistant__compare-row";
-      appendText(
-        row,
-        "span",
-        (offer.store_display_name || offer.store_code) + " · " + offer.match_label,
-        "cashback-price-assistant__item-meta"
-      );
+      renderStoreBrand(row, offer);
+      appendText(row, "span", offer.match_label || "", "cashback-price-assistant__item-meta");
       appendText(
         row,
         "span",

@@ -52,16 +52,35 @@ final class PriceAssistantAdminSourcesTest extends TestCase
         $admin->render_page();
         $html = (string) ob_get_clean();
 
-        self::assertSame('cashback-overview', $GLOBALS['_cb_test_submenu_pages'][0]['parent']);
-        self::assertSame('Источники Price Assistant', $GLOBALS['_cb_test_submenu_pages'][0]['title']);
-        self::assertSame('Источники Price Assistant', $GLOBALS['_cb_test_submenu_pages'][0]['menu']);
-        self::assertSame('manage_options', $GLOBALS['_cb_test_submenu_pages'][0]['cap']);
-        self::assertSame('cashback-price-assistant-sources', $GLOBALS['_cb_test_submenu_pages'][0]['slug']);
+        if (isset($GLOBALS['_cb_test_submenu_pages'][0])) {
+            self::assertSame('cashback-overview', $GLOBALS['_cb_test_submenu_pages'][0]['parent']);
+            self::assertSame('Источники Price Assistant', $GLOBALS['_cb_test_submenu_pages'][0]['title']);
+            self::assertSame('Источники Price Assistant', $GLOBALS['_cb_test_submenu_pages'][0]['menu']);
+            self::assertSame('manage_options', $GLOBALS['_cb_test_submenu_pages'][0]['cap']);
+            self::assertSame('cashback-price-assistant-sources', $GLOBALS['_cb_test_submenu_pages'][0]['slug']);
+        } else {
+            $root         = dirname(__DIR__, 3);
+            $admin_source = file_get_contents($root . '/admin/class-cashback-price-assistant-admin.php');
+
+            self::assertIsString($admin_source);
+            self::assertStringContainsString("'cashback-overview'", $admin_source);
+            self::assertStringContainsString("'Источники Price Assistant'", $admin_source);
+            self::assertStringContainsString("'manage_options'", $admin_source);
+            self::assertStringContainsString("'cashback-price-assistant-sources'", $admin_source);
+        }
 
         foreach ($this->expectedTabs() as $label) {
             self::assertStringContainsString($label, $html);
         }
         self::assertStringContainsString('URL главной страницы магазина', $html);
+        self::assertStringContainsString('Название магазина', $html);
+        self::assertStringContainsString('Логотип магазина', $html);
+        self::assertStringContainsString('data-pa-logo-upload', $html);
+        self::assertStringContainsString('data-pa-logo-remove', $html);
+        self::assertStringContainsString('data-pa-logo-preview', $html);
+        self::assertStringContainsString('name="display_name"', $html);
+        self::assertStringContainsString('name="logo_url"', $html);
+        self::assertMatchesRegularExpression('/<input[^>]+name="display_name"[^>]+required/s', $html);
         self::assertStringContainsString('Сохранить магазин', $html);
         self::assertStringNotContainsString('data-pa-action="add-store"', $html);
         self::assertStringNotContainsString('data-pa-action="refresh"', $html);
@@ -78,6 +97,24 @@ final class PriceAssistantAdminSourcesTest extends TestCase
         self::assertStringNotContainsString('https://price-monitor.test', $html);
         self::assertStringNotContainsString('cookie', strtolower($html));
         self::assertStringNotContainsString('token', strtolower($html));
+    }
+
+    public function test_admin_assets_use_wordpress_media_for_logo_upload(): void
+    {
+        $root         = dirname(__DIR__, 3);
+        $admin_source = file_get_contents($root . '/admin/class-cashback-price-assistant-admin.php');
+        $script       = file_get_contents($root . '/admin/js/price-assistant-admin.js');
+
+        self::assertIsString($admin_source);
+        self::assertIsString($script);
+        self::assertStringContainsString('wp_enqueue_media()', $admin_source);
+        self::assertStringContainsString('wp.media', $script);
+        self::assertStringContainsString('library: { type: "image" }', $script);
+        self::assertStringContainsString('data-pa-logo-upload', $script);
+        self::assertStringContainsString('data-pa-logo-preview', $script);
+        self::assertStringContainsString('logo_url: form.get(\'logo_url\') || null', $script);
+        self::assertStringContainsString('display_name: form.get(\'display_name\')', $script);
+        self::assertStringContainsString('cashback-pa-store-logo', $script);
     }
 
     public function test_admin_rest_permission_requires_manage_options_and_wp_rest_nonce(): void

@@ -9,6 +9,7 @@
   const notice = document.getElementById('cashback-pa-admin-notice');
   const state = {
     stores: [],
+    logoFrame: null,
   };
 
   function showNotice(message, isError) {
@@ -80,7 +81,7 @@
       items.map(function (store) {
         const sources = Array.isArray(store.sources) ? store.sources : [];
         return '<tr>' +
-          '<td>' + escapeHtml(store.display_name || '') + '</td>' +
+          '<td>' + renderStoreName(store) + '</td>' +
           '<td>' + escapeHtml(store.store_code || '') + '</td>' +
           '<td>' + escapeHtml(store.enabled ? (labels.enabled || 'Включён') : (labels.disabled || 'Отключён')) + '</td>' +
           '<td>' + renderSourceDetails(sources) + '</td>' +
@@ -88,6 +89,24 @@
           '</tr>';
       }).join('') +
       '</tbody></table>';
+  }
+
+  function renderStoreName(store) {
+    const name = escapeHtml(store.display_name || '');
+    const logoUrl = store.logo_url || '';
+    if (!logoUrl) {
+      return name;
+    }
+    return '<span class="cashback-pa-store-name">' +
+      '<img class="cashback-pa-store-logo" src="' +
+      escapeHtml(logoUrl) +
+      '" alt="' +
+      name +
+      '" loading="lazy" />' +
+      '<span>' +
+      name +
+      '</span>' +
+      '</span>';
   }
 
   function renderStoreAction(store) {
@@ -156,6 +175,20 @@
 
   function bindForms() {
     root.addEventListener('click', function (event) {
+      const uploadLogo = event.target.closest('[data-pa-logo-upload]');
+      if (uploadLogo) {
+        event.preventDefault();
+        openLogoFrame();
+        return;
+      }
+
+      const removeLogo = event.target.closest('[data-pa-logo-remove]');
+      if (removeLogo) {
+        event.preventDefault();
+        setLogoPreview('');
+        return;
+      }
+
       const toggle = event.target.closest('[data-pa-toggle-store]');
       if (!toggle) {
         return;
@@ -186,16 +219,62 @@
           method: 'POST',
           body: JSON.stringify({
             enabled: true,
+            display_name: form.get('display_name'),
             homepage_url: form.get('homepage_url') || null,
+            logo_url: form.get('logo_url') || null,
           }),
         }).then(function () {
           showNotice(labels.saved || 'Сохранено.', false);
           storeForm.reset();
+          setLogoPreview('');
           loadSection('stores');
         }).catch(function () {
           showNotice(labels.saveError || 'Не удалось сохранить.', true);
         });
       });
+    }
+  }
+
+  function openLogoFrame() {
+    if (!window.wp || !window.wp.media) {
+      showNotice(labels.saveError || 'Не удалось сохранить.', true);
+      return;
+    }
+    if (!state.logoFrame) {
+      state.logoFrame = window.wp.media({
+        title: 'Логотип магазина',
+        button: { text: 'Выбрать логотип' },
+        library: { type: "image" },
+        multiple: false,
+      });
+      state.logoFrame.on('select', function () {
+        const attachment = state.logoFrame.state().get('selection').first();
+        const data = attachment ? attachment.toJSON() : {};
+        setLogoPreview(data.url || '');
+      });
+    }
+    state.logoFrame.open();
+  }
+
+  function setLogoPreview(url) {
+    const input = root.querySelector('[name="logo_url"]');
+    const preview = root.querySelector('[data-pa-logo-preview]');
+    const remove = root.querySelector('[data-pa-logo-remove]');
+    if (input) {
+      input.value = url || '';
+    }
+    if (preview) {
+      preview.textContent = '';
+      if (url) {
+        const image = document.createElement('img');
+        image.className = 'cashback-pa-store-logo';
+        image.src = url;
+        image.alt = 'Логотип магазина';
+        preview.appendChild(image);
+      }
+    }
+    if (remove) {
+      remove.classList.toggle('hidden', !url);
     }
   }
 
