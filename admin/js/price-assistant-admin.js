@@ -10,8 +10,11 @@
   const STORE_PER_PAGE = 20;
   const state = {
     stores: [],
+    storesData: null,
+    editingStoreId: '',
     storePage: 1,
     logoFrame: null,
+    logoSelectCallback: null,
   };
 
   function showNotice(message, isError) {
@@ -72,6 +75,7 @@
       return;
     }
     state.stores = items;
+    state.storesData = data;
     if (items.length === 0) {
       target.innerHTML = '<p>' + escapeHtml(labels.empty || 'Данных пока нет.') + '</p>';
       renderStorePagination(data);
@@ -79,12 +83,14 @@
     }
     target.innerHTML =
       '<table class="widefat striped"><thead><tr>' +
-      '<th>Магазин</th><th>Код</th><th>Статус</th><th>Источники</th><th>Действие</th>' +
+      '<th>Магазин</th><th>URL</th><th>Логотип</th><th>Код</th><th>Статус</th><th>Источники</th><th>Действия</th>' +
       '</tr></thead><tbody>' +
       items.map(function (store) {
         const sources = Array.isArray(store.sources) ? store.sources : [];
-        return '<tr>' +
-          '<td>' + renderStoreName(store) + '</td>' +
+        return '<tr data-pa-store-row data-pa-store-id="' + escapeHtml(store.store_id || '') + '">' +
+          '<td class="edit-field">' + renderStoreDisplayName(store) + '</td>' +
+          '<td class="edit-field">' + renderStoreHomepage(store) + '</td>' +
+          '<td class="edit-field">' + renderStoreLogoCell(store) + '</td>' +
           '<td>' + escapeHtml(store.store_code || '') + '</td>' +
           '<td>' + escapeHtml(store.enabled ? (labels.enabled || 'Включён') : (labels.disabled || 'Отключён')) + '</td>' +
           '<td>' + renderSourceDetails(sources) + '</td>' +
@@ -95,26 +101,71 @@
     renderStorePagination(data);
   }
 
-  function renderStoreName(store) {
-    const name = escapeHtml(store.display_name || '');
-    const logoUrl = store.logo_url || '';
-    if (!logoUrl) {
-      return name;
+  function renderStoreDisplayName(store) {
+    if (isStoreEditing(store)) {
+      return '<input type="text" class="edit-input" data-pa-store-input="display_name" value="' +
+        escapeHtml(store.display_name || '') +
+        '" required autocomplete="off" />';
     }
-    return '<span class="cashback-pa-store-name">' +
-      '<img class="cashback-pa-store-logo" src="' +
-      escapeHtml(logoUrl) +
+    return escapeHtml(store.display_name || '');
+  }
+
+  function renderStoreHomepage(store) {
+    const homepage = store.homepage_url || '';
+    if (isStoreEditing(store)) {
+      return '<input type="url" class="edit-input" data-pa-store-input="homepage_url" value="' +
+        escapeHtml(homepage) +
+        '" required autocomplete="off" />';
+    }
+    if (!homepage) {
+      return '<span class="description">—</span>';
+    }
+    return '<a href="' + escapeHtml(homepage) + '" target="_blank" rel="noopener noreferrer">' +
+      escapeHtml(homepage) +
+      '</a>';
+  }
+
+  function renderStoreLogoCell(store) {
+    const logoUrl = store.logo_url || '';
+    if (!isStoreEditing(store)) {
+      return logoUrl ? renderLogoImage(logoUrl, store.display_name || 'Логотип магазина') : '<span class="description">—</span>';
+    }
+    return '<div class="cashback-pa-inline-logo-field">' +
+      '<input type="hidden" class="edit-input" data-pa-store-input="logo_url" value="' + escapeHtml(logoUrl) + '" />' +
+      '<div class="cashback-pa-logo-preview" data-pa-inline-logo-preview>' +
+      (logoUrl ? renderLogoImage(logoUrl, store.display_name || 'Логотип магазина') : '') +
+      '</div>' +
+      '<div class="cashback-pa-logo-actions">' +
+      '<button type="button" class="button" data-pa-inline-logo-upload>Выбрать</button>' +
+      '<button type="button" class="button' + (logoUrl ? '' : ' hidden') + '" data-pa-inline-logo-remove>Удалить</button>' +
+      '</div>' +
+      '</div>';
+  }
+
+  function renderLogoImage(url, alt) {
+    return '<img class="cashback-pa-store-logo" src="' +
+      escapeHtml(url) +
       '" alt="' +
-      name +
-      '" loading="lazy" />' +
-      '<span>' +
-      name +
-      '</span>' +
-      '</span>';
+      escapeHtml(alt || 'Логотип магазина') +
+      '" loading="lazy" decoding="async" />';
+  }
+
+  function isStoreEditing(store) {
+    return String(state.editingStoreId || '') === String(store.store_id || '');
   }
 
   function renderStoreAction(store) {
     const storeId = store.store_id || '';
+    if (isStoreEditing(store)) {
+      return '<div class="cashback-pa-actions">' +
+        '<button type="button" class="button button-primary save-btn" data-pa-save-store data-pa-store-id="' +
+        escapeHtml(storeId) +
+        '">Сохранить</button>' +
+        '<button type="button" class="button button-default cancel-btn" data-pa-cancel-store data-pa-store-id="' +
+        escapeHtml(storeId) +
+        '">Отмена</button>' +
+        '</div>';
+    }
     const nextEnabled = !store.enabled;
     const label = store.enabled ? 'Деактивировать' : 'Активировать';
     return '<div class="cashback-pa-actions">' +
@@ -195,61 +246,27 @@
     return root.querySelector('[data-pa-store-form]');
   }
 
-  function storeField(name) {
-    const form = storeForm();
-    return form ? form.querySelector('[name="' + name + '"]') : null;
-  }
-
-  function setStoreField(name, value) {
-    const field = storeField(name);
-    if (field) {
-      field.value = value ? String(value) : '';
-    }
-  }
-
-  function selectedStore(storeId) {
-    return state.stores.find(function (store) {
-      return String(store.store_id || '') === String(storeId || '');
-    });
-  }
-
   function resetStoreForm() {
     const form = storeForm();
     if (form) {
       form.reset();
     }
-    setStoreField('editing_store_id', '');
-    setStoreField('homepage_url', '');
-    setStoreField('display_name', '');
     setLogoPreview('');
-    const label = root.querySelector('[data-pa-store-submit-label]');
-    const cancel = root.querySelector('[data-pa-store-cancel-edit]');
-    if (label) {
-      label.textContent = 'Сохранить магазин';
-    }
-    if (cancel) {
-      cancel.classList.add('hidden');
-      cancel.hidden = true;
-    }
   }
 
   function beginStoreEdit(storeId) {
-    const store = selectedStore(storeId);
-    if (!store) {
-      return;
-    }
-    setStoreField('editing_store_id', store.store_id || '');
-    setStoreField('homepage_url', store.homepage_url || '');
-    setStoreField('display_name', store.display_name || '');
-    setLogoPreview(store.logo_url || '');
-    const label = root.querySelector('[data-pa-store-submit-label]');
-    const cancel = root.querySelector('[data-pa-store-cancel-edit]');
-    if (label) {
-      label.textContent = 'Сохранить изменения';
-    }
-    if (cancel) {
-      cancel.classList.remove('hidden');
-      cancel.hidden = false;
+    state.editingStoreId = storeId || '';
+    rerenderStores();
+  }
+
+  function cancelStoreEdit() {
+    state.editingStoreId = '';
+    rerenderStores();
+  }
+
+  function rerenderStores() {
+    if (state.storesData) {
+      renderStores(state.storesData);
     }
   }
 
@@ -273,7 +290,7 @@
       const uploadLogo = event.target.closest('[data-pa-logo-upload]');
       if (uploadLogo) {
         event.preventDefault();
-        openLogoFrame();
+        openLogoFrame(setLogoPreview);
         return;
       }
 
@@ -284,6 +301,23 @@
         return;
       }
 
+      const inlineLogoUpload = event.target.closest('[data-pa-inline-logo-upload]');
+      if (inlineLogoUpload) {
+        event.preventDefault();
+        const row = event.target.closest('[data-pa-store-row]');
+        openLogoFrame(function (url) {
+          setInlineLogoPreview(row, url);
+        });
+        return;
+      }
+
+      const inlineLogoRemove = event.target.closest('[data-pa-inline-logo-remove]');
+      if (inlineLogoRemove) {
+        event.preventDefault();
+        setInlineLogoPreview(event.target.closest('[data-pa-store-row]'), '');
+        return;
+      }
+
       const editStore = event.target.closest('[data-pa-edit-store]');
       if (editStore) {
         event.preventDefault();
@@ -291,10 +325,17 @@
         return;
       }
 
-      const cancelEdit = event.target.closest('[data-pa-store-cancel-edit]');
+      const cancelEdit = event.target.closest('[data-pa-cancel-store]');
       if (cancelEdit) {
         event.preventDefault();
-        resetStoreForm();
+        cancelStoreEdit();
+        return;
+      }
+
+      const saveStore = event.target.closest('[data-pa-save-store]');
+      if (saveStore) {
+        event.preventDefault();
+        saveStoreChanges(saveStore, event.target.closest('[data-pa-store-row]'));
         return;
       }
 
@@ -332,26 +373,18 @@
       storeForm.addEventListener('submit', function (event) {
         event.preventDefault();
         const form = new FormData(storeForm);
-        const editingStoreId = form.get('editing_store_id') || '';
         const payload = {
           display_name: form.get('display_name'),
           homepage_url: form.get('homepage_url') || null,
           logo_url: form.get('logo_url') || null,
+          enabled: true,
         };
-        const isEditing = Boolean(editingStoreId);
-        const path = isEditing ? '/stores/' + encodeURIComponent(editingStoreId) : '/stores';
-        const method = isEditing ? 'PATCH' : 'POST';
-        if (!isEditing) {
-          payload.enabled = true;
-        }
-        request(path, {
-          method: method,
+        request('/stores', {
+          method: 'POST',
           body: JSON.stringify(payload),
         }).then(function () {
           showNotice(labels.saved || 'Сохранено.', false);
-          if (!isEditing) {
-            state.storePage = 1;
-          }
+          state.storePage = 1;
           resetStoreForm();
           loadSection('stores');
         }).catch(function () {
@@ -361,11 +394,38 @@
     }
   }
 
-  function openLogoFrame() {
+  function saveStoreChanges(button, row) {
+    const storeId = button.getAttribute('data-pa-store-id') || '';
+    if (!storeId || !row) {
+      return;
+    }
+    request('/stores/' + encodeURIComponent(storeId), {
+      method: 'PATCH',
+      body: JSON.stringify({
+        display_name: rowInputValue(row, 'display_name'),
+        homepage_url: rowInputValue(row, 'homepage_url') || null,
+        logo_url: rowInputValue(row, 'logo_url') || null,
+      }),
+    }).then(function () {
+      showNotice(labels.saved || 'Сохранено.', false);
+      state.editingStoreId = '';
+      loadSection('stores');
+    }).catch(function () {
+      showNotice(labels.saveError || 'Не удалось сохранить.', true);
+    });
+  }
+
+  function rowInputValue(row, name) {
+    const input = row.querySelector('[data-pa-store-input="' + name + '"]');
+    return input ? input.value : '';
+  }
+
+  function openLogoFrame(onSelect) {
     if (!window.wp || !window.wp.media) {
       showNotice(labels.saveError || 'Не удалось сохранить.', true);
       return;
     }
+    state.logoSelectCallback = onSelect || setLogoPreview;
     if (!state.logoFrame) {
       state.logoFrame = window.wp.media({
         title: 'Логотип магазина',
@@ -376,7 +436,8 @@
       state.logoFrame.on('select', function () {
         const attachment = state.logoFrame.state().get('selection').first();
         const data = attachment ? attachment.toJSON() : {};
-        setLogoPreview(data.url || '');
+        const callback = state.logoSelectCallback || setLogoPreview;
+        callback(data.url || '');
       });
     }
     state.logoFrame.open();
@@ -396,8 +457,28 @@
         image.className = 'cashback-pa-store-logo';
         image.src = url;
         image.alt = 'Логотип магазина';
+        image.loading = 'lazy';
+        image.decoding = 'async';
         preview.appendChild(image);
       }
+    }
+    if (remove) {
+      remove.classList.toggle('hidden', !url);
+    }
+  }
+
+  function setInlineLogoPreview(row, url) {
+    if (!row) {
+      return;
+    }
+    const input = row.querySelector('[data-pa-store-input="logo_url"]');
+    const preview = row.querySelector('[data-pa-inline-logo-preview]');
+    const remove = row.querySelector('[data-pa-inline-logo-remove]');
+    if (input) {
+      input.value = url || '';
+    }
+    if (preview) {
+      preview.innerHTML = url ? renderLogoImage(url, 'Логотип магазина') : '';
     }
     if (remove) {
       remove.classList.toggle('hidden', !url);

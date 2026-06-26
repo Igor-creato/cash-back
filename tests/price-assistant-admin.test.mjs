@@ -88,12 +88,9 @@ class FakeElement {
 function createAdminDom() {
   const root = new FakeElement({ "data-price-assistant-admin": "" });
   const form = root.appendChild(new FakeElement({ "data-pa-store-form": "" }));
-  form.appendChild(new FakeElement({ name: "editing_store_id" }));
   form.appendChild(new FakeElement({ name: "homepage_url" }));
   form.appendChild(new FakeElement({ name: "display_name" }));
   form.appendChild(new FakeElement({ name: "logo_url" }));
-  form.appendChild(new FakeElement({ "data-pa-store-submit-label": "" }));
-  form.appendChild(new FakeElement({ "data-pa-store-cancel-edit": "" }));
   const stores = root.appendChild(new FakeElement({ "data-pa-section": "stores" }));
   const pagination = root.appendChild(new FakeElement({ "data-pa-store-pagination": "" }));
   const notice = new FakeElement();
@@ -179,6 +176,7 @@ async function testStoreTableRendersStatusActionsAndPatchesEnabledState() {
   assert.match(dom.stores.innerHTML, /Деактивировать/);
   assert.match(dom.stores.innerHTML, /Активировать/);
   assert.match(dom.stores.innerHTML, /Редактировать/);
+  assert.match(dom.stores.innerHTML, /<th>Логотип<\/th>/);
 
   root.dispatchEvent({
     type: "click",
@@ -203,70 +201,7 @@ async function testStoreTableRendersStatusActionsAndPatchesEnabledState() {
   assert.deepEqual(JSON.parse(patch.options.body), { enabled: true });
 }
 
-async function testEditStorePopulatesFormAndPatchesEditableFieldsOnly() {
-  const dom = createAdminDom();
-  const calls = [];
-  const fetch = (url, options = {}) => {
-    calls.push({ url, options });
-    if (options.method === "PATCH") {
-      return response({ store_id: 7, display_name: "DNS Updated" });
-    }
-    return response({
-      items: [
-        {
-          store_id: 7,
-          store_code: "dns_shop_ru",
-          display_name: "DNS",
-          homepage_url: "https://www.dns-shop.ru/",
-          logo_url: "https://cdn.example.com/dns.svg",
-          enabled: true,
-          sources: [],
-        },
-      ],
-    });
-  };
-
-  const root = runScript(dom, fetch);
-  await flush();
-
-  root.dispatchEvent({
-    type: "click",
-    preventDefault: () => {},
-    target: {
-      closest: (selector) =>
-        selector === "[data-pa-edit-store]"
-          ? {
-              getAttribute: (name) =>
-                ({
-                  "data-pa-store-id": "7",
-                })[name] || null,
-            }
-          : null,
-    },
-  });
-
-  assert.equal(dom.form.querySelector('[name="editing_store_id"]').value, "7");
-  assert.equal(dom.form.querySelector('[name="display_name"]').value, "DNS");
-  assert.equal(dom.form.querySelector('[name="homepage_url"]').value, "https://www.dns-shop.ru/");
-  assert.equal(dom.form.querySelector('[name="logo_url"]').value, "https://cdn.example.com/dns.svg");
-
-  dom.form.querySelector('[name="display_name"]').value = "DNS Updated";
-  dom.form.dispatchEvent({
-    type: "submit",
-    preventDefault: () => {},
-  });
-  await flush();
-
-  const patch = calls.find((call) => call.options.method === "PATCH");
-  assert.equal(patch.url, "https://example.test/wp-json/cashback/v1/price-assistant/admin/stores/7");
-  assert.deepEqual(JSON.parse(patch.options.body), {
-    display_name: "DNS Updated",
-    homepage_url: "https://www.dns-shop.ru/",
-    logo_url: "https://cdn.example.com/dns.svg",
-  });
-}
-
-async function testCancelStoreEditResetsFormToCreateMode() {
+async function testEditStoreTurnsTableRowIntoEditableFields() {
   const dom = createAdminDom();
   const fetch = () =>
     response({
@@ -301,19 +236,131 @@ async function testCancelStoreEditResetsFormToCreateMode() {
           : null,
     },
   });
+
+  assert.match(dom.stores.innerHTML, /data-pa-store-input="display_name"/);
+  assert.match(dom.stores.innerHTML, /data-pa-store-input="homepage_url"/);
+  assert.match(dom.stores.innerHTML, /data-pa-store-input="logo_url"/);
+  assert.match(dom.stores.innerHTML, /data-pa-save-store/);
+  assert.match(dom.stores.innerHTML, /data-pa-cancel-store/);
+  assert.doesNotMatch(dom.stores.innerHTML, /data-pa-store-cancel-edit/);
+}
+
+async function testInlineStoreSavePatchesEditableFieldsOnly() {
+  const dom = createAdminDom();
+  const calls = [];
+  const fetch = (url, options = {}) => {
+    calls.push({ url, options });
+    if (options.method === "PATCH") {
+      return response({ store_id: 7, display_name: "DNS Updated" });
+    }
+    return response({
+      items: [
+        {
+          store_id: 7,
+          store_code: "dns_shop_ru",
+          display_name: "DNS",
+          homepage_url: "https://www.dns-shop.ru/",
+          logo_url: "https://cdn.example.com/dns.svg",
+          enabled: true,
+          sources: [],
+        },
+      ],
+    });
+  };
+
+  const row = {
+    querySelector: (selector) =>
+      ({
+        '[data-pa-store-input="display_name"]': { value: "DNS Updated" },
+        '[data-pa-store-input="homepage_url"]': { value: "https://www.dns-shop.ru/" },
+        '[data-pa-store-input="logo_url"]': { value: "https://cdn.example.com/dns-updated.svg" },
+      })[selector] || null,
+  };
+
+  const root = runScript(dom, fetch);
+  await flush();
+  root.dispatchEvent({
+    type: "click",
+    preventDefault: () => {},
+    target: {
+      closest: (selector) => {
+        if (selector === "[data-pa-save-store]") {
+          return { getAttribute: (name) => (name === "data-pa-store-id" ? "7" : null) };
+        }
+        if (selector === "[data-pa-store-row]") {
+          return row;
+        }
+        return null;
+      },
+    },
+  });
+  await flush();
+
+  const patch = calls.find((call) => call.options.method === "PATCH");
+  assert.equal(patch.url, "https://example.test/wp-json/cashback/v1/price-assistant/admin/stores/7");
+  assert.deepEqual(JSON.parse(patch.options.body), {
+    display_name: "DNS Updated",
+    homepage_url: "https://www.dns-shop.ru/",
+    logo_url: "https://cdn.example.com/dns-updated.svg",
+  });
+}
+
+async function testInlineStoreCancelRestoresReadOnlyRow() {
+  const dom = createAdminDom();
+  const fetch = () =>
+    response({
+      items: [
+        {
+          store_id: 7,
+          store_code: "dns_shop_ru",
+          display_name: "DNS",
+          homepage_url: "https://www.dns-shop.ru/",
+          logo_url: "https://cdn.example.com/dns.svg",
+          enabled: true,
+          sources: [],
+        },
+      ],
+    });
+
+  const root = runScript(dom, fetch);
+  await flush();
+
   root.dispatchEvent({
     type: "click",
     preventDefault: () => {},
     target: {
       closest: (selector) =>
-        selector === "[data-pa-store-cancel-edit]" ? dom.form.querySelector("[data-pa-store-cancel-edit]") : null,
+        selector === "[data-pa-edit-store]"
+          ? {
+              getAttribute: (name) =>
+                ({
+                  "data-pa-store-id": "7",
+                })[name] || null,
+            }
+          : null,
     },
   });
 
-  assert.equal(dom.form.querySelector('[name="editing_store_id"]').value, "");
-  assert.equal(dom.form.querySelector('[name="display_name"]').value, "");
-  assert.equal(dom.form.querySelector('[name="homepage_url"]').value, "");
-  assert.equal(dom.form.querySelector('[name="logo_url"]').value, "");
+  assert.match(dom.stores.innerHTML, /data-pa-store-input="display_name"/);
+
+  root.dispatchEvent({
+    type: "click",
+    preventDefault: () => {},
+    target: {
+      closest: (selector) =>
+        selector === "[data-pa-cancel-store]"
+          ? {
+              getAttribute: (name) =>
+                ({
+                  "data-pa-store-id": "7",
+                })[name] || null,
+            }
+          : null,
+    },
+  });
+
+  assert.doesNotMatch(dom.stores.innerHTML, /data-pa-store-input="display_name"/);
+  assert.match(dom.stores.innerHTML, /Редактировать/);
 }
 
 async function testStorePaginationUsesSharedHelperAfterTwentyItems() {
@@ -407,6 +454,7 @@ function runScript(dom, fetch) {
 
 await testStoreSubmitCreatesEnabledStore();
 await testStoreTableRendersStatusActionsAndPatchesEnabledState();
-await testEditStorePopulatesFormAndPatchesEditableFieldsOnly();
-await testCancelStoreEditResetsFormToCreateMode();
+await testEditStoreTurnsTableRowIntoEditableFields();
+await testInlineStoreSavePatchesEditableFieldsOnly();
+await testInlineStoreCancelRestoresReadOnlyRow();
 await testStorePaginationUsesSharedHelperAfterTwentyItems();

@@ -56,6 +56,12 @@
   flex-wrap: wrap;
 }
 
+.cashback-pa-inline-logo-field {
+  display: grid;
+  gap: 6px;
+  min-width: 150px;
+}
+
 .cashback-pa-logo-preview {
   align-items: center;
   border: 1px dashed #c3c4c7;
@@ -70,6 +76,11 @@
   height: 32px;
   max-width: 96px;
   object-fit: contain;
+}
+
+.cashback-pa-table .edit-input {
+  max-width: 240px;
+  width: 100%;
 }
 
 .cashback-pa-grid input,

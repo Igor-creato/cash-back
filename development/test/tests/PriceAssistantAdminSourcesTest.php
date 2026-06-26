@@ -85,15 +85,14 @@ final class PriceAssistantAdminSourcesTest extends TestCase
         self::assertStringContainsString('data-pa-logo-upload', $html);
         self::assertStringContainsString('data-pa-logo-remove', $html);
         self::assertStringContainsString('data-pa-logo-preview', $html);
-        self::assertStringContainsString('name="editing_store_id"', $html);
-        self::assertStringContainsString('data-pa-store-submit-label', $html);
-        self::assertStringContainsString('data-pa-store-cancel-edit', $html);
+        self::assertStringNotContainsString('name="editing_store_id"', $html);
+        self::assertStringNotContainsString('data-pa-store-submit-label', $html);
+        self::assertStringNotContainsString('data-pa-store-cancel-edit', $html);
         self::assertStringContainsString('data-pa-store-pagination', $html);
         self::assertStringContainsString('name="display_name"', $html);
         self::assertStringContainsString('name="logo_url"', $html);
         self::assertMatchesRegularExpression('/<input[^>]+name="display_name"[^>]+required/s', $html);
         self::assertStringContainsString('Сохранить магазин', $html);
-        self::assertStringContainsString('Отменить изменения', $html);
         self::assertStringNotContainsString('data-pa-action="add-store"', $html);
         self::assertStringNotContainsString('data-pa-action="refresh"', $html);
         self::assertStringNotContainsString('type="checkbox"', $html);
@@ -127,6 +126,16 @@ final class PriceAssistantAdminSourcesTest extends TestCase
         self::assertStringContainsString('logo_url: form.get(\'logo_url\') || null', $script);
         self::assertStringContainsString('display_name: form.get(\'display_name\')', $script);
         self::assertStringContainsString('cashback-pa-store-logo', $script);
+        self::assertStringContainsString('<th>Логотип</th>', $script);
+        self::assertStringContainsString('class="edit-field"', $script);
+        self::assertStringContainsString('class="edit-input"', $script);
+        self::assertStringContainsString('data-pa-store-input="display_name"', $script);
+        self::assertStringContainsString('data-pa-store-input="homepage_url"', $script);
+        self::assertStringContainsString('data-pa-store-input="logo_url"', $script);
+        self::assertStringContainsString('data-pa-save-store', $script);
+        self::assertStringContainsString('data-pa-cancel-store', $script);
+        self::assertStringContainsString('>Сохранить</button>', $script);
+        self::assertStringContainsString('>Отмена</button>', $script);
     }
 
     public function test_admin_assets_depend_on_shared_pagination_helper(): void

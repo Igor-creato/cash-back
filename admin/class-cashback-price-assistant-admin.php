@@ -132,7 +132,6 @@ final class Cashback_Price_Assistant_Admin {
 				</p>
 
 				<form class="cashback-pa-grid" data-pa-store-form>
-					<input type="hidden" name="editing_store_id" value="" />
 					<label>
 						<span><?php echo esc_html__( 'URL главной страницы магазина', 'cashback' ); ?></span>
 						<input type="url" name="homepage_url" required autocomplete="off" placeholder="https://www.example.ru/" />
@@ -155,10 +154,7 @@ final class Cashback_Price_Assistant_Admin {
 						</div>
 					</div>
 					<button type="submit" class="button button-primary">
-						<span data-pa-store-submit-label><?php echo esc_html__( 'Сохранить магазин', 'cashback' ); ?></span>
-					</button>
-					<button type="button" class="button hidden" data-pa-store-cancel-edit>
-						<?php echo esc_html__( 'Отменить изменения', 'cashback' ); ?>
+						<?php echo esc_html__( 'Сохранить магазин', 'cashback' ); ?>
 					</button>
 				</form>
 
