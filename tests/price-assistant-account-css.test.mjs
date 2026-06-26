@@ -43,6 +43,7 @@ assertDeclaration(itemBlock, "padding", "8px");
 const deleteCardBlock = declarationBlock(".cashback-price-assistant__delete-card");
 assertDeclaration(deleteCardBlock, "left", "auto");
 assertDeclaration(deleteCardBlock, "padding", "0");
+assertDeclaration(deleteCardBlock, "position", "absolute !important");
 assertDeclaration(deleteCardBlock, "right", "5px");
 assertDeclaration(deleteCardBlock, "top", "5px");
 assertNoDeclaration(deleteCardBlock, "inset-inline-end");

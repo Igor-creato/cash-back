@@ -322,7 +322,7 @@
   line-height: 1;
   left: auto;
   padding: 0;
-  position: absolute;
+  position: absolute !important;
   right: 5px;
   top: 5px;
   width: 32px;
