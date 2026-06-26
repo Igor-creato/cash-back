@@ -18,7 +18,10 @@ class FakeElement {
     this.className = "";
     this.textContent = "";
     this.innerHTML = "";
+    this.value = attributes.value || "";
     this.classList = {
+      add: () => {},
+      remove: () => {},
       toggle: () => {},
     };
   }
@@ -30,6 +33,10 @@ class FakeElement {
 
   getAttribute(name) {
     return this.attributes[name] || null;
+  }
+
+  setAttribute(name, value) {
+    this.attributes[name] = String(value);
   }
 
   querySelector(selector) {
@@ -81,10 +88,17 @@ class FakeElement {
 function createAdminDom() {
   const root = new FakeElement({ "data-price-assistant-admin": "" });
   const form = root.appendChild(new FakeElement({ "data-pa-store-form": "" }));
+  form.appendChild(new FakeElement({ name: "editing_store_id" }));
+  form.appendChild(new FakeElement({ name: "homepage_url" }));
+  form.appendChild(new FakeElement({ name: "display_name" }));
+  form.appendChild(new FakeElement({ name: "logo_url" }));
+  form.appendChild(new FakeElement({ "data-pa-store-submit-label": "" }));
+  form.appendChild(new FakeElement({ "data-pa-store-cancel-edit": "" }));
   const stores = root.appendChild(new FakeElement({ "data-pa-section": "stores" }));
+  const pagination = root.appendChild(new FakeElement({ "data-pa-store-pagination": "" }));
   const notice = new FakeElement();
   notice.appendChild(new FakeElement());
-  return { root, form, stores, notice };
+  return { root, form, stores, pagination, notice };
 }
 
 function response(data, ok = true) {
@@ -102,7 +116,9 @@ async function flush() {
 
 async function testStoreSubmitCreatesEnabledStore() {
   const dom = createAdminDom();
-  dom.form.fields.homepage_url = "https://www.dns-shop.ru/";
+  dom.form.querySelector('[name="homepage_url"]').value = "https://www.dns-shop.ru/";
+  dom.form.querySelector('[name="display_name"]').value = "DNS";
+  dom.form.querySelector('[name="logo_url"]').value = "";
   const calls = [];
   const fetch = (url, options = {}) => {
     calls.push({ url, options });
@@ -122,8 +138,10 @@ async function testStoreSubmitCreatesEnabledStore() {
 
   const post = calls.find((call) => call.options.method === "POST");
   assert.deepEqual(JSON.parse(post.options.body), {
+    display_name: "DNS",
     enabled: true,
     homepage_url: "https://www.dns-shop.ru/",
+    logo_url: null,
   });
 }
 
@@ -160,9 +178,11 @@ async function testStoreTableRendersStatusActionsAndPatchesEnabledState() {
 
   assert.match(dom.stores.innerHTML, /Деактивировать/);
   assert.match(dom.stores.innerHTML, /Активировать/);
+  assert.match(dom.stores.innerHTML, /Редактировать/);
 
   root.dispatchEvent({
     type: "click",
+    preventDefault: () => {},
     target: {
       closest: (selector) =>
         selector === "[data-pa-toggle-store]"
@@ -183,6 +203,163 @@ async function testStoreTableRendersStatusActionsAndPatchesEnabledState() {
   assert.deepEqual(JSON.parse(patch.options.body), { enabled: true });
 }
 
+async function testEditStorePopulatesFormAndPatchesEditableFieldsOnly() {
+  const dom = createAdminDom();
+  const calls = [];
+  const fetch = (url, options = {}) => {
+    calls.push({ url, options });
+    if (options.method === "PATCH") {
+      return response({ store_id: 7, display_name: "DNS Updated" });
+    }
+    return response({
+      items: [
+        {
+          store_id: 7,
+          store_code: "dns_shop_ru",
+          display_name: "DNS",
+          homepage_url: "https://www.dns-shop.ru/",
+          logo_url: "https://cdn.example.com/dns.svg",
+          enabled: true,
+          sources: [],
+        },
+      ],
+    });
+  };
+
+  const root = runScript(dom, fetch);
+  await flush();
+
+  root.dispatchEvent({
+    type: "click",
+    preventDefault: () => {},
+    target: {
+      closest: (selector) =>
+        selector === "[data-pa-edit-store]"
+          ? {
+              getAttribute: (name) =>
+                ({
+                  "data-pa-store-id": "7",
+                })[name] || null,
+            }
+          : null,
+    },
+  });
+
+  assert.equal(dom.form.querySelector('[name="editing_store_id"]').value, "7");
+  assert.equal(dom.form.querySelector('[name="display_name"]').value, "DNS");
+  assert.equal(dom.form.querySelector('[name="homepage_url"]').value, "https://www.dns-shop.ru/");
+  assert.equal(dom.form.querySelector('[name="logo_url"]').value, "https://cdn.example.com/dns.svg");
+
+  dom.form.querySelector('[name="display_name"]').value = "DNS Updated";
+  dom.form.dispatchEvent({
+    type: "submit",
+    preventDefault: () => {},
+  });
+  await flush();
+
+  const patch = calls.find((call) => call.options.method === "PATCH");
+  assert.equal(patch.url, "https://example.test/wp-json/cashback/v1/price-assistant/admin/stores/7");
+  assert.deepEqual(JSON.parse(patch.options.body), {
+    display_name: "DNS Updated",
+    homepage_url: "https://www.dns-shop.ru/",
+    logo_url: "https://cdn.example.com/dns.svg",
+  });
+}
+
+async function testCancelStoreEditResetsFormToCreateMode() {
+  const dom = createAdminDom();
+  const fetch = () =>
+    response({
+      items: [
+        {
+          store_id: 7,
+          store_code: "dns_shop_ru",
+          display_name: "DNS",
+          homepage_url: "https://www.dns-shop.ru/",
+          logo_url: "https://cdn.example.com/dns.svg",
+          enabled: true,
+          sources: [],
+        },
+      ],
+    });
+
+  const root = runScript(dom, fetch);
+  await flush();
+
+  root.dispatchEvent({
+    type: "click",
+    preventDefault: () => {},
+    target: {
+      closest: (selector) =>
+        selector === "[data-pa-edit-store]"
+          ? {
+              getAttribute: (name) =>
+                ({
+                  "data-pa-store-id": "7",
+                })[name] || null,
+            }
+          : null,
+    },
+  });
+  root.dispatchEvent({
+    type: "click",
+    preventDefault: () => {},
+    target: {
+      closest: (selector) =>
+        selector === "[data-pa-store-cancel-edit]" ? dom.form.querySelector("[data-pa-store-cancel-edit]") : null,
+    },
+  });
+
+  assert.equal(dom.form.querySelector('[name="editing_store_id"]').value, "");
+  assert.equal(dom.form.querySelector('[name="display_name"]').value, "");
+  assert.equal(dom.form.querySelector('[name="homepage_url"]').value, "");
+  assert.equal(dom.form.querySelector('[name="logo_url"]').value, "");
+}
+
+async function testStorePaginationUsesSharedHelperAfterTwentyItems() {
+  const dom = createAdminDom();
+  const calls = [];
+  const fetch = (url, options = {}) => {
+    calls.push({ url, options });
+    return response({
+      items: [{ store_id: 1, store_code: "one", display_name: "One", enabled: true, sources: [] }],
+      page: 1,
+      per_page: 20,
+      total_items: 21,
+      total_pages: 2,
+    });
+  };
+
+  const root = runScript(dom, fetch);
+  await flush();
+
+  assert.equal(
+    calls[0].url,
+    "https://example.test/wp-json/cashback/v1/price-assistant/admin/stores?page=1&per_page=20"
+  );
+  assert.match(dom.pagination.innerHTML, /data-page="2"/);
+
+  root.dispatchEvent({
+    type: "click",
+    target: {
+      closest: (selector) =>
+        selector === "[data-pa-store-pagination] .page-numbers[data-page]"
+          ? {
+              getAttribute: (name) => (name === "data-page" ? "2" : null),
+              closest: () => dom.pagination,
+            }
+          : null,
+    },
+    preventDefault: () => {},
+  });
+  await flush();
+
+  assert.equal(
+    calls[1].url,
+    "https://example.test/wp-json/cashback/v1/price-assistant/admin/stores?page=2&per_page=20"
+  );
+}
+
 function runScript(dom, fetch) {
   const context = {
     window: {
@@ -199,11 +376,18 @@ function runScript(dom, fetch) {
           loadError: "Не удалось загрузить данные.",
         },
       },
+      CashbackPagination: {
+        build: (currentPage, totalPages) =>
+          totalPages > 1
+            ? `<nav><a href="#" class="page-numbers" data-page="${currentPage + 1}">${currentPage + 1}</a></nav>`
+            : "",
+      },
     },
     document: {
       querySelector: (selector) =>
         selector === "[data-price-assistant-admin]" ? dom.root : null,
       getElementById: (id) => (id === "cashback-pa-admin-notice" ? dom.notice : null),
+      createElement: () => new FakeElement(),
     },
     fetch,
     FormData: class {
@@ -212,7 +396,8 @@ function runScript(dom, fetch) {
       }
 
       get(name) {
-        return this.form.fields[name] || null;
+        const field = this.form.querySelector(`[name="${name}"]`);
+        return field ? field.value : null;
       }
     },
   };
@@ -222,3 +407,6 @@ function runScript(dom, fetch) {
 
 await testStoreSubmitCreatesEnabledStore();
 await testStoreTableRendersStatusActionsAndPatchesEnabledState();
+await testEditStorePopulatesFormAndPatchesEditableFieldsOnly();
+await testCancelStoreEditResetsFormToCreateMode();
+await testStorePaginationUsesSharedHelperAfterTwentyItems();

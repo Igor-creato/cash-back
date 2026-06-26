@@ -7,8 +7,10 @@
 
   const labels = config.labels || {};
   const notice = document.getElementById('cashback-pa-admin-notice');
+  const STORE_PER_PAGE = 20;
   const state = {
     stores: [],
+    storePage: 1,
     logoFrame: null,
   };
 
@@ -72,6 +74,7 @@
     state.stores = items;
     if (items.length === 0) {
       target.innerHTML = '<p>' + escapeHtml(labels.empty || 'Данных пока нет.') + '</p>';
+      renderStorePagination(data);
       return;
     }
     target.innerHTML =
@@ -89,6 +92,7 @@
           '</tr>';
       }).join('') +
       '</tbody></table>';
+    renderStorePagination(data);
   }
 
   function renderStoreName(store) {
@@ -113,13 +117,40 @@
     const storeId = store.store_id || '';
     const nextEnabled = !store.enabled;
     const label = store.enabled ? 'Деактивировать' : 'Активировать';
-    return '<button type="button" class="button" data-pa-toggle-store data-pa-store-id="' +
+    return '<div class="cashback-pa-actions">' +
+      '<button type="button" class="button" data-pa-edit-store data-pa-store-id="' +
+      escapeHtml(storeId) +
+      '">Редактировать</button>' +
+      '<button type="button" class="button" data-pa-toggle-store data-pa-store-id="' +
       escapeHtml(storeId) +
       '" data-pa-store-enabled="' +
       escapeHtml(nextEnabled ? 'true' : 'false') +
       '">' +
       escapeHtml(label) +
-      '</button>';
+      '</button>' +
+      '</div>';
+  }
+
+  function renderStorePagination(data) {
+    const target = root.querySelector('[data-pa-store-pagination]');
+    if (!target) {
+      return;
+    }
+    const page = parseInt(data.page, 10) || state.storePage || 1;
+    const totalItems = parseInt(data.total_items, 10) || 0;
+    const totalPages = parseInt(data.total_pages, 10) || 0;
+    if (
+      totalItems <= STORE_PER_PAGE ||
+      totalPages <= 1 ||
+      !window.CashbackPagination ||
+      typeof window.CashbackPagination.build !== 'function'
+    ) {
+      target.innerHTML = '';
+      return;
+    }
+    target.innerHTML = window.CashbackPagination.build(page, totalPages, {
+      containerClass: 'cashback-admin-pagination cashback-pa-store-pagination',
+    });
   }
 
   function renderSourceDetails(sources) {
@@ -140,7 +171,9 @@
   }
 
   function loadSection(section) {
-    const path = section === 'stores' ? '/stores' : '/' + section;
+    const path = section === 'stores'
+      ? '/stores?page=' + encodeURIComponent(state.storePage) + '&per_page=' + encodeURIComponent(STORE_PER_PAGE)
+      : '/' + section;
     const target = root.querySelector('[data-pa-section="' + section + '"]');
     if (target) {
       target.innerHTML = '<p>' + escapeHtml(labels.loading || 'Загрузка…') + '</p>';
@@ -156,6 +189,68 @@
       .catch(function () {
         showNotice(labels.loadError || 'Не удалось загрузить данные.', true);
       });
+  }
+
+  function storeForm() {
+    return root.querySelector('[data-pa-store-form]');
+  }
+
+  function storeField(name) {
+    const form = storeForm();
+    return form ? form.querySelector('[name="' + name + '"]') : null;
+  }
+
+  function setStoreField(name, value) {
+    const field = storeField(name);
+    if (field) {
+      field.value = value ? String(value) : '';
+    }
+  }
+
+  function selectedStore(storeId) {
+    return state.stores.find(function (store) {
+      return String(store.store_id || '') === String(storeId || '');
+    });
+  }
+
+  function resetStoreForm() {
+    const form = storeForm();
+    if (form) {
+      form.reset();
+    }
+    setStoreField('editing_store_id', '');
+    setStoreField('homepage_url', '');
+    setStoreField('display_name', '');
+    setLogoPreview('');
+    const label = root.querySelector('[data-pa-store-submit-label]');
+    const cancel = root.querySelector('[data-pa-store-cancel-edit]');
+    if (label) {
+      label.textContent = 'Сохранить магазин';
+    }
+    if (cancel) {
+      cancel.classList.add('hidden');
+      cancel.hidden = true;
+    }
+  }
+
+  function beginStoreEdit(storeId) {
+    const store = selectedStore(storeId);
+    if (!store) {
+      return;
+    }
+    setStoreField('editing_store_id', store.store_id || '');
+    setStoreField('homepage_url', store.homepage_url || '');
+    setStoreField('display_name', store.display_name || '');
+    setLogoPreview(store.logo_url || '');
+    const label = root.querySelector('[data-pa-store-submit-label]');
+    const cancel = root.querySelector('[data-pa-store-cancel-edit]');
+    if (label) {
+      label.textContent = 'Сохранить изменения';
+    }
+    if (cancel) {
+      cancel.classList.remove('hidden');
+      cancel.hidden = false;
+    }
   }
 
   function bindTabs() {
@@ -189,6 +284,28 @@
         return;
       }
 
+      const editStore = event.target.closest('[data-pa-edit-store]');
+      if (editStore) {
+        event.preventDefault();
+        beginStoreEdit(editStore.getAttribute('data-pa-store-id') || '');
+        return;
+      }
+
+      const cancelEdit = event.target.closest('[data-pa-store-cancel-edit]');
+      if (cancelEdit) {
+        event.preventDefault();
+        resetStoreForm();
+        return;
+      }
+
+      const pageLink = event.target.closest('[data-pa-store-pagination] .page-numbers[data-page]');
+      if (pageLink) {
+        event.preventDefault();
+        state.storePage = parseInt(pageLink.getAttribute('data-page'), 10) || 1;
+        loadSection('stores');
+        return;
+      }
+
       const toggle = event.target.closest('[data-pa-toggle-store]');
       if (!toggle) {
         return;
@@ -215,18 +332,27 @@
       storeForm.addEventListener('submit', function (event) {
         event.preventDefault();
         const form = new FormData(storeForm);
-        request('/stores', {
-          method: 'POST',
-          body: JSON.stringify({
-            enabled: true,
-            display_name: form.get('display_name'),
-            homepage_url: form.get('homepage_url') || null,
-            logo_url: form.get('logo_url') || null,
-          }),
+        const editingStoreId = form.get('editing_store_id') || '';
+        const payload = {
+          display_name: form.get('display_name'),
+          homepage_url: form.get('homepage_url') || null,
+          logo_url: form.get('logo_url') || null,
+        };
+        const isEditing = Boolean(editingStoreId);
+        const path = isEditing ? '/stores/' + encodeURIComponent(editingStoreId) : '/stores';
+        const method = isEditing ? 'PATCH' : 'POST';
+        if (!isEditing) {
+          payload.enabled = true;
+        }
+        request(path, {
+          method: method,
+          body: JSON.stringify(payload),
         }).then(function () {
           showNotice(labels.saved || 'Сохранено.', false);
-          storeForm.reset();
-          setLogoPreview('');
+          if (!isEditing) {
+            state.storePage = 1;
+          }
+          resetStoreForm();
           loadSection('stores');
         }).catch(function () {
           showNotice(labels.saveError || 'Не удалось сохранить.', true);

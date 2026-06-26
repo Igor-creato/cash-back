@@ -45,10 +45,15 @@
 }
 
 .cashback-pa-logo-actions,
+.cashback-pa-actions,
 .cashback-pa-store-name {
   align-items: center;
   display: flex;
   gap: 8px;
+}
+
+.cashback-pa-actions {
+  flex-wrap: wrap;
 }
 
 .cashback-pa-logo-preview {

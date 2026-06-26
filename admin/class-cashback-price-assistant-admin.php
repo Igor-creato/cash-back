@@ -66,9 +66,16 @@ final class Cashback_Price_Assistant_Admin {
 			'1.0.0'
 		);
 		wp_enqueue_script(
+			'cashback-pagination',
+			cashback_asset_url( 'assets/js/cashback-pagination.js' ),
+			array(),
+			'1.0.0',
+			true
+		);
+		wp_enqueue_script(
 			'cashback-price-assistant-admin',
 			cashback_asset_url( 'admin/js/price-assistant-admin.js' ),
-			array(),
+			array( 'cashback-pagination' ),
 			'1.0.0',
 			true
 		);
@@ -125,6 +132,7 @@ final class Cashback_Price_Assistant_Admin {
 				</p>
 
 				<form class="cashback-pa-grid" data-pa-store-form>
+					<input type="hidden" name="editing_store_id" value="" />
 					<label>
 						<span><?php echo esc_html__( 'URL главной страницы магазина', 'cashback' ); ?></span>
 						<input type="url" name="homepage_url" required autocomplete="off" placeholder="https://www.example.ru/" />
@@ -147,11 +155,15 @@ final class Cashback_Price_Assistant_Admin {
 						</div>
 					</div>
 					<button type="submit" class="button button-primary">
-						<?php echo esc_html__( 'Сохранить магазин', 'cashback' ); ?>
+						<span data-pa-store-submit-label><?php echo esc_html__( 'Сохранить магазин', 'cashback' ); ?></span>
+					</button>
+					<button type="button" class="button hidden" data-pa-store-cancel-edit>
+						<?php echo esc_html__( 'Отменить изменения', 'cashback' ); ?>
 					</button>
 				</form>
 
 				<div class="cashback-pa-table" data-pa-section="stores"></div>
+				<div class="cashback-pa-pagination" data-pa-store-pagination></div>
 			</section>
 
 			<?php foreach ( $tabs as $key => $label ) : ?>

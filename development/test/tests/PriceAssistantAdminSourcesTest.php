@@ -21,6 +21,12 @@ final class PriceAssistantAdminSourcesTest extends TestCase
                 return 'cashback_page_' . (string) $slug;
             }
         }
+        if (!function_exists('wp_enqueue_media')) {
+            function wp_enqueue_media(): void
+            {
+                $GLOBALS['_cb_test_media_enqueued'] = true;
+            }
+        }
 
         $root = dirname(__DIR__, 3);
 		self::assertFileExists($root . '/includes/rest/class-cashback-price-assistant-admin-rest-controller.php');
@@ -35,6 +41,7 @@ final class PriceAssistantAdminSourcesTest extends TestCase
         $GLOBALS['_cb_test_http_response_callback'] = null;
         $GLOBALS['_cb_test_submenu_pages'] = array();
         $GLOBALS['_cb_test_current_user_can'] = true;
+        $GLOBALS['_cb_test_enqueued_scripts'] = array();
         $GLOBALS['_cb_test_localized_scripts'] = array();
 
         update_option('price_monitor_enabled', 1);
@@ -78,10 +85,15 @@ final class PriceAssistantAdminSourcesTest extends TestCase
         self::assertStringContainsString('data-pa-logo-upload', $html);
         self::assertStringContainsString('data-pa-logo-remove', $html);
         self::assertStringContainsString('data-pa-logo-preview', $html);
+        self::assertStringContainsString('name="editing_store_id"', $html);
+        self::assertStringContainsString('data-pa-store-submit-label', $html);
+        self::assertStringContainsString('data-pa-store-cancel-edit', $html);
+        self::assertStringContainsString('data-pa-store-pagination', $html);
         self::assertStringContainsString('name="display_name"', $html);
         self::assertStringContainsString('name="logo_url"', $html);
         self::assertMatchesRegularExpression('/<input[^>]+name="display_name"[^>]+required/s', $html);
         self::assertStringContainsString('Сохранить магазин', $html);
+        self::assertStringContainsString('Отменить изменения', $html);
         self::assertStringNotContainsString('data-pa-action="add-store"', $html);
         self::assertStringNotContainsString('data-pa-action="refresh"', $html);
         self::assertStringNotContainsString('type="checkbox"', $html);
@@ -117,6 +129,19 @@ final class PriceAssistantAdminSourcesTest extends TestCase
         self::assertStringContainsString('cashback-pa-store-logo', $script);
     }
 
+    public function test_admin_assets_depend_on_shared_pagination_helper(): void
+    {
+        $admin = new Cashback_Price_Assistant_Admin();
+
+        $admin->enqueue_assets('cashback-overview_page_cashback-price-assistant-sources');
+
+        self::assertArrayHasKey('cashback-price-assistant-admin', $GLOBALS['_cb_test_enqueued_scripts']);
+        self::assertContains(
+            'cashback-pagination',
+            $GLOBALS['_cb_test_enqueued_scripts']['cashback-price-assistant-admin']['deps']
+        );
+    }
+
     public function test_admin_rest_permission_requires_manage_options_and_wp_rest_nonce(): void
     {
         $controller = new Cashback_Price_Assistant_Admin_REST_Controller();
@@ -150,11 +175,18 @@ final class PriceAssistantAdminSourcesTest extends TestCase
             new Cashback_Price_Assistant_Proxy_Client(static fn(): int => 1781516800)
         );
 
-        $response = $controller->proxy_get_stores($this->request('GET', '/cashback/v1/price-assistant/admin/stores'));
+        $request = $this->request('GET', '/cashback/v1/price-assistant/admin/stores');
+        $request->set_param('page', '2');
+        $request->set_param('per_page', '20');
+
+        $response = $controller->proxy_get_stores($request);
         $encoded = wp_json_encode($response->get_data());
 
         self::assertSame(200, $response->get_status());
-        self::assertSame('https://price-monitor.test/v1/price-assistant/admin/stores', $GLOBALS['_cb_test_http_calls'][0]['url']);
+        self::assertSame(
+            'https://price-monitor.test/v1/price-assistant/admin/stores?page=2&per_page=20',
+            $GLOBALS['_cb_test_http_calls'][0]['url']
+        );
         self::assertSame('GET', $GLOBALS['_cb_test_http_calls'][0]['args']['method']);
         self::assertArrayHasKey('X-Savello-Signature', $GLOBALS['_cb_test_http_calls'][0]['args']['headers']);
         self::assertStringNotContainsString(self::SECRET, (string) $encoded);
