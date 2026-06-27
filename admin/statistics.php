@@ -552,6 +552,72 @@ class Cashback_Statistics_Admin {
                 </div>
             </details>
 
+            <!-- [cashback_link_checker] -->
+            <details class="cb-shortcode-section">
+                <summary>[cashback_link_checker] — <?php echo esc_html__('Проверка кэшбэка по прямой ссылке', 'cashback-plugin'); ?></summary>
+                <div class="cb-shortcode-body">
+                        <p><?php echo esc_html__('Проверяет ссылку на товар или магазин и показывает, доступен ли кэшбэк Savello для этого домена. Если магазин подключён и ставка опубликована, пользователь сможет активировать переход перед покупкой.', 'cashback-plugin'); ?></p>
+                        <p><?php echo esc_html__('Подходит для отдельных страниц, лендингов, FAQ и виджетов, где посетитель сам вставляет ссылку магазина. Форма доступна гостям и авторизованным пользователям.', 'cashback-plugin'); ?></p>
+
+                        <table class="widefat striped" style="margin-bottom: 12px;">
+                            <thead>
+                                <tr>
+                                    <th style="width: 42%;"><?php echo esc_html__('Шорткод', 'cashback-plugin'); ?></th>
+                                    <th><?php echo esc_html__('Описание', 'cashback-plugin'); ?></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                $link_checker_rows = array(
+                                    array(
+                                        '[cashback_link_checker]',
+                                        __('Форма проверки ссылки с текстом поля по умолчанию.', 'cashback-plugin'),
+                                    ),
+                                    array(
+                                        '[cashback_link_checker placeholder="Вставьте ссылку на товар или магазин"]',
+                                        __('Форма с собственным текстом placeholder в поле URL.', 'cashback-plugin'),
+                                    ),
+                                );
+                                foreach ($link_checker_rows as $row) :
+                                ?>
+                                <tr>
+                                    <td>
+                                        <span class="cb-shortcode-copy" data-shortcode="<?php echo esc_attr($row[0]); ?>" title="<?php echo esc_attr__('Нажмите, чтобы скопировать', 'cashback-plugin'); ?>">
+                                            <span class="cb-copy-icon">⎘</span><?php echo esc_html($row[0]); ?>
+                                        </span>
+                                    </td>
+                                    <td><?php echo esc_html($row[1]); ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+
+                        <p class="cb-shortcode-attrs">
+                            <strong><?php echo esc_html__('Атрибуты:', 'cashback-plugin'); ?></strong>
+                            <code>placeholder</code> — <?php echo esc_html__('текст подсказки в поле URL (по умолчанию «Вставьте ссылку на товар или магазин»)', 'cashback-plugin'); ?>
+                        </p>
+
+                        <div class="cb-how-to">
+                            <strong><?php echo esc_html__('Как работает:', 'cashback-plugin'); ?></strong>
+                            <ol>
+                                <li><?php echo esc_html__('Посетитель вставляет URL товара или магазина и нажимает «Проверить кэшбэк».', 'cashback-plugin'); ?></li>
+                                <li><?php echo esc_html__('Плагин ищет подключённый магазин по домену и показывает ставку кэшбэка, если она доступна.', 'cashback-plugin'); ?></li>
+                                <li><?php echo esc_html__('Кнопка «Активировать и перейти» создаёт click-session и отдаёт ссылку перехода через существующий партнёрский механизм.', 'cashback-plugin'); ?></li>
+                            </ol>
+                        </div>
+
+                        <div class="cb-notice-info">
+                            <strong><?php echo esc_html__('Важно:', 'cashback-plugin'); ?></strong>
+                            <?php echo esc_html__('Кэшбэк не гарантируется: начисление зависит от подтверждения заказа магазином и CPA-сетью. Проверка только показывает доступность кэшбэка и помогает активировать корректный переход.', 'cashback-plugin'); ?>
+                        </div>
+
+                        <p style="margin-top: 12px;">
+                            <strong><?php echo esc_html__('Защита:', 'cashback-plugin'); ?></strong>
+                            <?php echo esc_html__('REST-запросы требуют nonce WordPress и проходят через rate limit. Валидатор принимает только http/https URL и отклоняет localhost, приватные IP, userinfo и небезопасные схемы.', 'cashback-plugin'); ?>
+                        </p>
+                </div>
+            </details>
+
             <!-- [cashback_withdrawal_form] -->
             <details class="cb-shortcode-section">
                 <summary>[cashback_withdrawal_form] — <?php echo esc_html__('Форма вывода кэшбэка', 'cashback-plugin'); ?></summary>
