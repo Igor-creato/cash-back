@@ -37,10 +37,13 @@ final class Cashback_Link_Checker_Service {
                 'cashback_available'  => false,
                 'activation_required' => false,
                 'url'                 => $validated['url'],
+                'direct_url'          => $validated['url'],
                 'host'                => $validated['host'],
                 'store'               => $store,
                 'cashback'            => null,
                 'conditions'          => array(),
+                'warning'             => 'Кэшбэк не начислится',
+                'button_text'         => 'Перейти в магазин',
                 'message'             => 'Кэшбэк для этого магазина временно недоступен.',
             );
         }
@@ -52,12 +55,15 @@ final class Cashback_Link_Checker_Service {
                 'cashback_available'  => false,
                 'activation_required' => false,
                 'url'                 => $validated['url'],
+                'direct_url'          => $validated['url'],
                 'host'                => $validated['host'],
                 'store'               => $store,
                 'cashback'            => null,
                 'conditions'          => array(
                     'Ставка кэшбэка для этого магазина сейчас не опубликована.',
                 ),
+                'warning'             => 'Кэшбэк не начислится',
+                'button_text'         => 'Перейти в магазин',
                 'message'             => 'Магазин подключён, но активная ставка кэшбэка пока недоступна.',
             );
         }
@@ -74,6 +80,7 @@ final class Cashback_Link_Checker_Service {
                 'Кэшбэк начисляется после подтверждения заказа магазином и CPA-сетью.',
                 'Не закрывайте страницу магазина сразу после перехода по ссылке.',
             ),
+            'button_text'         => 'Активировать кэшбэк',
             'message'             => 'Кэшбэк доступен. Перед покупкой активируйте переход по ссылке Savello.',
         );
     }
@@ -91,16 +98,14 @@ final class Cashback_Link_Checker_Service {
             );
         }
 
-        $merchant = $this->find_merchant_by_host((string) $validated['host']);
-        if ($merchant === null || !$this->is_merchant_active($merchant)) {
-            return new WP_Error(
-                'product_not_indexed',
-                'Магазин пока не найден в каталоге кэшбэка.',
-                array( 'status' => 404 )
-            );
+        if (!class_exists('Savello_Cashback_Internal_API_Service')) {
+            $path = dirname(__DIR__) . '/services/class-cashback-internal-api-service.php';
+            if (file_exists($path)) {
+                require_once $path;
+            }
         }
 
-        if (!class_exists('Cashback_Click_Session_Service')) {
+        if (!class_exists('Savello_Cashback_Internal_API_Service')) {
             return new WP_Error(
                 'activation_unavailable',
                 'Активация кэшбэка временно недоступна.',
@@ -108,33 +113,49 @@ final class Cashback_Link_Checker_Service {
             );
         }
 
-        $result = Cashback_Click_Session_Service::activate_for_link_checker(array(
-            'product_id'         => (int) $merchant['ID'],
-            'target_url'         => (string) $validated['url'],
+        if (!class_exists('Cashback_Click_Session_Service')) {
+            $path = dirname(__DIR__) . '/class-cashback-click-session-service.php';
+            if (file_exists($path)) {
+                require_once $path;
+            }
+        }
+
+        $result = (new Savello_Cashback_Internal_API_Service())->resolve_direct_product_link(array(
+            'direct_url'         => (string) $validated['url'],
             'user_id'            => $user_id,
             'ip_address'         => class_exists('Cashback_Encryption') ? Cashback_Encryption::get_client_ip() : '',
             'user_agent'         => isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : null,
-            'referer'            => (string) $validated['url'],
             'client_request_id'  => $client_request_id,
         ));
 
-        if (($result['status'] ?? '') !== 'ok') {
-            return $this->activation_error((string) ($result['status'] ?? 'error'));
+        if ($result instanceof WP_Error) {
+            return $result;
         }
 
-        $click_id      = (string) $result['canonical_click_id'];
-        $affiliate_url = (string) $result['affiliate_url'];
-        $redirect_url  = $this->build_activation_page_url((int) $merchant['ID'], $click_id, $user_id, $affiliate_url);
+        if (empty($result['cashback_available'])) {
+            return array(
+                'status'              => 'not_available',
+                'cashback_available'  => false,
+                'redirect_url'        => (string) ( $result['url'] ?? $validated['url'] ),
+                'direct_url'          => (string) $validated['url'],
+                'button_text'         => (string) ( $result['button_text'] ?? 'Перейти в магазин' ),
+                'warning'             => (string) ( $result['warning'] ?? 'Кэшбэк не начислится' ),
+                'reason_code'         => (string) ( $result['reason_code'] ?? 'cashback_unavailable' ),
+                'message'             => 'Кэшбэк не начислится. Можно перейти по прямой ссылке магазина.',
+            );
+        }
+
+        $cashback_url = (string) ( $result['cashback_url'] ?? $result['url'] ?? '' );
+        $redirect_url = (string) ( $result['activation_page_url'] ?? $cashback_url );
 
         return array(
             'status'              => 'ok',
             'redirect_url'        => $redirect_url,
-            'activation_page_url' => $redirect_url,
-            'affiliate_url'       => $affiliate_url,
-            'click_id'            => $click_id,
-            'expires_at'          => gmdate('Y-m-d H:i:s', time() + (int) $result['window_seconds']),
-            'reused'              => (bool) $result['reused'],
-            'tap_count'           => (int) $result['tap_count'],
+            'activation_page_url' => (string) ( $result['activation_page_url'] ?? $redirect_url ),
+            'cashback_url'        => $cashback_url,
+            'affiliate_url'       => $cashback_url,
+            'click_id'            => (string) ( $result['click_id'] ?? '' ),
+            'button_text'         => (string) ( $result['button_text'] ?? 'Активировать кэшбэк' ),
             'message'             => 'Переход активирован. Кэшбэк появится после подтверждения заказа магазином.',
         );
     }
@@ -285,10 +306,13 @@ final class Cashback_Link_Checker_Service {
             'cashback_available'  => false,
             'activation_required' => false,
             'url'                 => $url,
+            'direct_url'          => $url,
             'host'                => $host,
             'store'               => null,
             'cashback'            => null,
             'conditions'          => array(),
+            'warning'             => 'Кэшбэк не начислится',
+            'button_text'         => 'Перейти в магазин',
             'message'             => $message,
         );
     }
@@ -302,8 +326,8 @@ final class Cashback_Link_Checker_Service {
     }
 
     private function build_activation_page_url( int $product_id, string $click_id, int $user_id, string $fallback_url ): string {
-        $permalink = function_exists('get_permalink') ? (string) get_permalink($product_id) : '';
-        if ($permalink === '') {
+        unset($product_id);
+        if (!function_exists('home_url')) {
             return $fallback_url;
         }
 
@@ -316,7 +340,7 @@ final class Cashback_Link_Checker_Service {
             $args['t'] = Cashback_Encryption::sign_activation_token($click_id, $user_id, time());
         }
 
-        return add_query_arg($args, $permalink);
+        return add_query_arg($args, home_url('/'));
     }
 
     private function activation_error( string $status ): WP_Error {

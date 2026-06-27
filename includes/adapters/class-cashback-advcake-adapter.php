@@ -117,6 +117,53 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
     }
 
     /**
+     * Создать Adv.Cake deeplink на конкретный товарный URL.
+     *
+     * @param array<string,mixed> $credentials
+     * @param array<string,mixed> $network_config
+     * @param array<string,string> $tracking
+     * @return array{success:bool,url?:string,link_type?:string,reason_code?:string,error?:string}
+     */
+    public function create_deeplink(
+        array $credentials,
+        array $network_config,
+        string $offer_id,
+        string $target_url,
+        array $tracking,
+        string $template_url = '',
+        bool $allow_deep = true
+    ): array {
+        unset($network_config, $offer_id);
+
+        if (!$allow_deep) {
+            return $this->deeplink_error('advcake_deeplink_disabled');
+        }
+        if (!$this->is_safe_http_url($target_url)) {
+            return $this->deeplink_error('advcake_invalid_target_url');
+        }
+
+        $tracking = $this->filter_tracking_params($tracking);
+        if ($tracking === array()) {
+            return $this->deeplink_error('advcake_missing_click_tracking');
+        }
+
+        $template_url = trim($template_url);
+        if ($template_url !== '' && str_contains($template_url, '{dl}')) {
+            $url = $this->build_dynamic_template_url($template_url, $target_url, $tracking);
+            if (!$this->is_safe_http_url($url)) {
+                return $this->deeplink_error('advcake_invalid_template_url');
+            }
+            return array(
+                'success'   => true,
+                'url'       => $url,
+                'link_type' => 'dynamic_template',
+            );
+        }
+
+        return $this->create_cakelink($credentials, $target_url, $tracking);
+    }
+
+    /**
      * Получить одну страницу действий из Advcake API.
      *
      * @param array $credentials   Расшифрованные credentials (`api_key`)
@@ -1206,6 +1253,121 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
         }
         $body = trim($body);
         return $body === '' ? 'empty body' : $body;
+    }
+
+    /**
+     * @return array{success:false,reason_code:string,error:string}
+     */
+    private function deeplink_error( string $reason_code, string $error = '' ): array {
+        return array(
+            'success'     => false,
+            'reason_code' => $reason_code,
+            'error'       => $error,
+        );
+    }
+
+    /**
+     * @param array<string,string> $tracking
+     */
+    private function build_dynamic_template_url( string $template_url, string $target_url, array $tracking ): string {
+        $replacements = array( '{dl}' => rawurlencode($target_url) );
+        foreach ($tracking as $key => $value) {
+            $replacements['{' . $key . '}'] = rawurlencode($value);
+        }
+        $url = strtr($template_url, $replacements);
+        return (string) preg_replace('/\{[a-zA-Z0-9_\-]{1,32}\}/', '', $url);
+    }
+
+    /**
+     * @param array<string,mixed> $credentials
+     * @param array<string,string> $tracking
+     * @return array{success:bool,url?:string,link_type?:string,reason_code?:string,error?:string}
+     */
+    private function create_cakelink( array $credentials, string $target_url, array $tracking ): array {
+        $token = $this->get_token($credentials, array());
+        if ($token === null) {
+            return $this->deeplink_error('advcake_auth_unavailable', $this->last_token_error);
+        }
+
+        $query = array_merge(array(
+            'dl'   => $target_url,
+            'pass' => $token,
+        ), $tracking);
+        $url = 'https://cakelink.ru/link?' . http_build_query($query);
+
+        $response = $this->http_get($url, array(), 30);
+        if (is_wp_error($response)) {
+            return $this->deeplink_error('advcake_api_error', $response->get_error_message());
+        }
+
+        $code = (int) wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        if ($code !== 200 || !is_array($body)) {
+            return $this->deeplink_error('advcake_api_error', 'HTTP ' . $code . ': ' . $this->safe_error_summary(wp_remote_retrieve_body($response)));
+        }
+        if (empty($body['success'])) {
+            return $this->deeplink_error('advcake_api_error');
+        }
+
+        $deeplink = $this->extract_cakelink_deeplink_url($body);
+        if ($deeplink === '' || !$this->is_safe_http_url($deeplink)) {
+            return $this->deeplink_error('advcake_empty_deeplink');
+        }
+
+        return array(
+            'success'   => true,
+            'url'       => $deeplink,
+            'link_type' => 'cakelink',
+        );
+    }
+
+    /**
+     * @param array<string,mixed> $body
+     */
+    private function extract_cakelink_deeplink_url( array $body ): string {
+        foreach (array( 'url', 'link' ) as $key) {
+            if (!empty($body[$key]) && is_scalar($body[$key])) {
+                return trim((string) $body[$key]);
+            }
+        }
+
+        foreach (array( 'data', 'result' ) as $key) {
+            if (!empty($body[$key]) && is_array($body[$key])) {
+                $nested = $this->extract_cakelink_deeplink_url($body[$key]);
+                if ($nested !== '') {
+                    return $nested;
+                }
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array<string,string> $tracking
+     * @return array<string,string>
+     */
+    private function filter_tracking_params( array $tracking ): array {
+        $result = array();
+        foreach ($tracking as $key => $value) {
+            if ($value === '') {
+                continue;
+            }
+            $name = (string) $key;
+            $valid = class_exists('Cashback_Click_Session_Service')
+                ? Cashback_Click_Session_Service::is_valid_affiliate_param_name($name)
+                : (bool) preg_match('/^[a-zA-Z0-9_\-]{1,32}$/', $name);
+            if (!$valid) {
+                continue;
+            }
+            $result[$name] = (string) $value;
+        }
+        return $result;
+    }
+
+    private function is_safe_http_url( string $url ): bool {
+        $scheme = strtolower((string) wp_parse_url($url, PHP_URL_SCHEME));
+        return in_array($scheme, array( 'http', 'https' ), true);
     }
 
     /**

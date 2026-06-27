@@ -16,3 +16,10 @@ test('link checker frontend avoids guaranteed cashback copy', () => {
   assert.match(source, /Кэшбэк не гарантируется/);
   assert.doesNotMatch(source, /гарантируем/i);
 });
+
+test('link checker frontend opens a tab synchronously and redirects it to activation page', () => {
+  assert.match(source, /window\.open\(/);
+  assert.match(source, /about:blank/);
+  assert.match(source, /activation_page_url/);
+  assert.match(source, /popup\.location(?:\.href)?\s*=/);
+});

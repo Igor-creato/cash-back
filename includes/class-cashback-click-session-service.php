@@ -209,6 +209,73 @@ final class Cashback_Click_Session_Service {
     }
 
     /**
+     * Активация click-session для прямой ссылки на товар магазина.
+     *
+     * Deeplink уже создан caller'ом через CPA API с заранее сгенерированным
+     * click_id, поэтому здесь переиспользуется общий TX/log flow без повторной
+     * подстановки tracking-параметров.
+     *
+     * @param array{
+     *   product_id: int,
+     *   network_id: int,
+     *   direct_url: string,
+     *   affiliate_url: string,
+     *   canonical_click_id: string,
+     *   user_id: int,
+     *   ip_address: string,
+     *   user_agent?: ?string,
+     *   referer?: ?string,
+     *   client_request_id?: ?string,
+     *   force_spam?: bool,
+     * } $args
+     *
+     * @return array see activate()
+     */
+    public static function activate_for_direct_url( array $args ): array {
+        $product_id         = isset($args['product_id']) ? (int) $args['product_id'] : 0;
+        $network_id         = isset($args['network_id']) ? (int) $args['network_id'] : 0;
+        $direct_url         = isset($args['direct_url']) ? (string) $args['direct_url'] : '';
+        $affiliate_url      = isset($args['affiliate_url']) ? (string) $args['affiliate_url'] : '';
+        $canonical_click_id = isset($args['canonical_click_id']) ? sanitize_text_field((string) $args['canonical_click_id']) : '';
+        $user_id            = isset($args['user_id']) ? (int) $args['user_id'] : 0;
+        $ip_address         = isset($args['ip_address']) ? (string) $args['ip_address'] : '';
+        $user_agent         = array_key_exists('user_agent', $args) ? ( $args['user_agent'] !== null ? (string) $args['user_agent'] : null ) : null;
+        $referer            = array_key_exists('referer', $args) ? ( $args['referer'] !== null ? (string) $args['referer'] : null ) : null;
+        $client_request_id  = array_key_exists('client_request_id', $args) && $args['client_request_id'] !== null
+            ? (string) $args['client_request_id']
+            : null;
+
+        if ($product_id <= 0 || $network_id <= 0 || $canonical_click_id === '') {
+            return array( 'status' => 'invalid_product' );
+        }
+
+        if (!self::is_safe_http_url($direct_url) || !self::is_safe_http_url($affiliate_url)) {
+            return array( 'status' => 'no_url' );
+        }
+
+        return self::do_activate(array(
+            'source'             => 'direct_product_url',
+            'product_id'         => $product_id,
+            'network_id'         => $network_id,
+            'cpa_network'        => self::get_network_slug_by_id($network_id),
+            'offer_id'           => (string) get_post_meta($product_id, '_offer_id', true),
+            'base_url'           => $direct_url,
+            'affiliate_url'      => $affiliate_url,
+            'canonical_click_id' => $canonical_click_id,
+            'user_id'            => $user_id,
+            'ip_address'         => $ip_address,
+            'user_agent'         => $user_agent,
+            'referer'            => $referer,
+            'client_request_id'  => $client_request_id,
+            'force_spam'         => !empty($args['force_spam']),
+            'promocode_id'       => null,
+            'utm_source'         => 'link_checker',
+            'utm_medium'         => 'shortcode',
+            'utm_campaign'       => '',
+        ));
+    }
+
+    /**
      * Активация click-session для клика по карточке промокода.
      *
      * Тот же return-shape, что и у activate(). Использует тот же TX-сценарий
@@ -282,12 +349,14 @@ final class Cashback_Click_Session_Service {
      * Общий TX-блок активации click-session.
      *
      * @param array{
-     *   source: 'wc_product'|'promocode'|'link_checker',
+     *   source: 'wc_product'|'promocode'|'link_checker'|'direct_product_url',
      *   product_id: int,
      *   network_id: int,
      *   cpa_network: ?string,
      *   offer_id: string,
      *   base_url: string,
+     *   affiliate_url?: string,
+     *   canonical_click_id?: string,
      *   user_id: int,
      *   ip_address: string,
      *   user_agent: ?string,
@@ -358,6 +427,9 @@ final class Cashback_Click_Session_Service {
         // Гости (user_id=0) не должны шарить сессию по общей dedup-строке `(user_id=0, product_id)`:
         // два независимых гостя на одном product получили бы одну сессию. Принудительно always_new.
         if ($user_id <= 0) {
+            $policy = 'always_new';
+        }
+        if ((string) ( $ctx['source'] ?? '' ) === 'direct_product_url') {
             $policy = 'always_new';
         }
 
@@ -431,9 +503,14 @@ final class Cashback_Click_Session_Service {
                 $is_primary         = false;
                 $reused             = true;
             } else {
-                // New session: canonical_click_id = UUID v7 (time-ordered).
-                $canonical_click_id = cashback_generate_uuid7(false);
-                $affiliate_url      = self::build_affiliate_url_with_parts($base_url, $network_id, $product_id, $user_id, $canonical_click_id);
+                // New session: canonical_click_id = UUID v7 (time-ordered), unless
+                // caller generated it first for a CPA deeplink API.
+                $canonical_click_id = !empty($ctx['canonical_click_id'])
+                    ? sanitize_text_field((string) $ctx['canonical_click_id'])
+                    : cashback_generate_uuid7(false);
+                $affiliate_url      = !empty($ctx['affiliate_url'])
+                    ? (string) $ctx['affiliate_url']
+                    : self::build_affiliate_url_with_parts($base_url, $network_id, $product_id, $user_id, $canonical_click_id);
                 if (empty($affiliate_url)) {
                     $affiliate_url = $base_url;
                 }
@@ -619,14 +696,28 @@ final class Cashback_Click_Session_Service {
      * source product_id, к которому привязан купон по network+offer.
      */
     private static function build_affiliate_url_with_parts( string $base_url, int $network_id, ?int $product_id, int $user_id, string $click_id ): ?string {
-        global $wpdb;
-
-        if ($base_url === '') {
-            return null;
+        $params = self::build_affiliate_tracking_params($network_id, $product_id, $user_id, $click_id);
+        if (empty($params)) {
+            return $base_url;
         }
 
+        return add_query_arg($params, $base_url);
+    }
+
+    /**
+     * Возвращает tracking-параметры CPA-сети для уже созданного click_id.
+     *
+     * Имена параметров берутся только из `cashback_affiliate_network_params`
+     * и product-level overrides `_affiliate_product_params`; код не добавляет
+     * fallback-имён вроде subid/sub1.
+     *
+     * @return array<string,string>
+     */
+    public static function build_affiliate_tracking_params( int $network_id, ?int $product_id, int $user_id, string $click_id ): array {
+        global $wpdb;
+
         if ($network_id <= 0) {
-            return $base_url;
+            return array();
         }
 
         // Сначала загружаем параметры сети
@@ -672,12 +763,12 @@ final class Cashback_Click_Session_Service {
         }
 
         if (empty($merged)) {
-            return $base_url;
+            return array();
         }
 
         // Получаем partner_token (криптографически стойкий, вместо user_id)
         $partner_token = null;
-        if ($user_id > 0) {
+        if ($user_id > 0 && class_exists('Mariadb_Plugin')) {
             $partner_token = Mariadb_Plugin::get_partner_token($user_id);
         }
 
@@ -703,11 +794,11 @@ final class Cashback_Click_Session_Service {
             } elseif ($param_type === 'uuid') {
                 $params[ $param['key'] ] = $click_id;
             } else {
-                $params[ $param['key'] ] = $param['value'];
+            $params[ (string) $param['key'] ] = (string) $param['value'];
             }
         }
 
-        return add_query_arg($params, $base_url);
+        return $params;
     }
 
     /**

@@ -42,7 +42,7 @@ final class Cashback_Link_Checker_Shortcode {
                     required
                 />
             </label>
-            <button class="cashback-link-checker__button" type="submit">
+            <button class="cashback-link-checker__button cashback-btn-primary" type="submit">
                 <?php echo esc_html__('Проверить кэшбэк', 'cashback-plugin'); ?>
             </button>
             <div class="cashback-link-checker__result" data-cashback-link-checker-result aria-live="polite"></div>
@@ -54,9 +54,16 @@ final class Cashback_Link_Checker_Shortcode {
 
     private static function enqueue_assets(): void {
         wp_enqueue_style(
+            'cashback-account-base',
+            cashback_asset_url('assets/css/cashback-account-base.css'),
+            array(),
+            '1.0.0'
+        );
+
+        wp_enqueue_style(
             self::HANDLE,
             cashback_asset_url('assets/css/cashback-link-checker.css'),
-            array(),
+            array( 'cashback-account-base' ),
             '1.0.0'
         );
 

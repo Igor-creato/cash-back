@@ -117,6 +117,69 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
     }
 
     /**
+     * Создать Admitad deeplink на конкретный товарный URL.
+     *
+     * @param array<string,mixed> $credentials
+     * @param array<string,mixed> $network_config
+     * @param array<string,string> $tracking
+     * @return array{success:bool,url?:string,link_type?:string,reason_code?:string,error?:string}
+     */
+    public function create_deeplink( array $credentials, array $network_config, string $campaign_id, string $target_url, array $tracking ): array {
+        $website_id  = trim((string) ( $network_config['api_website_id'] ?? '' ));
+        $campaign_id = trim($campaign_id);
+        if ($website_id === '' || $campaign_id === '') {
+            return $this->deeplink_error('admitad_missing_campaign_or_website');
+        }
+        if (!$this->is_safe_http_url($target_url)) {
+            return $this->deeplink_error('admitad_invalid_target_url');
+        }
+
+        $auth_headers = $this->build_auth_headers($credentials, $network_config);
+        if (!$auth_headers) {
+            return $this->deeplink_error('admitad_auth_unavailable');
+        }
+
+        $query = array( 'ulp' => $target_url );
+        foreach ($this->filter_deeplink_tracking_params($tracking) as $key => $value) {
+            $query[$key] = $value;
+        }
+
+        $base = rtrim((string) ( $network_config['api_base_url'] ?? 'https://api.admitad.com' ), '/');
+        $url  = $base . '/deeplink/' . rawurlencode($website_id) . '/advcampaign/' . rawurlencode($campaign_id) . '/?' . http_build_query($query);
+        $response = $this->http_get($url, $auth_headers, 30);
+        if (is_wp_error($response)) {
+            return $this->deeplink_error('admitad_api_error', $response->get_error_message());
+        }
+
+        $code = (int) wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        if ($code !== 200 || !is_array($body)) {
+            return $this->deeplink_error('admitad_api_error', 'HTTP ' . $code . ': ' . $this->safe_error_summary($body));
+        }
+        if (array_key_exists('is_affiliate_product', $body) && $body['is_affiliate_product'] === false) {
+            return $this->deeplink_error('admitad_not_affiliate_product');
+        }
+
+        $deeplink = $this->extract_deeplink_url($body);
+        if ($deeplink === '' || !$this->is_safe_http_url($deeplink)) {
+            return $this->deeplink_error('admitad_empty_deeplink');
+        }
+
+        if (!empty($network_config['validate_links'])) {
+            $validation = $this->validate_deeplink_url($base, $auth_headers, $deeplink);
+            if ($validation !== true) {
+                return $this->deeplink_error('admitad_validate_failed', is_string($validation) ? $validation : '');
+            }
+        }
+
+        return array(
+            'success'   => true,
+            'url'       => $deeplink,
+            'link_type' => 'deeplink',
+        );
+    }
+
+    /**
      * Получить действия из Admitad API (одна страница)
      *
      * @param array $credentials   API credentials
@@ -1268,6 +1331,83 @@ class Cashback_Admitad_Adapter extends Cashback_Network_Adapter_Base {
             'next_offset' => 0,
             'error'       => $error,
         );
+    }
+
+    /**
+     * @return array{success:false,reason_code:string,error:string}
+     */
+    private function deeplink_error( string $reason_code, string $error = '' ): array {
+        return array(
+            'success'     => false,
+            'reason_code' => $reason_code,
+            'error'       => $error,
+        );
+    }
+
+    /**
+     * @param array<string,string> $tracking
+     * @return array<string,string>
+     */
+    private function filter_deeplink_tracking_params( array $tracking ): array {
+        $result = array();
+        foreach ($tracking as $key => $value) {
+            if ($value === '') {
+                continue;
+            }
+            $name = (string) $key;
+            $valid = class_exists('Cashback_Click_Session_Service')
+                ? Cashback_Click_Session_Service::is_valid_affiliate_param_name($name)
+                : (bool) preg_match('/^[a-zA-Z0-9_\-]{1,32}$/', $name);
+            if (!$valid) {
+                continue;
+            }
+            $result[$name] = (string) $value;
+        }
+        return $result;
+    }
+
+    private function extract_deeplink_url( array $body ): string {
+        foreach (array( 'deeplink', 'admitad_link', 'link', 'url' ) as $key) {
+            if (!empty($body[$key]) && is_scalar($body[$key])) {
+                return trim((string) $body[$key]);
+            }
+        }
+        if (isset($body['result']) && is_array($body['result'])) {
+            return $this->extract_deeplink_url($body['result']);
+        }
+        if (array_is_list($body) && isset($body[0]) && is_array($body[0])) {
+            return $this->extract_deeplink_url($body[0]);
+        }
+        return '';
+    }
+
+    private function validate_deeplink_url( string $base_url, array $auth_headers, string $deeplink ): bool|string {
+        $url = $base_url . '/validate_links/?' . http_build_query(array( 'link' => $deeplink ));
+        $response = $this->http_get($url, $auth_headers, 30);
+        if (is_wp_error($response)) {
+            return $response->get_error_message();
+        }
+
+        $code = (int) wp_remote_retrieve_response_code($response);
+        if ($code !== 200) {
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+            return 'HTTP ' . $code . ': ' . $this->safe_error_summary($body);
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        if (is_array($body) && array_key_exists('valid', $body) && $body['valid'] === false) {
+            return 'valid=false';
+        }
+        if (is_array($body) && array_key_exists('is_valid', $body) && $body['is_valid'] === false) {
+            return 'is_valid=false';
+        }
+
+        return true;
+    }
+
+    private function is_safe_http_url( string $url ): bool {
+        $scheme = strtolower((string) wp_parse_url($url, PHP_URL_SCHEME));
+        return in_array($scheme, array( 'http', 'https' ), true);
     }
 
     /**
