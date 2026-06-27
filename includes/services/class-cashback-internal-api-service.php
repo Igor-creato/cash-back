@@ -240,7 +240,7 @@ final class Savello_Cashback_Internal_API_Service {
             return $this->direct_link_fallback($direct_url, 'click_session_' . (string) ( $session['status'] ?? 'error' ), $merchant);
         }
 
-        return array(
+        $payload = array(
             'cashback_available' => true,
             'button_text'        => 'Активировать кэшбэк',
             'url'                => (string) $session['affiliate_url'],
@@ -252,6 +252,13 @@ final class Savello_Cashback_Internal_API_Service {
             'network'            => (string) $merchant['network'],
             'link_type'          => (string) ( $deeplink['link_type'] ?? 'deeplink' ),
         );
+
+        $activation_page_url = $this->activation_page_url((string) $session['canonical_click_id'], $user_id);
+        if ($activation_page_url !== null) {
+            $payload['activation_page_url'] = $activation_page_url;
+        }
+
+        return $payload;
     }
 
     public function get_user_price_monitor_limits( string $external_user_id ) {
@@ -508,6 +515,23 @@ final class Savello_Cashback_Internal_API_Service {
             }
         }
         return $rates[0] ?? null;
+    }
+
+    private function activation_page_url( string $click_id, int $user_id ): ?string {
+        if (strlen($click_id) !== 32 || !ctype_xdigit($click_id)) {
+            return null;
+        }
+
+        $query = array(
+            'cashback_go' => '1',
+            'click_id'    => $click_id,
+        );
+
+        if ($user_id > 0 && class_exists('Cashback_Encryption') && method_exists('Cashback_Encryption', 'sign_activation_token')) {
+            $query['t'] = Cashback_Encryption::sign_activation_token($click_id, $user_id, time());
+        }
+
+        return add_query_arg($query, home_url('/'));
     }
 
     private function load_user_profile( int $user_id ): ?array {

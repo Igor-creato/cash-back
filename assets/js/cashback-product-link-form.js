@@ -12,7 +12,9 @@
     }
 
     const hasCashback = Boolean(data && data.cashback_available);
-    const url = data && typeof data.url === "string" ? data.url : "";
+    const activationUrl =
+      data && typeof data.activation_page_url === "string" ? data.activation_page_url : "";
+    const url = activationUrl || (data && typeof data.url === "string" ? data.url : "");
     const buttonText =
       data && typeof data.button_text === "string"
         ? data.button_text

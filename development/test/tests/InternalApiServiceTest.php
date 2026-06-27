@@ -327,6 +327,31 @@ final class InternalApiServiceTest extends TestCase
         self::assertNull($missing['cashback_rate']);
     }
 
+    public function test_direct_product_link_exposes_activation_page_for_valid_hex_click_id(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cashback-click-session-service.php';
+        $GLOBALS['_cb_test_internal_include_advcake'] = true;
+
+        $click_id = '0123456789abcdef0123456789abcdef';
+        $service  = new Savello_Cashback_Internal_API_Service();
+
+        $cashback = $service->resolve_direct_product_link(array(
+            'direct_url' => 'https://shop.advcake.example/product/sku-1',
+            'source'     => 'user',
+            'user_id'    => 77,
+            'click_id'   => $click_id,
+        ));
+
+        self::assertSame(true, $cashback['cashback_available']);
+        self::assertStringContainsString('dl=https%3A%2F%2Fshop.advcake.example%2Fproduct%2Fsku-1', $cashback['url']);
+        self::assertSame($cashback['url'], $cashback['cashback_url']);
+        self::assertArrayHasKey('activation_page_url', $cashback);
+        self::assertStringStartsWith('https://savelloclub.test/?', $cashback['activation_page_url']);
+        self::assertStringContainsString('cashback_go=1', $cashback['activation_page_url']);
+        self::assertStringContainsString('click_id=' . $click_id, $cashback['activation_page_url']);
+        self::assertStringContainsString('t=', $cashback['activation_page_url']);
+    }
+
     #[RunInSeparateProcess]
     #[PreserveGlobalState(false)]
     #[Group('direct-product-link')]
