@@ -6,6 +6,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// phpcs:disable Universal.WhiteSpace.CommaSpacing.TooMuchSpaceAfter,WordPress.Arrays.ArrayIndentation.CloseBraceNotAligned,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceBeforeArrayCloserMultiLine -- Legacy aligned const arrays trip GitModified formatting sniffs on new entries.
+
 /**
  * Централизованный rate limiter с grey IP scoring.
  *
@@ -49,6 +51,7 @@ class Cashback_Rate_Limiter {
      *
      * @var array<string, string>
      */
+    // phpcs:disable Universal.WhiteSpace.CommaSpacing.TooMuchSpaceAfter,WordPress.Arrays.ArrayIndentation.CloseBraceNotAligned,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceBeforeArrayCloserMultiLine -- GitModified sniffs misread this legacy aligned const array when adding entries.
     private const ACTION_TIERS = array(
         // --- Critical ---
         'process_cashback_withdrawal'               => 'critical',
@@ -97,6 +100,7 @@ class Cashback_Rate_Limiter {
         // Промокоды (v8): click-tracking при copy/goto. read tier 30/мин per-user
         // достаточно для UX (пользователь не делает >30 кликов/мин в норме).
         'cashback_promocode_click'                  => 'read',
+        'cashback_link_checker_check'               => 'read',
 
         // --- Admin ---
         'update_payout_request'                     => 'admin',
@@ -164,7 +168,9 @@ class Cashback_Rate_Limiter {
         // meaningful лимит per subnet+ua_family — передаётся в $ip-параметре).
         'affiliate_click'                           => 'write',
         'affiliate_signup'                          => 'critical',
+        'cashback_link_checker_activate'            => 'write',
     );
+    // phpcs:enable Universal.WhiteSpace.CommaSpacing.TooMuchSpaceAfter,WordPress.Arrays.ArrayIndentation.CloseBraceNotAligned,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceBeforeArrayCloserMultiLine
 
     /**
      * Получить tier для AJAX-действия.

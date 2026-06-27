@@ -1,0 +1,56 @@
+.cashback-link-checker {
+    display: grid;
+    gap: 12px;
+    max-width: 640px;
+}
+
+.cashback-link-checker__field {
+    display: grid;
+    gap: 6px;
+}
+
+.cashback-link-checker__input {
+    min-height: 42px;
+    padding: 8px 10px;
+}
+
+.cashback-link-checker__button {
+    justify-self: start;
+}
+
+.cashback-link-checker__result {
+    border-left: 3px solid #d4d8dd;
+    padding: 10px 12px;
+}
+
+.cashback-link-checker__result:empty {
+    display: none;
+}
+
+.cashback-link-checker__result--available {
+    border-left-color: #138a36;
+}
+
+.cashback-link-checker__result--unavailable,
+.cashback-link-checker__result--error {
+    border-left-color: #b42318;
+}
+
+.cashback-link-checker__result--activated {
+    border-left-color: #1f6feb;
+}
+
+.cashback-link-checker__store,
+.cashback-link-checker__cashback,
+.cashback-link-checker__message,
+.cashback-link-checker__notice {
+    margin: 0 0 8px;
+}
+
+.cashback-link-checker__conditions {
+    margin: 0 0 12px 18px;
+}
+
+.cashback-link-checker__goto {
+    display: inline-block;
+}

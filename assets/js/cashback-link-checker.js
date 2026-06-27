@@ -1,0 +1,169 @@
+(function () {
+    'use strict';
+
+    var config = window.CashbackLinkChecker || {};
+
+    function text(key, fallback) {
+        return config.i18n && config.i18n[key] ? config.i18n[key] : fallback;
+    }
+
+    function endpoint(path) {
+        return String(config.restBase || '').replace(/\/$/, '') + path;
+    }
+
+    function request(path, payload) {
+        return fetch(endpoint(path), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-WP-Nonce': config.nonce || ''
+            },
+            body: JSON.stringify(payload)
+        }).then(function (response) {
+            return response.json().catch(function () {
+                return {};
+            }).then(function (data) {
+                if (!response.ok) {
+                    throw data;
+                }
+                return data;
+            });
+        });
+    }
+
+    function clear(node) {
+        while (node && node.firstChild) {
+            node.removeChild(node.firstChild);
+        }
+    }
+
+    function appendText(node, tag, className, value) {
+        var child = document.createElement(tag);
+        child.className = className;
+        child.textContent = value;
+        node.appendChild(child);
+        return child;
+    }
+
+    function clientRequestId() {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            return window.crypto.randomUUID();
+        }
+        return 'lc-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+    }
+
+    function renderError(result, message) {
+        clear(result);
+        result.className = 'cashback-link-checker__result cashback-link-checker__result--error';
+        appendText(result, 'p', 'cashback-link-checker__message', message || text('error', 'Не удалось проверить ссылку.'));
+    }
+
+    function renderUnavailable(result, data) {
+        clear(result);
+        result.className = 'cashback-link-checker__result cashback-link-checker__result--unavailable';
+        appendText(result, 'p', 'cashback-link-checker__message', data.message || 'Кэшбэк для этой ссылки недоступен.');
+    }
+
+    function renderAvailable(form, result, data, directUrl) {
+        clear(result);
+        result.className = 'cashback-link-checker__result cashback-link-checker__result--available';
+
+        var title = data.store && data.store.name ? data.store.name : data.host;
+        appendText(result, 'p', 'cashback-link-checker__store', title);
+
+        if (data.cashback && data.cashback.value) {
+            appendText(
+                result,
+                'p',
+                'cashback-link-checker__cashback',
+                (data.cashback.label || 'Кэшбэк') + ': ' + data.cashback.value
+            );
+        }
+
+        appendText(result, 'p', 'cashback-link-checker__notice', 'Кэшбэк не гарантируется: начисление зависит от подтверждения заказа магазином и CPA-сетью.');
+
+        if (Array.isArray(data.conditions) && data.conditions.length > 0) {
+            var list = document.createElement('ul');
+            list.className = 'cashback-link-checker__conditions';
+            data.conditions.forEach(function (condition) {
+                appendText(list, 'li', 'cashback-link-checker__condition', condition);
+            });
+            result.appendChild(list);
+        }
+
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'cashback-link-checker__button cashback-link-checker__button--activate';
+        button.textContent = 'Активировать и перейти';
+        button.addEventListener('click', function () {
+            activate(form, result, directUrl, button);
+        });
+        result.appendChild(button);
+    }
+
+    function renderActivated(result, data) {
+        clear(result);
+        result.className = 'cashback-link-checker__result cashback-link-checker__result--activated';
+        appendText(result, 'p', 'cashback-link-checker__message', data.message || 'Переход активирован.');
+
+        if (data.redirect_url) {
+            var link = document.createElement('a');
+            link.className = 'cashback-link-checker__goto';
+            link.href = data.redirect_url;
+            link.rel = 'nofollow noopener';
+            link.textContent = 'Перейти в магазин';
+            result.appendChild(link);
+        }
+    }
+
+    function activate(form, result, directUrl, button) {
+        button.disabled = true;
+        button.textContent = 'Активируем...';
+
+        request('/activate', {
+            url: directUrl,
+            client_request_id: clientRequestId()
+        }).then(function (data) {
+            renderActivated(result, data);
+        }).catch(function (error) {
+            button.disabled = false;
+            button.textContent = 'Активировать и перейти';
+            renderError(result, error && error.message ? error.message : text('error', 'Не удалось активировать ссылку.'));
+        });
+
+        form.setAttribute('data-cashback-link-checker-activated', '1');
+    }
+
+    document.addEventListener('submit', function (event) {
+        var form = event.target;
+        if (!form || !form.matches('[data-cashback-link-checker-form]')) {
+            return;
+        }
+
+        event.preventDefault();
+
+        var input = form.querySelector('[name="direct_url"]');
+        var result = form.querySelector('[data-cashback-link-checker-result]');
+        var directUrl = input ? input.value.trim() : '';
+        if (!result) {
+            return;
+        }
+
+        clear(result);
+        result.className = 'cashback-link-checker__result cashback-link-checker__result--loading';
+        appendText(result, 'p', 'cashback-link-checker__message', text('checking', 'Проверяем...'));
+
+        request('/check', {
+            url: directUrl
+        }).then(function (data) {
+            if (data.status === 'available') {
+                renderAvailable(form, result, data, directUrl);
+                return;
+            }
+            renderUnavailable(result, data);
+        }).catch(function (error) {
+            renderError(result, error && error.message ? error.message : text('error', 'Не удалось проверить ссылку.'));
+        });
+    });
+}());

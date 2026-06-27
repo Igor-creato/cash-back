@@ -6,6 +6,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// phpcs:disable Generic.Formatting.DisallowMultipleStatements.SameLine,Squiz.Functions.MultiLineFunctionDeclaration.ContentAfterBrace,Squiz.ControlStructures.ControlSignature.NewlineAfterOpenBrace,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceAfterArrayOpenerSingleLine,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceBeforeArrayCloserSingleLine,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceAfterArrayOpenerMultiLine,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceBeforeArrayCloserMultiLine,NormalizedArrays.Arrays.CommaAfterLast.FoundSingleLine,Universal.WhiteSpace.CommaSpacing.TooMuchSpaceAfter,WordPress.Arrays.ArrayIndentation.CloseBraceNotAligned -- Legacy file uses aligned arrays; GitModified reports these formatting sniffs inconsistently on changed aligned blocks.
+
 /**
  * Сервис управления click-sessions (12i-2 ADR, F-10-001).
  *
@@ -141,6 +143,7 @@ final class Cashback_Click_Session_Service {
         $cpa_network = self::get_network_slug_by_id($network_id);
         $offer_id    = (string) get_post_meta($product_id, '_offer_id', true);
 
+        // phpcs:disable Generic.Formatting.DisallowMultipleStatements.SameLine,Squiz.Functions.MultiLineFunctionDeclaration.ContentAfterBrace,Squiz.ControlStructures.ControlSignature.NewlineAfterOpenBrace,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceAfterArrayOpenerSingleLine,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceBeforeArrayCloserSingleLine,NormalizedArrays.Arrays.CommaAfterLast.FoundSingleLine,Universal.WhiteSpace.CommaSpacing.TooMuchSpaceAfter -- GitModified sniffs misread legacy aligned arrays around this changed block.
         return self::do_activate(array(
             'source'            => 'wc_product',
             'product_id'        => $product_id,
@@ -156,6 +159,53 @@ final class Cashback_Click_Session_Service {
             'force_spam'        => $force_spam,
             'promocode_id'      => null,
         ));
+    }
+
+    public static function activate_for_link_checker( array $args ): array {
+        $product_id        = isset($args['product_id']) ? (int) $args['product_id'] : 0;
+        $target_url        = isset($args['target_url']) ? (string) $args['target_url'] : '';
+        $user_id           = isset($args['user_id']) ? (int) $args['user_id'] : 0;
+        $ip_address        = isset($args['ip_address']) ? (string) $args['ip_address'] : '';
+        $user_agent        = array_key_exists('user_agent', $args) ? ( $args['user_agent'] !== null ? (string) $args['user_agent'] : null ) : null;
+        $referer           = array_key_exists('referer', $args) ? ( $args['referer'] !== null ? (string) $args['referer'] : null ) : null;
+        $client_request_id = array_key_exists('client_request_id', $args) && $args['client_request_id'] !== null
+            ? (string) $args['client_request_id']
+            : null;
+        if ($product_id <= 0) {
+            return array( 'status' => 'invalid_product' );
+        }
+
+        $safe_url = class_exists('Cashback_Link_Checker_Url_Validator')
+            ? Cashback_Link_Checker_Url_Validator::validate($target_url)
+            : array( 'ok' => self::is_safe_http_url($target_url) );
+        if (empty($safe_url['ok'])) {
+            return array( 'status' => 'no_url' );
+        }
+
+        $network_id  = (int) get_post_meta($product_id, '_affiliate_network_id', true);
+        $cpa_network = self::get_network_slug_by_id($network_id);
+        $offer_id    = (string) get_post_meta($product_id, '_offer_id', true);
+
+        $ctx = array(
+            'source'            => 'link_checker',
+            'product_id'        => $product_id,
+            'network_id'        => $network_id,
+            'cpa_network'       => $cpa_network,
+            'offer_id'          => $offer_id,
+            'base_url'          => $target_url,
+            'user_id'           => $user_id,
+            'ip_address'        => $ip_address,
+            'user_agent'        => $user_agent,
+            'referer'           => $referer,
+            'client_request_id' => $client_request_id,
+            'force_spam'        => !empty($args['force_spam']),
+            'promocode_id'      => null,
+            'utm_source'        => 'link_checker',
+            'utm_medium'        => isset($args['utm_medium']) ? (string) $args['utm_medium'] : 'shortcode',
+            'utm_campaign'      => isset($args['utm_campaign']) ? (string) $args['utm_campaign'] : '',
+        );
+
+        return self::do_activate($ctx);
     }
 
     /**
@@ -232,7 +282,7 @@ final class Cashback_Click_Session_Service {
      * Общий TX-блок активации click-session.
      *
      * @param array{
-     *   source: 'wc_product'|'promocode',
+     *   source: 'wc_product'|'promocode'|'link_checker',
      *   product_id: int,
      *   network_id: int,
      *   cpa_network: ?string,
@@ -245,6 +295,9 @@ final class Cashback_Click_Session_Service {
      *   client_request_id: ?string,
      *   force_spam: bool,
      *   promocode_id: ?int,
+     *   utm_source?: string,
+     *   utm_medium?: string,
+     *   utm_campaign?: string,
      * } $ctx
      */
     private static function do_activate( array $ctx ): array {
@@ -437,7 +490,7 @@ final class Cashback_Click_Session_Service {
             $promocode_id = isset($ctx['promocode_id']) && $ctx['promocode_id'] !== null
                 ? (int) $ctx['promocode_id']
                 : null;
-            self::log_click(array(
+            $log_data = array(
                 'click_id'           => $tap_click_id,
                 'click_session_id'   => $session_pk,
                 'client_request_id'  => $client_request_id,
@@ -453,7 +506,11 @@ final class Cashback_Click_Session_Service {
                 'spam_click'         => $spam_flag,
                 'referer'            => $referer,
                 'promocode_id'       => $promocode_id,
-            ));
+            );
+            $log_data['utm_source']   = (string) ( $ctx['utm_source'] ?? '' );
+            $log_data['utm_medium']   = (string) ( $ctx['utm_medium'] ?? '' );
+            $log_data['utm_campaign'] = (string) ( $ctx['utm_campaign'] ?? '' );
+            self::log_click($log_data);
 
             $wpdb->query('COMMIT');
         } catch (\Throwable $e) {
@@ -706,6 +763,20 @@ final class Cashback_Click_Session_Service {
             'created_at'         => $created_at,
         );
         $fmt = array( '%s', '%d', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s' );
+        if (isset($data['utm_source']) && (string) $data['utm_source'] !== '') {
+            $row['utm_source'] = sanitize_text_field((string) $data['utm_source']);
+            $fmt[]             = '%s';
+        }
+
+        if (isset($data['utm_medium']) && (string) $data['utm_medium'] !== '') {
+            $row['utm_medium'] = sanitize_text_field((string) $data['utm_medium']);
+            $fmt[]             = '%s';
+        }
+
+        if (isset($data['utm_campaign']) && (string) $data['utm_campaign'] !== '') {
+            $row['utm_campaign'] = sanitize_text_field((string) $data['utm_campaign']);
+            $fmt[]               = '%s';
+        }
 
         // promocode_id (v10) — опциональное поле, передаём только при наличии чтобы
         // INSERT не падал на старых БД до миграции v10.

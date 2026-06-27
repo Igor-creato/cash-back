@@ -1,0 +1,162 @@
+<?php
+
+declare(strict_types=1);
+
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\TestCase;
+
+#[Group('link-checker')]
+final class LinkCheckerServiceTest extends TestCase {
+
+    public static function setUpBeforeClass(): void {
+        if (!function_exists('get_permalink')) {
+            function get_permalink( int $post_id = 0 ): string {
+                return 'https://savelloclub.test/store/' . $post_id . '/';
+            }
+        }
+
+        require_once dirname(__DIR__, 3) . '/includes/class-cashback-shop-options.php';
+        require_once dirname(__DIR__, 3) . '/includes/shops/class-cashback-shop-tariff-sync.php';
+        require_once dirname(__DIR__, 3) . '/includes/shops/class-cashback-cashback-display-calculator.php';
+        require_once dirname(__DIR__, 3) . '/includes/link-checker/class-cashback-link-checker-url-validator.php';
+        require_once dirname(__DIR__, 3) . '/includes/link-checker/class-cashback-link-checker-service.php';
+    }
+
+    protected function setUp(): void {
+        global $wpdb;
+
+        $wpdb = new LinkCheckerServiceWpdbStub();
+
+        $GLOBALS['_cb_test_meta']                  = array();
+        $GLOBALS['_cb_test_link_checker_products'] = array();
+        $GLOBALS['_cb_test_link_checker_tariffs']  = array();
+        $GLOBALS['_cb_test_options']               = array(
+            'cashback_guest_display_rate' => '60',
+        );
+    }
+
+    public function test_check_returns_available_store_with_display_cashback(): void {
+        $this->seed_product(array(
+            'ID'             => 501,
+            'post_title'     => 'Ozon',
+            'post_status'    => 'publish',
+            'network_id'     => 7,
+            'offer_id'       => 'ozon-123',
+            'store_domain'   => 'https://www.ozon.ru',
+            'network_slug'   => 'admitad',
+            'network_name'   => 'Admitad',
+            'network_active' => 1,
+        ));
+        $GLOBALS['_cb_test_link_checker_tariffs'] = array(
+            array(
+                'tariff_id'    => 'base',
+                'tariff_type'  => 'percent',
+                'payment_size' => '10',
+                'currency'     => 'RUB',
+                'is_deleted'   => 0,
+            ),
+        );
+
+        $result = ( new Cashback_Link_Checker_Service() )->check('https://www.ozon.ru/product/123', 0);
+
+        self::assertSame('available', $result['status']);
+        self::assertTrue($result['cashback_available']);
+        self::assertTrue($result['activation_required']);
+        self::assertSame(501, $result['store']['product_id']);
+        self::assertSame('ozon.ru', $result['store']['domain']);
+        self::assertSame('admitad', $result['store']['network']);
+        self::assertSame('6%', $result['cashback']['value']);
+        self::assertStringContainsString('Кэшбэк доступен', $result['message']);
+    }
+
+    public function test_check_returns_not_available_for_unconnected_domain(): void {
+        $result = ( new Cashback_Link_Checker_Service() )->check('https://unknown-shop.example/item', 0);
+
+        self::assertSame('not_available', $result['status']);
+        self::assertFalse($result['cashback_available']);
+        self::assertFalse($result['activation_required']);
+        self::assertStringContainsString('не подключён', $result['message']);
+    }
+
+    public function test_check_returns_partner_no_commission_when_no_active_tariff(): void {
+        $this->seed_product(array(
+            'ID'             => 777,
+            'post_title'     => 'No Tariff',
+            'post_status'    => 'publish',
+            'network_id'     => 9,
+            'offer_id'       => 'no-rate',
+            'store_domain'   => 'shop.example',
+            'network_slug'   => 'advcake',
+            'network_name'   => 'AdvCake',
+            'network_active' => 1,
+        ));
+
+        $result = ( new Cashback_Link_Checker_Service() )->check('https://shop.example/product', 0);
+
+        self::assertSame('partner_no_commission', $result['status']);
+        self::assertFalse($result['cashback_available']);
+        self::assertFalse($result['activation_required']);
+        self::assertSame(777, $result['store']['product_id']);
+    }
+
+    public function test_check_returns_not_available_for_inactive_network(): void {
+        $this->seed_product(array(
+            'ID'             => 888,
+            'post_title'     => 'Paused Shop',
+            'post_status'    => 'publish',
+            'network_id'     => 10,
+            'offer_id'       => 'paused',
+            'store_domain'   => 'paused.example',
+            'network_slug'   => 'admitad',
+            'network_name'   => 'Admitad',
+            'network_active' => 0,
+        ));
+
+        $result = ( new Cashback_Link_Checker_Service() )->check('https://paused.example/item', 0);
+
+        self::assertSame('not_available', $result['status']);
+        self::assertFalse($result['cashback_available']);
+        self::assertStringContainsString('временно недоступен', $result['message']);
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     */
+    private function seed_product( array $row ): void {
+        $GLOBALS['_cb_test_link_checker_products'][] = $row;
+
+        $id = (int) $row['ID'];
+        $GLOBALS['_cb_test_meta'][ $id ] = array(
+            '_affiliate_network_id'     => (string) $row['network_id'],
+            '_offer_id'                 => (string) $row['offer_id'],
+            '_store_domain'             => (string) $row['store_domain'],
+            '_cashback_display_label'   => 'Кэшбэк',
+            '_cashback_campaign_status_raw' => (string) ( $row['status_raw'] ?? '' ),
+        );
+    }
+}
+
+final class LinkCheckerServiceWpdbStub {
+    public string $prefix   = 'wp_';
+    public string $posts    = 'wp_posts';
+    public string $postmeta = 'wp_postmeta';
+
+    public function prepare( string $query, mixed ...$args ): string {
+        return $query . ' -- ' . wp_json_encode($args);
+    }
+
+    public function get_results( string $query, string $output = ARRAY_A ): array {
+        unset($output);
+
+        if (str_contains($query, 'cashback_shop_tariffs')) {
+            return $GLOBALS['_cb_test_link_checker_tariffs'] ?? array();
+        }
+
+        return $GLOBALS['_cb_test_link_checker_products'] ?? array();
+    }
+
+    public function get_var( string $query ): mixed {
+        unset($query);
+        return null;
+    }
+}
