@@ -26,6 +26,27 @@ final class LinkCheckerActivationTest extends TestCase {
         self::assertMatchesRegularExpression('/\\$row\\[\\s*[\'"]utm_source[\'"]\\s*\\]/', $source);
     }
 
+    public function test_wc_product_clicks_do_not_reuse_link_checker_sessions(): void {
+        $source = (string) file_get_contents(dirname(__DIR__, 3) . '/includes/class-cashback-click-session-service.php');
+
+        self::assertMatchesRegularExpression(
+            '/\\$current_source\\s*=\\s*\\(string\\)\\s*\\(\\s*\\$ctx\\[\\s*[\'"]source[\'"]\\s*\\]\\s*\\?\\?\\s*[\'"][\'"]\\s*\\)/',
+            $source,
+            'WC/catalog clicks must be able to distinguish their source from link-checker direct-product sessions.'
+        );
+        self::assertMatchesRegularExpression(
+            '/\\$click_log_t\\s*=\\s*\\$wpdb->prefix\\s*\\.\\s*[\'"]cashback_click_log[\'"]/',
+            $source,
+            'The exclusion must inspect the click log table where link_checker source is persisted.'
+        );
+        self::assertStringContainsString("%s = 'wc_product'", $source);
+        self::assertStringContainsString('AND EXISTS (', $source);
+        self::assertStringContainsString('l.is_session_primary = 1', $source);
+        self::assertStringContainsString('l.utm_source = %s', $source);
+        self::assertStringContainsString('$click_log_t', $source);
+        self::assertStringContainsString("'link_checker'", $source);
+    }
+
     #[Group('direct-product-link')]
     public function test_direct_product_flow_uses_shared_tracking_api_without_hardcoded_sub_fallbacks(): void {
         $source = (string) file_get_contents(dirname(__DIR__, 3) . '/includes/services/class-cashback-internal-api-service.php');

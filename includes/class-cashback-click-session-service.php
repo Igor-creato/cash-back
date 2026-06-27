@@ -454,6 +454,8 @@ final class Cashback_Click_Session_Service {
 
         $spam_flag  = ( $rate_status === 'spam' || $force_spam ) ? 1 : 0;
         $sessions_t = $wpdb->prefix . 'cashback_click_sessions';
+        $click_log_t    = $wpdb->prefix . 'cashback_click_log';
+        $current_source = (string) ( $ctx['source'] ?? '' );
 
         // v11: dedup-key включает promocode_id, чтобы промо-клик не reuse-ил
         // товарную session (был баг — купонный goto_link терялся, в click_log
@@ -477,31 +479,57 @@ final class Cashback_Click_Session_Service {
                 if ($promocode_id_for_dedup === null) {
                     // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- FOR UPDATE inside TX (Group 8 pattern).
                     $existing = $wpdb->get_row($wpdb->prepare(
-                        "SELECT id, canonical_click_id, affiliate_url, tap_count
-                           FROM %i
-                          WHERE user_id = %d AND product_id = %d
-                            AND promocode_id IS NULL
-                            AND status = 'active' AND expires_at > UTC_TIMESTAMP()
-                          ORDER BY created_at DESC LIMIT 1
-                          FOR UPDATE",
-                        $sessions_t,
-                        $user_id,
-                        $product_id
-                    ), ARRAY_A);
-                } else {
-                    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- FOR UPDATE inside TX (Group 8 pattern).
-                    $existing = $wpdb->get_row($wpdb->prepare(
-                        "SELECT id, canonical_click_id, affiliate_url, tap_count
-                           FROM %i
-                          WHERE user_id = %d AND product_id = %d
-                            AND promocode_id = %d
-                            AND status = 'active' AND expires_at > UTC_TIMESTAMP()
-                          ORDER BY created_at DESC LIMIT 1
+                        "SELECT s.id, s.canonical_click_id, s.affiliate_url, s.tap_count
+                           FROM %i s
+                          WHERE s.user_id = %d AND s.product_id = %d
+                            AND s.promocode_id IS NULL
+                            AND s.status = 'active' AND s.expires_at > UTC_TIMESTAMP()
+                            AND NOT (
+                                %s = 'wc_product'
+                                AND EXISTS (
+                                    SELECT 1
+                                      FROM %i l
+                                     WHERE l.click_session_id = s.id
+                                       AND l.is_session_primary = 1
+                                       AND l.utm_source = %s
+                                )
+                            )
+                          ORDER BY s.created_at DESC LIMIT 1
                           FOR UPDATE",
                         $sessions_t,
                         $user_id,
                         $product_id,
-                        $promocode_id_for_dedup
+                        $current_source,
+                        $click_log_t,
+                        'link_checker'
+                    ), ARRAY_A);
+                } else {
+                    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- FOR UPDATE inside TX (Group 8 pattern).
+                    $existing = $wpdb->get_row($wpdb->prepare(
+                        "SELECT s.id, s.canonical_click_id, s.affiliate_url, s.tap_count
+                           FROM %i s
+                          WHERE s.user_id = %d AND s.product_id = %d
+                            AND s.promocode_id = %d
+                            AND s.status = 'active' AND s.expires_at > UTC_TIMESTAMP()
+                            AND NOT (
+                                %s = 'wc_product'
+                                AND EXISTS (
+                                    SELECT 1
+                                      FROM %i l
+                                     WHERE l.click_session_id = s.id
+                                       AND l.is_session_primary = 1
+                                       AND l.utm_source = %s
+                                )
+                            )
+                          ORDER BY s.created_at DESC LIMIT 1
+                          FOR UPDATE",
+                        $sessions_t,
+                        $user_id,
+                        $product_id,
+                        $promocode_id_for_dedup,
+                        $current_source,
+                        $click_log_t,
+                        'link_checker'
                     ), ARRAY_A);
                 }
             }
