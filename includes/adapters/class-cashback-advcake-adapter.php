@@ -1289,11 +1289,7 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             return $this->deeplink_error('advcake_auth_unavailable', $this->last_token_error);
         }
 
-        $query = array_merge(array(
-            'dl'   => $target_url,
-            'pass' => $token,
-        ), $tracking);
-        $url = 'https://cakelink.ru/link?' . http_build_query($query);
+        $url = $this->build_cakelink_request_url($target_url, $tracking, $token);
 
         $response = $this->http_get($url, array(), 30);
         if (is_wp_error($response)) {
@@ -1333,6 +1329,22 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             'url'       => $deeplink,
             'link_type' => 'cakelink',
         );
+    }
+
+    /**
+     * @param array<string,string> $tracking
+     */
+    private function build_cakelink_request_url( string $target_url, array $tracking, string $token ): string {
+        $query = array( 'dl' => $target_url );
+        foreach ($tracking as $key => $value) {
+            if ($value === '' || $key === 'dl' || $key === 'pass') {
+                continue;
+            }
+            $query[(string) $key] = (string) $value;
+        }
+        $query['pass'] = $token;
+
+        return add_query_arg($query, 'https://cakelink.ru/link');
     }
 
     /**

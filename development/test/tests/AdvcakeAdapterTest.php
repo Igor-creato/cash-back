@@ -235,6 +235,63 @@ XML;
     // URL composition
     // ------------------------------------------------------------------
 
+    public function test_cakelink_request_sends_subids_as_top_level_params_not_inside_dl(): void
+    {
+        $this->queue_responses(array(
+            $this->http_response(200, (string) wp_json_encode(array(
+                'success' => true,
+                'data'    => array(
+                    'url' => 'https://www.kolesa-darom.ru/?advcake_params=abc123',
+                ),
+            ))),
+        ));
+
+        $target_url = 'https://www.kolesa-darom.ru/product?id=123&utm_source=abc';
+        $adapter    = new Cashback_Advcake_Adapter();
+        $result     = $adapter->create_deeplink(
+            $this->default_credentials(),
+            $this->default_network_config(),
+            '2222',
+            $target_url,
+            array(
+                'sub1' => 'TEST_TOP_1782590258',
+                'sub2' => 'CLICK_TOP_7c83cd625efd',
+            ),
+            'https://go.redav.online/20fe219674c95fc1?erid=2VfnxxEEBKF&m=31',
+            true
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(1, $GLOBALS['_cb_test_http_calls']);
+
+        $request_url = (string) $GLOBALS['_cb_test_http_calls'][0]['url'];
+        $this->assertSame('cakelink.ru', wp_parse_url($request_url, PHP_URL_HOST));
+        $this->assertSame('/link', wp_parse_url($request_url, PHP_URL_PATH));
+
+        $query = (string) wp_parse_url($request_url, PHP_URL_QUERY);
+        parse_str($query, $params);
+
+        $this->assertSame($target_url, $params['dl']);
+        $this->assertSame('TEST_TOP_1782590258', $params['sub1']);
+        $this->assertSame('CLICK_TOP_7c83cd625efd', $params['sub2']);
+        $this->assertSame('REDACTED_ADVCAKE_TEST_KEY', $params['pass']);
+        $this->assertStringNotContainsString('sub1=', (string) $params['dl']);
+        $this->assertStringNotContainsString('sub2=', (string) $params['dl']);
+
+        $dl_pos   = strpos($query, 'dl=');
+        $sub1_pos = strpos($query, 'sub1=');
+        $sub2_pos = strpos($query, 'sub2=');
+        $pass_pos = strpos($query, 'pass=');
+
+        $this->assertIsInt($dl_pos);
+        $this->assertIsInt($sub1_pos);
+        $this->assertIsInt($sub2_pos);
+        $this->assertIsInt($pass_pos);
+        $this->assertLessThan($sub1_pos, $dl_pos);
+        $this->assertLessThan($sub2_pos, $sub1_pos);
+        $this->assertLessThan($pass_pos, $sub2_pos);
+    }
+
     public function test_cakelink_success_keeps_tracking_params_on_returned_url(): void
     {
         $this->queue_responses(array(
@@ -263,6 +320,113 @@ XML;
         $this->assertStringContainsString('advcake_params=abc123', $result['url']);
         $this->assertStringContainsString('sub1=0123456789abcdef0123456789abcdef', $result['url']);
         $this->assertStringContainsString('sub2=7f2c1763a0017fd3e98c822ba1296704', $result['url']);
+    }
+
+    public function test_cakelink_success_reads_nested_data_url(): void
+    {
+        $this->queue_responses(array(
+            $this->http_response(200, (string) wp_json_encode(array(
+                'success' => true,
+                'data'    => array(
+                    'url' => 'https://mnogomebeli.com/item/?advcake_params=nested',
+                ),
+            ))),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->create_deeplink(
+            $this->default_credentials(),
+            $this->default_network_config(),
+            '1111',
+            'https://mnogomebeli.com/item/',
+            array(
+                'sub1' => '0123456789abcdef0123456789abcdef',
+                'sub2' => '7f2c1763a0017fd3e98c822ba1296704',
+            ),
+            '',
+            true
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('cakelink', $result['link_type']);
+        $this->assertStringContainsString('advcake_params=nested', $result['url']);
+    }
+
+    public function test_cakelink_api_failure_returns_error_without_fallback(): void
+    {
+        $this->queue_responses(array(
+            $this->http_response(200, (string) wp_json_encode(array(
+                'success' => false,
+                'error'   => 'invalid_dl',
+            ))),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->create_deeplink(
+            $this->default_credentials(),
+            $this->default_network_config(),
+            '1111',
+            'https://mnogomebeli.com/item/',
+            array( 'sub1' => '0123456789abcdef0123456789abcdef' ),
+            '',
+            true
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('advcake_api_error', $result['reason_code']);
+        $this->assertSame('invalid_dl', $result['error']);
+    }
+
+    public function test_cakelink_empty_data_url_returns_error(): void
+    {
+        $this->queue_responses(array(
+            $this->http_response(200, (string) wp_json_encode(array(
+                'success' => true,
+                'data'    => array(
+                    'url' => '',
+                ),
+            ))),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->create_deeplink(
+            $this->default_credentials(),
+            $this->default_network_config(),
+            '1111',
+            'https://mnogomebeli.com/item/',
+            array( 'sub1' => '0123456789abcdef0123456789abcdef' ),
+            '',
+            true
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('advcake_empty_deeplink', $result['reason_code']);
+    }
+
+    public function test_cakelink_http_error_redacts_api_key_from_error(): void
+    {
+        $this->queue_responses(array(
+            $this->http_response(
+                500,
+                'failed url=https://cakelink.ru/link?pass=REDACTED_ADVCAKE_TEST_KEY&dl=x path=/export/webmaster/REDACTED_ADVCAKE_TEST_KEY'
+            ),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->create_deeplink(
+            $this->default_credentials(),
+            $this->default_network_config(),
+            '1111',
+            'https://mnogomebeli.com/item/',
+            array( 'sub1' => '0123456789abcdef0123456789abcdef' ),
+            '',
+            true
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('advcake_api_error', $result['reason_code']);
+        $this->assertStringNotContainsString('REDACTED_ADVCAKE_TEST_KEY', $result['error']);
+        $this->assertStringContainsString('[redacted]', $result['error']);
     }
 
     public function test_cakelink_not_in_allowlist_falls_back_to_stored_affiliate_url_with_tracking(): void
@@ -295,6 +459,41 @@ XML;
         $this->assertStringContainsString('m=31', $result['url']);
         $this->assertStringContainsString('sub1=0123456789abcdef0123456789abcdef', $result['url']);
         $this->assertStringContainsString('sub2=7f2c1763a0017fd3e98c822ba1296704', $result['url']);
+    }
+
+    public function test_cakelink_live_smoke_is_opt_in(): void
+    {
+        if (getenv('ADVCAKE_LIVE_TEST') !== '1') {
+            $this->markTestSkipped('Set ADVCAKE_LIVE_TEST=1 to run the live CakeLink smoke.');
+        }
+
+        $api_key = (string) getenv('ADVCAKE_API_KEY');
+        if ($api_key === '') {
+            $this->markTestSkipped('Set ADVCAKE_API_KEY to run the live CakeLink smoke.');
+        }
+
+        $target_url = (string) getenv('ADVCAKE_TEST_URL');
+        if ($target_url === '') {
+            $target_url = 'https://www.kolesa-darom.ru/';
+        }
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->create_deeplink(
+            array( 'api_key' => $api_key ),
+            $this->default_network_config(),
+            'live-smoke',
+            $target_url,
+            array(
+                'sub1' => 'TEST_TOP_' . time(),
+                'sub2' => 'CLICK_TOP_' . substr(hash('sha256', $target_url . microtime(true)), 0, 12),
+            ),
+            '',
+            true
+        );
+
+        $this->assertTrue($result['success'], (string) ( $result['error'] ?? $result['reason_code'] ?? 'CakeLink failed' ));
+        $this->assertSame('cakelink', $result['link_type']);
+        $this->assertNotEmpty($result['url']);
     }
 
     public function test_actions_url_substitutes_token_into_path(): void

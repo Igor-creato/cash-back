@@ -33,6 +33,7 @@ final class LinkCheckerServiceTest extends TestCase {
         $GLOBALS['_cb_test_options']               = array(
             'cashback_guest_display_rate' => '60',
         );
+        $GLOBALS['_cb_test_http_calls']             = array();
     }
 
     public function test_check_returns_available_store_with_display_cashback(): void {
@@ -76,6 +77,31 @@ final class LinkCheckerServiceTest extends TestCase {
         self::assertFalse($result['cashback_available']);
         self::assertFalse($result['activation_required']);
         self::assertStringContainsString('не подключён', $result['message']);
+    }
+
+    public function test_activate_does_not_call_cakelink_for_unconnected_domain(): void {
+        $result = ( new Cashback_Link_Checker_Service() )->activate(
+            'https://unknown-shop.example/item',
+            '550e8400e29b41d4a716446655440000',
+            0
+        );
+
+        self::assertIsArray($result);
+        self::assertFalse($result['cashback_available']);
+        self::assertSame('merchant_not_found', $result['reason_code']);
+        self::assertSame(array(), $GLOBALS['_cb_test_http_calls']);
+    }
+
+    public function test_activate_does_not_call_cakelink_for_invalid_url_scheme(): void {
+        $result = ( new Cashback_Link_Checker_Service() )->activate(
+            'javascript:alert(1)',
+            '550e8400e29b41d4a716446655440000',
+            0
+        );
+
+        self::assertInstanceOf(WP_Error::class, $result);
+        self::assertSame('invalid_url', $result->get_error_code());
+        self::assertSame(array(), $GLOBALS['_cb_test_http_calls']);
     }
 
     public function test_check_returns_partner_no_commission_when_no_active_tariff(): void {
