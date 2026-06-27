@@ -22,7 +22,6 @@ if (!defined('ABSPATH')) {
  *
  * @since 2.1.0
  */
-// phpcs:disable -- PHPCS auto-fixer misformats this legacy class' nested arrays and compact return arrays.
 class Cashback_Rate_Limiter {
 
     /**
@@ -38,7 +37,12 @@ class Cashback_Rate_Limiter {
     /**
      * Конфигурация тиров: [лимит, окно в секундах].
      */
-    private const TIERS = array( 'critical' => array( 5, 60 ), 'write' => array( 10, 60 ), 'read' => array( 30, 60 ), 'admin' => array( 60, 60 ) );
+    private const TIERS = array(
+        'critical' => array( 5, 60 ),
+        'write'    => array( 10, 60 ),
+        'read'     => array( 30, 60 ),
+        'admin'    => array( 60, 60 ),
+    );
 
     /**
      * Реестр AJAX-действий плагина → tier.
@@ -92,7 +96,7 @@ class Cashback_Rate_Limiter {
         'cashback_fraud_fingerprint'                => 'read',
         // Промокоды (v8): click-tracking при copy/goto. read tier 30/мин per-user
         // достаточно для UX (пользователь не делает >30 кликов/мин в норме).
-        'cashback_promocode_click' => 'read', 'cashback_price_assistant_read' => 'read', 'cashback_product_link_resolve' => 'read',
+        'cashback_promocode_click'                  => 'read',
 
         // --- Admin ---
         'update_payout_request'                     => 'admin',
@@ -150,7 +154,8 @@ class Cashback_Rate_Limiter {
         'get_network_params'                        => 'admin',
         'delete_network_param'                      => 'admin',
         'update_network_param'                      => 'admin',
-        'cashback_admin_save_notification_settings' => 'admin', 'fraud_save_bot_settings' => 'admin', 'cashback_price_assistant_write' => 'write',
+        'cashback_admin_save_notification_settings' => 'admin',
+        'fraud_save_bot_settings'                   => 'admin',
 
         // F-22-003 (Группа 12): referral entry-points. Не admin-AJAX, но проходят
         // через Cashback_Rate_Limiter::check() на handle_referral_visit и
@@ -221,17 +226,10 @@ class Cashback_Rate_Limiter {
             );
         }
 
-        $limit_config            = self::limit_config_for($action, $tier);
-        $limit                   = $limit_config[0];
-        $window                  = $limit_config[1];
-        $uses_grey_rate_penalty  = self::uses_grey_rate_penalty($action);
+        [$limit, $window] = self::TIERS[ $tier ];
 
-        // Для серых subject — урезаем лимит на critical/write.
-        if (
-            $uses_grey_rate_penalty
-            && in_array($tier, array( 'critical', 'write' ), true)
-            && self::is_grey_ip($user_id, $ip)
-        ) {
+        // Для серых subject — урезаем лимит на critical/write
+        if (in_array($tier, array( 'critical', 'write' ), true) && self::is_grey_ip($user_id, $ip)) {
             $limit = max(1, (int) floor($limit / 2));
         }
 
@@ -257,9 +255,7 @@ class Cashback_Rate_Limiter {
 
         if (! $result['allowed']) {
             // Записываем нарушение для grey scoring (per-user или per-IP — см. grey_subject).
-            if ($uses_grey_rate_penalty) {
-                self::record_violation($user_id, $ip, 'rate_limit');
-            }
+            self::record_violation($user_id, $ip, 'rate_limit');
 
             return array(
                 'allowed'     => false,
@@ -295,26 +291,6 @@ class Cashback_Rate_Limiter {
     private static function make_scope_key( string $tier, string $action, int $user_id, string $ip ): string {
         $subject = $user_id > 0 ? 'u:' . $user_id : 'ip:' . $ip;
         return sprintf('%s_%s', $tier[0], substr(sha1($action . '|' . $subject), 0, 40));
-    }
-
-    /**
-     * Get limit config for an action: [limit, window seconds].
-     *
-     * @return array{0:int, 1:int}
-     */
-    private static function limit_config_for( string $action, string $tier ): array {
-        if ($action === 'cashback_price_assistant_write') {
-            return array( 30, 60 );
-        }
-
-        return self::TIERS[ $tier ];
-    }
-
-    /**
-     * Whether rate-limit denials should contribute to grey scoring.
-     */
-    private static function uses_grey_rate_penalty( string $action ): bool {
-        return $action !== 'cashback_price_assistant_write';
     }
 
     /**
@@ -386,7 +362,12 @@ class Cashback_Rate_Limiter {
     /**
      * Баллы за типы нарушений.
      */
-    private const VIOLATION_SCORES = array( 'rate_limit' => 10, 'bot_ua' => 30, 'honeypot' => 40, 'timing' => 15 );
+    private const VIOLATION_SCORES = array(
+        'rate_limit' => 10,
+        'bot_ua'     => 30,
+        'honeypot'   => 40,
+        'timing'     => 15,
+    );
 
     /** Grey IP TTL в секундах (1 час, sliding). */
     private const GREY_TTL = 3600;
@@ -449,8 +430,6 @@ class Cashback_Rate_Limiter {
      * Transient ключ для grey score (по subject-токену).
      */
     private static function grey_key( string $subject ): string {
-
         return 'cb_grey_' . substr(md5($subject), 0, 12);
     }
 }
-// phpcs:enable

@@ -552,7 +552,6 @@ class CashbackPlugin {
         add_rewrite_endpoint('cashback-affiliate', EP_ROOT | EP_PAGES);
         add_rewrite_endpoint('cashback_lost_cashback', EP_ROOT | EP_PAGES);
         add_rewrite_endpoint('cashback-notifications', EP_ROOT | EP_PAGES);
-        add_rewrite_endpoint('price-assistant', EP_ROOT | EP_PAGES);
 
         // Сбрасываем переписывание URL
         flush_rewrite_rules();
@@ -1014,22 +1013,15 @@ class CashbackPlugin {
         $this->require_file('admin/class-cashback-shop-import-admin.php');
         $this->require_file('admin/class-cashback-shop-groups-admin.php');
 
-        // phpcs:disable Generic.Formatting.DisallowMultipleStatements,Squiz.ControlStructures.ControlSignature -- Scoped bootstrap area has pre-existing PHPCS false positives around adjacent one-line comments.
         // --- Click-session service (12i-2 ADR) — общий сервис для /activate и ?cashback_click= ---
         $this->require_file('includes/class-cashback-click-session-service.php');
-// --- REST API для браузерного расширения ---
+
+        // --- REST API для браузерного расширения ---
         $this->require_file('includes/class-cashback-rest-api.php');
-// --- Price Assistant WordPress proxy + consent metadata ---
-        $this->require_file('includes/services/class-price-assistant-proxy-client.php');
-$this->require_file('includes/rest/class-price-assistant-rest-controller.php');
-		$this->require_file('includes/rest/class-cashback-price-assistant-admin-rest-controller.php');
-$this->require_file('includes/class-price-assistant-account.php');
-$this->require_file('admin/class-cashback-price-assistant-admin.php');
-// --- Internal REST API для server-to-server price-monitor ---
+        // --- Internal REST API для server-to-server price-monitor ---
         $this->require_file('includes/services/class-internal-hmac-auth-service.php');
-$this->require_file('includes/services/class-cashback-internal-api-service.php');
-$this->require_file('includes/rest/class-cashback-internal-rest-controller.php');
-        // phpcs:enable Generic.Formatting.DisallowMultipleStatements,Squiz.ControlStructures.ControlSignature
+        $this->require_file('includes/services/class-cashback-internal-api-service.php');
+        $this->require_file('includes/rest/class-cashback-internal-rest-controller.php');
 
         // Шорткоды (доступны на фронтенде и в превью редактора)
         $this->require_file('includes/class-cashback-shortcodes.php');
@@ -1882,7 +1874,6 @@ $this->require_file('includes/rest/class-cashback-internal-rest-controller.php')
             Cashback_Balance_Reconciliation::init();
         }
 
-        // phpcs:disable Generic.Formatting.DisallowMultipleStatements,Squiz.ControlStructures.ControlSignature -- Scoped init area has pre-existing PHPCS false positives around adjacent bootstrap blocks.
         // --- E2E A1-1: ежечасная audit-trail сверка ledger ↔ audit_log ---
         if (class_exists('Cashback_Audit_Trail_Reconciliation')) {
             Cashback_Audit_Trail_Reconciliation::init();
@@ -1900,30 +1891,13 @@ $this->require_file('includes/rest/class-cashback-internal-rest-controller.php')
 
         // --- REST API для браузерного расширения ---
         if (class_exists('Cashback_REST_API')) {
-Cashback_REST_API::get_instance();
-}
-
-        if (class_exists('Cashback_Price_Assistant_REST_Controller')) {
-Cashback_Price_Assistant_REST_Controller::init();
-}
-
-        if (class_exists('Cashback_Price_Assistant_Admin_REST_Controller')) {
-Cashback_Price_Assistant_Admin_REST_Controller::init();
-}
-
-        if (class_exists('Cashback_Price_Assistant_Account')) {
-Cashback_Price_Assistant_Account::init();
-}
-
-        if (is_admin() && class_exists('Cashback_Price_Assistant_Admin')) {
-Cashback_Price_Assistant_Admin::init();
-}
+            Cashback_REST_API::get_instance();
+        }
 
         // --- Internal REST API для server-to-server price-monitor ---
         if (class_exists('Savello_Cashback_Internal_REST_Controller')) {
-Savello_Cashback_Internal_REST_Controller::init();
+            Savello_Cashback_Internal_REST_Controller::init();
         }
-        // phpcs:enable Generic.Formatting.DisallowMultipleStatements,Squiz.ControlStructures.ControlSignature
 
         // Шорткоды
         if (class_exists('Cashback_Shortcodes')) {

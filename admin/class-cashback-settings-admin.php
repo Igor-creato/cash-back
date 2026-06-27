@@ -95,56 +95,6 @@ class Cashback_Settings_Admin {
             )
         );
 
-        register_setting(
-            self::OPTION_GROUP,
-            Cashback_Price_Assistant_Proxy_Client::OPTION_ENABLED,
-            array(
-                'type'              => 'integer',
-                'default'           => 0,
-                'sanitize_callback' => array( 'Cashback_Price_Assistant_Proxy_Client', 'sanitize_enabled' ),
-            )
-        );
-        register_setting(
-            self::OPTION_GROUP,
-            Cashback_Price_Assistant_Proxy_Client::OPTION_BASE_URL,
-            array(
-                'type'              => 'string',
-                'default'           => '',
-                'sanitize_callback' => array( 'Cashback_Price_Assistant_Proxy_Client', 'sanitize_base_url' ),
-            )
-        );
-        register_setting(
-            self::OPTION_GROUP,
-            Cashback_Price_Assistant_Proxy_Client::OPTION_SITE_ID,
-            array(
-                'type'              => 'string',
-                'default'           => '',
-                'sanitize_callback' => array( 'Cashback_Price_Assistant_Proxy_Client', 'sanitize_site_id' ),
-            )
-        );
-        register_setting(
-            self::OPTION_GROUP,
-            Cashback_Price_Assistant_Proxy_Client::OPTION_HMAC_SECRET,
-            array(
-                'type'              => 'string',
-                'default'           => '',
-                'sanitize_callback' => array( 'Cashback_Price_Assistant_Proxy_Client', 'sanitize_hmac_secret' ),
-                'show_in_rest'      => false,
-            )
-        );
-        foreach (Cashback_Price_Assistant_REST_Controller::marketplaces() as $marketplace => $label) {
-            unset($label);
-            register_setting(
-                self::OPTION_GROUP,
-                Cashback_Price_Assistant_REST_Controller::marketplace_option_name($marketplace),
-                array(
-                    'type'              => 'integer',
-                    'default'           => 0,
-                    'sanitize_callback' => array( self::class, 'sanitize_bool_to_int' ),
-                )
-            );
-        }
-
         add_settings_section('cashback_settings_display', 'Отображение кэшбэка', '__return_false', self::PAGE_SLUG);
         add_settings_field(
             Cashback_Shop_Options::OPT_GUEST_DISPLAY_RATE,
@@ -184,43 +134,6 @@ class Cashback_Settings_Admin {
             array( self::class, 'render_field_registration' ),
             self::PAGE_SLUG,
             'cashback_settings_registration'
-        );
-
-        add_settings_section('cashback_settings_price_monitor', 'Price Assistant proxy', '__return_false', self::PAGE_SLUG);
-        add_settings_field(
-            Cashback_Price_Assistant_Proxy_Client::OPTION_ENABLED,
-            'Включить proxy',
-            array( self::class, 'render_field_price_monitor_enabled' ),
-            self::PAGE_SLUG,
-            'cashback_settings_price_monitor'
-        );
-        add_settings_field(
-            Cashback_Price_Assistant_Proxy_Client::OPTION_BASE_URL,
-            'FastAPI base URL',
-            array( self::class, 'render_field_price_monitor_base_url' ),
-            self::PAGE_SLUG,
-            'cashback_settings_price_monitor'
-        );
-        add_settings_field(
-            Cashback_Price_Assistant_Proxy_Client::OPTION_SITE_ID,
-            'Site ID',
-            array( self::class, 'render_field_price_monitor_site_id' ),
-            self::PAGE_SLUG,
-            'cashback_settings_price_monitor'
-        );
-        add_settings_field(
-            Cashback_Price_Assistant_Proxy_Client::OPTION_HMAC_SECRET,
-            'HMAC secret',
-            array( self::class, 'render_field_price_monitor_hmac_secret' ),
-            self::PAGE_SLUG,
-            'cashback_settings_price_monitor'
-        );
-        add_settings_field(
-            'price_monitor_marketplaces',
-            'Marketplace flags',
-            array( self::class, 'render_field_price_monitor_marketplaces' ),
-            self::PAGE_SLUG,
-            'cashback_settings_price_monitor'
         );
     }
 
@@ -333,49 +246,5 @@ class Cashback_Settings_Admin {
         echo '<p class="description">'
             . esc_html__('Эта же опция управляется стандартным WordPress-чекбоксом Settings → Общие → Членство → «Любой может зарегистрироваться». При выключении: /register/ показывает уведомление, social-логин для новых аккаунтов возвращает ошибку, уже зарегистрированные через соцсети входят как обычно.', 'cashback')
             . '</p>';
-    }
-
-    public static function render_field_price_monitor_enabled(): void {
-        $value = (int) get_option(Cashback_Price_Assistant_Proxy_Client::OPTION_ENABLED, 0);
-        echo '<label>';
-        echo '<input type="hidden" name="' . esc_attr(Cashback_Price_Assistant_Proxy_Client::OPTION_ENABLED) . '" value="0" />';
-        echo '<input type="checkbox" name="' . esc_attr(Cashback_Price_Assistant_Proxy_Client::OPTION_ENABLED) . '" value="1" ' . checked(1, $value, false) . ' /> ';
-        echo esc_html__('Включено — браузер обращается только к WordPress REST proxy, FastAPI URL и secret не отдаются клиенту.', 'cashback');
-        echo '</label>';
-    }
-
-    public static function render_field_price_monitor_base_url(): void {
-        $value = (string) get_option(Cashback_Price_Assistant_Proxy_Client::OPTION_BASE_URL, '');
-        echo '<input type="url" class="regular-text" name="'
-            . esc_attr(Cashback_Price_Assistant_Proxy_Client::OPTION_BASE_URL)
-            . '" value="' . esc_attr($value) . '" placeholder="https://price-monitor.example" />';
-    }
-
-    public static function render_field_price_monitor_site_id(): void {
-        $value = (string) get_option(Cashback_Price_Assistant_Proxy_Client::OPTION_SITE_ID, '');
-        echo '<input type="text" class="regular-text" name="'
-            . esc_attr(Cashback_Price_Assistant_Proxy_Client::OPTION_SITE_ID)
-            . '" value="' . esc_attr($value) . '" placeholder="savelloclub.ru" />';
-    }
-
-    public static function render_field_price_monitor_hmac_secret(): void {
-        echo '<input type="password" class="regular-text" name="'
-            . esc_attr(Cashback_Price_Assistant_Proxy_Client::OPTION_HMAC_SECRET)
-            . '" value="" autocomplete="new-password" />';
-        echo '<p class="description">'
-            . esc_html__('Оставьте пустым, чтобы сохранить текущий secret. Значение не выводится обратно в HTML.', 'cashback')
-            . '</p>';
-    }
-
-    public static function render_field_price_monitor_marketplaces(): void {
-        foreach (Cashback_Price_Assistant_REST_Controller::marketplaces() as $marketplace => $label) {
-            $option = Cashback_Price_Assistant_REST_Controller::marketplace_option_name($marketplace);
-            $value  = (int) get_option($option, 0);
-            echo '<label style="display:block;margin:4px 0;">';
-            echo '<input type="hidden" name="' . esc_attr($option) . '" value="0" />';
-            echo '<input type="checkbox" name="' . esc_attr($option) . '" value="1" ' . checked(1, $value, false) . ' /> ';
-            echo esc_html($label);
-            echo '</label>';
-        }
     }
 }

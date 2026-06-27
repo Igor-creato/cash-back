@@ -246,18 +246,44 @@ class Cashback_REST_API {
         // POST — т.к. эндпоинт создаёт записи в click_log (побочный эффект).
         // GET для state-changing операций уязвим к CSRF через <img>, prefetch и т.д.
         register_rest_route(self::NAMESPACE, '/activate', array(
-			'methods'             => 'POST', 'callback'            => array( $this, 'activate_cashback' ), 'permission_callback' => array( $this, 'check_user_logged_in' ), 'args'                => array(
-'product_id'        => array( 'type'              => 'integer', 'required'          => true, 'minimum'           => 1, 'sanitize_callback' => 'absint' ),
+            'methods'             => 'POST',
+            'callback'            => array( $this, 'activate_cashback' ),
+            'permission_callback' => array( $this, 'check_user_logged_in' ),
+            'args'                => array(
+                'product_id'        => array(
+                    'type'              => 'integer',
+                    'required'          => true,
+                    'minimum'           => 1,
+                    'sanitize_callback' => 'absint',
+                ),
                 // 12i-2 ADR (F-10-001): клиент передаёт UUID v4/v7 для идемпотентности
                 // ретраев. Пустое значение допустимо — сервер сгенерирует fallback.
                 'client_request_id' => array(
-                    'type'              => 'string', 'required'          => false, 'sanitize_callback' => 'sanitize_text_field',
-),
-),
-		));
-register_rest_route(self::NAMESPACE, '/product-link/resolve', array( 'methods'             => 'POST', 'callback'            => array( $this, 'resolve_product_link' ), 'permission_callback' => array( $this, 'check_product_link_permission' ), 'args'                => array( 'direct_url' => array( 'type'              => 'string', 'required'          => true, 'sanitize_callback' => 'esc_url_raw' ) ) ));
-// Статус активации для домена или по click_id.
-        register_rest_route(self::NAMESPACE, '/session-status', array( 'methods'             => 'GET', 'callback'            => array( $this, 'get_session_status' ), 'permission_callback' => array( $this, 'check_user_logged_in' ), 'args'                => array( 'domain'   => array( 'type'              => 'string', 'required'          => false, 'sanitize_callback' => 'sanitize_text_field' ), 'click_id' => array( 'type'              => 'string', 'required'          => false, 'sanitize_callback' => 'sanitize_text_field' ) ) ));
+                    'type'              => 'string',
+                    'required'          => false,
+                    'sanitize_callback' => 'sanitize_text_field',
+                ),
+            ),
+        ));
+
+        // Статус активации для домена или по click_id
+        register_rest_route(self::NAMESPACE, '/session-status', array(
+            'methods'             => 'GET',
+            'callback'            => array( $this, 'get_session_status' ),
+            'permission_callback' => array( $this, 'check_user_logged_in' ),
+            'args'                => array(
+                'domain'   => array(
+                    'type'              => 'string',
+                    'required'          => false,
+                    'sanitize_callback' => 'sanitize_text_field',
+                ),
+                'click_id' => array(
+                    'type'              => 'string',
+                    'required'          => false,
+                    'sanitize_callback' => 'sanitize_text_field',
+                ),
+            ),
+        ));
     }
 
     /**
@@ -349,14 +375,6 @@ register_rest_route(self::NAMESPACE, '/product-link/resolve', array( 'methods'  
      */
     public function check_user_logged_in(): bool {
         return is_user_logged_in();
-}
-
-    private function client_ip_for_product_link(): string {
-        if (class_exists('Cashback_Encryption') && method_exists('Cashback_Encryption', 'get_client_ip')) {
-return Cashback_Encryption::get_client_ip();
-}
-        $remote_addr = filter_input(INPUT_SERVER, 'REMOTE_ADDR', FILTER_VALIDATE_IP);
-return is_string($remote_addr) ? $remote_addr : '0.0.0.0';
     }
 
     /**
@@ -716,58 +734,8 @@ return is_string($remote_addr) ? $remote_addr : '0.0.0.0';
 
         // 12i-2 ADR (F-10-001): store_result для retry-replay в течение TTL.
         Cashback_Idempotency::store_result($idem_scope, $user_id, $client_request_id, $response_payload);
-return new \WP_REST_Response($response_payload, 200);
-}
 
-    public function check_product_link_permission( \WP_REST_Request $request ) {
-        $nonce = trim($request->get_header('X-WP-Nonce'));
-if ($nonce === '') {
-$nonce = trim((string) $request->get_param('_wpnonce'));
-}
-        if ($nonce === '' || !wp_verify_nonce($nonce, 'wp_rest')) {
-return new \WP_Error('cashback_product_link_nonce_required', 'REST nonce is required.', array( 'status' => 403 ));
-}
-
-        if (class_exists('Cashback_Rate_Limiter')) {
-$limit = Cashback_Rate_Limiter::check(
-                'cashback_product_link_resolve', (int) get_current_user_id(), $this->client_ip_for_product_link()
-            );
-if (empty($limit['allowed'])) {
-return new \WP_Error(
-                    'cashback_product_link_rate_limited', 'Too many requests.', array( 'status'      => 429, 'retry_after' => (int) ( $limit['retry_after'] ?? 60 ) )
-                );
-}
-        }
-
-        return true;
-}
-
-    public function resolve_product_link( \WP_REST_Request $request ): \WP_REST_Response {
-        if (!class_exists('Savello_Cashback_Internal_API_Service')) {
-$path = __DIR__ . '/services/class-cashback-internal-api-service.php';
-if (file_exists($path)) {
-require_once $path;
-}
-        }
-        if (!class_exists('Cashback_Click_Session_Service')) {
-$path = __DIR__ . '/class-cashback-click-session-service.php';
-if (file_exists($path)) {
-require_once $path;
-}
-        }
-
-        if (!class_exists('Savello_Cashback_Internal_API_Service')) {
-return new \WP_REST_Response(array( 'code'    => 'cashback_product_link_unavailable', 'message' => 'Не удалось проверить кэшбэк. Попробуйте позже.' ), 503);
-}
-
-        $service = new Savello_Cashback_Internal_API_Service();
-$result  = $service->resolve_direct_product_link(array( 'direct_url' => (string) $request->get_param('direct_url'), 'source'     => 'user', 'user_id'    => (int) get_current_user_id(), 'ip_address' => $this->client_ip_for_product_link(), 'user_agent' => sanitize_text_field($request->get_header('user_agent')) ));
-if (is_wp_error($result)) {
-$data = $result->get_error_data();
-return new \WP_REST_Response(array( 'code'    => $result->get_error_code(), 'message' => $result->get_error_message() ), is_array($data) ? (int) ( $data['status'] ?? 400 ) : 400);
-}
-
-        return new \WP_REST_Response($result, 200);
+        return new \WP_REST_Response($response_payload, 200);
     }
 
     /**

@@ -59,11 +59,6 @@ final class Savello_Cashback_Internal_API_Service {
     }
 
     public function resolve_product_cashback( array $payload ) {
-        if (!empty($payload['generate_link'])) {
-            $payload['direct_url'] = $payload['direct_url'] ?? ( $payload['url'] ?? '' );
-            return $this->resolve_direct_product_link($payload);
-        }
-
         $url      = $this->sanitize_url((string) ( $payload['url'] ?? '' ));
         $price    = $payload['price'] ?? null;
         $currency = strtoupper(sanitize_text_field((string) ( $payload['currency'] ?? 'RUB' )));
@@ -179,88 +174,6 @@ final class Savello_Cashback_Internal_API_Service {
         );
     }
 
-    public function resolve_direct_product_link( array $payload ) {
-        $direct_url = $this->sanitize_url((string) ( $payload['direct_url'] ?? $payload['url'] ?? $payload['target_url'] ?? '' ));
-        if ($direct_url === '') {
-            return $this->bad_request('Invalid direct_url.');
-        }
-
-        $merchant = $this->find_merchant_by_url($direct_url, true);
-        if ($merchant === null) {
-            return $this->direct_link_fallback($direct_url, 'merchant_not_found');
-        }
-        if (($merchant['status'] ?? '') !== 'active') {
-            return $this->direct_link_fallback($direct_url, 'merchant_inactive', $merchant);
-        }
-        if (empty($merchant['cashback_available'])) {
-            return $this->direct_link_fallback($direct_url, 'cashback_disabled', $merchant);
-        }
-        if (empty($merchant['supports_deeplink'])) {
-            return $this->direct_link_fallback($direct_url, 'deeplink_not_supported', $merchant);
-        }
-
-        $user_id  = isset($payload['user_id']) ? (int) $payload['user_id'] : ( function_exists('get_current_user_id') ? (int) get_current_user_id() : 0 );
-        $click_id = $this->sanitize_click_id((string) ( $payload['click_id'] ?? $payload['subid'] ?? '' ));
-        if ($click_id === '') {
-            $click_id = $this->new_click_id();
-        }
-
-        $tracking = $this->tracking_params_for_merchant($merchant, $user_id, $click_id);
-        if ($tracking === array()) {
-            return $this->direct_link_fallback($direct_url, 'tracking_unavailable', $merchant);
-        }
-
-        $deeplink = $this->create_network_deeplink($merchant, $direct_url, $tracking, !empty($payload['validate_links']));
-        if (empty($deeplink['success']) || empty($deeplink['url']) || !is_string($deeplink['url'])) {
-            return $this->direct_link_fallback(
-                $direct_url,
-                (string) ( $deeplink['reason_code'] ?? 'deeplink_unavailable' ),
-                $merchant
-            );
-        }
-
-        if (!class_exists('Cashback_Click_Session_Service')) {
-            return $this->direct_link_fallback($direct_url, 'click_session_unavailable', $merchant);
-        }
-
-        $session = Cashback_Click_Session_Service::activate_for_direct_url(array(
-            'product_id'          => (int) $merchant['merchant_id'],
-            'network_id'          => (int) $merchant['_network_id'],
-            'direct_url'          => $direct_url,
-            'affiliate_url'       => (string) $deeplink['url'],
-            'canonical_click_id'  => $click_id,
-            'user_id'             => $user_id,
-            'ip_address'          => $this->client_ip($payload),
-            'user_agent'          => isset($payload['user_agent']) ? sanitize_text_field((string) $payload['user_agent']) : null,
-            'referer'             => $direct_url,
-            'client_request_id'   => $this->sanitize_click_id((string) ( $payload['client_request_id'] ?? '' )) ?: null,
-        ));
-
-        if (($session['status'] ?? '') !== 'ok') {
-            return $this->direct_link_fallback($direct_url, 'click_session_' . (string) ( $session['status'] ?? 'error' ), $merchant);
-        }
-
-        $payload = array(
-            'cashback_available' => true,
-            'button_text'        => 'Активировать кэшбэк',
-            'url'                => (string) $session['affiliate_url'],
-            'cashback_url'       => (string) $session['affiliate_url'],
-            'merchant'           => (string) $merchant['merchant_name'],
-            'merchant_id'        => (string) $merchant['merchant_id'],
-            'cashback_rate'      => $this->cashback_rate_label($merchant, $user_id),
-            'click_id'           => (string) $session['canonical_click_id'],
-            'network'            => (string) $merchant['network'],
-            'link_type'          => (string) ( $deeplink['link_type'] ?? 'deeplink' ),
-        );
-
-        $activation_page_url = $this->activation_page_url((string) $session['canonical_click_id'], $user_id);
-        if ($activation_page_url !== null) {
-            $payload['activation_page_url'] = $activation_page_url;
-        }
-
-        return $payload;
-    }
-
     public function get_user_price_monitor_limits( string $external_user_id ) {
         $external_user_id = sanitize_text_field($external_user_id);
         if (! preg_match('/^wp:[A-Za-z0-9_.:-]+:(\d+)$/', $external_user_id, $m)) {
@@ -327,14 +240,13 @@ final class Savello_Cashback_Internal_API_Service {
         return null;
     }
 
-    private function find_merchant_by_url( string $url, bool $include_inactive = false ): ?array {
+    private function find_merchant_by_url( string $url ): ?array {
         $host = $this->normalize_domain((string) wp_parse_url($url, PHP_URL_HOST));
         if ($host === '') {
             return null;
         }
 
-        $status = $include_inactive ? 'all' : 'active';
-        foreach ($this->get_merchants(array( 'status' => $status, 'limit' => 500 ))['items'] as $merchant) {
+        foreach ($this->get_merchants(array( 'status' => 'active', 'limit' => 500 ))['items'] as $merchant) {
             foreach ($merchant['domains'] as $domain) {
                 if ($host === $domain || str_ends_with($host, '.' . $domain)) {
                     return $merchant;
@@ -359,13 +271,9 @@ final class Savello_Cashback_Internal_API_Service {
                     pm_currency.meta_value AS currency,
                     pm_status.meta_value AS status_raw,
                     pm_url.meta_value AS product_url,
-                    pm_enabled.meta_value AS cashback_enabled,
                     n.name AS network_name,
                     n.slug AS network_slug,
-                    n.is_active AS network_active,
-                    n.api_base_url AS api_base_url,
-                    n.api_token_endpoint AS api_token_endpoint,
-                    n.api_website_id AS api_website_id
+                    n.is_active AS network_active
                FROM %i p
           LEFT JOIN %i pm_net ON p.ID = pm_net.post_id AND pm_net.meta_key = %s
           LEFT JOIN %i pm_offer ON p.ID = pm_offer.post_id AND pm_offer.meta_key = %s
@@ -373,7 +281,6 @@ final class Savello_Cashback_Internal_API_Service {
           LEFT JOIN %i pm_currency ON p.ID = pm_currency.post_id AND pm_currency.meta_key = %s
           LEFT JOIN %i pm_status ON p.ID = pm_status.post_id AND pm_status.meta_key = %s
           LEFT JOIN %i pm_url ON p.ID = pm_url.post_id AND pm_url.meta_key = %s
-          LEFT JOIN %i pm_enabled ON p.ID = pm_enabled.post_id AND pm_enabled.meta_key = %s
           LEFT JOIN %i n ON n.id = pm_net.meta_value
               WHERE p.post_type = %s
                 AND pm_net.meta_value IS NOT NULL
@@ -392,8 +299,6 @@ final class Savello_Cashback_Internal_API_Service {
             '_cashback_campaign_status_raw',
             $wpdb->postmeta,
             '_product_url',
-            $wpdb->postmeta,
-            '_cashback_enabled',
             $networks_table,
             'product'
         );
@@ -415,9 +320,7 @@ final class Savello_Cashback_Internal_API_Service {
         $network_active = (int) ( $row['network_active'] ?? 1 ) === 1;
         $status_raw     = strtolower((string) ( $row['status_raw'] ?? '' ));
         $post_status    = (string) ( $row['post_status'] ?? '' );
-        $network_slug           = (string) ( $row['network_slug'] ?? '' );
-        $canonical_network_slug = $this->canonical_network_slug($network_slug);
-        $status                 = 'active';
+        $status         = 'active';
         if (! $network_active || ! in_array($post_status, array( 'publish', 'draft' ), true)) {
             $status = 'disabled';
         } elseif (in_array($status_raw, array( 'paused', 'suspend', 'suspended', 'disabled', 'declined' ), true) || $post_status !== 'publish') {
@@ -429,15 +332,10 @@ final class Savello_Cashback_Internal_API_Service {
             $currency = 'RUB';
         }
 
-        $product_url       = (string) ( $row['product_url'] ?? '' );
-        $cashback_enabled  = $this->truthy($row['cashback_enabled'] ?? 1);
-        $supports_deeplink = in_array($canonical_network_slug, array( 'admitad', 'advcake' ), true)
-            && ( $canonical_network_slug === 'admitad' || $product_url !== '' );
-
         return array(
             'merchant_id'           => (string) $product_id,
             'merchant_name'         => (string) ( $row['post_title'] ?? ( $row['network_name'] ?? $domain ) ),
-            'network'               => $network_slug,
+            'network'               => (string) ( $row['network_slug'] ?? '' ),
             'offer_id'              => $offer_id,
             'program_id'            => $offer_id,
             'status'                => $status,
@@ -445,15 +343,12 @@ final class Savello_Cashback_Internal_API_Service {
             'domain_aliases'        => array_values(array_unique(array( 'www.' . $domain ))),
             'allowed_regions'       => array(),
             'default_currency'      => $currency,
-            'supports_deeplink'     => $supports_deeplink,
+            'supports_deeplink'     => (string) ( $row['product_url'] ?? '' ) !== '',
             'supports_product_feed' => false,
-            'cashback_available'    => $status === 'active' && $cashback_enabled,
+            'cashback_available'    => $status === 'active',
             'updated_at'            => $this->mysql_to_iso((string) ( $row['updated_at'] ?? '' )),
             '_network_id'           => $network_id,
-            '_product_url'          => $product_url,
-            '_api_base_url'         => (string) ( $row['api_base_url'] ?? '' ),
-            '_api_token_endpoint'   => (string) ( $row['api_token_endpoint'] ?? '' ),
-            '_api_website_id'       => (string) ( $row['api_website_id'] ?? '' ),
+            '_product_url'          => (string) ( $row['product_url'] ?? '' ),
         );
     }
 
@@ -515,23 +410,6 @@ final class Savello_Cashback_Internal_API_Service {
             }
         }
         return $rates[0] ?? null;
-    }
-
-    private function activation_page_url( string $click_id, int $user_id ): ?string {
-        if (strlen($click_id) !== 32 || !ctype_xdigit($click_id)) {
-            return null;
-        }
-
-        $query = array(
-            'cashback_go' => '1',
-            'click_id'    => $click_id,
-        );
-
-        if ($user_id > 0 && class_exists('Cashback_Encryption') && method_exists('Cashback_Encryption', 'sign_activation_token')) {
-            $query['t'] = Cashback_Encryption::sign_activation_token($click_id, $user_id, time());
-        }
-
-        return add_query_arg($query, home_url('/'));
     }
 
     private function load_user_profile( int $user_id ): ?array {
@@ -627,267 +505,5 @@ final class Savello_Cashback_Internal_API_Service {
 
     private function merchant_not_found(): WP_Error {
         return new WP_Error('savello_internal_merchant_not_found', 'Merchant not found.', array( 'status' => 404 ));
-    }
-
-    private function direct_link_fallback( string $direct_url, string $reason_code, ?array $merchant = null ): array {
-        $payload = array(
-            'cashback_available' => false,
-            'button_text'        => 'Перейти в магазин',
-            'url'                => $direct_url,
-            'warning'            => 'Кэшбэк не начисляется по этому товару',
-            'reason_code'        => $reason_code,
-        );
-        if ($merchant !== null) {
-            $payload['merchant']    = (string) $merchant['merchant_name'];
-            $payload['merchant_id'] = (string) $merchant['merchant_id'];
-            $payload['network']     = (string) $merchant['network'];
-        }
-        return $payload;
-    }
-
-    /**
-     * @return array<string,string>
-     */
-    private function tracking_params_for_merchant( array $merchant, int $user_id, string $click_id ): array {
-        if (!class_exists('Cashback_Click_Session_Service')) {
-            return array();
-        }
-
-        $params = Cashback_Click_Session_Service::build_affiliate_tracking_params(
-            (int) $merchant['_network_id'],
-            (int) $merchant['merchant_id'],
-            $user_id,
-            $click_id
-        );
-
-        $network = $this->canonical_network_slug((string) $merchant['network']);
-
-        if ($network === 'admitad') {
-            $has_subid = false;
-            foreach ($params as $key => $value) {
-                if (preg_match('/^subid\d?$/', $key) && $value !== '') {
-                    $has_subid = true;
-                    break;
-                }
-            }
-            if (!$has_subid) {
-                $params['subid'] = $click_id;
-            }
-        }
-
-        if ($network === 'advcake' && empty($params['sub1'])) {
-            $params['sub1'] = $click_id;
-        }
-
-        return $params;
-    }
-
-    /**
-     * @param array<string,string> $tracking
-     * @return array{success:bool,url?:string,link_type?:string,reason_code?:string,error?:string}
-     */
-    private function create_network_deeplink( array $merchant, string $direct_url, array $tracking, bool $validate_links ): array {
-        $network = $this->canonical_network_slug((string) $merchant['network']);
-        $config  = $this->network_config_for_merchant($merchant);
-
-        if ($network === 'admitad') {
-            if (!$this->ensure_adapter_loaded('admitad') || !class_exists('Cashback_Admitad_Adapter')) {
-                return array( 'success' => false, 'reason_code' => 'admitad_adapter_missing' );
-            }
-            $config['validate_links'] = $validate_links;
-            $result = (new Cashback_Admitad_Adapter())->create_deeplink(
-                is_array($config['credentials'] ?? null) ? $config['credentials'] : array(),
-                $config,
-                (string) $merchant['offer_id'],
-                $direct_url,
-                $tracking
-            );
-
-            if (!$this->is_admitad_generator_scope_error($result)) {
-                return $result;
-            }
-
-            return $this->create_admitad_stored_deeplink($merchant, $direct_url, $tracking);
-        }
-
-        if ($network === 'advcake') {
-            if (!$this->ensure_adapter_loaded('advcake') || !class_exists('Cashback_Advcake_Adapter')) {
-                return array( 'success' => false, 'reason_code' => 'advcake_adapter_missing' );
-            }
-            return (new Cashback_Advcake_Adapter())->create_deeplink(
-                is_array($config['credentials'] ?? null) ? $config['credentials'] : array(),
-                $config,
-                (string) $merchant['offer_id'],
-                $direct_url,
-                $tracking,
-                (string) $merchant['_product_url'],
-                true
-            );
-        }
-
-        return array( 'success' => false, 'reason_code' => 'network_not_supported' );
-    }
-
-    /**
-     * @param array<string,mixed> $result
-     */
-    private function is_admitad_generator_scope_error( array $result ): bool {
-        if ((string) ( $result['reason_code'] ?? '' ) !== 'admitad_api_error') {
-            return false;
-        }
-
-        $error = strtolower((string) ( $result['error'] ?? '' ));
-        return str_contains($error, 'insufficient_scope') && str_contains($error, 'deeplink_generator');
-    }
-
-    /**
-     * Build a product-level Admitad URL from the stored campaign affiliate link
-     * when the API credentials are connected but lack the deeplink_generator scope.
-     *
-     * @param array<string,mixed> $merchant
-     * @param array<string,string> $tracking
-     * @return array{success:bool,url?:string,link_type?:string,reason_code?:string}
-     */
-    private function create_admitad_stored_deeplink( array $merchant, string $direct_url, array $tracking ): array {
-        $affiliate_url = $this->sanitize_url((string) ( $merchant['_product_url'] ?? '' ));
-        if ($affiliate_url === '') {
-            return array( 'success' => false, 'reason_code' => 'admitad_stored_affiliate_url_missing' );
-        }
-
-        $affiliate_host = $this->normalize_domain((string) wp_parse_url($affiliate_url, PHP_URL_HOST));
-        $direct_host    = $this->normalize_domain((string) wp_parse_url($direct_url, PHP_URL_HOST));
-        if ($affiliate_host === '' || $affiliate_host === $direct_host) {
-            return array( 'success' => false, 'reason_code' => 'admitad_stored_affiliate_url_missing' );
-        }
-
-        $query = array( 'ulp' => $direct_url );
-        foreach ($tracking as $key => $value) {
-            if (!preg_match('/^subid\d?$/', (string) $key) || $value === '') {
-                continue;
-            }
-            $query[ (string) $key ] = (string) $value;
-        }
-
-        $url = $this->sanitize_url(add_query_arg($query, $affiliate_url));
-        if ($url === '') {
-            return array( 'success' => false, 'reason_code' => 'admitad_stored_affiliate_url_invalid' );
-        }
-
-        return array(
-            'success'   => true,
-            'url'       => $url,
-            'link_type' => 'deeplink',
-        );
-    }
-
-    private function network_config_for_merchant( array $merchant ): array {
-        $network_slug           = (string) $merchant['network'];
-        $canonical_network_slug = $this->canonical_network_slug($network_slug);
-        $config = array(
-            'id'                 => (int) $merchant['_network_id'],
-            'slug'               => $network_slug,
-            'api_base_url'       => (string) ( $merchant['_api_base_url'] ?? '' ),
-            'api_token_endpoint' => (string) ( $merchant['_api_token_endpoint'] ?? '' ),
-            'api_website_id'     => (string) ( $merchant['_api_website_id'] ?? '' ),
-        );
-
-        if (class_exists('Cashback_API_Client')) {
-            try {
-                $loaded = Cashback_API_Client::get_instance()->get_network_config($network_slug);
-                if (!is_array($loaded) && $canonical_network_slug !== $network_slug) {
-                    $loaded = Cashback_API_Client::get_instance()->get_network_config($canonical_network_slug);
-                }
-                if (is_array($loaded)) {
-                    $config = array_merge($config, $loaded);
-                }
-            } catch (\Throwable $e) {
-                unset($e);
-            }
-        }
-
-        return $config;
-    }
-
-    private function ensure_adapter_loaded( string $network ): bool {
-        $root = dirname(__DIR__, 2);
-        foreach (array(
-            '/includes/class-cashback-outbound-http-guard.php',
-            '/includes/oauth/class-oauth2-client-credentials-helper.php',
-            '/includes/adapters/interface-cashback-network-adapter.php',
-            '/includes/adapters/abstract-cashback-network-adapter.php',
-        ) as $relative) {
-            $path = $root . $relative;
-            if (file_exists($path)) {
-                require_once $path;
-            }
-        }
-
-        $adapter = $network === 'admitad'
-            ? '/includes/adapters/class-admitad-adapter.php'
-            : '/includes/adapters/class-cashback-advcake-adapter.php';
-        $path = $root . $adapter;
-        if (file_exists($path)) {
-            require_once $path;
-        }
-
-        return $network === 'admitad' ? class_exists('Cashback_Admitad_Adapter') : class_exists('Cashback_Advcake_Adapter');
-    }
-
-    private function canonical_network_slug( string $network ): string {
-        $network = strtolower(trim($network));
-
-        return match ($network) {
-            'adm' => 'admitad',
-            'adv', 'advcake.ru' => 'advcake',
-            default => $network,
-        };
-    }
-
-    private function cashback_rate_label( array $merchant, int $user_id = 0 ): ?string {
-        if (!class_exists('Cashback_Cashback_Display_Calculator')) {
-            $path = dirname(__DIR__) . '/shops/class-cashback-cashback-display-calculator.php';
-            if (file_exists($path)) {
-                require_once $path;
-            }
-        }
-
-        if (!class_exists('Cashback_Cashback_Display_Calculator')) {
-            return null;
-        }
-
-        $product_id = (int) $merchant['merchant_id'];
-        $display    = Cashback_Cashback_Display_Calculator::compute($product_id, $user_id > 0 ? $user_id : 0);
-        if (! empty($display['formatted'])) {
-            return (string) $display['formatted'];
-        }
-
-        $legacy = (string) get_post_meta($product_id, '_cashback_display_value', true);
-        $legacy = trim($legacy);
-
-        return $legacy !== '' ? $legacy : null;
-    }
-
-    private function sanitize_click_id( string $value ): string {
-        $value = sanitize_text_field($value);
-        return preg_match('/^[A-Za-z0-9_-]{1,128}$/', $value) ? $value : '';
-    }
-
-    private function client_ip( array $payload ): string {
-        if (!empty($payload['ip_address']) && is_scalar($payload['ip_address'])) {
-            return sanitize_text_field((string) $payload['ip_address']);
-        }
-        if (class_exists('Cashback_Encryption') && method_exists('Cashback_Encryption', 'get_client_ip')) {
-            return Cashback_Encryption::get_client_ip();
-        }
-        $remote_addr = filter_input(INPUT_SERVER, 'REMOTE_ADDR', FILTER_VALIDATE_IP);
-        return is_string($remote_addr) ? $remote_addr : '0.0.0.0';
-    }
-
-    private function truthy( mixed $value ): bool {
-        if (is_bool($value)) {
-            return $value;
-        }
-        $value = strtolower(trim((string) $value));
-        return !in_array($value, array( '', '0', 'false', 'no', 'off', 'disabled' ), true);
     }
 }

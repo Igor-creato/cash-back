@@ -171,48 +171,6 @@ final class RateLimiterBackendDITest extends TestCase
         $this->assertSame(60, $backend->windows[0]);
         $this->assertSame(5, $backend->limits[0]); // critical tier default
     }
-
-    public function test_price_assistant_write_allows_ten_delete_add_cycles_without_grey_penalty(): void
-    {
-        $queue = array();
-        for ($hits = 1; $hits <= 20; $hits++) {
-            $queue[] = array( 'hits' => $hits, 'allowed' => true, 'reset_at' => time() + 60 );
-        }
-        $backend = new Fake_RL_Backend($queue);
-        \Cashback_Rate_Limiter::set_backend($backend);
-
-        $result = null;
-        for ($index = 0; $index < 20; $index++) {
-            $result = \Cashback_Rate_Limiter::check(
-                'cashback_price_assistant_write',
-                42,
-                '198.51.100.7'
-            );
-        }
-
-        $this->assertIsArray($result);
-        $this->assertTrue($result['allowed']);
-        $this->assertSame(20, $backend->call_count);
-        $this->assertSame(array_fill(0, 20, 30), $backend->limits);
-        $this->assertSame(0, \Cashback_Rate_Limiter::get_grey_score(42, '198.51.100.7'));
-    }
-
-    public function test_price_assistant_write_rate_limit_does_not_record_grey_violation(): void
-    {
-        $backend = new Fake_RL_Backend(array(
-            array( 'hits' => 31, 'allowed' => false, 'reset_at' => time() + 60 ),
-        ));
-        \Cashback_Rate_Limiter::set_backend($backend);
-
-        $result = \Cashback_Rate_Limiter::check(
-            'cashback_price_assistant_write',
-            42,
-            '198.51.100.7'
-        );
-
-        $this->assertFalse($result['allowed']);
-        $this->assertSame(0, \Cashback_Rate_Limiter::get_grey_score(42, '198.51.100.7'));
-    }
 }
 
 /**
