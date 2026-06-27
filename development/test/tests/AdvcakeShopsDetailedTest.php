@@ -110,7 +110,12 @@ final class AdvcakeShopsDetailedTest extends TestCase
 
     private function default_credentials(): array
     {
-        return array( 'api_key' => 'REDACTED_ADVCAKE_TEST_KEY' );
+        return array( 'api_key' => $this->synthetic_api_key() );
+    }
+
+    private function synthetic_api_key(): string
+    {
+        return 'unit_test_' . substr(hash('sha256', self::class), 0, 24);
     }
 
     private function default_network_config(): array
@@ -206,7 +211,7 @@ final class AdvcakeShopsDetailedTest extends TestCase
         $this->assertStringNotContainsString('{token}', $url);
 
         $q = $this->url_query();
-        $this->assertSame('REDACTED_ADVCAKE_TEST_KEY', $q['pass']);
+        $this->assertSame($this->synthetic_api_key(), $q['pass']);
         $this->assertSame('json', $q['type']);
         $this->assertSame('50', $q['limit']);
         $this->assertSame('250', $q['offset']);

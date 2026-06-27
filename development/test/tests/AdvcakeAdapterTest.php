@@ -117,7 +117,12 @@ final class AdvcakeAdapterTest extends TestCase
 
     private function default_credentials(): array
     {
-        return array( 'api_key' => 'REDACTED_ADVCAKE_TEST_KEY' );
+        return array( 'api_key' => $this->synthetic_api_key() );
+    }
+
+    private function synthetic_api_key(): string
+    {
+        return 'unit_test_' . substr(hash('sha256', self::class), 0, 24);
     }
 
     private function default_network_config(): array
@@ -208,7 +213,7 @@ XML;
     {
         $adapter = new Cashback_Advcake_Adapter();
         $token   = $adapter->get_token($this->default_credentials(), $this->default_network_config());
-        $this->assertSame('REDACTED_ADVCAKE_TEST_KEY', $token);
+        $this->assertSame($this->synthetic_api_key(), $token);
     }
 
     public function test_get_token_returns_null_for_empty_api_key(): void
@@ -274,7 +279,7 @@ XML;
         $this->assertSame($target_url, $params['dl']);
         $this->assertSame('TEST_TOP_1782590258', $params['sub1']);
         $this->assertSame('CLICK_TOP_7c83cd625efd', $params['sub2']);
-        $this->assertSame('REDACTED_ADVCAKE_TEST_KEY', $params['pass']);
+        $this->assertSame($this->synthetic_api_key(), $params['pass']);
         $this->assertStringNotContainsString('sub1=', (string) $params['dl']);
         $this->assertStringNotContainsString('sub2=', (string) $params['dl']);
 
@@ -405,10 +410,11 @@ XML;
 
     public function test_cakelink_http_error_redacts_api_key_from_error(): void
     {
+        $token = $this->synthetic_api_key();
         $this->queue_responses(array(
             $this->http_response(
                 500,
-                'failed url=https://cakelink.ru/link?pass=REDACTED_ADVCAKE_TEST_KEY&dl=x path=/export/webmaster/REDACTED_ADVCAKE_TEST_KEY'
+                'failed url=https://cakelink.ru/link?pass=' . $token . '&dl=x path=/export/webmaster/' . $token
             ),
         ));
 
@@ -425,7 +431,7 @@ XML;
 
         $this->assertFalse($result['success']);
         $this->assertSame('advcake_api_error', $result['reason_code']);
-        $this->assertStringNotContainsString('REDACTED_ADVCAKE_TEST_KEY', $result['error']);
+        $this->assertStringNotContainsString($token, $result['error']);
         $this->assertStringContainsString('[redacted]', $result['error']);
     }
 
@@ -509,7 +515,7 @@ XML;
 
         $this->assertCount(1, $GLOBALS['_cb_test_http_calls']);
         $url = $GLOBALS['_cb_test_http_calls'][0]['url'];
-        $this->assertStringContainsString('https://api.advcake.ru/export/webmaster/REDACTED_ADVCAKE_TEST_KEY', $url);
+        $this->assertStringContainsString('https://api.advcake.ru/export/webmaster/' . $this->synthetic_api_key(), $url);
         $this->assertStringContainsString('update_from=2026-05-07', $url);
         $this->assertStringContainsString('update_to=2026-05-14', $url);
         // {token} placeholder не должен остаться в финальном URL.
@@ -984,7 +990,7 @@ XML;
         $url = $GLOBALS['_cb_test_http_calls'][0]['url'];
 
         $this->assertStringStartsWith('https://api.advcake.ru/offers?', $url);
-        $this->assertStringContainsString('pass=REDACTED_ADVCAKE_TEST_KEY', $url);
+        $this->assertStringContainsString('pass=' . $this->synthetic_api_key(), $url);
         $this->assertStringContainsString('type=json', $url);
         // Не должен попасть actions-endpoint path.
         $this->assertStringNotContainsString('/export/webmaster/', $url);

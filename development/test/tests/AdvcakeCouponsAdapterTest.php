@@ -165,8 +165,17 @@ final class AdvcakeCouponsAdapterTest extends TestCase
     /**
      * Минимальный API-client stub: get_credentials($id) → {api_key}, get_network_config('advcake') → {id, api_base_url}.
      */
-    private function make_api_client_stub(?string $api_key = 'REDACTED_ADVCAKE_TEST_KEY', int $network_id = 9): object
+    private function synthetic_api_key(): string
     {
+        return 'unit_test_' . substr(hash('sha256', self::class), 0, 24);
+    }
+
+    private function make_api_client_stub(string|null|false $api_key = false, int $network_id = 9): object
+    {
+        if ($api_key === false) {
+            $api_key = $this->synthetic_api_key();
+        }
+
         return new class($api_key, $network_id) {
             public array $get_credentials_calls = array();
             public array $get_network_config_calls = array();
@@ -246,7 +255,7 @@ final class AdvcakeCouponsAdapterTest extends TestCase
         $this->assertStringStartsWith('https://api.advcake.ru/promocodes?', $url);
 
         $q = $this->url_query();
-        $this->assertSame('REDACTED_ADVCAKE_TEST_KEY', $q['pass']);
+        $this->assertSame($this->synthetic_api_key(), $q['pass']);
         $this->assertSame('json', $q['type']);
         $this->assertArrayHasKey('limit', $q);
         $this->assertSame('0', $q['offset']);
