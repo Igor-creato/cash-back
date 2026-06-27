@@ -247,7 +247,7 @@ final class Savello_Cashback_Internal_API_Service {
             'cashback_url'       => (string) $session['affiliate_url'],
             'merchant'           => (string) $merchant['merchant_name'],
             'merchant_id'        => (string) $merchant['merchant_id'],
-            'cashback_rate'      => $this->cashback_rate_label($merchant),
+            'cashback_rate'      => $this->cashback_rate_label($merchant, $user_id),
             'click_id'           => (string) $session['canonical_click_id'],
             'network'            => (string) $merchant['network'],
             'link_type'          => (string) ( $deeplink['link_type'] ?? 'deeplink' ),
@@ -819,27 +819,28 @@ final class Savello_Cashback_Internal_API_Service {
         };
     }
 
-    private function cashback_rate_label( array $merchant ): ?string {
-        $rates = $this->load_rates_for_merchant($merchant);
-        $row   = $this->select_rate($rates, '');
-        if ($row === null) {
+    private function cashback_rate_label( array $merchant, int $user_id = 0 ): ?string {
+        if (!class_exists('Cashback_Cashback_Display_Calculator')) {
+            $path = dirname(__DIR__) . '/shops/class-cashback-cashback-display-calculator.php';
+            if (file_exists($path)) {
+                require_once $path;
+            }
+        }
+
+        if (!class_exists('Cashback_Cashback_Display_Calculator')) {
             return null;
         }
-        $formatted = $this->format_rate_row((string) $merchant['merchant_id'], $row);
-        if ($formatted === null) {
-            return null;
+
+        $product_id = (int) $merchant['merchant_id'];
+        $display    = Cashback_Cashback_Display_Calculator::compute($product_id, $user_id > 0 ? $user_id : 0);
+        if (! empty($display['formatted'])) {
+            return (string) $display['formatted'];
         }
-        $share = $this->guest_user_share();
-        if ($formatted['commission_exact'] !== null) {
-            return (string) $this->round_rate((float) $formatted['commission_exact'] * $share) . '%';
-        }
-        if ($formatted['commission_min'] !== null || $formatted['commission_max'] !== null) {
-            return (string) $this->round_rate((float) ( $formatted['commission_min'] ?? 0.0 ) * $share)
-                . '-'
-                . (string) $this->round_rate((float) ( $formatted['commission_max'] ?? 0.0 ) * $share)
-                . '%';
-        }
-        return null;
+
+        $legacy = (string) get_post_meta($product_id, '_cashback_display_value', true);
+        $legacy = trim($legacy);
+
+        return $legacy !== '' ? $legacy : null;
     }
 
     private function sanitize_click_id( string $value ): string {

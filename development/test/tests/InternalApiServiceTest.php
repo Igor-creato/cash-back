@@ -43,6 +43,22 @@ final class InternalApiServiceTest extends TestCase
         update_post_meta(102, '_cashback_campaign_status_raw', 'paused');
         update_post_meta(102, '_product_url', 'https://paused.example/go');
 
+        foreach (array(
+            103 => array('advcake.example', 'offer-42'),
+            108 => array('zero-range.example', 'zero-range'),
+            109 => array('manual-lock.example', 'manual-lock'),
+            110 => array('manual-unlocked.example', 'manual-unlocked'),
+            111 => array('legacy-rate.example', 'no-tariffs'),
+            112 => array('empty-rate.example', 'empty-rate'),
+        ) as $product_id => $fixture) {
+            update_post_meta($product_id, '_affiliate_network_id', '2');
+            update_post_meta($product_id, '_offer_id', $fixture[1]);
+            update_post_meta($product_id, '_store_domain', $fixture[0]);
+            update_post_meta($product_id, '_cashback_campaign_currency', 'RUB');
+            update_post_meta($product_id, '_cashback_campaign_status_raw', 'active');
+            update_post_meta($product_id, '_product_url', 'https://go.advcake.example/template?dl={dl}&sub1={sub1}&sub2={sub2}');
+        }
+
         $this->wpdb = new Internal_Api_Wpdb_Stub();
         $GLOBALS['wpdb'] = $this->wpdb;
     }
@@ -231,6 +247,84 @@ final class InternalApiServiceTest extends TestCase
         ));
         self::assertInstanceOf(WP_Error::class, $unsafe);
         self::assertSame('savello_internal_bad_request', $unsafe->get_error_code());
+    }
+
+    public function test_direct_product_link_cashback_rate_uses_user_display_calculator_for_zero_ranges(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cashback-click-session-service.php';
+        $GLOBALS['_cb_test_internal_include_advcake']    = true;
+        $GLOBALS['_cb_test_internal_include_rate_cases'] = true;
+
+        $service = new Savello_Cashback_Internal_API_Service();
+
+        $cashback = $service->resolve_direct_product_link(array(
+            'direct_url' => 'https://zero-range.example/catalog/sku-1',
+            'source'     => 'user',
+            'user_id'    => 77,
+            'click_id'   => 'zerorange123',
+        ));
+
+        self::assertSame(true, $cashback['cashback_available']);
+        self::assertSame('4.5%', $cashback['cashback_rate']);
+        self::assertNotSame('0-0%', $cashback['cashback_rate']);
+    }
+
+    public function test_direct_product_link_cashback_rate_respects_manual_override_only_when_locked(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cashback-click-session-service.php';
+        $GLOBALS['_cb_test_internal_include_advcake']    = true;
+        $GLOBALS['_cb_test_internal_include_rate_cases'] = true;
+
+        update_post_meta(109, '_rate_locked', '1');
+        update_post_meta(109, '_manual_advertiser_rate', '9.99%');
+        update_post_meta(110, '_manual_advertiser_rate', '88%');
+
+        $service = new Savello_Cashback_Internal_API_Service();
+
+        $locked = $service->resolve_direct_product_link(array(
+            'direct_url' => 'https://manual-lock.example/catalog/sku-1',
+            'source'     => 'user',
+            'user_id'    => 77,
+            'click_id'   => 'manualock123',
+        ));
+
+        $unlocked = $service->resolve_direct_product_link(array(
+            'direct_url' => 'https://manual-unlocked.example/catalog/sku-1',
+            'source'     => 'user',
+            'user_id'    => 77,
+            'click_id'   => 'manualopen123',
+        ));
+
+        self::assertSame('9.99%', $locked['cashback_rate']);
+        self::assertSame('6.5%', $unlocked['cashback_rate']);
+    }
+
+    public function test_direct_product_link_cashback_rate_uses_legacy_fallback_and_null_when_missing(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cashback-click-session-service.php';
+        $GLOBALS['_cb_test_internal_include_advcake']    = true;
+        $GLOBALS['_cb_test_internal_include_rate_cases'] = true;
+
+        update_post_meta(111, '_cashback_display_value', 'до 5%');
+
+        $service = new Savello_Cashback_Internal_API_Service();
+
+        $legacy = $service->resolve_direct_product_link(array(
+            'direct_url' => 'https://legacy-rate.example/catalog/sku-1',
+            'source'     => 'user',
+            'user_id'    => 77,
+            'click_id'   => 'legacyrate123',
+        ));
+
+        $missing = $service->resolve_direct_product_link(array(
+            'direct_url' => 'https://empty-rate.example/catalog/sku-1',
+            'source'     => 'user',
+            'user_id'    => 77,
+            'click_id'   => 'emptyrate123',
+        ));
+
+        self::assertSame('до 5%', $legacy['cashback_rate']);
+        self::assertNull($missing['cashback_rate']);
     }
 
     #[RunInSeparateProcess]
@@ -423,6 +517,39 @@ final class Internal_Api_Wpdb_Stub
     {
         unset($output);
         if (str_contains($sql, 'cashback_shop_tariffs')) {
+            if (str_contains($sql, 'zero-range')) {
+                return array(
+                    array(
+                        'tariff_id'    => 'zero-range',
+                        'name'         => 'Zero range sale',
+                        'tariff_type'  => 'percent',
+                        'payment_size' => '6.92',
+                        'payment_min'  => '0',
+                        'payment_max'  => '0',
+                        'currency'     => 'RUB',
+                        'is_deleted'   => '0',
+                        'updated_at'   => '2026-06-01 09:55:00',
+                    ),
+                );
+            }
+            if (str_contains($sql, 'manual-lock') || str_contains($sql, 'manual-unlocked')) {
+                return array(
+                    array(
+                        'tariff_id'    => 'manual',
+                        'name'         => 'Manual fixture sale',
+                        'tariff_type'  => 'percent',
+                        'payment_size' => '10',
+                        'payment_min'  => null,
+                        'payment_max'  => null,
+                        'currency'     => 'RUB',
+                        'is_deleted'   => '0',
+                        'updated_at'   => '2026-06-01 09:55:00',
+                    ),
+                );
+            }
+            if (str_contains($sql, 'no-tariffs') || str_contains($sql, 'empty-rate')) {
+                return array();
+            }
             return array(
                 array(
                     'tariff_id'    => 'exact',
@@ -585,6 +712,93 @@ final class Internal_Api_Wpdb_Stub
                     'updated_at'     => '2026-06-26 19:46:52',
                 );
             }
+            if (!empty($GLOBALS['_cb_test_internal_include_rate_cases'])) {
+                $rows[] = array(
+                    'ID'           => '108',
+                    'post_title'   => 'Zero Range Store',
+                    'post_status'  => 'publish',
+                    'network_id'   => '2',
+                    'network_name' => 'Adv.Cake',
+                    'network_slug' => 'advcake',
+                    'network_active' => '1',
+                    'offer_id'     => 'zero-range',
+                    'store_domain' => 'zero-range.example',
+                    'currency'     => 'RUB',
+                    'status_raw'   => 'active',
+                    'product_url'  => 'https://go.advcake.example/template?dl={dl}&sub1={sub1}&sub2={sub2}',
+                    'api_base_url' => 'https://api.advcake.ru',
+                    'api_website_id' => '',
+                    'updated_at'   => '2026-06-01 09:58:00',
+                );
+                $rows[] = array(
+                    'ID'           => '109',
+                    'post_title'   => 'Manual Lock Store',
+                    'post_status'  => 'publish',
+                    'network_id'   => '2',
+                    'network_name' => 'Adv.Cake',
+                    'network_slug' => 'advcake',
+                    'network_active' => '1',
+                    'offer_id'     => 'manual-lock',
+                    'store_domain' => 'manual-lock.example',
+                    'currency'     => 'RUB',
+                    'status_raw'   => 'active',
+                    'product_url'  => 'https://go.advcake.example/template?dl={dl}&sub1={sub1}&sub2={sub2}',
+                    'api_base_url' => 'https://api.advcake.ru',
+                    'api_website_id' => '',
+                    'updated_at'   => '2026-06-01 09:58:00',
+                );
+                $rows[] = array(
+                    'ID'           => '110',
+                    'post_title'   => 'Manual Unlocked Store',
+                    'post_status'  => 'publish',
+                    'network_id'   => '2',
+                    'network_name' => 'Adv.Cake',
+                    'network_slug' => 'advcake',
+                    'network_active' => '1',
+                    'offer_id'     => 'manual-unlocked',
+                    'store_domain' => 'manual-unlocked.example',
+                    'currency'     => 'RUB',
+                    'status_raw'   => 'active',
+                    'product_url'  => 'https://go.advcake.example/template?dl={dl}&sub1={sub1}&sub2={sub2}',
+                    'api_base_url' => 'https://api.advcake.ru',
+                    'api_website_id' => '',
+                    'updated_at'   => '2026-06-01 09:58:00',
+                );
+                $rows[] = array(
+                    'ID'           => '111',
+                    'post_title'   => 'Legacy Rate Store',
+                    'post_status'  => 'publish',
+                    'network_id'   => '2',
+                    'network_name' => 'Adv.Cake',
+                    'network_slug' => 'advcake',
+                    'network_active' => '1',
+                    'offer_id'     => 'no-tariffs',
+                    'store_domain' => 'legacy-rate.example',
+                    'currency'     => 'RUB',
+                    'status_raw'   => 'active',
+                    'product_url'  => 'https://go.advcake.example/template?dl={dl}&sub1={sub1}&sub2={sub2}',
+                    'api_base_url' => 'https://api.advcake.ru',
+                    'api_website_id' => '',
+                    'updated_at'   => '2026-06-01 09:58:00',
+                );
+                $rows[] = array(
+                    'ID'           => '112',
+                    'post_title'   => 'Empty Rate Store',
+                    'post_status'  => 'publish',
+                    'network_id'   => '2',
+                    'network_name' => 'Adv.Cake',
+                    'network_slug' => 'advcake',
+                    'network_active' => '1',
+                    'offer_id'     => 'empty-rate',
+                    'store_domain' => 'empty-rate.example',
+                    'currency'     => 'RUB',
+                    'status_raw'   => 'active',
+                    'product_url'  => 'https://go.advcake.example/template?dl={dl}&sub1={sub1}&sub2={sub2}',
+                    'api_base_url' => 'https://api.advcake.ru',
+                    'api_website_id' => '',
+                    'updated_at'   => '2026-06-01 09:58:00',
+                );
+            }
             return $rows;
         }
 
@@ -619,6 +833,9 @@ final class Internal_Api_Wpdb_Stub
 
     public function get_var(string $sql): ?string
     {
+        if (str_contains($sql, 'cashback_user_profile') && str_contains($sql, '77')) {
+            return '65.00';
+        }
         if (str_contains($sql, 'cashback_affiliate_networks') && str_contains($sql, '"2"')) {
             return 'advcake';
         }
