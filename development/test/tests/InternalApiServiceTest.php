@@ -49,13 +49,13 @@ final class InternalApiServiceTest extends TestCase
         $service = new Savello_Cashback_Internal_API_Service();
 
         $active = $service->get_merchants(array());
-        self::assertCount(1, $active['items']);
+        self::assertCount(3, $active['items']);
         self::assertSame('101', $active['items'][0]['merchant_id']);
         self::assertSame(array('aliexpress.ru'), $active['items'][0]['domains']);
         self::assertIsArray($active['items'][0]['domain_aliases']);
 
         $all = $service->get_merchants(array( 'status' => 'all', 'limit' => 999 ));
-        self::assertCount(2, $all['items']);
+        self::assertCount(4, $all['items']);
         self::assertSame(500, $all['pagination']['limit']);
     }
 
@@ -209,6 +209,36 @@ final class InternalApiServiceTest extends TestCase
         self::assertSame('tracking_unavailable', $result['reason_code']);
         self::assertSame('https://empty-tracking.example/product', $result['url']);
         self::assertSame(0, $this->wpdb->insert_count);
+    }
+
+    #[Group('direct-product-link')]
+    public function test_click_log_normalizes_overlong_client_request_id_before_insert(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cashback-click-session-service.php';
+
+        $method = new ReflectionMethod(Cashback_Click_Session_Service::class, 'log_click');
+        $method->setAccessible(true);
+
+        $logged = $method->invoke(null, array(
+            'click_id'           => '11111111111111111111111111111111',
+            'click_session_id'   => 42,
+            'client_request_id'  => '550e8400-e29b-41d4-a716-446655440000-extra-ui-state',
+            'is_session_primary' => 1,
+            'user_id'            => 1,
+            'product_id'         => 103,
+            'cpa_network'        => 'advcake',
+            'offer_id'           => '1111',
+            'affiliate_url'      => 'https://go.redav.online/hash?sub1=11111111111111111111111111111111',
+            'ip_address'         => '127.0.0.1',
+            'user_agent'         => 'phpunit',
+            'referer'            => 'https://mnogomebeli.com/item/',
+            'spam_click'         => 0,
+        ));
+
+        self::assertTrue($logged);
+        self::assertSame(1, $this->wpdb->insert_count);
+        self::assertMatchesRegularExpression('/^[a-f0-9]{32}$/', $this->wpdb->insert_rows[0]['client_request_id']);
+        self::assertSame(32, strlen($this->wpdb->insert_rows[0]['client_request_id']));
     }
 
     public function test_user_limits_return_only_limits_and_cashback_rules(): void

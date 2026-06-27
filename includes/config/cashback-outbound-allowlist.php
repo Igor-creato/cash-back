@@ -32,12 +32,9 @@ return array(
         // Admitad (CPA-сеть)
         'api.admitad.com',
 
-        // Advcake (CPA-сеть)
-        'api.advcake.ru',
-
-        // Yandex SmartCaptcha (антифрод)
-        'smartcaptcha.yandexcloud.net',
-    ),
+        // Advcake Cakelink + Yandex SmartCaptcha.
+        'api.advcake.ru', 'cakelink.ru', 'smartcaptcha.yandexcloud.net',
+	),
 
     // Точечные суффиксы вида '.example.com' — хост проходит, если ЗАКАНЧИВАЕТСЯ
     // на '.example.com' (т.е. это поддомен). Используется с осторожностью,

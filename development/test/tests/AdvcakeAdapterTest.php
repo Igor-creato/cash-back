@@ -235,6 +235,68 @@ XML;
     // URL composition
     // ------------------------------------------------------------------
 
+    public function test_cakelink_success_keeps_tracking_params_on_returned_url(): void
+    {
+        $this->queue_responses(array(
+            $this->http_response(200, (string) wp_json_encode(array(
+                'success' => true,
+                'url'     => 'https://mnogomebeli.com/item/?utm_source=advcake&advcake_params=abc123',
+            ))),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->create_deeplink(
+            $this->default_credentials(),
+            $this->default_network_config(),
+            '1111',
+            'https://mnogomebeli.com/item/',
+            array(
+                'sub1' => '0123456789abcdef0123456789abcdef',
+                'sub2' => '7f2c1763a0017fd3e98c822ba1296704',
+            ),
+            'https://go.redav.online/20fe219674c95fc1?erid=2VfnxxEEBKF&m=31',
+            true
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('cakelink', $result['link_type']);
+        $this->assertStringContainsString('advcake_params=abc123', $result['url']);
+        $this->assertStringContainsString('sub1=0123456789abcdef0123456789abcdef', $result['url']);
+        $this->assertStringContainsString('sub2=7f2c1763a0017fd3e98c822ba1296704', $result['url']);
+    }
+
+    public function test_cakelink_not_in_allowlist_falls_back_to_stored_affiliate_url_with_tracking(): void
+    {
+        $this->queue_responses(array(
+            $this->http_response(200, (string) wp_json_encode(array(
+                'success' => false,
+                'error'   => 'not_in_allowlist',
+            ))),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->create_deeplink(
+            $this->default_credentials(),
+            $this->default_network_config(),
+            '1111',
+            'https://mnogomebeli.com/divany/nord/divan-nord/!divan-nord-alkantara-shokolad/',
+            array(
+                'sub1' => '0123456789abcdef0123456789abcdef',
+                'sub2' => '7f2c1763a0017fd3e98c822ba1296704',
+            ),
+            'https://go.redav.online/20fe219674c95fc1?erid=2VfnxxEEBKF&m=31',
+            true
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('stored_affiliate_url', $result['link_type']);
+        $this->assertStringStartsWith('https://go.redav.online/20fe219674c95fc1?', $result['url']);
+        $this->assertStringContainsString('erid=2VfnxxEEBKF', $result['url']);
+        $this->assertStringContainsString('m=31', $result['url']);
+        $this->assertStringContainsString('sub1=0123456789abcdef0123456789abcdef', $result['url']);
+        $this->assertStringContainsString('sub2=7f2c1763a0017fd3e98c822ba1296704', $result['url']);
+    }
+
     public function test_actions_url_substitutes_token_into_path(): void
     {
         $this->queue_responses(array( $this->http_response(200, '<items></items>') ));

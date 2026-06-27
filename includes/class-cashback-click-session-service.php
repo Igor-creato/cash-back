@@ -858,7 +858,7 @@ final class Cashback_Click_Session_Service {
         $row = array(
             'click_id'           => (string) $data['click_id'],
             'click_session_id'   => isset($data['click_session_id']) ? (int) $data['click_session_id'] : null,
-            'client_request_id'  => isset($data['client_request_id']) ? (string) $data['client_request_id'] : null,
+            'client_request_id'  => self::normalize_client_request_id($data['client_request_id'] ?? null),
             'is_session_primary' => !empty($data['is_session_primary']) ? 1 : 0,
             'user_id'            => (int) $data['user_id'],
             'product_id'         => (int) $data['product_id'],

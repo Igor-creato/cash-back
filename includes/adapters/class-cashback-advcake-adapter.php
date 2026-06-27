@@ -160,7 +160,7 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             );
         }
 
-        return $this->create_cakelink($credentials, $target_url, $tracking);
+        return $this->create_cakelink($credentials, $target_url, $tracking, $template_url);
     }
 
     /**
@@ -1283,7 +1283,7 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
      * @param array<string,string> $tracking
      * @return array{success:bool,url?:string,link_type?:string,reason_code?:string,error?:string}
      */
-    private function create_cakelink( array $credentials, string $target_url, array $tracking ): array {
+    private function create_cakelink( array $credentials, string $target_url, array $tracking, string $template_url = '' ): array {
         $token = $this->get_token($credentials, array());
         if ($token === null) {
             return $this->deeplink_error('advcake_auth_unavailable', $this->last_token_error);
@@ -1306,13 +1306,27 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             return $this->deeplink_error('advcake_api_error', 'HTTP ' . $code . ': ' . $this->safe_error_summary(wp_remote_retrieve_body($response)));
         }
         if (empty($body['success'])) {
-            return $this->deeplink_error('advcake_api_error');
+            $api_error = isset($body['error']) && is_scalar($body['error']) ? (string) $body['error'] : '';
+            if ($api_error === 'not_in_allowlist') {
+                $fallback = $this->build_stored_affiliate_url($template_url, $tracking);
+                if ($fallback !== '') {
+                    return array(
+                        'success'   => true,
+                        'url'       => $fallback,
+                        'link_type' => 'stored_affiliate_url',
+                    );
+                }
+            }
+
+            return $this->deeplink_error('advcake_api_error', $api_error);
         }
 
         $deeplink = $this->extract_cakelink_deeplink_url($body);
         if ($deeplink === '' || !$this->is_safe_http_url($deeplink)) {
             return $this->deeplink_error('advcake_empty_deeplink');
         }
+
+        $deeplink = $this->append_tracking_params($deeplink, $tracking);
 
         return array(
             'success'   => true,
@@ -1341,6 +1355,41 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
         }
 
         return '';
+    }
+
+    /**
+     * @param array<string,string> $tracking
+     */
+    private function build_stored_affiliate_url( string $template_url, array $tracking ): string {
+        $template_url = trim($template_url);
+        if ($template_url === '' || !$this->is_safe_http_url($template_url)) {
+            return '';
+        }
+
+        return $this->append_tracking_params($template_url, $tracking);
+    }
+
+    /**
+     * @param array<string,string> $tracking
+     */
+    private function append_tracking_params( string $url, array $tracking ): string {
+        if (!$this->is_safe_http_url($url)) {
+            return '';
+        }
+
+        $args = array();
+        foreach ($tracking as $key => $value) {
+            if ($value === '') {
+                continue;
+            }
+            $args[(string) $key] = (string) $value;
+        }
+
+        if ($args === array()) {
+            return $url;
+        }
+
+        return add_query_arg($args, $url);
     }
 
     /**
