@@ -132,7 +132,10 @@
     function activate(form, result, directUrl, button) {
         var popup = null;
         try {
-            popup = window.open('about:blank', '_blank', 'noopener');
+            popup = window.open('about:blank', '_blank');
+            if (popup) {
+                popup.opener = null;
+            }
         } catch (error) {
             popup = null;
         }

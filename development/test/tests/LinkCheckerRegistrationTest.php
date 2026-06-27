@@ -86,4 +86,14 @@ final class LinkCheckerRegistrationTest extends TestCase {
         self::assertStringContainsString("wp_verify_nonce(\$nonce, 'wp_rest')", $source);
         self::assertStringContainsString('rest_cookie_invalid_nonce', $source);
     }
+
+    public function test_link_checker_uses_enqueued_base_button_styles(): void {
+        $base_css = (string) file_get_contents(dirname(__DIR__, 3) . '/assets/css/cashback-account-base.css');
+
+        self::assertStringContainsString(
+            '.cashback-btn-primary',
+            $base_css,
+            'cashback-account-base.css должен содержать общий стиль .cashback-btn-primary, потому что link-checker подключает именно base CSS.'
+        );
+    }
 }
