@@ -695,7 +695,7 @@ final class Cashback_Click_Session_Service {
      * сетевых (overrides по ключу + добавление новых). Для промокодов передаём
      * source product_id, к которому привязан купон по network+offer.
      */
-    private static function build_affiliate_url_with_parts( string $base_url, int $network_id, ?int $product_id, int $user_id, string $click_id ): ?string {
+    private static function build_affiliate_url_with_parts( string $base_url, int $network_id, ?int $product_id, int $user_id, string $click_id ): string {
         $params = self::build_affiliate_tracking_params($network_id, $product_id, $user_id, $click_id);
         if (empty($params)) {
             return $base_url;
