@@ -174,7 +174,7 @@ final class InternalApiServiceTest extends TestCase
         $result = $service->resolve_direct_product_link(array(
             'direct_url'        => 'https://custom.example/products/sku-1',
             'click_id'          => $click_id,
-            'client_request_id' => 'client-1',
+            'client_request_id' => '550e8400-e29b-41d4-a716-446655440000',
             'ip_address'        => '127.0.0.1',
             'user_agent'        => 'phpunit',
         ));
@@ -190,6 +190,7 @@ final class InternalApiServiceTest extends TestCase
         self::assertDoesNotMatchRegularExpression('/(?:^|[?&])sub(?:id)?\d?=/', $result['cashback_url']);
         self::assertGreaterThanOrEqual(1, $this->wpdb->insert_count);
         self::assertSame($result['cashback_url'], $this->wpdb->insert_rows[0]['affiliate_url']);
+        self::assertSame('550e8400e29b41d4a716446655440000', $this->wpdb->insert_rows[0]['client_request_id']);
     }
 
     #[Group('direct-product-link')]

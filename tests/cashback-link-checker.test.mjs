@@ -170,3 +170,78 @@ test('link checker activation keeps the reserved tab controllable for async redi
   assert.equal(popup.location, 'https://savelloclub.test/cashback-go/request-1');
   assert.equal(requests.length, 2);
 });
+
+test('link checker activation keeps the checked result text unchanged after redirect starts', async () => {
+  let submitListener = null;
+  const { form, result } = createForm('https://iboxstore.ru/catalog/item');
+  const popup = { closed: false, location: 'about:blank', opener: {} };
+
+  const context = {
+    window: {
+      CashbackLinkChecker: {
+        restBase: 'https://savelloclub.test/wp-json/cashback/v1/link-checker',
+        nonce: 'nonce',
+        i18n: {}
+      },
+      crypto: { randomUUID: () => '550e8400-e29b-41d4-a716-446655440000' },
+      open() {
+        return popup;
+      }
+    },
+    document: {
+      addEventListener(type, callback) {
+        if (type === 'submit') {
+          submitListener = callback;
+        }
+      },
+      createElement(tagName) {
+        return new FakeElement(tagName);
+      }
+    },
+    fetch(url) {
+      if (url.endsWith('/check')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            status: 'available',
+            host: 'iboxstore.ru',
+            store: { name: 'iBOX' },
+            cashback: { label: 'Кэшбэк', value: '2.87%' },
+            conditions: ['Кэшбэк начисляется после подтверждения заказа магазином и CPA-сетью.']
+          })
+        });
+      }
+
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          status: 'ok',
+          activation_page_url: 'https://savelloclub.test/?cashback_go=1&click_id=click-1'
+        })
+      });
+    }
+  };
+  context.window.window = context.window;
+
+  vm.runInNewContext(source, context);
+  submitListener({
+    target: form,
+    preventDefault() {}
+  });
+
+  await flushPromises();
+  const activateButton = result.children.find((child) => child.tagName === 'BUTTON');
+  assert.ok(activateButton, 'available result should render activation button');
+
+  activateButton.click();
+  await flushPromises();
+
+  assert.equal(result.className, 'cashback-link-checker__result cashback-link-checker__result--available');
+  assert.equal(result.children[0].textContent, 'iBOX');
+  assert.equal(activateButton.disabled, false);
+  assert.equal(activateButton.textContent, 'Активировать кэшбэк');
+  assert.equal(
+    result.children.some((child) => /Переход активирован/.test(child.textContent)),
+    false
+  );
+});

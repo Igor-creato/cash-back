@@ -48,9 +48,22 @@
 
     function clientRequestId() {
         if (window.crypto && typeof window.crypto.randomUUID === 'function') {
-            return window.crypto.randomUUID();
+            return window.crypto.randomUUID().replace(/-/g, '');
         }
-        return 'lc-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+        return (Date.now().toString(16) + Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2))
+            .replace(/[^a-f0-9]/gi, '')
+            .slice(0, 32);
+    }
+
+    function appendLink(result, url, label) {
+        var link = document.createElement('a');
+        link.className = 'cashback-link-checker__goto cashback-btn-primary';
+        link.href = url;
+        link.rel = 'nofollow noopener';
+        link.target = '_blank';
+        link.textContent = label;
+        result.appendChild(link);
+        return link;
     }
 
     function renderError(result, message) {
@@ -68,17 +81,6 @@
         if (directUrl) {
             appendLink(result, directUrl, data.button_text || 'Перейти в магазин');
         }
-    }
-
-    function appendLink(result, url, label) {
-        var link = document.createElement('a');
-        link.className = 'cashback-link-checker__goto cashback-btn-primary';
-        link.href = url;
-        link.rel = 'nofollow noopener';
-        link.target = '_blank';
-        link.textContent = label;
-        result.appendChild(link);
-        return link;
     }
 
     function renderAvailable(form, result, data, directUrl) {
@@ -118,19 +120,9 @@
         result.appendChild(button);
     }
 
-    function renderActivated(result, data) {
-        clear(result);
-        result.className = 'cashback-link-checker__result cashback-link-checker__result--activated';
-        appendText(result, 'p', 'cashback-link-checker__message', data.message || 'Переход активирован.');
-
-        var targetUrl = data.activation_page_url || data.redirect_url || data.cashback_url;
-        if (targetUrl) {
-            appendLink(result, targetUrl, data.button_text || 'Перейти в магазин');
-        }
-    }
-
     function activate(form, result, directUrl, button) {
         var popup = null;
+        var originalText = button.textContent;
         try {
             popup = window.open('about:blank', '_blank');
             if (popup) {
@@ -158,14 +150,17 @@
             var targetUrl = data.activation_page_url || data.redirect_url || data.cashback_url;
             if (targetUrl && popup) {
                 popup.location = targetUrl;
+            } else if (targetUrl) {
+                window.location.href = targetUrl;
             }
-            renderActivated(result, data);
+            button.disabled = false;
+            button.textContent = originalText;
         }).catch(function (error) {
             if (popup && !popup.closed) {
                 popup.close();
             }
             button.disabled = false;
-            button.textContent = 'Активировать кэшбэк';
+            button.textContent = originalText;
             renderError(result, error && error.message ? error.message : text('error', 'Не удалось активировать ссылку.'));
         });
 

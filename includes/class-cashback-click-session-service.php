@@ -124,9 +124,7 @@ final class Cashback_Click_Session_Service {
         $ip_address        = isset($args['ip_address']) ? (string) $args['ip_address'] : '';
         $user_agent        = array_key_exists('user_agent', $args) ? ( $args['user_agent'] !== null ? (string) $args['user_agent'] : null ) : null;
         $referer           = array_key_exists('referer', $args) ? ( $args['referer'] !== null ? (string) $args['referer'] : null ) : null;
-        $client_request_id = array_key_exists('client_request_id', $args) && $args['client_request_id'] !== null
-            ? (string) $args['client_request_id']
-            : null;
+        $client_request_id = self::normalize_client_request_id($args['client_request_id'] ?? null);
         $force_spam        = !empty($args['force_spam']);
 
         $product = wc_get_product($product_id);
@@ -168,9 +166,7 @@ final class Cashback_Click_Session_Service {
         $ip_address        = isset($args['ip_address']) ? (string) $args['ip_address'] : '';
         $user_agent        = array_key_exists('user_agent', $args) ? ( $args['user_agent'] !== null ? (string) $args['user_agent'] : null ) : null;
         $referer           = array_key_exists('referer', $args) ? ( $args['referer'] !== null ? (string) $args['referer'] : null ) : null;
-        $client_request_id = array_key_exists('client_request_id', $args) && $args['client_request_id'] !== null
-            ? (string) $args['client_request_id']
-            : null;
+        $client_request_id = self::normalize_client_request_id($args['client_request_id'] ?? null);
         if ($product_id <= 0) {
             return array( 'status' => 'invalid_product' );
         }
@@ -241,9 +237,7 @@ final class Cashback_Click_Session_Service {
         $ip_address         = isset($args['ip_address']) ? (string) $args['ip_address'] : '';
         $user_agent         = array_key_exists('user_agent', $args) ? ( $args['user_agent'] !== null ? (string) $args['user_agent'] : null ) : null;
         $referer            = array_key_exists('referer', $args) ? ( $args['referer'] !== null ? (string) $args['referer'] : null ) : null;
-        $client_request_id  = array_key_exists('client_request_id', $args) && $args['client_request_id'] !== null
-            ? (string) $args['client_request_id']
-            : null;
+        $client_request_id  = self::normalize_client_request_id($args['client_request_id'] ?? null);
 
         if ($product_id <= 0 || $network_id <= 0 || $canonical_click_id === '') {
             return array( 'status' => 'invalid_product' );
@@ -312,9 +306,7 @@ final class Cashback_Click_Session_Service {
         $ip_address        = isset($args['ip_address']) ? (string) $args['ip_address'] : '';
         $user_agent        = array_key_exists('user_agent', $args) ? ( $args['user_agent'] !== null ? (string) $args['user_agent'] : null ) : null;
         $referer           = array_key_exists('referer', $args) ? ( $args['referer'] !== null ? (string) $args['referer'] : null ) : null;
-        $client_request_id = array_key_exists('client_request_id', $args) && $args['client_request_id'] !== null
-            ? (string) $args['client_request_id']
-            : null;
+        $client_request_id = self::normalize_client_request_id($args['client_request_id'] ?? null);
         $force_spam        = !empty($args['force_spam']);
 
         if ($promocode_id <= 0 || $product_id <= 0 || $network_id <= 0) {
@@ -343,6 +335,33 @@ final class Cashback_Click_Session_Service {
             'force_spam'        => $force_spam,
             'promocode_id'      => $promocode_id,
         ));
+    }
+
+    private static function normalize_client_request_id( mixed $value ): ?string {
+        if ($value === null) {
+            return null;
+        }
+
+        $normalized = sanitize_text_field((string) $value);
+        if ($normalized === '') {
+            return null;
+        }
+
+        $compact_uuid = str_replace('-', '', $normalized);
+        if (preg_match('/^[A-Fa-f0-9]{32}$/', $compact_uuid)) {
+            return strtolower($compact_uuid);
+        }
+
+        $safe = preg_replace('/[^A-Za-z0-9_-]/', '', $normalized);
+        if (!is_string($safe) || $safe === '') {
+            return null;
+        }
+
+        if (strlen($safe) <= 32) {
+            return $safe;
+        }
+
+        return substr(hash('sha256', $safe), 0, 32);
     }
 
     /**
