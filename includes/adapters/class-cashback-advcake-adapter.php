@@ -146,6 +146,9 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
         if ($tracking === array()) {
             return $this->deeplink_error('advcake_missing_click_tracking');
         }
+        if (empty($tracking['sub1'])) {
+            return $this->deeplink_error('advcake_missing_sub1_tracking');
+        }
 
         $template_url = trim($template_url);
         if ($template_url !== '' && str_contains($template_url, '{dl}')) {
@@ -1293,12 +1296,14 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
 
         $response = $this->http_get($url, array(), 30);
         if (is_wp_error($response)) {
+            $this->maybe_emit_cakelink_debug('cakelink', $target_url, $tracking, $url, '');
             return $this->deeplink_error('advcake_api_error', $response->get_error_message());
         }
 
         $code = (int) wp_remote_retrieve_response_code($response);
         $body = json_decode(wp_remote_retrieve_body($response), true);
         if ($code !== 200 || !is_array($body)) {
+            $this->maybe_emit_cakelink_debug('cakelink', $target_url, $tracking, $url, '');
             return $this->deeplink_error('advcake_api_error', 'HTTP ' . $code . ': ' . $this->safe_error_summary(wp_remote_retrieve_body($response)));
         }
         if (empty($body['success'])) {
@@ -1306,6 +1311,7 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             if ($api_error === 'not_in_allowlist') {
                 $fallback = $this->build_stored_affiliate_url($template_url, $tracking);
                 if ($fallback !== '') {
+                    $this->maybe_emit_cakelink_debug('stored_affiliate_url', $target_url, $tracking, $url, $fallback);
                     return array(
                         'success'   => true,
                         'url'       => $fallback,
@@ -1314,15 +1320,17 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
                 }
             }
 
+            $this->maybe_emit_cakelink_debug('cakelink', $target_url, $tracking, $url, '');
             return $this->deeplink_error('advcake_api_error', $api_error);
         }
 
         $deeplink = $this->extract_cakelink_deeplink_url($body);
         if ($deeplink === '' || !$this->is_safe_http_url($deeplink)) {
+            $this->maybe_emit_cakelink_debug('cakelink', $target_url, $tracking, $url, $deeplink);
             return $this->deeplink_error('advcake_empty_deeplink');
         }
 
-        $deeplink = $this->append_tracking_params($deeplink, $tracking);
+        $this->maybe_emit_cakelink_debug('cakelink', $target_url, $tracking, $url, $deeplink);
 
         return array(
             'success'   => true,
@@ -1426,6 +1434,27 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
         return $result;
     }
 
+    /**
+     * @param array<string,string> $tracking
+     */
+    private function maybe_emit_cakelink_debug( string $link_type, string $target_url, array $tracking, string $request_url, string $returned_url ): void {
+        $enabled = (bool) apply_filters(
+            'cashback_advcake_cakelink_debug_enabled',
+            defined('CASHBACK_ADVCAKE_CAKELINK_DEBUG') && (bool) constant('CASHBACK_ADVCAKE_CAKELINK_DEBUG')
+        );
+        if (!$enabled) {
+            return;
+        }
+
+        do_action('cashback_advcake_cakelink_debug', array(
+            'link_type'            => $link_type,
+            'target_url'           => $target_url,
+            'tracking_keys'        => array_keys($tracking),
+            'cakelink_request_url' => $this->redact_diagnostic_url($request_url),
+            'returned_url'         => $this->redact_diagnostic_url($returned_url),
+        ));
+    }
+
     private function is_safe_http_url( string $url ): bool {
         $scheme = strtolower((string) wp_parse_url($url, PHP_URL_SCHEME));
         return in_array($scheme, array( 'http', 'https' ), true);
@@ -1441,5 +1470,14 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
         $text = (string) preg_replace('/([?&]pass=)[^&\\s]+/i', '$1[redacted]', $text);
         $text = (string) preg_replace('#(/export/webmaster/)[^/?\\s]+#i', '$1[redacted]', $text);
         return $text;
+    }
+
+    /**
+     * Редактирует диагностические URL так, чтобы структура запроса была видна,
+     * но API key и click/user tracking values не попадали в логи/hook payload.
+     */
+    private function redact_diagnostic_url( string $url ): string {
+        $url = $this->redact_secret_tokens($url);
+        return (string) preg_replace('/([?&]sub[1-5]=)[^&\\s]+/i', '$1[redacted]', $url);
     }
 }

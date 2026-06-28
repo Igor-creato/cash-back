@@ -185,9 +185,11 @@ final class InternalApiServiceTest extends TestCase
         self::assertArrayHasKey('activation_page_url', $result);
         self::assertStringContainsString('cashback_go=1', $result['activation_page_url']);
         self::assertStringContainsString('click_id=' . $click_id, $result['activation_page_url']);
-        self::assertStringContainsString('click_ref=' . $click_id, $result['cashback_url']);
-        self::assertStringContainsString('user_ref=unregistered', $result['cashback_url']);
-        self::assertDoesNotMatchRegularExpression('/(?:^|[?&])sub(?:id)?\d?=/', $result['cashback_url']);
+        self::assertStringContainsString('sub1=' . $click_id, $result['cashback_url']);
+        self::assertStringContainsString('sub2=unregistered', $result['cashback_url']);
+        self::assertDoesNotMatchRegularExpression('/(?:^|[?&])subid\d?=/', $result['cashback_url']);
+        self::assertStringNotContainsString('click_ref=', $result['cashback_url']);
+        self::assertStringNotContainsString('user_ref=', $result['cashback_url']);
         self::assertGreaterThanOrEqual(1, $this->wpdb->insert_count);
         self::assertSame($result['cashback_url'], $this->wpdb->insert_rows[0]['affiliate_url']);
         self::assertSame('550e8400e29b41d4a716446655440000', $this->wpdb->insert_rows[0]['client_request_id']);
@@ -290,8 +292,8 @@ final class Internal_Api_Wpdb_Stub
         if (str_contains($sql, 'cashback_affiliate_network_params')) {
             if (str_contains($sql, '"4"') || str_contains($sql, ',4]')) {
                 return array(
-                    array( 'param_name' => 'click_ref', 'param_type' => 'uuid' ),
-                    array( 'param_name' => 'user_ref', 'param_type' => 'user' ),
+                    array( 'param_name' => 'sub1', 'param_type' => 'uuid' ),
+                    array( 'param_name' => 'sub2', 'param_type' => 'user' ),
                 );
             }
             if (str_contains($sql, '"5"') || str_contains($sql, ',5]')) {
@@ -385,7 +387,7 @@ final class Internal_Api_Wpdb_Stub
                     'store_domain' => 'custom.example',
                     'currency'     => 'RUB',
                     'status_raw'   => 'active',
-                    'product_url'  => 'https://go.custom.example/click?dl={dl}&click_ref={click_ref}&user_ref={user_ref}',
+                    'product_url'  => 'https://go.custom.example/click?dl={dl}&sub1={sub1}&sub2={sub2}',
                     'cashback_enabled' => '1',
                     'api_base_url' => 'https://api.advcake.test',
                     'api_token_endpoint' => '',

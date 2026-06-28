@@ -55,6 +55,7 @@ final class AdvcakeAdapterTest extends TestCase
         $GLOBALS['_cb_test_filters']                = array();
         $GLOBALS['_cb_test_transients']             = array();
         $GLOBALS['_cb_test_cache']                  = array();
+        $GLOBALS['_cb_test_actions_fired']          = array();
         $GLOBALS['_cb_test_http_calls']             = array();
         $GLOBALS['_cb_test_http_response']          = array(
             'body'     => '<items></items>',
@@ -297,12 +298,14 @@ XML;
         $this->assertLessThan($pass_pos, $sub2_pos);
     }
 
-    public function test_cakelink_success_keeps_tracking_params_on_returned_url(): void
+    public function test_cakelink_success_returns_api_data_url_without_mutating_it(): void
     {
+        $returned_url = 'https://mnogomebeli.com/item/?utm_source=advcake&advcake_params=abc123';
+
         $this->queue_responses(array(
             $this->http_response(200, (string) wp_json_encode(array(
                 'success' => true,
-                'url'     => 'https://mnogomebeli.com/item/?utm_source=advcake&advcake_params=abc123',
+                'url'     => $returned_url,
             ))),
         ));
 
@@ -322,9 +325,79 @@ XML;
 
         $this->assertTrue($result['success']);
         $this->assertSame('cakelink', $result['link_type']);
-        $this->assertStringContainsString('advcake_params=abc123', $result['url']);
-        $this->assertStringContainsString('sub1=0123456789abcdef0123456789abcdef', $result['url']);
-        $this->assertStringContainsString('sub2=7f2c1763a0017fd3e98c822ba1296704', $result['url']);
+        $this->assertSame($returned_url, $result['url']);
+        $this->assertStringNotContainsString('sub1=', $result['url']);
+        $this->assertStringNotContainsString('sub2=', $result['url']);
+    }
+
+    public function test_cakelink_requires_sub1_tracking_before_calling_api(): void
+    {
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->create_deeplink(
+            $this->default_credentials(),
+            $this->default_network_config(),
+            '1111',
+            'https://mnogomebeli.com/item/',
+            array(
+                'click_id' => '0123456789abcdef0123456789abcdef',
+                'sub2'     => '7f2c1763a0017fd3e98c822ba1296704',
+            ),
+            '',
+            true
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('advcake_missing_sub1_tracking', $result['reason_code']);
+        $this->assertSame(array(), $GLOBALS['_cb_test_http_calls']);
+    }
+
+    public function test_cakelink_debug_hook_is_opt_in_and_redacts_pass(): void
+    {
+        add_filter('cashback_advcake_cakelink_debug_enabled', static fn(): bool => true);
+
+        $returned_url = 'https://www.kolesa-darom.ru/?advcake_params=diag';
+        $this->queue_responses(array(
+            $this->http_response(200, (string) wp_json_encode(array(
+                'success' => true,
+                'data'    => array(
+                    'url' => $returned_url,
+                ),
+            ))),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->create_deeplink(
+            $this->default_credentials(),
+            $this->default_network_config(),
+            '2222',
+            'https://www.kolesa-darom.ru/',
+            array(
+                'sub1' => 'TEST_TOP_1782590258',
+                'sub2' => 'CLICK_TOP_7c83cd625efd',
+            ),
+            '',
+            true
+        );
+
+        $this->assertTrue($result['success']);
+
+        $events = array_values(array_filter(
+            $GLOBALS['_cb_test_actions_fired'],
+            static fn(array $event): bool => $event['hook'] === 'cashback_advcake_cakelink_debug'
+        ));
+        $this->assertCount(1, $events);
+
+        $payload = $events[0]['args'][0];
+        $this->assertSame('cakelink', $payload['link_type']);
+        $this->assertSame('https://www.kolesa-darom.ru/', $payload['target_url']);
+        $this->assertSame(array( 'sub1', 'sub2' ), $payload['tracking_keys']);
+        $this->assertSame($returned_url, $payload['returned_url']);
+        $this->assertStringContainsString('pass=[redacted]', $payload['cakelink_request_url']);
+        $this->assertStringNotContainsString($this->synthetic_api_key(), $payload['cakelink_request_url']);
+        $this->assertStringContainsString('sub1=[redacted]', $payload['cakelink_request_url']);
+        $this->assertStringContainsString('sub2=[redacted]', $payload['cakelink_request_url']);
+        $this->assertStringNotContainsString('TEST_TOP_1782590258', $payload['cakelink_request_url']);
+        $this->assertStringNotContainsString('CLICK_TOP_7c83cd625efd', $payload['cakelink_request_url']);
     }
 
     public function test_cakelink_success_reads_nested_data_url(): void

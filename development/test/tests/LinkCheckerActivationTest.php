@@ -57,7 +57,7 @@ final class LinkCheckerActivationTest extends TestCase {
     }
 
     #[Group('direct-product-link')]
-    public function test_deeplink_adapters_accept_tracking_array_without_sub_only_filters(): void {
+    public function test_deeplink_adapters_accept_db_tracking_and_advcake_requires_sub1(): void {
         $admitad = (string) file_get_contents(dirname(__DIR__, 3) . '/includes/adapters/class-admitad-adapter.php');
         $advcake = (string) file_get_contents(dirname(__DIR__, 3) . '/includes/adapters/class-cashback-advcake-adapter.php');
 
@@ -67,8 +67,9 @@ final class LinkCheckerActivationTest extends TestCase {
 
         self::assertStringContainsString('create_deeplink', $advcake);
         self::assertStringContainsString("array( 'data', 'result' )", $advcake);
+        self::assertStringContainsString("['sub1']", $this->createDeeplinkMethodSource($advcake));
+        self::assertStringContainsString('advcake_missing_sub1_tracking', $this->createDeeplinkMethodSource($advcake));
         self::assertStringNotContainsString('/^sub', $this->createDeeplinkMethodSource($advcake));
-        self::assertStringNotContainsString("['sub1']", $this->createDeeplinkMethodSource($advcake));
     }
 
     private function createDeeplinkMethodSource(string $source): string {

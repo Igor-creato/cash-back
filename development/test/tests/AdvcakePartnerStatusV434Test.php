@@ -43,6 +43,22 @@ final class AdvcakePartnerStatusV434Test extends TestCase
     {
         $GLOBALS['_cb_test_posts']     = array();
         $GLOBALS['_cb_test_post_meta'] = array();
+        Cashback_Advcake_Partner_Status_Sync::set_test_campaign_resolver(
+            static fn(string $offer_id): array => array(
+                'success'  => true,
+                'active'   => true,
+                'campaign' => array(
+                    'id'   => $offer_id,
+                    'name' => 'Advcake offer ' . $offer_id,
+                ),
+            )
+        );
+    }
+
+    protected function tearDown(): void
+    {
+        Cashback_Advcake_Partner_Status_Sync::set_test_campaign_resolver(null);
+        parent::tearDown();
     }
 
     /**
