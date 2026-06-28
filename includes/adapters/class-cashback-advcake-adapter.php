@@ -133,7 +133,7 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
         string $template_url = '',
         bool $allow_deep = true
     ): array {
-        unset($network_config, $offer_id);
+        unset($offer_id);
 
         if (!$allow_deep) {
             return $this->deeplink_error('advcake_deeplink_disabled');
@@ -161,6 +161,17 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
                 'url'       => $url,
                 'link_type' => 'dynamic_template',
             );
+        }
+
+        if (!empty($network_config['prefer_stored_affiliate_url'])) {
+            $stored_url = $this->build_stored_affiliate_url($template_url, $tracking);
+            if ($stored_url !== '') {
+                return array(
+                    'success'   => true,
+                    'url'       => $stored_url,
+                    'link_type' => 'stored_affiliate_url',
+                );
+            }
         }
 
         return $this->create_cakelink($credentials, $target_url, $tracking, $template_url);

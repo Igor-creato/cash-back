@@ -49,13 +49,13 @@ final class InternalApiServiceTest extends TestCase
         $service = new Savello_Cashback_Internal_API_Service();
 
         $active = $service->get_merchants(array());
-        self::assertCount(3, $active['items']);
+        self::assertCount(4, $active['items']);
         self::assertSame('101', $active['items'][0]['merchant_id']);
         self::assertSame(array('aliexpress.ru'), $active['items'][0]['domains']);
         self::assertIsArray($active['items'][0]['domain_aliases']);
 
         $all = $service->get_merchants(array( 'status' => 'all', 'limit' => 999 ));
-        self::assertCount(4, $all['items']);
+        self::assertCount(5, $all['items']);
         self::assertSame(500, $all['pagination']['limit']);
     }
 
@@ -193,6 +193,32 @@ final class InternalApiServiceTest extends TestCase
         self::assertGreaterThanOrEqual(1, $this->wpdb->insert_count);
         self::assertSame($result['cashback_url'], $this->wpdb->insert_rows[0]['affiliate_url']);
         self::assertSame('550e8400e29b41d4a716446655440000', $this->wpdb->insert_rows[0]['client_request_id']);
+    }
+
+    #[Group('direct-product-link')]
+    public function test_advcake_direct_product_link_prefers_stored_affiliate_url_when_available(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cashback-click-session-service.php';
+
+        $service  = new Savello_Cashback_Internal_API_Service();
+        $click_id = '11111111111111111111111111111111';
+
+        $result = $service->resolve_direct_product_link(array(
+            'direct_url'        => 'https://static-advcake.example/products/sku-1',
+            'click_id'          => $click_id,
+            'client_request_id' => '550e8400-e29b-41d4-a716-446655440001',
+            'ip_address'        => '127.0.0.1',
+            'user_agent'        => 'phpunit',
+        ));
+
+        self::assertTrue($result['cashback_available']);
+        self::assertSame('stored_affiliate_url', $result['link_type']);
+        self::assertStringStartsWith('https://go.static-advcake.example/click?', $result['cashback_url']);
+        self::assertStringContainsString('erid=test-erid', $result['cashback_url']);
+        self::assertStringContainsString('m=31', $result['cashback_url']);
+        self::assertStringContainsString('sub1=' . $click_id, $result['cashback_url']);
+        self::assertStringContainsString('sub2=unregistered', $result['cashback_url']);
+        self::assertSame($result['cashback_url'], $this->wpdb->insert_rows[0]['affiliate_url']);
     }
 
     #[Group('direct-product-link')]
@@ -407,6 +433,25 @@ final class Internal_Api_Wpdb_Stub
                     'currency'     => 'RUB',
                     'status_raw'   => 'active',
                     'product_url'  => 'https://go.empty.example/click?dl={dl}',
+                    'cashback_enabled' => '1',
+                    'api_base_url' => 'https://api.advcake.test',
+                    'api_token_endpoint' => '',
+                    'api_website_id' => '',
+                    'updated_at'   => '2026-06-01 09:50:00',
+                ),
+                array(
+                    'ID'           => '105',
+                    'post_title'   => 'Static AdvCake Shop',
+                    'post_status'  => 'publish',
+                    'network_id'   => '4',
+                    'network_name' => 'AdvCake',
+                    'network_slug' => 'advcake',
+                    'network_active' => '1',
+                    'offer_id'     => 'static-offer',
+                    'store_domain' => 'static-advcake.example',
+                    'currency'     => 'RUB',
+                    'status_raw'   => 'active',
+                    'product_url'  => 'https://go.static-advcake.example/click?erid=test-erid&m=31',
                     'cashback_enabled' => '1',
                     'api_base_url' => 'https://api.advcake.test',
                     'api_token_endpoint' => '',

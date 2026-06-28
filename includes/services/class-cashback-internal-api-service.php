@@ -606,6 +606,7 @@ final class Savello_Cashback_Internal_API_Service {
             if (!$this->ensure_adapter_loaded('advcake') || !class_exists('Cashback_Advcake_Adapter')) {
                 return array( 'success' => false, 'reason_code' => 'advcake_adapter_missing' );
             }
+            $config['prefer_stored_affiliate_url'] = true;
             return (new Cashback_Advcake_Adapter())->create_deeplink(
                 is_array($config['credentials'] ?? null) ? $config['credentials'] : array(),
                 $config,

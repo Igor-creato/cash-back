@@ -330,6 +330,33 @@ XML;
         $this->assertStringNotContainsString('sub2=', $result['url']);
     }
 
+    public function test_prefer_stored_affiliate_url_skips_cakelink_for_safe_static_template(): void
+    {
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->create_deeplink(
+            $this->default_credentials(),
+            array_merge($this->default_network_config(), array(
+                'prefer_stored_affiliate_url' => true,
+            )),
+            '977',
+            'https://www.vseinstrumenti.ru/product/perforator-makita-hr-2470-5195/',
+            array(
+                'sub1' => '0123456789abcdef0123456789abcdef',
+                'sub2' => 'unregistered',
+            ),
+            'https://go.redav.online/b35a045b3e97f221?erid=2VfnxweGDap&m=31',
+            true
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('stored_affiliate_url', $result['link_type']);
+        $this->assertSame(
+            'https://go.redav.online/b35a045b3e97f221?erid=2VfnxweGDap&m=31&sub1=0123456789abcdef0123456789abcdef&sub2=unregistered',
+            $result['url']
+        );
+        $this->assertSame(array(), $GLOBALS['_cb_test_http_calls']);
+    }
+
     public function test_cakelink_requires_sub1_tracking_before_calling_api(): void
     {
         $adapter = new Cashback_Advcake_Adapter();
