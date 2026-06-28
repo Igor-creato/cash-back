@@ -457,6 +457,39 @@ XML;
         $this->assertStringContainsString('advcake_params=nested', $result['url']);
     }
 
+    public function test_cakelink_success_reads_nested_data_result_url(): void
+    {
+        $returned_url = 'https://mnogomebeli.com/item/?advcake_params=nested-result';
+        $this->queue_responses(array(
+            $this->http_response(200, (string) wp_json_encode(array(
+                'success' => true,
+                'data'    => array(
+                    'result' => array(
+                        'url' => $returned_url,
+                    ),
+                ),
+            ))),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->create_deeplink(
+            $this->default_credentials(),
+            $this->default_network_config(),
+            '1111',
+            'https://mnogomebeli.com/item/',
+            array(
+                'sub1' => '0123456789abcdef0123456789abcdef',
+                'sub2' => '7f2c1763a0017fd3e98c822ba1296704',
+            ),
+            '',
+            true
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('cakelink', $result['link_type']);
+        $this->assertSame($returned_url, $result['url']);
+    }
+
     public function test_cakelink_api_failure_returns_error_without_fallback(): void
     {
         $this->queue_responses(array(
@@ -535,7 +568,7 @@ XML;
         $this->assertStringContainsString('[redacted]', $result['error']);
     }
 
-    public function test_cakelink_not_in_allowlist_falls_back_to_stored_affiliate_url_with_tracking(): void
+    public function test_cakelink_not_in_allowlist_returns_error_without_stored_affiliate_fallback(): void
     {
         $this->queue_responses(array(
             $this->http_response(200, (string) wp_json_encode(array(
@@ -558,13 +591,9 @@ XML;
             true
         );
 
-        $this->assertTrue($result['success']);
-        $this->assertSame('stored_affiliate_url', $result['link_type']);
-        $this->assertStringStartsWith('https://go.redav.online/20fe219674c95fc1?', $result['url']);
-        $this->assertStringContainsString('erid=2VfnxxEEBKF', $result['url']);
-        $this->assertStringContainsString('m=31', $result['url']);
-        $this->assertStringContainsString('sub1=0123456789abcdef0123456789abcdef', $result['url']);
-        $this->assertStringContainsString('sub2=7f2c1763a0017fd3e98c822ba1296704', $result['url']);
+        $this->assertFalse($result['success']);
+        $this->assertSame('advcake_api_error', $result['reason_code']);
+        $this->assertSame('not_in_allowlist', $result['error']);
     }
 
     public function test_cakelink_live_smoke_is_opt_in(): void

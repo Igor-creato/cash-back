@@ -174,7 +174,7 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
             }
         }
 
-        return $this->create_cakelink($credentials, $target_url, $tracking, $template_url);
+        return $this->create_cakelink($credentials, $target_url, $tracking);
     }
 
     /**
@@ -1297,7 +1297,7 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
      * @param array<string,string> $tracking
      * @return array{success:bool,url?:string,link_type?:string,reason_code?:string,error?:string}
      */
-    private function create_cakelink( array $credentials, string $target_url, array $tracking, string $template_url = '' ): array {
+    private function create_cakelink( array $credentials, string $target_url, array $tracking ): array {
         $token = $this->get_token($credentials, array());
         if ($token === null) {
             return $this->deeplink_error('advcake_auth_unavailable', $this->last_token_error);
@@ -1319,18 +1319,6 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
         }
         if (empty($body['success'])) {
             $api_error = isset($body['error']) && is_scalar($body['error']) ? (string) $body['error'] : '';
-            if ($api_error === 'not_in_allowlist') {
-                $fallback = $this->build_stored_affiliate_url($template_url, $tracking);
-                if ($fallback !== '') {
-                    $this->maybe_emit_cakelink_debug('stored_affiliate_url', $target_url, $tracking, $url, $fallback);
-                    return array(
-                        'success'   => true,
-                        'url'       => $fallback,
-                        'link_type' => 'stored_affiliate_url',
-                    );
-                }
-            }
-
             $this->maybe_emit_cakelink_debug('cakelink', $target_url, $tracking, $url, '');
             return $this->deeplink_error('advcake_api_error', $api_error);
         }

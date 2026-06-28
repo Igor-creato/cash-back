@@ -15,6 +15,12 @@ final class InternalApiServiceTest extends TestCase
         parent::setUp();
         require_once dirname(__DIR__, 3) . '/includes/class-cashback-shop-options.php';
         require_once dirname(__DIR__, 3) . '/includes/shops/class-cashback-shop-tariff-sync.php';
+        require_once dirname(__DIR__, 3) . '/includes/adapters/interface-cashback-network-adapter.php';
+        require_once dirname(__DIR__, 3) . '/includes/adapters/abstract-cashback-network-adapter.php';
+        require_once dirname(__DIR__, 3) . '/includes/adapters/class-admitad-adapter.php';
+        require_once dirname(__DIR__, 3) . '/includes/adapters/class-epn-adapter.php';
+        require_once dirname(__DIR__, 3) . '/includes/adapters/class-cashback-advcake-adapter.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cashback-api-client.php';
         require_once dirname(__DIR__, 3) . '/includes/services/class-cashback-internal-api-service.php';
 
         $GLOBALS['_cb_test_options'] = array(
@@ -196,9 +202,21 @@ final class InternalApiServiceTest extends TestCase
     }
 
     #[Group('direct-product-link')]
-    public function test_advcake_direct_product_link_prefers_stored_affiliate_url_when_available(): void
+    public function test_advcake_direct_product_link_uses_cakelink_even_when_stored_affiliate_url_exists(): void
     {
         require_once dirname(__DIR__, 3) . '/includes/class-cashback-click-session-service.php';
+
+        $returned_url = 'https://www.static-advcake.example/products/sku-1?advcake_params=from-api';
+        $GLOBALS['_cb_test_http_response'] = array(
+            'body'     => (string) wp_json_encode(array(
+                'success' => true,
+                'data'    => array(
+                    'url' => $returned_url,
+                ),
+            )),
+            'response' => array( 'code' => 200, 'message' => 'OK' ),
+            'headers'  => array(),
+        );
 
         $service  = new Savello_Cashback_Internal_API_Service();
         $click_id = '11111111111111111111111111111111';
@@ -212,13 +230,21 @@ final class InternalApiServiceTest extends TestCase
         ));
 
         self::assertTrue($result['cashback_available']);
-        self::assertSame('stored_affiliate_url', $result['link_type']);
-        self::assertStringStartsWith('https://go.static-advcake.example/click?', $result['cashback_url']);
-        self::assertStringContainsString('erid=test-erid', $result['cashback_url']);
-        self::assertStringContainsString('m=31', $result['cashback_url']);
-        self::assertStringContainsString('sub1=' . $click_id, $result['cashback_url']);
-        self::assertStringContainsString('sub2=unregistered', $result['cashback_url']);
+        self::assertSame('cakelink', $result['link_type']);
+        self::assertSame($returned_url, $result['cashback_url']);
+        self::assertSame($returned_url, $result['url']);
+        self::assertStringNotContainsString('sub1=', $result['cashback_url']);
+        self::assertStringNotContainsString('sub2=', $result['cashback_url']);
         self::assertSame($result['cashback_url'], $this->wpdb->insert_rows[0]['affiliate_url']);
+
+        self::assertCount(1, $GLOBALS['_cb_test_http_calls']);
+        $request_url = (string) $GLOBALS['_cb_test_http_calls'][0]['url'];
+        self::assertSame('cakelink.ru', wp_parse_url($request_url, PHP_URL_HOST));
+        parse_str((string) wp_parse_url($request_url, PHP_URL_QUERY), $params);
+        self::assertSame('https://static-advcake.example/products/sku-1', $params['dl']);
+        self::assertSame($click_id, $params['sub1']);
+        self::assertSame('unregistered', $params['sub2']);
+        self::assertArrayHasKey('pass', $params);
     }
 
     #[Group('direct-product-link')]
@@ -467,6 +493,21 @@ final class Internal_Api_Wpdb_Stub
     public function get_row(string $sql, string $output = ARRAY_A): ?array
     {
         unset($output);
+        if (str_contains($sql, 'cashback_affiliate_networks') && str_contains($sql, 'advcake')) {
+            return array(
+                'id'                 => '4',
+                'name'               => 'AdvCake',
+                'slug'               => 'advcake',
+                'api_base_url'       => 'https://api.advcake.test',
+                'api_user_field'     => 'sub2',
+                'api_click_field'    => 'sub1',
+                'api_website_id'     => '',
+                'api_status_map'     => '',
+                'api_field_map'      => '',
+                'api_credentials'    => $this->advcake_credentials_ciphertext(),
+                'is_active'          => '1',
+            );
+        }
         if (str_contains($sql, 'cashback_user_profile') && str_contains($sql, '77')) {
             return array(
                 'user_id'       => '77',
@@ -479,6 +520,12 @@ final class Internal_Api_Wpdb_Stub
 
     public function get_var(string $sql): ?string
     {
+        if (str_contains($sql, 'cashback_affiliate_networks') && str_contains($sql, 'api_credentials')) {
+            if (str_contains($sql, '"4"') || str_contains($sql, ',4]')) {
+                return $this->advcake_credentials_ciphertext();
+            }
+            return null;
+        }
         if (str_contains($sql, 'cashback_affiliate_networks')) {
             if (str_contains($sql, '"4"') || str_contains($sql, ',4]')) {
                 return 'advcake';
@@ -503,6 +550,17 @@ final class Internal_Api_Wpdb_Stub
             ++$this->insert_id;
         }
         return 1;
+    }
+
+    private function advcake_credentials_ciphertext(): string
+    {
+        static $ciphertext = null;
+        if ($ciphertext === null) {
+            $ciphertext = Cashback_Encryption::encrypt((string) wp_json_encode(array(
+                'api_key' => 'unitTestAdvcakePass_123',
+            )));
+        }
+        return $ciphertext;
     }
 
     public function insert(string $table, array $data, array $format = array()): int|bool
