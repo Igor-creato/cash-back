@@ -298,6 +298,52 @@ XML;
         $this->assertLessThan($pass_pos, $sub2_pos);
     }
 
+    public function test_cakelink_dl_is_urlencoded_so_target_query_string_survives(): void
+    {
+        // Целевой URL с query-строкой — главный кейс бага: при сыром `dl`
+        // cakelink парсит `&categoryId=5510` как СВОЙ параметр и хвост URL теряется.
+        $target = 'https://site.ru/product/?sortBy=popular&categoryId=5510';
+
+        $this->queue_responses(array(
+            $this->http_response(200, (string) wp_json_encode(array(
+                'success' => true,
+                'data'    => array(
+                    'url' => 'https://site.ru/product/?advcake_params=abc123',
+                ),
+            ))),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->create_deeplink(
+            $this->default_credentials(),
+            $this->default_network_config(),
+            '3333',
+            $target,
+            array(
+                'sub1' => 'TEST_DIRTY_URL_1782590258',
+                'sub2' => 'CLICK_DIRTY_URL_7c83cd625efd',
+            ),
+            'https://go.redav.online/20fe219674c95fc1?erid=2VfnxxEEBKF&m=31',
+            true
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(1, $GLOBALS['_cb_test_http_calls']);
+
+        $request_url = (string) $GLOBALS['_cb_test_http_calls'][0]['url'];
+        $raw_query   = (string) wp_parse_url($request_url, PHP_URL_QUERY);
+
+        // Ассерт на СЫРОЙ query-стринг (до parse_str) — ловит сам факт кодирования:
+        // если `dl` уйдёт сырым, этой подстроки в запросе не будет.
+        $this->assertStringContainsString('dl=' . rawurlencode($target), $raw_query);
+
+        // И что хвост целевого URL не утёк в собственные параметры cakelink.
+        parse_str($raw_query, $params);
+        $this->assertSame($target, $params['dl']);
+        $this->assertArrayNotHasKey('categoryId', $params);
+        $this->assertArrayNotHasKey('sortBy', $params);
+    }
+
     public function test_cakelink_success_returns_api_data_url_without_mutating_it(): void
     {
         $returned_url = 'https://mnogomebeli.com/item/?utm_source=advcake&advcake_params=abc123';

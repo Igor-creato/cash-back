@@ -1342,16 +1342,21 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
      * @param array<string,string> $tracking
      */
     private function build_cakelink_request_url( string $target_url, array $tracking, string $token ): string {
-        $query = array( 'dl' => $target_url );
+        // `dl` — это целевой URL, упакованный значением одного query-поля. По RFC 3986
+        // такое значение обязано быть percent-encoded, иначе cakelink не отличит хвост
+        // нашего URL (`?a=1&b=2`) от собственных параметров. WP add_query_arg() значения
+        // НЕ кодирует, поэтому собираем строку вручную с rawurlencode() каждого значения.
+        // Порядок параметров сохраняем: dl → sub-ы → pass (проверяется тестом через strpos).
+        $pairs = array( 'dl=' . rawurlencode($target_url) );
         foreach ($tracking as $key => $value) {
             if ($value === '' || $key === 'dl' || $key === 'pass') {
                 continue;
             }
-            $query[(string) $key] = (string) $value;
+            $pairs[] = rawurlencode((string) $key) . '=' . rawurlencode((string) $value);
         }
-        $query['pass'] = $token;
+        $pairs[] = 'pass=' . rawurlencode($token);
 
-        return add_query_arg($query, 'https://cakelink.ru/link');
+        return 'https://cakelink.ru/link?' . implode('&', $pairs);
     }
 
     /**
