@@ -298,6 +298,107 @@ XML;
         $this->assertLessThan($pass_pos, $sub2_pos);
     }
 
+    public function test_cakelink_request_uses_non_wordpress_user_agent(): void
+    {
+        // Regression: cakelink.ru не засчитывает клик, если User-Agent содержит
+        // подстроку "WordPress" — возвращает HTTP 200 + валидный advcake_params хэш,
+        // но sub1/sub2 не регистрируются в кабинете AdvCake (бот-фильтр). Доказано
+        // на staging 2026-06-28: curl/браузерный/нейтральный UA → клик учтён; любой
+        // UA с "WordPress" → не учтён. wp_remote_get по умолчанию шлёт
+        // "WordPress/<ver>; <home_url>", поэтому create_cakelink() обязан слать
+        // нейтральный UA.
+        $this->queue_responses(array(
+            $this->http_response(200, (string) wp_json_encode(array(
+                'success' => true,
+                'data'    => array( 'url' => 'https://shop.ru/?advcake_params=abc123' ),
+            ))),
+        ));
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->create_deeplink(
+            $this->default_credentials(),
+            $this->default_network_config(),
+            '2222',
+            'https://shop.ru/product?id=1',
+            array(
+                'sub1' => 'S1',
+                'sub2' => 'S2',
+            ),
+            '',
+            true
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(1, $GLOBALS['_cb_test_http_calls']);
+
+        $args = $GLOBALS['_cb_test_http_calls'][0]['args'];
+        // http_get() перекладывает headers['User-Agent'] в $args['user-agent']
+        // (приоритетный для wp_remote_get), поэтому проверяем оба места.
+        $ua = (string) ( $args['user-agent'] ?? ( $args['headers']['User-Agent'] ?? '' ) );
+
+        $this->assertNotSame('', $ua, 'cakelink-запрос должен слать явный User-Agent');
+        $this->assertStringNotContainsStringIgnoringCase(
+            'wordpress',
+            $ua,
+            'cakelink.ru режет UA с подстрокой "WordPress" — клик не засчитывается'
+        );
+    }
+
+    /**
+     * @dataProvider cakelink_user_agent_filter_provider
+     */
+    public function test_cakelink_user_agent_filter_is_respected_and_guarded(
+        string $filtered_ua,
+        string $expected_ua
+    ): void {
+        $this->queue_responses(array(
+            $this->http_response(200, (string) wp_json_encode(array(
+                'success' => true,
+                'data'    => array( 'url' => 'https://shop.ru/?advcake_params=abc123' ),
+            ))),
+        ));
+
+        add_filter(
+            'cashback_advcake_cakelink_user_agent',
+            static fn(): string => $filtered_ua
+        );
+
+        $adapter = new Cashback_Advcake_Adapter();
+        $result  = $adapter->create_deeplink(
+            $this->default_credentials(),
+            $this->default_network_config(),
+            '2222',
+            'https://shop.ru/product?id=1',
+            array( 'sub1' => 'S1', 'sub2' => 'S2' ),
+            '',
+            true
+        );
+
+        $this->assertTrue($result['success']);
+        $args = $GLOBALS['_cb_test_http_calls'][0]['args'];
+        $ua   = (string) ( $args['user-agent'] ?? ( $args['headers']['User-Agent'] ?? '' ) );
+
+        // Никогда не "WordPress" и никогда не содержит control-символов.
+        $this->assertStringNotContainsStringIgnoringCase('wordpress', $ua);
+        $this->assertSame($ua, (string) preg_replace('/[^\x20-\x7E]/', '', $ua), 'UA не должен содержать control-символы');
+        $this->assertSame($expected_ua, $ua);
+    }
+
+    /**
+     * @return array<string,array{0:string,1:string}>
+     */
+    public static function cakelink_user_agent_filter_provider(): array
+    {
+        return array(
+            'valid neutral override' => array( 'MyCashback/2.0', 'MyCashback/2.0' ),
+            'empty falls back'       => array( '', 'SavelloCashback/1.0' ),
+            'contains WordPress'     => array( 'Mozilla/5.0 (compatible; WordPress/7.0)', 'SavelloCashback/1.0' ),
+            'wordpress lowercase'    => array( 'wordpress-bot', 'SavelloCashback/1.0' ),
+            'control chars stripped' => array( "Good\r\nUA", 'GoodUA' ),
+            'only control chars'     => array( "\r\n\t", 'SavelloCashback/1.0' ),
+        );
+    }
+
     public function test_cakelink_dl_is_urlencoded_so_target_query_string_survives(): void
     {
         // Целевой URL с query-строкой — главный кейс бага: при сыром `dl`

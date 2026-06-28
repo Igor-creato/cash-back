@@ -1305,7 +1305,7 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
 
         $url = $this->build_cakelink_request_url($target_url, $tracking, $token);
 
-        $response = $this->http_get($url, array(), 30);
+        $response = $this->http_get($url, array( 'User-Agent' => $this->cakelink_user_agent() ), 30);
         if (is_wp_error($response)) {
             $this->maybe_emit_cakelink_debug('cakelink', $target_url, $tracking, $url, '');
             return $this->deeplink_error('advcake_api_error', $response->get_error_message());
@@ -1357,6 +1357,31 @@ class Cashback_Advcake_Adapter extends Cashback_Network_Adapter_Base {
         $pairs[] = 'pass=' . rawurlencode($token);
 
         return 'https://cakelink.ru/link?' . implode('&', $pairs);
+    }
+
+    /**
+     * User-Agent для запроса к cakelink.ru.
+     *
+     * cakelink.ru режет запросы с подстрокой "WordPress" в User-Agent: возвращает
+     * HTTP 200 + валидный advcake_params хэш, но НЕ засчитывает клик — sub1/sub2 не
+     * регистрируются в кабинете AdvCake (бот-фильтр). wp_remote_get() по умолчанию
+     * шлёт "WordPress/<ver>; <home_url>", поэтому для deeplink-вызова подставляем
+     * нейтральный UA. Доказано на staging 2026-06-28: curl/браузерный/нейтральный
+     * UA → клик учтён; любой UA с "WordPress" → не учтён. Фильтр позволяет
+     * переопределить значение; guard защищает от случайного возврата UA с запретной
+     * подстрокой.
+     */
+    private function cakelink_user_agent(): string {
+        $ua = (string) apply_filters( 'cashback_advcake_cakelink_user_agent', 'SavelloCashback/1.0' );
+        // Defense-in-depth: вырезаем control/не-ASCII-printable символы — фильтр-override
+        // мог бы вернуть значение с \r\n (header-splitting) или мусором, ломающим запрос
+        // и тихо обнуляющим атрибуцию.
+        $ua = (string) preg_replace( '/[^\x20-\x7E]/', '', $ua );
+        $ua = trim( $ua );
+        if ( $ua === '' || stripos( $ua, 'wordpress' ) !== false ) {
+            $ua = 'SavelloCashback/1.0';
+        }
+        return $ua;
     }
 
     /**
