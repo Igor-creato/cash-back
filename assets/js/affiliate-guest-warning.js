@@ -12,9 +12,14 @@
 (function ($) {
   'use strict';
 
+  var params = window.wcAffiliateParams || {};
+
+  window.CashbackAffiliateGuestWarning = window.CashbackAffiliateGuestWarning || {};
+  window.CashbackAffiliateGuestWarning.show = showAuthWarning;
+
   // Авторизованные пользователи — никакого JS-перехвата,
   // ссылки работают как обычные <a href target=_blank>
-  if (wcAffiliateParams.isLoggedIn) {
+  if (params.isLoggedIn) {
     return;
   }
 
@@ -45,7 +50,7 @@
   /**
    * Показ модального окна для неавторизованных пользователей
    *
-   * @param {jQuery} $button Кнопка, по которой кликнули
+   * @param {jQuery|Object} source Кнопка, по которой кликнули, или опции модалки.
    */
   function safeUrl(raw) {
     var s = String(raw == null ? '' : raw).trim();
@@ -63,13 +68,20 @@
     return '#';
   }
 
-  function showAuthWarning($button) {
+  function showAuthWarning(source) {
     // Удаляем существующее модальное окно
     $('#wc-affiliate-warning-modal').remove();
 
-    var redirectUrl = safeUrl($button.attr('href'));
-    var loginUrl = safeUrl(wcAffiliateParams.loginUrl);
-    var warningMessage = String(wcAffiliateParams.warningMessage == null ? '' : wcAffiliateParams.warningMessage);
+    var hasAttr = source && typeof source.attr === 'function';
+    var options = !hasAttr && source && typeof source === 'object' ? source : {};
+    var redirectUrl = safeUrl(hasAttr ? source.attr('href') : options.redirectUrl);
+    var loginUrl = safeUrl(options.loginUrl || params.loginUrl);
+    var warningMessage = String(
+      options.warningMessage == null
+        ? (params.warningMessage == null ? '' : params.warningMessage)
+        : options.warningMessage
+    );
+    var onContinue = typeof options.onContinue === 'function' ? options.onContinue : null;
 
     var $modal = $('<div>', { id: 'wc-affiliate-warning-modal', 'class': 'wc-affiliate-modal' });
     var $content = $('<div>', { 'class': 'wc-affiliate-modal-content' });
@@ -88,14 +100,26 @@
       }).text('\u0410\u0432\u0442\u043E\u0440\u0438\u0437\u043E\u0432\u0430\u0442\u044C\u0441\u044F \u0438\u043B\u0438 \u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u043E\u0432\u0430\u0442\u044C\u0441\u044F')
     );
     $actions.append(
-      $('<a>', {
-        href: redirectUrl,
+      $('<a>', continueAttrs(onContinue, redirectUrl)).text('\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C \u0431\u0435\u0437 \u0430\u0432\u0442\u043E\u0440\u0438\u0437\u0430\u0446\u0438\u0438')
+    );
+
+    function continueAttrs(callback, url) {
+      var attrs = {
+        href: url,
         target: '_blank',
         rel: 'nofollow noopener noreferrer',
         'class': 'wc-affiliate-btn wc-affiliate-btn-primary',
         id: 'wc-affiliate-continue'
-      }).text('\u041F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C \u0431\u0435\u0437 \u0430\u0432\u0442\u043E\u0440\u0438\u0437\u0430\u0446\u0438\u0438')
-    );
+      };
+
+      if (callback) {
+        attrs.href = '#';
+        delete attrs.target;
+        delete attrs.rel;
+      }
+
+      return attrs;
+    }
 
     $content.append($actions);
     $modal.append($content);
@@ -106,7 +130,14 @@
     }, 10);
 
     // «Продолжить без авторизации» — обычная ссылка, закрываем модалку
-    $('#wc-affiliate-continue').on('click', function () {
+    $('#wc-affiliate-continue').on('click', function (e) {
+      if (onContinue) {
+        e.preventDefault();
+        closeModal();
+        onContinue();
+        return false;
+      }
+
       closeModal();
       // Ссылка — обычный <a href target=_blank>, браузер сам откроет
     });

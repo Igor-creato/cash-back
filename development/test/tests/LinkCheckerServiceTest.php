@@ -18,6 +18,8 @@ final class LinkCheckerServiceTest extends TestCase {
         require_once dirname(__DIR__, 3) . '/includes/class-cashback-shop-options.php';
         require_once dirname(__DIR__, 3) . '/includes/shops/class-cashback-shop-tariff-sync.php';
         require_once dirname(__DIR__, 3) . '/includes/shops/class-cashback-cashback-display-calculator.php';
+        require_once dirname(__DIR__, 3) . '/includes/shops/class-cashback-shop-importer.php';
+        require_once dirname(__DIR__, 3) . '/includes/shops/class-cashback-tab-conditions-renderer.php';
         require_once dirname(__DIR__, 3) . '/includes/link-checker/class-cashback-link-checker-url-validator.php';
         require_once dirname(__DIR__, 3) . '/includes/link-checker/class-cashback-link-checker-service.php';
     }
@@ -51,12 +53,17 @@ final class LinkCheckerServiceTest extends TestCase {
         $GLOBALS['_cb_test_link_checker_tariffs'] = array(
             array(
                 'tariff_id'    => 'base',
+                'name'         => 'Оплаченный заказ на сайте',
                 'tariff_type'  => 'percent',
                 'payment_size' => '10',
                 'currency'     => 'RUB',
                 'is_deleted'   => 0,
             ),
         );
+        $GLOBALS['_cb_test_meta'][501]['_woodmart_product_custom_tab_content'] =
+            Cashback_Tab_Conditions_Renderer::SENTINEL . "\n"
+            . '<h3><strong>Условия начисления</strong></h3>' . "\n"
+            . '<p>Оплаченный заказ на сайте — категория аксессуары: <strong>6,00%</strong></p>';
 
         $result = ( new Cashback_Link_Checker_Service() )->check('https://www.ozon.ru/product/123', 0);
 
@@ -67,7 +74,45 @@ final class LinkCheckerServiceTest extends TestCase {
         self::assertSame('ozon.ru', $result['store']['domain']);
         self::assertSame('admitad', $result['store']['network']);
         self::assertSame('6%', $result['cashback']['value']);
+        self::assertArrayHasKey('conditions_html', $result);
+        self::assertStringContainsString('Условия начисления', $result['conditions_html']);
+        self::assertStringContainsString('Оплаченный заказ на сайте', $result['conditions_html']);
+        self::assertStringContainsString('<strong>6,00%</strong>', $result['conditions_html']);
+        self::assertStringNotContainsString(Cashback_Tab_Conditions_Renderer::SENTINEL, $result['conditions_html']);
         self::assertStringContainsString('Кэшбэк доступен', $result['message']);
+    }
+
+    public function test_check_builds_conditions_html_with_renderer_when_product_tab_is_empty(): void {
+        $this->seed_product(array(
+            'ID'             => 502,
+            'post_title'     => 'Renderer Shop',
+            'post_status'    => 'publish',
+            'network_id'     => 7,
+            'offer_id'       => 'renderer-123',
+            'store_domain'   => 'renderer-shop.example',
+            'network_slug'   => 'admitad',
+            'network_name'   => 'Admitad',
+            'network_active' => 1,
+        ));
+        $GLOBALS['_cb_test_link_checker_tariffs'] = array(
+            array(
+                'tariff_id'    => 'base',
+                'name'         => 'Оплаченный заказ на сайте',
+                'tariff_type'  => 'percent',
+                'payment_size' => '10',
+                'currency'     => 'RUB',
+                'is_deleted'   => 0,
+            ),
+        );
+
+        $result = ( new Cashback_Link_Checker_Service() )->check('https://renderer-shop.example/product/123', 0);
+
+        self::assertSame('available', $result['status']);
+        self::assertArrayHasKey('conditions_html', $result);
+        self::assertStringContainsString('<h3><strong>Условия начисления</strong></h3>', $result['conditions_html']);
+        self::assertStringContainsString('Оплаченный заказ на сайте: <strong>6,00%</strong>', $result['conditions_html']);
+        self::assertStringContainsString('Срок начисления кэшбэка', $result['conditions_html']);
+        self::assertStringNotContainsString(Cashback_Tab_Conditions_Renderer::SENTINEL, $result['conditions_html']);
     }
 
     public function test_check_returns_not_available_for_unconnected_domain(): void {
@@ -76,6 +121,9 @@ final class LinkCheckerServiceTest extends TestCase {
         self::assertSame('not_available', $result['status']);
         self::assertFalse($result['cashback_available']);
         self::assertFalse($result['activation_required']);
+        self::assertSame('https://unknown-shop.example/item', $result['direct_url']);
+        self::assertSame('Магазин не подключен, кэшбэк не начислится', $result['warning']);
+        self::assertSame('Перейти', $result['button_text']);
         self::assertStringContainsString('не подключён', $result['message']);
     }
 

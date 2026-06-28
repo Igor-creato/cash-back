@@ -167,6 +167,7 @@ final class Cashback_Click_Session_Service {
         $user_agent        = array_key_exists('user_agent', $args) ? ( $args['user_agent'] !== null ? (string) $args['user_agent'] : null ) : null;
         $referer           = array_key_exists('referer', $args) ? ( $args['referer'] !== null ? (string) $args['referer'] : null ) : null;
         $client_request_id = self::normalize_client_request_id($args['client_request_id'] ?? null);
+        $canonical_click_id = isset($args['canonical_click_id']) ? sanitize_text_field((string) $args['canonical_click_id']) : '';
         if ($product_id <= 0) {
             return array( 'status' => 'invalid_product' );
         }
@@ -178,9 +179,13 @@ final class Cashback_Click_Session_Service {
             return array( 'status' => 'no_url' );
         }
 
-        $network_id  = (int) get_post_meta($product_id, '_affiliate_network_id', true);
-        $cpa_network = self::get_network_slug_by_id($network_id);
-        $offer_id    = (string) get_post_meta($product_id, '_offer_id', true);
+        $network_id  = isset($args['network_id']) ? (int) $args['network_id'] : (int) get_post_meta($product_id, '_affiliate_network_id', true);
+        $cpa_network = isset($args['cpa_network']) && is_scalar($args['cpa_network'])
+            ? sanitize_key((string) $args['cpa_network'])
+            : self::get_network_slug_by_id($network_id);
+        $offer_id    = isset($args['offer_id']) && is_scalar($args['offer_id'])
+            ? sanitize_text_field((string) $args['offer_id'])
+            : (string) get_post_meta($product_id, '_offer_id', true);
 
         $ctx = array(
             'source'            => 'link_checker',
@@ -194,6 +199,7 @@ final class Cashback_Click_Session_Service {
             'user_agent'        => $user_agent,
             'referer'           => $referer,
             'client_request_id' => $client_request_id,
+            'canonical_click_id' => $canonical_click_id,
             'force_spam'        => !empty($args['force_spam']),
             'promocode_id'      => null,
             'utm_source'        => 'link_checker',

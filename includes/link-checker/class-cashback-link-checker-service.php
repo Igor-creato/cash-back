@@ -26,11 +26,14 @@ final class Cashback_Link_Checker_Service {
             return $this->not_available(
                 (string) $validated['url'],
                 (string) $validated['host'],
-                'Этот магазин пока не подключён к кэшбэку Savello.'
+                'Этот магазин пока не подключён к кэшбэку Savello.',
+                'Магазин не подключен, кэшбэк не начислится',
+                'Перейти'
             );
         }
 
         $store = $this->format_store($merchant);
+        $conditions_html = $this->conditions_html($merchant);
         if (!$this->is_merchant_active($merchant)) {
             return array(
                 'status'              => 'not_available',
@@ -42,6 +45,7 @@ final class Cashback_Link_Checker_Service {
                 'store'               => $store,
                 'cashback'            => null,
                 'conditions'          => array(),
+                'conditions_html'     => '',
                 'warning'             => 'Кэшбэк не начислится',
                 'button_text'         => 'Перейти в магазин',
                 'message'             => 'Кэшбэк для этого магазина временно недоступен.',
@@ -62,6 +66,7 @@ final class Cashback_Link_Checker_Service {
                 'conditions'          => array(
                     'Ставка кэшбэка для этого магазина сейчас не опубликована.',
                 ),
+                'conditions_html'     => $conditions_html,
                 'warning'             => 'Кэшбэк не начислится',
                 'button_text'         => 'Перейти в магазин',
                 'message'             => 'Магазин подключён, но активная ставка кэшбэка пока недоступна.',
@@ -80,6 +85,7 @@ final class Cashback_Link_Checker_Service {
                 'Кэшбэк начисляется после подтверждения заказа магазином и CPA-сетью.',
                 'Не закрывайте страницу магазина сразу после перехода по ссылке.',
             ),
+            'conditions_html'     => $conditions_html,
             'button_text'         => 'Активировать кэшбэк',
             'message'             => 'Кэшбэк доступен. Перед покупкой активируйте переход по ссылке Savello.',
         );
@@ -148,7 +154,7 @@ final class Cashback_Link_Checker_Service {
         $cashback_url = (string) ( $result['cashback_url'] ?? $result['url'] ?? '' );
         $redirect_url = (string) ( $result['activation_page_url'] ?? $cashback_url );
 
-        return array(
+        $response = array(
             'status'              => 'ok',
             'redirect_url'        => $redirect_url,
             'activation_page_url' => (string) ( $result['activation_page_url'] ?? $redirect_url ),
@@ -158,6 +164,14 @@ final class Cashback_Link_Checker_Service {
             'button_text'         => (string) ( $result['button_text'] ?? 'Активировать кэшбэк' ),
             'message'             => 'Переход активирован. Кэшбэк появится после подтверждения заказа магазином.',
         );
+
+        foreach (array( 'fallback', 'fallback_reason_code', 'link_type' ) as $key) {
+            if (array_key_exists($key, $result)) {
+                $response[ $key ] = $result[ $key ];
+            }
+        }
+
+        return $response;
     }
 
     /**
@@ -298,9 +312,101 @@ final class Cashback_Link_Checker_Service {
     }
 
     /**
+     * @param array<string,mixed> $merchant
+     */
+    private function conditions_html( array $merchant ): string {
+        $product_id = (int) ( $merchant['ID'] ?? 0 );
+        if ($product_id <= 0) {
+            return '';
+        }
+
+        $html = (string) get_post_meta($product_id, '_woodmart_product_custom_tab_content', true);
+        if (trim($html) === '') {
+            $this->ensure_conditions_renderer_loaded();
+            if (class_exists('Cashback_Tab_Conditions_Renderer') && method_exists('Cashback_Tab_Conditions_Renderer', 'render')) {
+                $html = (string) Cashback_Tab_Conditions_Renderer::render(
+                    $product_id,
+                    (int) ( $merchant['network_id'] ?? 0 ),
+                    (string) ( $merchant['offer_id'] ?? '' )
+                );
+            }
+        }
+
+        if ($html === '') {
+            return '';
+        }
+
+        $sentinel = class_exists('Cashback_Tab_Conditions_Renderer')
+            ? Cashback_Tab_Conditions_Renderer::SENTINEL
+            : '<!-- cashback:autogen:v1 -->';
+        $html = trim(str_replace($sentinel, '', $html));
+        if ($html === '') {
+            return '';
+        }
+
+        if (function_exists('wp_kses_post')) {
+            return trim((string) wp_kses_post($html));
+        }
+
+        return $this->fallback_conditions_kses($html);
+    }
+
+    private function fallback_conditions_kses( string $html ): string {
+        $html = preg_replace('#<(script|style)\b[^>]*>.*?</\1>#is', '', $html) ?? '';
+        $allowed = array(
+            'h1'     => true,
+            'h2'     => true,
+            'h3'     => true,
+            'h4'     => true,
+            'h5'     => true,
+            'h6'     => true,
+            'p'      => true,
+            'strong' => true,
+            'b'      => true,
+            'em'     => true,
+            'i'      => true,
+            'ul'     => true,
+            'ol'     => true,
+            'li'     => true,
+            'br'     => true,
+            'span'   => true,
+            'div'    => true,
+        );
+
+        $html = preg_replace_callback(
+            '#</?([a-z0-9]+)(?:\s[^>]*)?>#i',
+            static function ( array $matches ) use ( $allowed ): string {
+                $tag = strtolower((string) $matches[1]);
+                if (!isset($allowed[ $tag ])) {
+                    return '';
+                }
+
+                return str_starts_with((string) $matches[0], '</') ? '</' . $tag . '>' : '<' . $tag . '>';
+            },
+            $html
+        ) ?? '';
+
+        return trim($html);
+    }
+
+    private function ensure_conditions_renderer_loaded(): void {
+        $root = dirname(__DIR__, 2);
+        foreach (array(
+            '/includes/shops/class-cashback-shop-importer.php',
+            '/includes/shops/class-cashback-shop-tariff-sync.php',
+            '/includes/shops/class-cashback-tab-conditions-renderer.php',
+        ) as $relative) {
+            $path = $root . $relative;
+            if (file_exists($path)) {
+                require_once $path;
+            }
+        }
+    }
+
+    /**
      * @return array<string,mixed>
      */
-    private function not_available( string $url, string $host, string $message ): array {
+    private function not_available( string $url, string $host, string $message, string $warning = 'Кэшбэк не начислится', string $button_text = 'Перейти в магазин' ): array {
         return array(
             'status'              => 'not_available',
             'cashback_available'  => false,
@@ -311,8 +417,9 @@ final class Cashback_Link_Checker_Service {
             'store'               => null,
             'cashback'            => null,
             'conditions'          => array(),
-            'warning'             => 'Кэшбэк не начислится',
-            'button_text'         => 'Перейти в магазин',
+            'conditions_html'     => '',
+            'warning'             => $warning,
+            'button_text'         => $button_text,
             'message'             => $message,
         );
     }

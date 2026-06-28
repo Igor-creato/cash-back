@@ -195,10 +195,6 @@ final class Savello_Cashback_Internal_API_Service {
         if (empty($merchant['cashback_available'])) {
             return $this->direct_link_fallback($direct_url, 'cashback_disabled', $merchant);
         }
-        if (empty($merchant['supports_deeplink'])) {
-            return $this->direct_link_fallback($direct_url, 'deeplink_not_supported', $merchant);
-        }
-
         $rates = $this->load_rates_for_merchant($merchant);
         if ($this->select_rate($rates, (string) ( $payload['category_id'] ?? '' )) === null) {
             return $this->direct_link_fallback($direct_url, 'partner_no_commission', $merchant);
@@ -217,12 +213,26 @@ final class Savello_Cashback_Internal_API_Service {
             return $this->direct_link_fallback($direct_url, 'tracking_unavailable', $merchant);
         }
 
+        if (empty($merchant['supports_deeplink'])) {
+            return $this->standard_affiliate_activation_fallback(
+                $direct_url,
+                'deeplink_not_supported',
+                $merchant,
+                $payload,
+                $user_id,
+                $click_id
+            );
+        }
+
         $deeplink = $this->create_network_deeplink($merchant, $direct_url, $tracking, !empty($payload['validate_links']));
         if (empty($deeplink['success']) || empty($deeplink['url']) || !is_string($deeplink['url'])) {
-            return $this->direct_link_fallback(
+            return $this->standard_affiliate_activation_fallback(
                 $direct_url,
                 (string) ( $deeplink['reason_code'] ?? 'deeplink_unavailable' ),
-                $merchant
+                $merchant,
+                $payload,
+                $user_id,
+                $click_id
             );
         }
 
@@ -244,7 +254,14 @@ final class Savello_Cashback_Internal_API_Service {
         ));
 
         if (($session['status'] ?? '') !== 'ok') {
-            return $this->direct_link_fallback($direct_url, 'click_session_' . (string) ( $session['status'] ?? 'error' ), $merchant);
+            return $this->standard_affiliate_activation_fallback(
+                $direct_url,
+                'click_session_' . (string) ( $session['status'] ?? 'error' ),
+                $merchant,
+                $payload,
+                $user_id,
+                $click_id
+            );
         }
 
         $result = array(
@@ -555,6 +572,58 @@ final class Savello_Cashback_Internal_API_Service {
             $result['merchant_id'] = (string) $merchant['merchant_id'];
             $result['network']     = (string) $merchant['network'];
         }
+        return $result;
+    }
+
+    private function standard_affiliate_activation_fallback( string $direct_url, string $reason_code, array $merchant, array $payload, int $user_id, string $click_id ): array {
+        $product_url = $this->sanitize_url((string) ( $merchant['_product_url'] ?? '' ));
+        if ($product_url === '' || !class_exists('Cashback_Click_Session_Service')) {
+            return $this->direct_link_fallback($direct_url, $reason_code, $merchant);
+        }
+
+        $session = Cashback_Click_Session_Service::activate_for_link_checker(array(
+            'product_id'          => (int) $merchant['merchant_id'],
+            'network_id'          => (int) $merchant['_network_id'],
+            'offer_id'            => (string) $merchant['offer_id'],
+            'target_url'          => $product_url,
+            'user_id'             => $user_id,
+            'ip_address'          => $this->client_ip($payload),
+            'user_agent'          => isset($payload['user_agent']) ? sanitize_text_field((string) $payload['user_agent']) : null,
+            'referer'             => $direct_url,
+            'client_request_id'   => $this->sanitize_click_id((string) ( $payload['client_request_id'] ?? '' )) ?: null,
+            'canonical_click_id'  => $click_id,
+            'utm_campaign'        => sanitize_key($reason_code),
+        ));
+
+        if (($session['status'] ?? '') !== 'ok') {
+            return $this->direct_link_fallback(
+                $direct_url,
+                $reason_code . '_fallback_' . (string) ( $session['status'] ?? 'error' ),
+                $merchant
+            );
+        }
+
+        $result = array(
+            'cashback_available'   => true,
+            'button_text'          => 'Активировать кэшбэк',
+            'url'                  => (string) $session['affiliate_url'],
+            'cashback_url'         => (string) $session['affiliate_url'],
+            'affiliate_url'        => (string) $session['affiliate_url'],
+            'merchant'             => (string) $merchant['merchant_name'],
+            'merchant_id'          => (string) $merchant['merchant_id'],
+            'cashback_rate'        => $this->cashback_rate_label($merchant, $user_id),
+            'click_id'             => (string) $session['canonical_click_id'],
+            'network'              => (string) $merchant['network'],
+            'link_type'            => 'standard_affiliate_url',
+            'fallback'             => true,
+            'fallback_reason_code' => $reason_code,
+        );
+
+        $activation_page_url = $this->activation_page_url((string) $session['canonical_click_id'], $user_id);
+        if ($activation_page_url !== null) {
+            $result['activation_page_url'] = $activation_page_url;
+        }
+
         return $result;
     }
 

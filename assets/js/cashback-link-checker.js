@@ -46,6 +46,18 @@
         return child;
     }
 
+    function appendHtml(node, className, value) {
+        var child = document.createElement('div');
+        child.className = className;
+        if (typeof window.cashbackSafeHtml === 'function') {
+            child.innerHTML = window.cashbackSafeHtml(value);
+        } else {
+            child.textContent = String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        }
+        node.appendChild(child);
+        return child;
+    }
+
     function clientRequestId() {
         if (window.crypto && typeof window.crypto.randomUUID === 'function') {
             return window.crypto.randomUUID().replace(/-/g, '');
@@ -83,6 +95,39 @@
         }
     }
 
+    function renderConditions(result, data) {
+        if (typeof data.conditions_html === 'string' && data.conditions_html.trim() !== '') {
+            appendHtml(result, 'cashback-link-checker__conditions-html', data.conditions_html);
+            return;
+        }
+
+        if (Array.isArray(data.conditions) && data.conditions.length > 0) {
+            var list = document.createElement('ul');
+            list.className = 'cashback-link-checker__conditions';
+            data.conditions.forEach(function (condition) {
+                appendText(list, 'li', 'cashback-link-checker__condition', condition);
+            });
+            result.appendChild(list);
+        }
+    }
+
+    function showGuestWarning(onContinue) {
+        if (config.isLoggedIn !== false) {
+            return false;
+        }
+        if (!window.CashbackAffiliateGuestWarning || typeof window.CashbackAffiliateGuestWarning.show !== 'function') {
+            return false;
+        }
+
+        window.CashbackAffiliateGuestWarning.show({
+            loginUrl: config.loginUrl || '',
+            warningMessage: config.guestWarningMessage || 'Вы не авторизованы, при переходе покупка не будет учтена сервисом. Продолжить?',
+            onContinue: onContinue
+        });
+
+        return true;
+    }
+
     function renderAvailable(form, result, data, directUrl) {
         clear(result);
         result.className = 'cashback-link-checker__result cashback-link-checker__result--available';
@@ -99,22 +144,19 @@
             );
         }
 
-        appendText(result, 'p', 'cashback-link-checker__notice', 'Кэшбэк не гарантируется: начисление зависит от подтверждения заказа магазином и CPA-сетью.');
-
-        if (Array.isArray(data.conditions) && data.conditions.length > 0) {
-            var list = document.createElement('ul');
-            list.className = 'cashback-link-checker__conditions';
-            data.conditions.forEach(function (condition) {
-                appendText(list, 'li', 'cashback-link-checker__condition', condition);
-            });
-            result.appendChild(list);
-        }
+        renderConditions(result, data);
 
         var button = document.createElement('button');
         button.type = 'button';
         button.className = 'cashback-link-checker__button cashback-link-checker__button--activate cashback-btn-primary';
         button.textContent = data.button_text || 'Активировать кэшбэк';
         button.addEventListener('click', function () {
+            if (showGuestWarning(function () {
+                activate(form, result, directUrl, button);
+            })) {
+                return;
+            }
+
             activate(form, result, directUrl, button);
         });
         result.appendChild(button);

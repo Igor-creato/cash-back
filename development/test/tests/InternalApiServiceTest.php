@@ -248,6 +248,46 @@ final class InternalApiServiceTest extends TestCase
     }
 
     #[Group('direct-product-link')]
+    public function test_direct_product_link_falls_back_to_standard_affiliate_activation_when_api_generation_fails(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cashback-click-session-service.php';
+
+        $GLOBALS['_cb_test_http_response'] = array(
+            'body'     => (string) wp_json_encode(array(
+                'success' => false,
+                'error'   => 'temporary api failure',
+            )),
+            'response' => array( 'code' => 502, 'message' => 'Bad Gateway' ),
+            'headers'  => array(),
+        );
+
+        $service  = new Savello_Cashback_Internal_API_Service();
+        $click_id = '22222222222222222222222222222222';
+
+        $result = $service->resolve_direct_product_link(array(
+            'direct_url'        => 'https://static-advcake.example/products/sku-2',
+            'click_id'          => $click_id,
+            'client_request_id' => '550e8400-e29b-41d4-a716-446655440002',
+            'ip_address'        => '127.0.0.1',
+            'user_agent'        => 'phpunit',
+        ));
+
+        self::assertTrue($result['cashback_available']);
+        self::assertTrue($result['fallback']);
+        self::assertSame('standard_affiliate_url', $result['link_type']);
+        self::assertSame('Активировать кэшбэк', $result['button_text']);
+        self::assertSame('advcake_api_error', $result['fallback_reason_code']);
+        self::assertStringStartsWith('https://go.static-advcake.example/click', $result['cashback_url']);
+        self::assertStringContainsString('sub1=', $result['cashback_url']);
+        self::assertStringContainsString('sub2=unregistered', $result['cashback_url']);
+        self::assertArrayHasKey('activation_page_url', $result);
+        self::assertStringContainsString('cashback_go=1', $result['activation_page_url']);
+        self::assertSame($result['cashback_url'], $this->wpdb->insert_rows[0]['affiliate_url']);
+        self::assertSame('link_checker', $this->wpdb->insert_rows[0]['utm_source']);
+        self::assertSame('550e8400e29b41d4a716446655440002', $this->wpdb->insert_rows[0]['client_request_id']);
+    }
+
+    #[Group('direct-product-link')]
     public function test_direct_product_link_fails_closed_when_network_tracking_params_are_empty(): void
     {
         require_once dirname(__DIR__, 3) . '/includes/class-cashback-click-session-service.php';
