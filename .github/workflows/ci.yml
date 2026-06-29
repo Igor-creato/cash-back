@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - feature/product-price-monitor-service
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - feature/product-price-monitor-service
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -216,6 +220,17 @@ jobs:
       - name: Run gitleaks
         run: gitleaks detect --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1
 
+  local-secret-patterns:
+    name: Local secret pattern scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run project secret scan
+        shell: pwsh
+        run: ./tools/secret-scan.ps1
+
   codeql:
     name: CodeQL (${{ matrix.language }})
     runs-on: ubuntu-latest
@@ -242,6 +257,7 @@ jobs:
       - sql-and-injection-scan
       - semgrep
       - gitleaks
+      - local-secret-patterns
       - codeql
     runs-on: ubuntu-latest
     steps:

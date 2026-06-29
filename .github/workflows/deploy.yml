@@ -4,7 +4,9 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
-    branches: [main]
+    branches:
+      - main
+      - feature/product-price-monitor-service
 
 permissions:
   contents: read
@@ -12,7 +14,11 @@ permissions:
 jobs:
   deploy:
     name: Deploy via SSH
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    if: >-
+      ${{
+        github.event.workflow_run.conclusion == 'success' &&
+        contains(fromJSON('["main","feature/product-price-monitor-service"]'), github.event.workflow_run.head_branch)
+      }}
     runs-on: ubuntu-latest
     steps:
       - name: Execute remote SSH commands
@@ -24,12 +30,24 @@ jobs:
           port: ${{ secrets.SERVER_PORT }}
           script: |
             set -e
+            DEPLOY_BRANCH='${{ github.event.workflow_run.head_branch }}'
+            case "$DEPLOY_BRANCH" in
+              main|feature/product-price-monitor-service) ;;
+              *) echo "Unsupported deploy branch: $DEPLOY_BRANCH"; exit 1 ;;
+            esac
+
             PLUGIN_DIR=/home/igor/cash-back/deploy-cashback/service/volumes/wordpress/wp-content/plugins/cash-back
             cd "$PLUGIN_DIR"
             git -c safe.directory="$PLUGIN_DIR" remote -v
+            git -c safe.directory="$PLUGIN_DIR" fetch --prune origin "$DEPLOY_BRANCH"
+            if git -c safe.directory="$PLUGIN_DIR" show-ref --verify --quiet "refs/heads/$DEPLOY_BRANCH"; then
+              git -c safe.directory="$PLUGIN_DIR" checkout "$DEPLOY_BRANCH"
+            else
+              git -c safe.directory="$PLUGIN_DIR" checkout -b "$DEPLOY_BRANCH" "origin/$DEPLOY_BRANCH"
+            fi
             git -c safe.directory="$PLUGIN_DIR" branch
             git -c safe.directory="$PLUGIN_DIR" log --oneline -3
-            git -c safe.directory="$PLUGIN_DIR" pull --ff-only origin main
+            git -c safe.directory="$PLUGIN_DIR" pull --ff-only origin "$DEPLOY_BRANCH"
             git -c safe.directory="$PLUGIN_DIR" log --oneline -3
 
             # opcache invalidation (production has opcache.validate_timestamps=Off
