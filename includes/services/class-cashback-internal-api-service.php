@@ -357,15 +357,18 @@ final class Savello_Cashback_Internal_API_Service {
             return null;
         }
 
-        $status = $include_inactive ? 'all' : 'active';
+        $matches = array();
+        $status  = $include_inactive ? 'all' : 'active';
         foreach ($this->get_merchants(array( 'status' => $status, 'limit' => 500 ))['items'] as $merchant) {
             foreach ($merchant['domains'] as $domain) {
                 if ($host === $domain || str_ends_with($host, '.' . $domain)) {
-                    return $merchant;
+                    $matches[] = $merchant;
+                    break;
                 }
             }
         }
-        return null;
+
+        return $this->select_merchant_candidate($matches);
     }
 
     private function load_merchant_rows(): array {
@@ -479,6 +482,65 @@ final class Savello_Cashback_Internal_API_Service {
             '_api_token_endpoint'   => (string) ( $row['api_token_endpoint'] ?? '' ),
             '_api_website_id'       => (string) ( $row['api_website_id'] ?? '' ),
         );
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $candidates
+     * @return array<string,mixed>|null
+     */
+    private function select_merchant_candidate( array $candidates ): ?array {
+        if (empty($candidates)) {
+            return null;
+        }
+
+        $preferred_id = $this->preferred_product_id_for_candidates($candidates);
+        if ($preferred_id > 0) {
+            foreach ($candidates as $candidate) {
+                if (
+                    (int) ($candidate['merchant_id'] ?? 0) === $preferred_id
+                    && (string) ($candidate['status'] ?? '') === 'active'
+                ) {
+                    return $candidate;
+                }
+            }
+        }
+
+        foreach ($candidates as $candidate) {
+            if ((string) ($candidate['status'] ?? '') === 'active') {
+                return $candidate;
+            }
+        }
+
+        return $candidates[0];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $candidates
+     */
+    private function preferred_product_id_for_candidates( array $candidates ): int {
+        if (
+            !class_exists('Cashback_Shop_Group_Resolver')
+            || !method_exists('Cashback_Shop_Group_Resolver', 'resolve_preferred')
+        ) {
+            return 0;
+        }
+
+        $candidate_ids = array();
+        foreach ($candidates as $candidate) {
+            $candidate_id = (int) ($candidate['merchant_id'] ?? 0);
+            if ($candidate_id > 0) {
+                $candidate_ids[ $candidate_id ] = true;
+            }
+        }
+
+        foreach (array_keys($candidate_ids) as $candidate_id) {
+            $preferred_id = (int) Cashback_Shop_Group_Resolver::resolve_preferred((int) $candidate_id);
+            if ($preferred_id > 0 && isset($candidate_ids[ $preferred_id ])) {
+                return $preferred_id;
+            }
+        }
+
+        return 0;
     }
 
     private function load_rates_for_merchant( array $merchant ): array {
