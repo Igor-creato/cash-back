@@ -39,7 +39,7 @@
       success: function (response) {
         if (response.success) {
           $('#transactions-table-container').html(safeHtml(response.data.html));
-          $('#pagination-container').html(
+          $('#history-pagination-container').html(
             safeHtml(window.CashbackPagination.build(response.data.current_page, response.data.total_pages))
           );
         }
@@ -57,7 +57,7 @@
     }
 
     // Pagination
-    $(document).on('click', '#pagination-container .page-numbers[data-page]', function (e) {
+    $(document).on('click', '#history-pagination-container .page-numbers[data-page]', function (e) {
       e.preventDefault();
       var page = $(this).data('page');
       if (page) {
