@@ -111,8 +111,15 @@
         }
     }
 
+    function isLoggedIn() {
+        return config.isLoggedIn === true
+            || config.isLoggedIn === 1
+            || config.isLoggedIn === '1'
+            || config.isLoggedIn === 'true';
+    }
+
     function showGuestWarning(onContinue) {
-        if (config.isLoggedIn !== false) {
+        if (isLoggedIn()) {
             return false;
         }
         if (!window.CashbackAffiliateGuestWarning || typeof window.CashbackAffiliateGuestWarning.show !== 'function') {

@@ -260,7 +260,7 @@ test('guest link checker activation opens existing warning modal and waits for c
       CashbackLinkChecker: {
         restBase: 'https://savelloclub.test/wp-json/cashback/v1/link-checker',
         nonce: 'nonce',
-        isLoggedIn: false,
+        isLoggedIn: '',
         loginUrl: 'https://savelloclub.test/my-account/?action=register',
         guestWarningMessage: 'Гость предупрежден',
         i18n: {}
