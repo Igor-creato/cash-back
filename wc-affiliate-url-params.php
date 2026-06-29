@@ -2671,13 +2671,15 @@ HTML;
      */
     public function enqueue_frontend_scripts(): void {
         if (!is_admin()) {
+            // phpcs:disable WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
             wp_enqueue_script(
                 'wc-affiliate-url-params',
-                plugins_url('assets/js/affiliate-guest-warning.js', __FILE__),
+                cashback_asset_url('assets/js/affiliate-guest-warning.js'),
                 array( 'jquery' ),
-                '4.2.0',
+                null,
                 true
             );
+            // phpcs:enable WordPress.WP.EnqueuedResourceParameters.MissingVersion
 
             wp_localize_script('wc-affiliate-url-params', 'wcAffiliateParams', array(
                 'isLoggedIn'     => is_user_logged_in(),
@@ -2685,7 +2687,11 @@ HTML;
                     'Вы не авторизованы, при переходе покупка не будет учтена сервисом. Продолжить?',
                     'wc-affiliate-url-params'
                 ),
-                'loginUrl'       => add_query_arg('action', 'register', get_permalink(wc_get_page_id('myaccount'))),
+                'loginUrl'       => add_query_arg(
+                    'action',
+                    'register',
+                    get_permalink(wc_get_page_id('myaccount'))
+                ),
             ));
 
             wp_enqueue_style(

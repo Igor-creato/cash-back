@@ -61,13 +61,15 @@ final class Cashback_Link_Checker_Shortcode {
         }
 
         if (!is_user_logged_in()) {
+            // phpcs:disable WordPress.WP.EnqueuedResourceParameters.MissingVersion -- version embedded via cashback_asset_url() ?cv=<filemtime>
             wp_enqueue_script(
                 'wc-affiliate-url-params',
                 cashback_asset_url('assets/js/affiliate-guest-warning.js'),
                 array( 'jquery' ),
-                '4.2.1',
+                null,
                 true
             );
+            // phpcs:enable WordPress.WP.EnqueuedResourceParameters.MissingVersion
 
             wp_localize_script('wc-affiliate-url-params', 'wcAffiliateParams', array(
                 'isLoggedIn'     => false,
