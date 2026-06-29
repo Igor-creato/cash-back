@@ -1666,6 +1666,12 @@ class CashbackPlugin {
             Cashback_Frontend_Performance::init();
         }
 
+        // Dynamic cashback display cache: tariff sync changes custom-table data,
+        // so post_meta hooks do not fire. Invalidate before external HTML cache purge.
+        if (class_exists('Cashback_Cashback_Display_Calculator')) {
+            add_action('cashback_tariffs_changed', array( 'Cashback_Cashback_Display_Calculator', 'bust_cache_for_product' ), 5, 1);
+        }
+
         // Nginx fastcgi_cache invalidation (см. require_file выше).
         if (class_exists('Cashback_Nginx_Cache_Hooks')) {
             Cashback_Nginx_Cache_Hooks::init();

@@ -26,6 +26,13 @@ final class InternalApiServiceTest extends TestCase
         $GLOBALS['_cb_test_options'] = array(
             'cashback_guest_display_rate' => 70,
         );
+        $GLOBALS['_cb_test_http_calls']             = array();
+        $GLOBALS['_cb_test_http_response_callback'] = null;
+        $GLOBALS['_cb_test_http_response']          = array(
+            'body'     => '',
+            'response' => array( 'code' => 200, 'message' => 'OK' ),
+            'headers'  => array(),
+        );
         $GLOBALS['_cb_test_post_meta'] = array();
         $GLOBALS['_cb_test_posts']     = array(
             101 => (object) array( 'ID' => 101, 'post_status' => 'publish', 'post_type' => 'product', 'post_title' => 'AliExpress' ),
@@ -55,13 +62,13 @@ final class InternalApiServiceTest extends TestCase
         $service = new Savello_Cashback_Internal_API_Service();
 
         $active = $service->get_merchants(array());
-        self::assertCount(4, $active['items']);
+        self::assertCount(5, $active['items']);
         self::assertSame('101', $active['items'][0]['merchant_id']);
         self::assertSame(array('aliexpress.ru'), $active['items'][0]['domains']);
         self::assertIsArray($active['items'][0]['domain_aliases']);
 
         $all = $service->get_merchants(array( 'status' => 'all', 'limit' => 999 ));
-        self::assertCount(5, $all['items']);
+        self::assertCount(7, $all['items']);
         self::assertSame(500, $all['pagination']['limit']);
     }
 

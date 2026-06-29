@@ -165,6 +165,7 @@ final class CouponsIconsShortcodeTest extends TestCase
         $GLOBALS['_cb_test_attachments']     = array();
         $GLOBALS['_cb_test_products']        = array();
         $GLOBALS['_cb_test_enqueued_styles'] = array();
+        $GLOBALS['_cb_test_get_permalink']   = static fn( int $post_id = 0 ): string => 'http://localhost/?p=' . $post_id;
 
         // Сброс per-request кэша шорткода.
         if (class_exists('Cashback_Coupons_Icons_Shortcode')) {

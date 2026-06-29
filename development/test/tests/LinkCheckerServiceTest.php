@@ -271,6 +271,11 @@ final class LinkCheckerServiceWpdbStub {
         return $GLOBALS['_cb_test_link_checker_products'] ?? array();
     }
 
+    public function get_row( string $query, string $output = ARRAY_A ): ?array {
+        unset($query, $output);
+        return null;
+    }
+
     public function get_var( string $query ): mixed {
         unset($query);
         return null;

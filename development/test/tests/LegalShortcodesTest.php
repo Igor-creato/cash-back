@@ -67,6 +67,7 @@ final class LegalShortcodesTest extends TestCase
         $GLOBALS['_cb_test_options']         = array();
         $GLOBALS['_cb_test_current_user_can'] = false;
         $GLOBALS['_cb_test_post_statuses']    = array();
+        $GLOBALS['_cb_test_get_permalink']    = static fn( int $post_id = 0 ): string => 'http://localhost/?p=' . $post_id;
     }
 
     public function test_render_doc_returns_empty_for_unknown_type(): void

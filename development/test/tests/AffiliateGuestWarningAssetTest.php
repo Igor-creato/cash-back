@@ -18,7 +18,11 @@ final class AffiliateGuestWarningAssetTest extends TestCase {
 
         if (!function_exists('get_permalink')) {
             function get_permalink( int $post = 0 ): string {
-                unset($post);
+                $callback = $GLOBALS['_cb_test_get_permalink'] ?? null;
+                if ($callback instanceof Closure) {
+                    return (string) $callback($post);
+                }
+
                 return 'https://savelloclub.test/my-account/';
             }
         }
@@ -38,6 +42,7 @@ final class AffiliateGuestWarningAssetTest extends TestCase {
         $GLOBALS['_cb_test_enqueued_styles']   = array();
         $GLOBALS['_cb_test_localized_scripts'] = array();
         $GLOBALS['_cb_test_is_logged_in']      = false;
+        unset($GLOBALS['_cb_test_get_permalink']);
     }
 
     public function test_guest_warning_asset_uses_cache_busted_helper_for_guests(): void {
