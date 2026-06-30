@@ -85,6 +85,46 @@ final class PriceMonitorAlertDispatchTest extends TestCase
         self::assertSame(400, $result->get_error_data()['status'] ?? null);
     }
 
+    #[DataProvider('invalid_numeric_alert_payloads_provider')]
+    public function test_invalid_numeric_alert_payloads_return_400_and_skip_mail(
+        array $payload,
+        string $expected_field
+    ): void {
+        $GLOBALS['_cb_test_users'][15] = (object) array(
+            'ID'           => 15,
+            'user_email'   => 'alerts@example.com',
+            'display_name' => 'Иван',
+        );
+
+        $controller = new Savello_Cashback_Internal_REST_Controller();
+        $result     = $controller->send_price_monitor_alert($this->request($payload));
+
+        self::assertInstanceOf(WP_Error::class, $result);
+        self::assertSame(400, $result->get_error_data()['status'] ?? null);
+        self::assertCount(0, $GLOBALS['_cb_test_mail_calls'], $expected_field . ' should block wp_mail()');
+    }
+
+    public function test_digit_string_minor_values_remain_valid_and_send_mail(): void
+    {
+        $GLOBALS['_cb_test_users'][15] = (object) array(
+            'ID'           => 15,
+            'user_email'   => 'alerts@example.com',
+            'display_name' => 'Иван',
+        );
+
+        $controller = new Savello_Cashback_Internal_REST_Controller();
+        $payload    = $this->valid_payload();
+        $payload['target_price_minor']   = '0';
+        $payload['observed_price_minor'] = '179900';
+
+        $response = $controller->send_price_monitor_alert($this->request($payload));
+
+        self::assertInstanceOf(WP_REST_Response::class, $response);
+        self::assertSame(200, $response->get_status());
+        self::assertSame(array( 'status' => 'sent' ), $response->get_data());
+        self::assertCount(1, $GLOBALS['_cb_test_mail_calls']);
+    }
+
     public function test_send_price_monitor_alert_declares_required_return_type(): void
     {
         $reflection = new ReflectionMethod(
@@ -227,6 +267,26 @@ final class PriceMonitorAlertDispatchTest extends TestCase
             'invalid action url' => array(
                 array_merge($payload, array( 'action_url' => 'mailto:alerts@example.com' )),
                 'action_url',
+            ),
+        );
+    }
+
+    public static function invalid_numeric_alert_payloads_provider(): array
+    {
+        $payload = static::base_payload_for_invalid_required_fields();
+
+        return array(
+            'negative user id' => array(
+                array_merge($payload, array( 'user_id' => -15 )),
+                'user_id',
+            ),
+            'decimal target price minor' => array(
+                array_merge($payload, array( 'target_price_minor' => 179900.75 )),
+                'target_price_minor',
+            ),
+            'scientific observed price minor' => array(
+                array_merge($payload, array( 'observed_price_minor' => '1e5' )),
+                'observed_price_minor',
             ),
         );
     }

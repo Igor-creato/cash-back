@@ -1085,20 +1085,38 @@ final class Savello_Cashback_Internal_API_Service {
     }
 
     private function required_positive_int( array $payload, string $key ): ?int {
-        if (! array_key_exists($key, $payload) || ! is_numeric($payload[ $key ])) {
+        if (! array_key_exists($key, $payload)) {
             return null;
         }
 
-        $value = absint($payload[ $key ]);
+        $value = $payload[ $key ];
+        if (is_int($value)) {
+            return $value > 0 ? $value : null;
+        }
+
+        if (! is_string($value) || $value === '' || ! ctype_digit($value)) {
+            return null;
+        }
+
+        $value = (int) $value;
         return $value > 0 ? $value : null;
     }
 
     private function required_non_negative_int( array $payload, string $key ): ?int {
-        if (! array_key_exists($key, $payload) || ! is_numeric($payload[ $key ])) {
+        if (! array_key_exists($key, $payload)) {
             return null;
         }
 
-        $value = (int) $payload[ $key ];
+        $value = $payload[ $key ];
+        if (is_int($value)) {
+            return $value >= 0 ? $value : null;
+        }
+
+        if (! is_string($value) || $value === '' || ! ctype_digit($value)) {
+            return null;
+        }
+
+        $value = (int) $value;
         return $value >= 0 ? $value : null;
     }
 
