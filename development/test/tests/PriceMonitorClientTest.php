@@ -115,7 +115,7 @@ final class PriceMonitorClientTest extends TestCase {
         );
 
         $payload = array(
-            'external_user_id'    => 'wp:savelloclub.test:77',
+            'user_id'             => 'wp:savelloclub.test:77',
             'url'                 => 'https://shop.example/item',
             'target_price_minor'  => 12345,
             'currency'            => 'RUB',
@@ -133,7 +133,7 @@ final class PriceMonitorClientTest extends TestCase {
         self::assertSame('POST', $captured[0]['method']);
         self::assertSame('https://backend.example/api/v1/watchlist/items', $captured[0]['url']);
 
-        $expected_body = '{"external_user_id":"wp:savelloclub.test:77","url":"https://shop.example/item","target_price_minor":12345,"currency":"RUB"}';
+        $expected_body = '{"user_id":"wp:savelloclub.test:77","url":"https://shop.example/item","target_price_minor":12345,"currency":"RUB"}';
         $expected_hash = hash('sha256', $expected_body);
         $expected_sig  = hash_hmac(
             'sha256',

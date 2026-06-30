@@ -244,7 +244,7 @@ final class PriceMonitorRestControllerTest extends TestCase {
         self::assertSame('client-watch-123', $calls[1]['idempotency_key']);
         self::assertSame(
             array(
-                'external_user_id'   => 'wp:savelloclub.test:77',
+                'user_id'            => 'wp:savelloclub.test:77',
                 'url'                => 'https://shop.example/item',
                 'target_price_minor' => 12345,
                 'currency'           => 'RUB',
@@ -257,5 +257,102 @@ final class PriceMonitorRestControllerTest extends TestCase {
         self::assertCount(1, $activation_calls);
         self::assertSame('https://shop.example/item', $activation_calls[0]['url']);
         self::assertSame(77, $activation_calls[0]['user_id']);
+    }
+
+    public function test_update_delete_and_refresh_forward_user_id_to_backend_routes(): void {
+        $this->load_controller();
+
+        $GLOBALS['_cb_test_is_logged_in'] = true;
+        $GLOBALS['_cb_test_user_id']      = 77;
+
+        $calls      = array();
+        $controller = new Cashback_Price_Monitor_REST_Controller(
+            new class( $calls ) {
+                public array $calls;
+
+                public function __construct(array &$calls) {
+                    $this->calls = &$calls;
+                }
+
+                public function request(string $method, string $path, array $payload = array(), ?string $idempotency_key = null): array {
+                    $this->calls[] = compact('method', 'path', 'payload', 'idempotency_key');
+
+                    return match ($method) {
+                        'PATCH' => array(
+                            'item' => array(
+                                'id'                 => 'item-1',
+                                'target_price_minor' => 9999,
+                            ),
+                        ),
+                        'POST' => array(
+                            'scheduled'         => true,
+                            'watchlist_item_id' => 'item-1',
+                            'product_id'        => 'product-1',
+                            'status'            => 'queued',
+                        ),
+                        default => array(),
+                    };
+                }
+            },
+            new class {
+                public function check(string $url, int $user_id = 0): array {
+                    unset($url, $user_id);
+                    return array();
+                }
+            }
+        );
+
+        $update_request = new WP_REST_Request('PATCH', '/cashback/v1/price-monitor/items/item-1');
+        $update_request->set_param('item_id', 'item-1');
+        $update_request->set_param('target_price_minor', 9999);
+        $update_request->set_param('client_request_id', 'client-watch-patch');
+
+        $delete_request = new WP_REST_Request('DELETE', '/cashback/v1/price-monitor/items/item-1');
+        $delete_request->set_param('item_id', 'item-1');
+        $delete_request->set_param('client_request_id', 'client-watch-delete');
+
+        $refresh_request = new WP_REST_Request('POST', '/cashback/v1/price-monitor/items/item-1/refresh');
+        $refresh_request->set_param('item_id', 'item-1');
+        $refresh_request->set_param('client_request_id', 'client-watch-refresh');
+
+        $update_response  = $controller->update_item($update_request);
+        $delete_response  = $controller->delete_item($delete_request);
+        $refresh_response = $controller->refresh_item($refresh_request);
+
+        self::assertSame(200, $update_response->get_status());
+        self::assertSame(204, $delete_response->get_status());
+        self::assertSame(200, $refresh_response->get_status());
+        self::assertCount(3, $calls);
+
+        self::assertSame('PATCH', $calls[0]['method']);
+        self::assertSame('/api/v1/watchlist/items/item-1', $calls[0]['path']);
+        self::assertSame('client-watch-patch', $calls[0]['idempotency_key']);
+        self::assertSame(
+            array(
+                'user_id'            => 'wp:savelloclub.test:77',
+                'target_price_minor' => 9999,
+            ),
+            $calls[0]['payload']
+        );
+
+        self::assertSame('DELETE', $calls[1]['method']);
+        self::assertSame('/api/v1/watchlist/items/item-1', $calls[1]['path']);
+        self::assertSame('client-watch-delete', $calls[1]['idempotency_key']);
+        self::assertSame(
+            array(
+                'user_id' => 'wp:savelloclub.test:77',
+            ),
+            $calls[1]['payload']
+        );
+
+        self::assertSame('POST', $calls[2]['method']);
+        self::assertSame('/api/v1/watchlist/items/item-1/refresh', $calls[2]['path']);
+        self::assertSame('client-watch-refresh', $calls[2]['idempotency_key']);
+        self::assertSame(
+            array(
+                'user_id' => 'wp:savelloclub.test:77',
+            ),
+            $calls[2]['payload']
+        );
     }
 }

@@ -111,8 +111,8 @@ final class Cashback_Price_Monitor_REST_Controller {
         }
 
         $payload = array(
-            'external_user_id' => $this->external_user_id(),
-            'url'              => $url,
+            'user_id' => $this->external_user_id(),
+            'url'     => $url,
         );
 
         $target_price_minor = $request->get_param('target_price_minor');
@@ -154,7 +154,7 @@ final class Cashback_Price_Monitor_REST_Controller {
 
     public function update_item( WP_REST_Request $request ): WP_REST_Response {
         $payload = array(
-            'external_user_id' => $this->external_user_id(),
+            'user_id' => $this->external_user_id(),
         );
 
         foreach (array( 'target_price_minor', 'currency', 'status' ) as $key) {
@@ -179,7 +179,9 @@ final class Cashback_Price_Monitor_REST_Controller {
             $this->client->request(
                 'DELETE',
                 $this->item_path((string) $request->get_param('item_id')),
-                array(),
+                array(
+                    'user_id' => $this->external_user_id(),
+                ),
                 $this->idempotency_key($request)
             ),
             204
@@ -192,7 +194,7 @@ final class Cashback_Price_Monitor_REST_Controller {
                 'POST',
                 $this->item_path((string) $request->get_param('item_id'), '/refresh'),
                 array(
-                    'external_user_id' => $this->external_user_id(),
+                    'user_id' => $this->external_user_id(),
                 ),
                 $this->idempotency_key($request)
             )
