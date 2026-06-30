@@ -293,6 +293,16 @@ function errorJson(status, payload) {
   };
 }
 
+function noContent(status = 204) {
+  return {
+    ok: true,
+    status,
+    json: async () => {
+      throw new SyntaxError('Unexpected end of JSON input');
+    }
+  };
+}
+
 function cardFixture() {
   return {
     created: true,
@@ -402,42 +412,40 @@ test('successful add renders product card from the real enriched proxy response 
   assert.match(card.textContent, /Shop Example/);
 });
 
-test('refresh action posts to the refresh endpoint with a client_request_id and rerenders the returned card payload', async () => {
+test('refresh action posts to the refresh endpoint with a client_request_id and rerenders the returned WordPress card payload', async () => {
   const env = createEnvironment({
     initialItems: [cardFixture()],
     responses: [
       okJson({
-        card: {
-          item: {
-            id: 'item-1',
-            target_price_minor: 12345
-          },
-          product: {
-            title: 'Example Product Refreshed',
-            image_url: 'https://example.com/image.jpg',
-            rating_value: '4.9',
-            current_price_minor: 10999,
-            currency: 'RUB'
-          },
-          source: {
-            source_domain: 'shop.example',
-            display_name: 'Shop Example',
-            logo_url: 'https://example.com/logo.png'
-          },
-          chart: {
-            currency: 'RUB',
-            points: [
-              { date: '2026-06-29', min_price_minor: 12100, max_price_minor: 12100 },
-              { date: '2026-06-30', min_price_minor: 10999, max_price_minor: 10999 }
-            ]
-          },
-          activation: {
-            status: 'available',
-            button_text: 'Активировать кэшбэк'
-          },
-          actions: {
-            direct_url: 'https://shop.example/item'
-          }
+        item: {
+          id: 'item-1',
+          target_price_minor: 12345
+        },
+        product: {
+          title: 'Example Product Refreshed',
+          image_url: 'https://example.com/image.jpg',
+          rating_value: '4.9',
+          current_price_minor: 10999,
+          currency: 'RUB'
+        },
+        source: {
+          source_domain: 'shop.example',
+          display_name: 'Shop Example',
+          logo_url: 'https://example.com/logo.png'
+        },
+        chart: {
+          currency: 'RUB',
+          points: [
+            { date: '2026-06-29', min_price_minor: 12100, max_price_minor: 12100 },
+            { date: '2026-06-30', min_price_minor: 10999, max_price_minor: 10999 }
+          ]
+        },
+        activation: {
+          status: 'available',
+          button_text: 'Активировать кэшбэк'
+        },
+        actions: {
+          direct_url: 'https://shop.example/item'
         }
       })
     ]
@@ -480,7 +488,7 @@ test('edit, cashback action, and delete stay behind REST endpoints and activatio
         status: 'ok',
         activation_page_url: 'https://savelloclub.test/cashback-go/item-1'
       }),
-      okJson({})
+      noContent()
     ]
   });
 
@@ -510,6 +518,7 @@ test('edit, cashback action, and delete stay behind REST endpoints and activatio
   assert.equal(env.requests[2].options.method, 'DELETE');
   assert.equal(env.items.querySelector('.price-monitor-account__card'), null);
   assert.equal(env.items.querySelector('.price-monitor-account__empty').textContent, 'Пока нет отслеживаемых товаров');
+  assert.equal(env.feedback.textContent, '');
 });
 
 test('unavailable activation response closes popup, shows feedback, and does not navigate to redirect fallback', async () => {

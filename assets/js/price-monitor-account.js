@@ -45,8 +45,22 @@
             requestOptions.body = JSON.stringify(payload);
         }
 
+        function parseResponse(response) {
+            if (response.status === 204 || typeof response.json !== 'function') {
+                return Promise.resolve(null);
+            }
+
+            return response.json().catch(function (error) {
+                if (error && error.name === 'SyntaxError') {
+                    return null;
+                }
+
+                throw error;
+            });
+        }
+
         return fetch(url, requestOptions).then(function (response) {
-            return response.json().then(function (data) {
+            return parseResponse(response).then(function (data) {
                 if (!response.ok) {
                     var errorPayload = data && data.error ? data.error : data;
                     throw {

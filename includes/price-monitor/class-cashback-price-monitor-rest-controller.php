@@ -184,14 +184,23 @@ final class Cashback_Price_Monitor_REST_Controller {
     }
 
     public function refresh_item( WP_REST_Request $request ): WP_REST_Response {
+        $refreshed = $this->client->request(
+            'POST',
+            $this->item_path((string) $request->get_param('item_id'), '/refresh'),
+            array(
+                'user_id' => $this->external_user_id(),
+            ),
+            $this->idempotency_key($request)
+        );
+
+        if ($refreshed instanceof WP_Error) {
+            return $this->response($refreshed);
+        }
+
         return $this->response(
-            $this->client->request(
-                'POST',
-                $this->item_path((string) $request->get_param('item_id'), '/refresh'),
-                array(
-                    'user_id' => $this->external_user_id(),
-                ),
-                $this->idempotency_key($request)
+            $this->hydrate_refresh_payload(
+                $refreshed,
+                (string) $request->get_param('item_id')
             )
         );
     }
@@ -314,6 +323,84 @@ final class Cashback_Price_Monitor_REST_Controller {
         }
 
         return $created;
+    }
+
+    private function hydrate_refresh_payload( array $refreshed, string $route_item_id ): array {
+        $item = is_array($refreshed['item'] ?? null) ? $refreshed['item'] : array();
+
+        $lookup_item = null;
+        if ($this->needs_watchlist_lookup($item, $refreshed, $route_item_id)) {
+            $lookup_item = $this->find_watchlist_item($route_item_id);
+        }
+
+        if (is_array($lookup_item)) {
+            $item = array_merge($lookup_item, $item);
+        }
+
+        $fallbacks = array(
+            'id'         => $route_item_id !== '' ? $route_item_id : (string) ($refreshed['watchlist_item_id'] ?? ''),
+            'product_id' => (string) ($refreshed['product_id'] ?? ''),
+            'status'     => (string) ($refreshed['status'] ?? ''),
+        );
+
+        foreach ($fallbacks as $key => $value) {
+            if ($value !== '' && empty($item[ $key ])) {
+                $item[ $key ] = $value;
+            }
+        }
+
+        foreach (array( 'canonical_url', 'target_price_minor', 'currency' ) as $key) {
+            if (array_key_exists($key, $refreshed) && !array_key_exists($key, $item)) {
+                $item[ $key ] = $refreshed[ $key ];
+            }
+        }
+
+        if (empty($item['product_id'])) {
+            return $refreshed;
+        }
+
+        $refreshed['item'] = $item;
+
+        return $this->hydrate_card_payload($refreshed);
+    }
+
+    private function needs_watchlist_lookup( array $item, array $refreshed, string $route_item_id ): bool {
+        if ($route_item_id === '' && empty($refreshed['watchlist_item_id']) && empty($item['id'])) {
+            return false;
+        }
+
+        foreach (array( 'product_id', 'canonical_url', 'target_price_minor', 'currency' ) as $key) {
+            if (!array_key_exists($key, $item) || $item[ $key ] === '' || $item[ $key ] === null) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function find_watchlist_item( string $item_id ): ?array {
+        if ($item_id === '') {
+            return null;
+        }
+
+        $result = $this->client->request('GET', '/api/v1/watchlist/items', array(
+            'user_id' => $this->external_user_id(),
+        ));
+        if (!is_array($result) || !is_array($result['items'] ?? null)) {
+            return null;
+        }
+
+        foreach ($result['items'] as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            if ((string) ($item['id'] ?? '') === $item_id) {
+                return $item;
+            }
+        }
+
+        return null;
     }
 
     private function external_user_id(): string {

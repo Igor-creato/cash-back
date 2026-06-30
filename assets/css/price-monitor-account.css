@@ -149,6 +149,7 @@
 }
 
 .price-monitor-account__action,
+.price-monitor-account__menu-refresh,
 .price-monitor-account__menu-edit,
 .price-monitor-account__menu-delete {
     min-height: 36px;

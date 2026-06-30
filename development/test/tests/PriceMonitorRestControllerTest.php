@@ -335,14 +335,72 @@ final class PriceMonitorRestControllerTest extends TestCase {
                             'product_id'        => 'product-1',
                             'status'            => 'queued',
                         ),
+                        'GET' => match ($path) {
+                            '/api/v1/watchlist/items' => array(
+                                'items' => array(
+                                    array(
+                                        'id'                 => 'item-1',
+                                        'user_id'            => 'wp:savelloclub.test:77',
+                                        'product_id'         => 'product-1',
+                                        'canonical_url'      => 'https://shop.example/item',
+                                        'target_price_minor' => 9999,
+                                        'currency'           => 'RUB',
+                                        'status'             => 'active',
+                                    ),
+                                ),
+                            ),
+                            '/api/v1/products/product-1' => array(
+                                'product' => array(
+                                    'title'               => 'Example Product Refreshed',
+                                    'image_url'           => 'https://example.com/image.jpg',
+                                    'rating_value'        => '4.9',
+                                    'current_price_minor' => 10999,
+                                    'currency'            => 'RUB',
+                                ),
+                                'source'  => array(
+                                    'source_domain' => 'shop.example',
+                                    'display_name'  => 'Shop Example',
+                                    'logo_url'      => 'https://example.com/logo.png',
+                                ),
+                                'actions' => array(
+                                    'direct_url' => 'https://shop.example/item',
+                                ),
+                            ),
+                            '/api/v1/products/product-1/price-chart' => array(
+                                'currency' => 'RUB',
+                                'points'   => array(
+                                    array(
+                                        'date'            => '2026-06-29',
+                                        'min_price_minor' => 12100,
+                                        'max_price_minor' => 12100,
+                                    ),
+                                    array(
+                                        'date'            => '2026-06-30',
+                                        'min_price_minor' => 10999,
+                                        'max_price_minor' => 10999,
+                                    ),
+                                ),
+                            ),
+                            default => array(),
+                        },
                         default => array(),
                     };
                 }
             },
             new class {
+                public array $calls = array();
+
                 public function check(string $url, int $user_id = 0): array {
-                    unset($url, $user_id);
-                    return array();
+                    $this->calls[] = array(
+                        'url'     => $url,
+                        'user_id' => $user_id,
+                    );
+
+                    return array(
+                        'status'              => 'available',
+                        'activation_required' => true,
+                        'button_text'         => 'Активировать кэшбэк',
+                    );
                 }
             }
         );
@@ -367,7 +425,7 @@ final class PriceMonitorRestControllerTest extends TestCase {
         self::assertSame(200, $update_response->get_status());
         self::assertSame(204, $delete_response->get_status());
         self::assertSame(200, $refresh_response->get_status());
-        self::assertCount(3, $calls);
+        self::assertCount(6, $calls);
 
         self::assertSame('PATCH', $calls[0]['method']);
         self::assertSame('/api/v1/watchlist/items/item-1', $calls[0]['path']);
@@ -399,5 +457,31 @@ final class PriceMonitorRestControllerTest extends TestCase {
             ),
             $calls[2]['payload']
         );
+
+        self::assertSame('GET', $calls[3]['method']);
+        self::assertSame('/api/v1/watchlist/items', $calls[3]['path']);
+        self::assertSame(
+            array(
+                'user_id' => 'wp:savelloclub.test:77',
+            ),
+            $calls[3]['payload']
+        );
+        self::assertSame('GET', $calls[4]['method']);
+        self::assertSame('/api/v1/products/product-1', $calls[4]['path']);
+        self::assertSame('GET', $calls[5]['method']);
+        self::assertSame('/api/v1/products/product-1/price-chart', $calls[5]['path']);
+        self::assertSame(array( 'days' => 30 ), $calls[5]['payload']);
+
+        $refresh_data = $refresh_response->get_data();
+        self::assertTrue($refresh_data['scheduled']);
+        self::assertSame('item-1', $refresh_data['item']['id']);
+        self::assertSame('product-1', $refresh_data['item']['product_id']);
+        self::assertSame('https://shop.example/item', $refresh_data['item']['canonical_url']);
+        self::assertSame('Example Product Refreshed', $refresh_data['product']['title']);
+        self::assertSame('Shop Example', $refresh_data['source']['display_name']);
+        self::assertSame('https://shop.example/item', $refresh_data['actions']['direct_url']);
+        self::assertSame('RUB', $refresh_data['chart']['currency']);
+        self::assertCount(2, $refresh_data['chart']['points']);
+        self::assertSame('available', $refresh_data['activation']['status']);
     }
 }
