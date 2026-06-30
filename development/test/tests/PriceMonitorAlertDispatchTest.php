@@ -288,6 +288,30 @@ final class PriceMonitorAlertDispatchTest extends TestCase
                 array_merge($payload, array( 'observed_price_minor' => '1e5' )),
                 'observed_price_minor',
             ),
+            'blank target price minor' => array(
+                array_merge($payload, array( 'target_price_minor' => '' )),
+                'target_price_minor',
+            ),
+            'blank observed price minor' => array(
+                array_merge($payload, array( 'observed_price_minor' => '' )),
+                'observed_price_minor',
+            ),
+            'non-digit target price minor' => array(
+                array_merge($payload, array( 'target_price_minor' => 'abc' )),
+                'target_price_minor',
+            ),
+            'non-digit observed price minor' => array(
+                array_merge($payload, array( 'observed_price_minor' => 'abc' )),
+                'observed_price_minor',
+            ),
+            'negative target price minor' => array(
+                array_merge($payload, array( 'target_price_minor' => -1 )),
+                'target_price_minor',
+            ),
+            'negative observed price minor' => array(
+                array_merge($payload, array( 'observed_price_minor' => -1 )),
+                'observed_price_minor',
+            ),
         );
     }
 
