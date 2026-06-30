@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Admin settings page and form handlers for price monitor.
  */
-final class Cashback_Price_Monitor_Admin {
+class Cashback_Price_Monitor_Admin {
 
 	public const PAGE_SLUG         = 'cashback-price-monitor';
 	public const OPTION_USER_LIMIT = 'cashback_price_monitor_user_limit';
@@ -42,9 +42,9 @@ final class Cashback_Price_Monitor_Admin {
 		$this->client = $client ?? new Cashback_Price_Monitor_Client();
 
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
-		add_action( 'admin_post_cashback_price_monitor_save_settings', array( $this, 'handle_save_settings' ) );
-		add_action( 'admin_post_cashback_price_monitor_save_source', array( $this, 'handle_save_source' ) );
-		add_action( 'admin_post_cashback_price_monitor_save_proxy_pool', array( $this, 'handle_save_proxy_pool' ) );
+		add_action( 'admin_post_cashback_price_monitor_save_settings', array( $this, 'handle_save_settings_request' ) );
+		add_action( 'admin_post_cashback_price_monitor_save_source', array( $this, 'handle_save_source_request' ) );
+		add_action( 'admin_post_cashback_price_monitor_save_proxy_pool', array( $this, 'handle_save_proxy_pool_request' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 	}
 
@@ -360,6 +360,17 @@ final class Cashback_Price_Monitor_Admin {
 	}
 
 	/**
+	 * Handle admin-post settings save and redirect back to the settings page.
+	 */
+	public function handle_save_settings_request(): void {
+		$this->handle_request_redirect(
+			array( $this, 'handle_save_settings' ),
+			'settings_saved',
+			'settings_save_failed'
+		);
+	}
+
+	/**
 	 * Save a source definition.
 	 *
 	 * @return array
@@ -385,6 +396,17 @@ final class Cashback_Price_Monitor_Admin {
 	}
 
 	/**
+	 * Handle admin-post source save and redirect back to the settings page.
+	 */
+	public function handle_save_source_request(): void {
+		$this->handle_request_redirect(
+			array( $this, 'handle_save_source' ),
+			'source_saved',
+			'source_save_failed'
+		);
+	}
+
+	/**
 	 * Save a proxy pool definition.
 	 *
 	 * @return array
@@ -402,6 +424,17 @@ final class Cashback_Price_Monitor_Admin {
 		$this->request_backend( 'POST', '/api/v1/admin/proxy-pools', $payload );
 
 		return $payload;
+	}
+
+	/**
+	 * Handle admin-post proxy pool save and redirect back to the settings page.
+	 */
+	public function handle_save_proxy_pool_request(): void {
+		$this->handle_request_redirect(
+			array( $this, 'handle_save_proxy_pool' ),
+			'proxy_pool_saved',
+			'proxy_pool_save_failed'
+		);
 	}
 
 	/**
@@ -457,6 +490,47 @@ final class Cashback_Price_Monitor_Admin {
 		$result = $this->client->request( $method, $path, $payload );
 
 		return $result instanceof WP_Error || ! is_array( $result ) ? array() : $result;
+	}
+
+	/**
+	 * Run a save callback and redirect back to the settings page with status flags.
+	 *
+	 * @param callable $callback        Save callback.
+	 * @param string   $success_message Success message flag.
+	 * @param string   $error_message   Error message flag.
+	 */
+	private function handle_request_redirect( callable $callback, string $success_message, string $error_message ): void {
+		try {
+			call_user_func( $callback );
+			$this->redirect_to_admin_page(
+				array(
+					'page'    => self::PAGE_SLUG,
+					'status'  => 'success',
+					'message' => $success_message,
+				)
+			);
+		} catch ( Throwable $exception ) {
+			unset( $exception );
+			$this->redirect_to_admin_page(
+				array(
+					'page'    => self::PAGE_SLUG,
+					'status'  => 'error',
+					'message' => $error_message,
+				)
+			);
+		}
+	}
+
+	/**
+	 * Redirect to the price monitor admin page.
+	 *
+	 * @param array<string,string> $query_args Redirect query args.
+	 */
+	protected function redirect_to_admin_page( array $query_args ): void {
+		$url = add_query_arg( $query_args, admin_url( 'admin.php' ) );
+
+		wp_safe_redirect( $url );
+		exit;
 	}
 
 	/**

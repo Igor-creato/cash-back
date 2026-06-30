@@ -172,8 +172,16 @@ function createEnvironment({
   root.appendChild(items);
 
   const opened = [];
-  const popup = { closed: false, location: 'about:blank', opener: {} };
+  const popup = {
+    closed: false,
+    location: 'about:blank',
+    opener: {},
+    close() {
+      this.closed = true;
+    }
+  };
   const requests = [];
+  const location = { href: 'https://savelloclub.test/account/price-monitor' };
 
   const context = {
     window: {
@@ -208,6 +216,7 @@ function createEnvironment({
         opened.push(url);
         return popup;
       },
+      location,
       crypto: {
         randomUUID() {
           return '550e8400-e29b-41d4-a716-446655440000';
@@ -257,7 +266,8 @@ function createEnvironment({
     },
     requests,
     opened,
-    popup
+    popup,
+    location
   };
 }
 
@@ -435,4 +445,35 @@ test('edit, cashback action, and delete stay behind REST endpoints and activatio
   assert.equal(env.requests[2].options.method, 'DELETE');
   assert.equal(env.items.querySelector('.price-monitor-account__card'), null);
   assert.equal(env.items.querySelector('.price-monitor-account__empty').textContent, 'Пока нет отслеживаемых товаров');
+});
+
+test('unavailable activation response closes popup, shows feedback, and does not navigate to redirect fallback', async () => {
+  const env = createEnvironment({
+    initialItems: [cardFixture()],
+    responses: [
+      okJson({
+        status: 'not_available',
+        cashback_available: false,
+        redirect_url: 'https://shop.example/fallback',
+        message: 'Кэшбэк не начислится'
+      })
+    ]
+  });
+
+  vm.runInNewContext(source, env.context);
+  await flushPromises();
+
+  const card = env.items.children[0];
+  assert.ok(card, 'initial items should render on load');
+
+  card.querySelector('.price-monitor-account__action').click();
+  await flushPromises();
+
+  assert.equal(env.requests[0].url, 'https://savelloclub.test/wp-json/cashback/v1/link-checker/activate');
+  assert.equal(env.opened[0], 'about:blank');
+  assert.equal(env.popup.closed, true);
+  assert.equal(env.popup.location, 'about:blank');
+  assert.equal(env.location.href, 'https://savelloclub.test/account/price-monitor');
+  assert.equal(env.feedback.textContent, 'Кэшбэк не начислится');
+  assert.match(env.feedback.className, /price-monitor-account__feedback--error/);
 });

@@ -62,6 +62,26 @@ if ( ! function_exists( 'check_admin_referer' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_safe_redirect' ) ) {
+	/**
+	 * Test stub for wp_safe_redirect().
+	 *
+	 * @param string $location Redirect location.
+	 * @param int    $status   HTTP status.
+	 * @param string $x_redirect_by Redirect by marker.
+	 * @return bool
+	 */
+	function wp_safe_redirect( string $location, int $status = 302, string $x_redirect_by = 'WordPress' ): bool {
+		$GLOBALS['_cb_test_safe_redirects'][] = array(
+			'location'      => $location,
+			'status'        => $status,
+			'x_redirect_by' => $x_redirect_by,
+		);
+
+		return true;
+	}
+}
+
 /**
  * Admin settings page tests.
  */
@@ -86,6 +106,7 @@ final class PriceMonitorAdminTest extends TestCase {
 		$GLOBALS['_cb_test_submenu_pages']      = array();
 		$GLOBALS['_cb_test_admin_nonce_checks'] = array();
 		$GLOBALS['_cb_test_admin_nonce_result'] = true;
+		$GLOBALS['_cb_test_safe_redirects']     = array();
 		$_POST                                  = array();
 	}
 
@@ -103,6 +124,38 @@ final class PriceMonitorAdminTest extends TestCase {
 		require_once $path;
 
 		return new Cashback_Price_Monitor_Admin( $client );
+	}
+
+	/**
+	 * Load a test admin that captures redirects instead of exiting.
+	 *
+	 * @param object $client Spy client.
+	 */
+	private function load_redirecting_admin( object $client ): Cashback_Price_Monitor_Admin {
+		$path = $this->class_path();
+
+		self::assertFileExists( $path, 'Price monitor admin class must exist before settings UI can be registered.' );
+
+		require_once dirname( __DIR__, 3 ) . '/includes/price-monitor/class-cashback-price-monitor-client.php';
+		require_once $path;
+
+		return new class( $client ) extends Cashback_Price_Monitor_Admin {
+			/**
+			 * Captured redirects.
+			 *
+			 * @var array<int,array<string,string>>
+			 */
+			public array $redirects = array();
+
+			/**
+			 * Capture redirect query args for assertions.
+			 *
+			 * @param array<string,string> $query_args Redirect query args.
+			 */
+			protected function redirect_to_admin_page( array $query_args ): void {
+				$this->redirects[] = $query_args;
+			}
+		};
 	}
 
 	/**
@@ -323,6 +376,35 @@ final class PriceMonitorAdminTest extends TestCase {
 				'proxy_pool_id'            => 'pool-1',
 			),
 			$calls[0]['payload']
+		);
+	}
+
+	/**
+	 * Ensure the admin-post settings handler redirects back to the settings page.
+	 */
+	public function test_save_settings_request_redirects_back_to_price_monitor_page_with_success_flag(): void {
+		$calls = array();
+		$admin = $this->load_redirecting_admin( $this->spy_client( $calls ) );
+
+		$_POST = array(
+			'_wpnonce'                      => wp_create_nonce( 'cashback_price_monitor_save_settings' ),
+			'backend_url'                   => 'https://backend.example',
+			'backend_secret'                => 'top-secret',
+			'enabled'                       => '1',
+			'max_tracked_products_per_user' => '25',
+		);
+
+		$admin->handle_save_settings_request();
+
+		self::assertSame(
+			array(
+				array(
+					'page'    => Cashback_Price_Monitor_Admin::PAGE_SLUG,
+					'status'  => 'success',
+					'message' => 'settings_saved',
+				),
+			),
+			$admin->redirects
 		);
 	}
 }

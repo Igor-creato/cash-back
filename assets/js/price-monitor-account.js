@@ -162,6 +162,10 @@
         renderCards();
     }
 
+    function isUnavailableActivation(data) {
+        return !!(data && (data.cashback_available === false || data.status === 'not_available'));
+    }
+
     function openActivation(card) {
         var directUrl = (card.actions && card.actions.direct_url) || (card.item && card.item.canonical_url) || '';
         if (!directUrl) {
@@ -182,6 +186,15 @@
             }
         }, config.linkCheckerRestBase || '')
             .then(function (data) {
+                if (isUnavailableActivation(data)) {
+                    if (popup && typeof popup.close === 'function') {
+                        popup.close();
+                    }
+
+                    setFeedback(data.message || data.warning || text('cashbackUnavailable', 'Кэшбэк не начислится'), 'error');
+                    return;
+                }
+
                 var targetUrl = data.activation_page_url || data.redirect_url || data.cashback_url || '';
 
                 if (targetUrl && popup) {
