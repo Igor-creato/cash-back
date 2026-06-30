@@ -1030,6 +1030,10 @@ class CashbackPlugin {
         $this->require_file('includes/link-checker/class-cashback-link-checker-rest-controller.php');
         $this->require_file('includes/link-checker/class-cashback-link-checker-shortcode.php');
 
+        // --- Account REST proxy for price-monitor backend ---
+        $this->require_file('includes/price-monitor/class-cashback-price-monitor-client.php');
+        $this->require_file('includes/price-monitor/class-cashback-price-monitor-rest-controller.php');
+
         // Шорткоды (доступны на фронтенде и в превью редактора)
         $this->require_file('includes/class-cashback-shortcodes.php');
 
@@ -1919,6 +1923,10 @@ class CashbackPlugin {
 
         if (class_exists('Cashback_Link_Checker_Shortcode')) {
             Cashback_Link_Checker_Shortcode::init();
+        }
+
+        if (class_exists('Cashback_Price_Monitor_REST_Controller')) {
+            Cashback_Price_Monitor_REST_Controller::init();
         }
 
         // Шорткоды

@@ -1,0 +1,261 @@
+<?php
+
+declare(strict_types=1);
+
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\TestCase;
+
+#[Group('price-monitor')]
+final class PriceMonitorRestControllerTest extends TestCase {
+
+    private function controller_path(): string {
+        return dirname(__DIR__, 3) . '/includes/price-monitor/class-cashback-price-monitor-rest-controller.php';
+    }
+
+    protected function setUp(): void {
+        parent::setUp();
+
+        $GLOBALS['_cb_test_rest_routes']       = array();
+        $GLOBALS['_cb_test_is_logged_in']      = false;
+        $GLOBALS['_cb_test_user_id']           = 0;
+        $GLOBALS['_cb_test_current_user_can']  = true;
+    }
+
+    private function load_controller(): void {
+        $path = $this->controller_path();
+        self::assertFileExists($path, 'Price monitor REST controller class must exist before proxy routes can work.');
+
+        require_once dirname(__DIR__, 3) . '/includes/price-monitor/class-cashback-price-monitor-client.php';
+        require_once dirname(__DIR__, 3) . '/includes/link-checker/class-cashback-link-checker-url-validator.php';
+        require_once dirname(__DIR__, 3) . '/includes/link-checker/class-cashback-link-checker-service.php';
+        require_once dirname(__DIR__, 3) . '/includes/class-cashback-rate-limiter.php';
+        require_once $path;
+
+        Cashback_Rate_Limiter::set_backend(new class {
+            public function increment(string $scope_key, int $window, int $limit): array {
+                unset($scope_key, $window, $limit);
+                return array(
+                    'allowed' => true,
+                    'hits'    => 1,
+                );
+            }
+        });
+    }
+
+    public function test_registers_price_monitor_routes_in_dedicated_namespace(): void {
+        $this->load_controller();
+
+        $controller = new Cashback_Price_Monitor_REST_Controller(
+            new class {
+                public function request(string $method, string $path, array $payload = array(), ?string $idempotency_key = null): array {
+                    unset($method, $path, $payload, $idempotency_key);
+                    return array();
+                }
+            },
+            new class {
+                public function check(string $url, int $user_id = 0): array {
+                    unset($url, $user_id);
+                    return array();
+                }
+            }
+        );
+
+        $controller->register_routes();
+
+        foreach (array(
+            'cashback/v1/price-monitor/items',
+            'cashback/v1/price-monitor/items/(?P<item_id>[A-Za-z0-9_-]+)',
+            'cashback/v1/price-monitor/items/(?P<item_id>[A-Za-z0-9_-]+)/refresh',
+        ) as $route) {
+            self::assertArrayHasKey($route, $GLOBALS['_cb_test_rest_routes']);
+        }
+
+        $items_route = $GLOBALS['_cb_test_rest_routes']['cashback/v1/price-monitor/items']['args'];
+        self::assertSame('POST', $items_route[0]['methods']);
+        self::assertSame('GET', $items_route[1]['methods']);
+
+        $item_route = $GLOBALS['_cb_test_rest_routes']['cashback/v1/price-monitor/items/(?P<item_id>[A-Za-z0-9_-]+)']['args'];
+        self::assertSame('PATCH', $item_route[0]['methods']);
+        self::assertSame('DELETE', $item_route[1]['methods']);
+
+        self::assertSame('POST', $GLOBALS['_cb_test_rest_routes']['cashback/v1/price-monitor/items/(?P<item_id>[A-Za-z0-9_-]+)/refresh']['args']['methods']);
+    }
+
+    public function test_write_permission_requires_rest_nonce_and_authenticated_user(): void {
+        $this->load_controller();
+
+        $controller = new Cashback_Price_Monitor_REST_Controller(
+            new class {
+                public function request(string $method, string $path, array $payload = array(), ?string $idempotency_key = null): array {
+                    unset($method, $path, $payload, $idempotency_key);
+                    return array();
+                }
+            },
+            new class {
+                public function check(string $url, int $user_id = 0): array {
+                    unset($url, $user_id);
+                    return array();
+                }
+            }
+        );
+
+        $missing_nonce = $controller->allow_write_request(new WP_REST_Request('POST', '/cashback/v1/price-monitor/items'));
+
+        self::assertInstanceOf(WP_Error::class, $missing_nonce);
+        self::assertSame('rest_cookie_invalid_nonce', $missing_nonce->get_error_code());
+        self::assertSame(403, $missing_nonce->get_error_data()['status'] ?? null);
+
+        $request = new WP_REST_Request('POST', '/cashback/v1/price-monitor/items');
+        $request->set_header('X-WP-Nonce', 'ok');
+
+        $unauthenticated = $controller->allow_write_request($request);
+
+        self::assertInstanceOf(WP_Error::class, $unauthenticated);
+        self::assertContains($unauthenticated->get_error_data()['status'] ?? null, array( 401, 403 ));
+    }
+
+    public function test_create_item_returns_unsupported_store_when_source_is_not_supported(): void {
+        $this->load_controller();
+
+        $GLOBALS['_cb_test_is_logged_in'] = true;
+        $GLOBALS['_cb_test_user_id']      = 77;
+
+        $calls      = array();
+        $controller = new Cashback_Price_Monitor_REST_Controller(
+            new class( $calls ) {
+                public array $calls;
+
+                public function __construct(array &$calls) {
+                    $this->calls = &$calls;
+                }
+
+                public function request(string $method, string $path, array $payload = array(), ?string $idempotency_key = null): array {
+                    $this->calls[] = compact('method', 'path', 'payload', 'idempotency_key');
+
+                    return array(
+                        'supported' => false,
+                        'error'     => array(
+                            'code'    => 'unsupported_store',
+                            'message' => 'Магазин не поддерживается',
+                        ),
+                    );
+                }
+            },
+            new class {
+                public function check(string $url, int $user_id = 0): array {
+                    unset($url, $user_id);
+                    return array();
+                }
+            }
+        );
+
+        $request = new WP_REST_Request('POST', '/cashback/v1/price-monitor/items');
+        $request->set_param('url', 'https://unsupported.example/item');
+
+        $response = $controller->create_item($request);
+
+        self::assertSame(422, $response->get_status());
+        self::assertSame('unsupported_store', $response->get_data()['code']);
+        self::assertCount(1, $calls);
+        self::assertSame('GET', $calls[0]['method']);
+        self::assertSame('/api/v1/sources/supported', $calls[0]['path']);
+        self::assertSame(array( 'url' => 'https://unsupported.example/item' ), $calls[0]['payload']);
+    }
+
+    public function test_create_item_checks_supported_source_then_creates_watch_and_returns_activation_metadata(): void {
+        $this->load_controller();
+
+        $GLOBALS['_cb_test_is_logged_in'] = true;
+        $GLOBALS['_cb_test_user_id']      = 77;
+
+        $calls            = array();
+        $activation_calls = array();
+        $controller       = new Cashback_Price_Monitor_REST_Controller(
+            new class( $calls ) {
+                public array $calls;
+
+                public function __construct(array &$calls) {
+                    $this->calls = &$calls;
+                }
+
+                public function request(string $method, string $path, array $payload = array(), ?string $idempotency_key = null): array {
+                    $this->calls[] = compact('method', 'path', 'payload', 'idempotency_key');
+
+                    if ($method === 'GET') {
+                        return array(
+                            'supported' => true,
+                            'source'    => array(
+                                'source_domain' => 'shop.example',
+                                'display_name'  => 'Shop Example',
+                            ),
+                        );
+                    }
+
+                    return array(
+                        'created' => true,
+                        'item'    => array(
+                            'id'                => 'item-1',
+                            'user_id'           => 'wp:savelloclub.test:77',
+                            'product_id'        => 'product-1',
+                            'canonical_url'     => 'https://shop.example/item',
+                            'target_price_minor'=> 12345,
+                            'currency'          => 'RUB',
+                            'status'            => 'active',
+                        ),
+                    );
+                }
+            },
+            new class( $activation_calls ) {
+                public array $calls;
+
+                public function __construct(array &$calls) {
+                    $this->calls = &$calls;
+                }
+
+                public function check(string $url, int $user_id = 0): array {
+                    $this->calls[] = array(
+                        'url'     => $url,
+                        'user_id' => $user_id,
+                    );
+
+                    return array(
+                        'status'              => 'available',
+                        'activation_required' => true,
+                        'button_text'         => 'Активировать кэшбэк',
+                    );
+                }
+            }
+        );
+
+        $request = new WP_REST_Request('POST', '/cashback/v1/price-monitor/items');
+        $request->set_param('url', 'https://shop.example/item');
+        $request->set_param('target_price_minor', 12345);
+        $request->set_param('currency', 'RUB');
+        $request->set_param('client_request_id', 'client-watch-123');
+
+        $response = $controller->create_item($request);
+        $data     = $response->get_data();
+
+        self::assertSame(200, $response->get_status());
+        self::assertCount(2, $calls);
+        self::assertSame('GET', $calls[0]['method']);
+        self::assertSame('POST', $calls[1]['method']);
+        self::assertSame('/api/v1/watchlist/items', $calls[1]['path']);
+        self::assertSame('client-watch-123', $calls[1]['idempotency_key']);
+        self::assertSame(
+            array(
+                'external_user_id'   => 'wp:savelloclub.test:77',
+                'url'                => 'https://shop.example/item',
+                'target_price_minor' => 12345,
+                'currency'           => 'RUB',
+            ),
+            $calls[1]['payload']
+        );
+        self::assertSame('item-1', $data['item']['id']);
+        self::assertSame('available', $data['activation']['status']);
+        self::assertTrue($data['activation']['activation_required']);
+        self::assertCount(1, $activation_calls);
+        self::assertSame('https://shop.example/item', $activation_calls[0]['url']);
+        self::assertSame(77, $activation_calls[0]['user_id']);
+    }
+}

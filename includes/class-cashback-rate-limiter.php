@@ -81,6 +81,7 @@ class Cashback_Rate_Limiter {
         // (ранее оба action'а вызывали check() мимо реестра → fail-open).
         'social_email_prompt'                       => 'write',
         'social_unlink'                             => 'write',
+        'cashback_price_monitor_write'              => 'write',
 
         // --- Read ---
         'get_user_balance'                          => 'read',
@@ -101,6 +102,7 @@ class Cashback_Rate_Limiter {
         // достаточно для UX (пользователь не делает >30 кликов/мин в норме).
         'cashback_promocode_click'                  => 'read',
         'cashback_link_checker_check'               => 'read',
+        'cashback_price_monitor_read'               => 'read',
 
         // --- Admin ---
         'update_payout_request'                     => 'admin',
