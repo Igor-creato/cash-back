@@ -107,6 +107,7 @@ final class PriceMonitorAdminTest extends TestCase {
 		$GLOBALS['_cb_test_admin_nonce_checks'] = array();
 		$GLOBALS['_cb_test_admin_nonce_result'] = true;
 		$GLOBALS['_cb_test_safe_redirects']     = array();
+		$_GET                                   = array();
 		$_POST                                  = array();
 	}
 
@@ -193,6 +194,45 @@ final class PriceMonitorAdminTest extends TestCase {
 			 */
 			public function request( string $method, string $path, array $payload = array(), ?string $idempotency_key = null ): array {
 				$this->calls[] = compact( 'method', 'path', 'payload', 'idempotency_key' );
+
+				if ( 'GET' === $method && '/api/v1/admin/settings' === $path ) {
+					return array(
+						'settings' => array(
+							'max_tracked_products_per_user' => 25,
+						),
+					);
+				}
+
+				if ( 'GET' === $method && '/api/v1/admin/sources' === $path ) {
+					return array( 'sources' => array() );
+				}
+
+				return array(
+					'settings' => $payload,
+					'sources'  => array( $payload ),
+				);
+			}
+		};
+	}
+
+	private function failing_spy_client( array &$calls, string $method, string $path ): object {
+		return new class( $calls, $method, $path ) {
+			public array $calls;
+			private string $method;
+			private string $path;
+
+			public function __construct( array &$calls, string $method, string $path ) {
+				$this->calls  = &$calls;
+				$this->method = $method;
+				$this->path   = $path;
+			}
+
+			public function request( string $method, string $path, array $payload = array(), ?string $idempotency_key = null ): array|WP_Error {
+				$this->calls[] = compact( 'method', 'path', 'payload', 'idempotency_key' );
+
+				if ( $method === $this->method && $path === $this->path ) {
+					return new WP_Error( 'backend_unavailable', 'Backend unavailable' );
+				}
 
 				if ( 'GET' === $method && '/api/v1/admin/settings' === $path ) {
 					return array(
@@ -406,5 +446,87 @@ final class PriceMonitorAdminTest extends TestCase {
 			),
 			$admin->redirects
 		);
+	}
+
+	public function test_save_requests_redirect_with_error_when_backend_save_fails(): void {
+		$cases = array(
+			array(
+				'method'           => 'handle_save_settings_request',
+				'request_method'   => 'PATCH',
+				'path'             => '/api/v1/admin/settings',
+				'post'             => array(
+					'_wpnonce'                      => wp_create_nonce( 'cashback_price_monitor_save_settings' ),
+					'backend_url'                   => 'https://backend.example',
+					'backend_secret'                => 'top-secret',
+					'enabled'                       => '1',
+					'max_tracked_products_per_user' => '25',
+				),
+				'expected_message' => 'settings_save_failed',
+			),
+			array(
+				'method'           => 'handle_save_source_request',
+				'request_method'   => 'POST',
+				'path'             => '/api/v1/admin/sources',
+				'post'             => array(
+					'_wpnonce'                 => wp_create_nonce( 'cashback_price_monitor_save_source' ),
+					'source_domain'            => 'shop.example.com',
+					'display_name'             => 'Example Store',
+					'logo_url'                 => 'https://example.com/logo.png',
+					'status'                   => 'active',
+					'fetch_interval_hours'     => '6',
+					'history_retention_days'   => '90',
+					'browser_fallback_allowed' => '1',
+					'proxy_pool_id'            => 'pool-1',
+				),
+				'expected_message' => 'source_save_failed',
+			),
+			array(
+				'method'           => 'handle_save_proxy_pool_request',
+				'request_method'   => 'POST',
+				'path'             => '/api/v1/admin/proxy-pools',
+				'post'             => array(
+					'_wpnonce'             => wp_create_nonce( 'cashback_price_monitor_save_proxy_pool' ),
+					'pool_id'              => 'pool-1',
+					'tier'                 => '2',
+					'proxy_url_secret_ref' => 'secret-ref',
+				),
+				'expected_message' => 'proxy_pool_save_failed',
+			),
+		);
+
+		foreach ( $cases as $case ) {
+			$calls = array();
+			$admin = $this->load_redirecting_admin( $this->failing_spy_client( $calls, $case['request_method'], $case['path'] ) );
+
+			$_POST = $case['post'];
+
+			$admin->{$case['method']}();
+
+			self::assertSame(
+				array(
+					array(
+						'page'    => Cashback_Price_Monitor_Admin::PAGE_SLUG,
+						'status'  => 'error',
+						'message' => $case['expected_message'],
+					),
+				),
+				$admin->redirects
+			);
+		}
+	}
+
+	public function test_render_page_displays_sanitized_admin_notice_from_query_args(): void {
+		$calls           = array();
+		$admin           = $this->load_admin( $this->spy_client( $calls ) );
+		$_GET['status']  = 'success';
+		$_GET['message'] = 'settings_saved';
+
+		ob_start();
+		$admin->render_page();
+		$html = (string) ob_get_clean();
+
+		self::assertStringContainsString( 'notice notice-success', $html );
+		self::assertStringContainsString( 'Настройки мониторинга цен сохранены.', $html );
+		self::assertStringNotContainsString( '<script>', $html );
 	}
 }

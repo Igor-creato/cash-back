@@ -202,6 +202,7 @@ function createEnvironment({
           invalidTargetPrice: 'Проверьте желаемую цену',
           empty: 'Пока нет отслеживаемых товаров',
           cashbackButton: 'Активировать кэшбэк',
+          refreshButton: 'Обновить',
           editButton: 'Изменить цену',
           deleteButton: 'Удалить'
         }
@@ -399,6 +400,70 @@ test('successful add renders product card from the real enriched proxy response 
   assert.match(card.textContent, /Example Product/);
   assert.match(card.textContent, /4\.7/);
   assert.match(card.textContent, /Shop Example/);
+});
+
+test('refresh action posts to the refresh endpoint with a client_request_id and rerenders the returned card payload', async () => {
+  const env = createEnvironment({
+    initialItems: [cardFixture()],
+    responses: [
+      okJson({
+        card: {
+          item: {
+            id: 'item-1',
+            target_price_minor: 12345
+          },
+          product: {
+            title: 'Example Product Refreshed',
+            image_url: 'https://example.com/image.jpg',
+            rating_value: '4.9',
+            current_price_minor: 10999,
+            currency: 'RUB'
+          },
+          source: {
+            source_domain: 'shop.example',
+            display_name: 'Shop Example',
+            logo_url: 'https://example.com/logo.png'
+          },
+          chart: {
+            currency: 'RUB',
+            points: [
+              { date: '2026-06-29', min_price_minor: 12100, max_price_minor: 12100 },
+              { date: '2026-06-30', min_price_minor: 10999, max_price_minor: 10999 }
+            ]
+          },
+          activation: {
+            status: 'available',
+            button_text: 'Активировать кэшбэк'
+          },
+          actions: {
+            direct_url: 'https://shop.example/item'
+          }
+        }
+      })
+    ]
+  });
+
+  vm.runInNewContext(source, env.context);
+  await flushPromises();
+
+  const card = env.items.children[0];
+  assert.ok(card, 'initial items should render on load');
+
+  const refreshButton = card.querySelector('.price-monitor-account__menu-refresh');
+  assert.ok(refreshButton, 'refresh button should be rendered for each card');
+
+  refreshButton.click();
+  await flushPromises();
+
+  assert.equal(env.requests[0].url, 'https://savelloclub.test/wp-json/cashback/v1/price-monitor/items/item-1/refresh');
+  assert.equal(env.requests[0].options.method, 'POST');
+  assert.equal(env.requests[0].options.headers['X-WP-Nonce'], 'nonce');
+  assert.match(String(env.requests[0].options.body), /"client_request_id":"[a-f0-9]+"/);
+
+  const refreshedCard = env.items.children[0];
+  assert.match(refreshedCard.textContent, /Example Product Refreshed/);
+  assert.match(refreshedCard.textContent, /4\.9/);
+  assert.match(refreshedCard.textContent, /109\.99 RUB/);
 });
 
 test('edit, cashback action, and delete stay behind REST endpoints and activation uses link-checker activate', async () => {

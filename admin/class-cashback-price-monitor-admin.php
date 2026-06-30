@@ -113,6 +113,7 @@ class Cashback_Price_Monitor_Admin {
 		$redacted_settings = $this->redacted_settings();
 		$remote_settings   = $this->remote_settings();
 		$sources           = $this->remote_sources();
+		$notice            = $this->admin_notice();
 		$admin_post_url    = admin_url( 'admin-post.php' );
 		$user_limit        = isset( $remote_settings['max_tracked_products_per_user'] )
 			? (int) $remote_settings['max_tracked_products_per_user']
@@ -120,6 +121,9 @@ class Cashback_Price_Monitor_Admin {
 		?>
 		<div class="wrap cashback-price-monitor-admin">
 			<h1><?php echo esc_html( 'Мониторинг цен' ); ?></h1>
+			<?php if ( null !== $notice ) : ?>
+				<div class="notice <?php echo esc_attr( $notice['class'] ); ?> is-dismissible"><p><?php echo esc_html( $notice['message'] ); ?></p></div>
+			<?php endif; ?>
 
 			<div class="cashback-price-monitor-admin__grid">
 				<section class="cashback-price-monitor-admin__section">
@@ -348,7 +352,7 @@ class Cashback_Price_Monitor_Admin {
 		update_option( Cashback_Price_Monitor_Client::OPTION_ENABLED, $payload['enabled'], false );
 		update_option( self::OPTION_USER_LIMIT, $payload['max_tracked_products_per_user'], false );
 
-		$this->request_backend(
+		$this->ensure_backend_success(
 			'PATCH',
 			'/api/v1/admin/settings',
 			array(
@@ -390,7 +394,7 @@ class Cashback_Price_Monitor_Admin {
 			'proxy_pool_id'            => $this->sanitize_optional_text( $this->post_string( 'proxy_pool_id' ) ),
 		);
 
-		$this->request_backend( 'POST', '/api/v1/admin/sources', $payload );
+		$this->ensure_backend_success( 'POST', '/api/v1/admin/sources', $payload );
 
 		return $payload;
 	}
@@ -421,7 +425,7 @@ class Cashback_Price_Monitor_Admin {
 			'proxy_url_secret_ref' => $this->sanitize_optional_text( $this->post_string( 'proxy_url_secret_ref' ) ),
 		);
 
-		$this->request_backend( 'POST', '/api/v1/admin/proxy-pools', $payload );
+		$this->ensure_backend_success( 'POST', '/api/v1/admin/proxy-pools', $payload );
 
 		return $payload;
 	}
@@ -480,16 +484,38 @@ class Cashback_Price_Monitor_Admin {
 	 * @param string $method  HTTP method.
 	 * @param string $path    Backend path.
 	 * @param array  $payload Request payload.
-	 * @return array
+	 * @return array|WP_Error
 	 */
-	private function request_backend( string $method, string $path, array $payload = array() ): array {
+	private function request_backend( string $method, string $path, array $payload = array() ): array|WP_Error {
 		if ( ! method_exists( $this->client, 'request' ) ) {
-			return array();
+			return new WP_Error( 'price_monitor_missing_client', 'Price monitor backend client is unavailable.' );
 		}
 
 		$result = $this->client->request( $method, $path, $payload );
 
-		return $result instanceof WP_Error || ! is_array( $result ) ? array() : $result;
+		if ( $result instanceof WP_Error ) {
+			return $result;
+		}
+
+		return is_array( $result ) ? $result : new WP_Error( 'price_monitor_invalid_response', 'Price monitor backend returned an invalid response.' );
+	}
+
+	/**
+	 * Require a successful backend response for save operations.
+	 *
+	 * @param string $method  HTTP method.
+	 * @param string $path    Backend path.
+	 * @param array  $payload Request payload.
+	 * @return array
+	 */
+	private function ensure_backend_success( string $method, string $path, array $payload = array() ): array {
+		$result = $this->request_backend( $method, $path, $payload );
+
+		if ( $result instanceof WP_Error ) {
+			throw new RuntimeException( 'Price monitor backend request failed.' );
+		}
+
+		return $result;
 	}
 
 	/**
@@ -558,6 +584,38 @@ class Cashback_Price_Monitor_Admin {
 	 */
 	private function user_limit(): int {
 		return $this->sanitize_positive_int( get_option( self::OPTION_USER_LIMIT, 10 ), 10 );
+	}
+
+	/**
+	 * Build a visible admin notice from sanitized redirect query args.
+	 *
+	 * @return array<string,string>|null
+	 */
+	private function admin_notice(): ?array {
+		$status  = isset( $_GET['status'] ) ? sanitize_key( (string) wp_unslash( $_GET['status'] ) ) : '';
+		$message = isset( $_GET['message'] ) ? sanitize_key( (string) wp_unslash( $_GET['message'] ) ) : '';
+
+		if ( ! in_array( $status, array( 'success', 'error' ), true ) ) {
+			return null;
+		}
+
+		$messages = array(
+			'settings_saved'         => 'Настройки мониторинга цен сохранены.',
+			'settings_save_failed'   => 'Не удалось сохранить настройки мониторинга цен.',
+			'source_saved'           => 'Источник мониторинга цен сохранён.',
+			'source_save_failed'     => 'Не удалось сохранить источник мониторинга цен.',
+			'proxy_pool_saved'       => 'Прокси-пул сохранён.',
+			'proxy_pool_save_failed' => 'Не удалось сохранить прокси-пул.',
+		);
+
+		if ( ! isset( $messages[ $message ] ) ) {
+			return null;
+		}
+
+		return array(
+			'class'   => 'success' === $status ? 'notice-success' : 'notice-error',
+			'message' => $messages[ $message ],
+		);
 	}
 
 	/**

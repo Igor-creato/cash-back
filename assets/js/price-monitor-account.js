@@ -153,8 +153,13 @@
 
             var next = Object.assign({}, card);
             next.item = Object.assign({}, card.item || {}, patch.item || {});
-            if (patch.product) {
-                next.product = Object.assign({}, card.product || {}, patch.product);
+            next.product = Object.assign({}, card.product || {}, patch.product || {});
+            next.source = Object.assign({}, card.source || {}, patch.source || {});
+            next.actions = Object.assign({}, card.actions || {}, patch.actions || {});
+            next.activation = Object.assign({}, card.activation || {}, patch.activation || {});
+
+            if (patch.chart) {
+                next.chart = Object.assign({}, card.chart || {}, patch.chart);
             }
 
             return next;
@@ -297,6 +302,24 @@
             openActivation(card);
         });
         footer.appendChild(actionButton);
+
+        var refreshButton = document.createElement('button');
+        refreshButton.type = 'button';
+        refreshButton.className = 'price-monitor-account__menu-refresh';
+        refreshButton.textContent = text('refreshButton', 'Обновить');
+        refreshButton.addEventListener('click', function () {
+            request('/items/' + encodeURIComponent(String(item.id || '')) + '/refresh', {
+                method: 'POST',
+                payload: {
+                    client_request_id: clientRequestId()
+                }
+            }).then(function (response) {
+                updateCard(item.id, normalizeCard(response));
+            }).catch(function (error) {
+                setFeedback(error.message || text('fetchFailed', 'Не удалось обновить данные товара'), 'error');
+            });
+        });
+        footer.appendChild(refreshButton);
 
         var editButton = document.createElement('button');
         editButton.type = 'button';

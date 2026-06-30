@@ -175,6 +175,7 @@ final class Cashback_Price_Monitor_Account {
 				'empty'                  => 'Пока нет отслеживаемых товаров',
 				'addButton'              => 'Добавить товар',
 				'cashbackButton'         => 'Активировать кэшбэк',
+				'refreshButton'          => 'Обновить',
 				'deleteButton'           => 'Удалить',
 				'editButton'             => 'Изменить цену',
 			),
