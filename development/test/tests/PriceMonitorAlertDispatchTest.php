@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 #[Group('internal-rest-api')]
@@ -84,6 +85,45 @@ final class PriceMonitorAlertDispatchTest extends TestCase
         self::assertSame(400, $result->get_error_data()['status'] ?? null);
     }
 
+    public function test_send_price_monitor_alert_declares_required_return_type(): void
+    {
+        $reflection = new ReflectionMethod(
+            Savello_Cashback_Internal_API_Service::class,
+            'send_price_monitor_alert'
+        );
+
+        self::assertTrue($reflection->hasReturnType());
+        $return_type = $reflection->getReturnType();
+        self::assertInstanceOf(ReflectionUnionType::class, $return_type);
+
+        $types = array_map(
+            static fn (ReflectionNamedType $type): string => $type->getName(),
+            $return_type->getTypes()
+        );
+        sort($types);
+
+        self::assertSame(array( 'WP_Error', 'array' ), $types);
+    }
+
+    #[DataProvider('invalid_required_email_fields_provider')]
+    public function test_invalid_required_email_fields_return_400_and_skip_mail(
+        array $payload,
+        string $expected_field
+    ): void {
+        $GLOBALS['_cb_test_users'][15] = (object) array(
+            'ID'           => 15,
+            'user_email'   => 'alerts@example.com',
+            'display_name' => 'Иван',
+        );
+
+        $controller = new Savello_Cashback_Internal_REST_Controller();
+        $result     = $controller->send_price_monitor_alert($this->request($payload));
+
+        self::assertInstanceOf(WP_Error::class, $result);
+        self::assertSame(400, $result->get_error_data()['status'] ?? null);
+        self::assertCount(0, $GLOBALS['_cb_test_mail_calls'], $expected_field . ' should block wp_mail()');
+    }
+
     public function test_valid_payload_sends_email_with_required_fields_and_returns_sent_status(): void
     {
         $GLOBALS['_cb_test_users'][15] = (object) array(
@@ -144,6 +184,54 @@ final class PriceMonitorAlertDispatchTest extends TestCase
     }
 
     private function valid_payload(): array
+    {
+        return array(
+            'alert_event_id'        => 'evt-123',
+            'watchlist_item_id'     => 777,
+            'product_id'            => 345,
+            'user_id'               => 15,
+            'target_price_minor'    => 200000,
+            'observed_price_minor'  => 179900,
+            'currency'              => 'RUB',
+            'product_title'         => 'Смартфон Savello X',
+            'product_url'           => 'https://example.test/product/savello-x',
+            'action_url'            => 'https://savelloclub.test/account/price-monitor/777',
+        );
+    }
+
+    public static function invalid_required_email_fields_provider(): array
+    {
+        $payload = static::base_payload_for_invalid_required_fields();
+
+        return array(
+            'missing product title' => array(
+                array_diff_key($payload, array( 'product_title' => true )),
+                'product_title',
+            ),
+            'blank product title' => array(
+                array_merge($payload, array( 'product_title' => '   ' )),
+                'product_title',
+            ),
+            'missing product url' => array(
+                array_diff_key($payload, array( 'product_url' => true )),
+                'product_url',
+            ),
+            'invalid product url' => array(
+                array_merge($payload, array( 'product_url' => 'not-a-url' )),
+                'product_url',
+            ),
+            'missing action url' => array(
+                array_diff_key($payload, array( 'action_url' => true )),
+                'action_url',
+            ),
+            'invalid action url' => array(
+                array_merge($payload, array( 'action_url' => 'mailto:alerts@example.com' )),
+                'action_url',
+            ),
+        );
+    }
+
+    private static function base_payload_for_invalid_required_fields(): array
     {
         return array(
             'alert_event_id'        => 'evt-123',

@@ -332,7 +332,7 @@ final class Savello_Cashback_Internal_API_Service {
         );
     }
 
-    public function send_price_monitor_alert( array $payload ) {
+    public function send_price_monitor_alert( array $payload ): array|WP_Error {
         $alert = $this->sanitize_price_monitor_alert_payload($payload);
         if (is_wp_error($alert)) {
             return $alert;
@@ -1060,7 +1060,7 @@ final class Savello_Cashback_Internal_API_Service {
             return $this->bad_request('Invalid price monitor alert payload.');
         }
 
-        return array(
+        $alert = array(
             'alert_event_id'        => sanitize_text_field((string) ( $payload['alert_event_id'] ?? '' )),
             'watchlist_item_id'     => $watchlist_item_id,
             'product_id'            => $product_id,
@@ -1068,10 +1068,20 @@ final class Savello_Cashback_Internal_API_Service {
             'target_price_minor'    => $target_price_minor,
             'observed_price_minor'  => $observed_price_minor,
             'currency'              => $currency,
-            'product_title'         => sanitize_text_field((string) ( $payload['product_title'] ?? '' )),
+            'product_title'         => trim(sanitize_text_field((string) ( $payload['product_title'] ?? '' ))),
             'product_url'           => $this->sanitize_url((string) ( $payload['product_url'] ?? '' )),
             'action_url'            => $this->sanitize_url((string) ( $payload['action_url'] ?? '' )),
         );
+
+        if (
+            $alert['product_title'] === ''
+            || $alert['product_url'] === ''
+            || $alert['action_url'] === ''
+        ) {
+            return $this->bad_request('Invalid price monitor alert payload.');
+        }
+
+        return $alert;
     }
 
     private function required_positive_int( array $payload, string $key ): ?int {
