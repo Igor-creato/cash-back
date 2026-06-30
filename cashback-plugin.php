@@ -552,6 +552,7 @@ class CashbackPlugin {
         add_rewrite_endpoint('cashback-affiliate', EP_ROOT | EP_PAGES);
         add_rewrite_endpoint('cashback_lost_cashback', EP_ROOT | EP_PAGES);
         add_rewrite_endpoint('cashback-notifications', EP_ROOT | EP_PAGES);
+        add_rewrite_endpoint('price-monitor', EP_ROOT | EP_PAGES);
 
         // Сбрасываем переписывание URL
         flush_rewrite_rules();
@@ -1010,6 +1011,7 @@ class CashbackPlugin {
 
         // Shop Importer admin UI (v12)
         $this->require_file('admin/class-cashback-settings-admin.php');
+        $this->require_file('admin/class-cashback-price-monitor-admin.php');
         $this->require_file('admin/class-cashback-shop-import-admin.php');
         $this->require_file('admin/class-cashback-shop-groups-admin.php');
 
@@ -1033,6 +1035,7 @@ class CashbackPlugin {
         // --- Account REST proxy for price-monitor backend ---
         $this->require_file('includes/price-monitor/class-cashback-price-monitor-client.php');
         $this->require_file('includes/price-monitor/class-cashback-price-monitor-rest-controller.php');
+        $this->require_file('includes/price-monitor/class-cashback-price-monitor-account.php');
 
         // Шорткоды (доступны на фронтенде и в превью редактора)
         $this->require_file('includes/class-cashback-shortcodes.php');
@@ -1757,6 +1760,9 @@ class CashbackPlugin {
             if (class_exists('Cashback_Settings_Admin')) {
                 Cashback_Settings_Admin::init();
             }
+            if (class_exists('Cashback_Price_Monitor_Admin')) {
+                new Cashback_Price_Monitor_Admin();
+            }
             if (class_exists('Cashback_Shop_Import_Admin')) {
                 Cashback_Shop_Import_Admin::init();
             }
@@ -1927,6 +1933,10 @@ class CashbackPlugin {
 
         if (class_exists('Cashback_Price_Monitor_REST_Controller')) {
             Cashback_Price_Monitor_REST_Controller::init();
+        }
+
+        if (class_exists('Cashback_Price_Monitor_Account')) {
+            new Cashback_Price_Monitor_Account();
         }
 
         // Шорткоды
