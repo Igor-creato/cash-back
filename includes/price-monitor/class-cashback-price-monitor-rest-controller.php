@@ -132,12 +132,7 @@ final class Cashback_Price_Monitor_REST_Controller {
             return $this->response($created);
         }
 
-        $activation = $this->link_checker_service->check($url, $this->current_user_id());
-        if ($activation instanceof WP_Error) {
-            $activation = $this->error_payload($activation);
-        }
-
-        $created['activation'] = $activation;
+        $created = $this->hydrate_card_payload($created);
 
         return new WP_REST_Response($created, 200);
     }
@@ -286,6 +281,39 @@ final class Cashback_Price_Monitor_REST_Controller {
 
     private function item_path( string $item_id, string $suffix = '' ): string {
         return '/api/v1/watchlist/items/' . sanitize_text_field($item_id) . $suffix;
+    }
+
+    private function hydrate_card_payload( array $created ): array {
+        $item = $created['item'] ?? null;
+        if (!is_array($item)) {
+            return $created;
+        }
+
+        $account_class = 'Cashback_Price_Monitor_Account';
+        if (!class_exists($account_class)) {
+            $account_path = dirname(__FILE__) . '/class-cashback-price-monitor-account.php';
+            if (file_exists($account_path)) {
+                require_once $account_path;
+            }
+        }
+
+        if (!class_exists($account_class) || !method_exists($account_class, 'hydrate_card')) {
+            return $created;
+        }
+
+        /** @var array $card */
+        $card = $account_class::hydrate_card(
+            $this->client,
+            $this->link_checker_service,
+            $item,
+            $this->current_user_id()
+        );
+
+        foreach (array( 'product', 'source', 'actions', 'chart', 'activation' ) as $key) {
+            $created[ $key ] = $card[ $key ] ?? array();
+        }
+
+        return $created;
     }
 
     private function external_user_id(): string {

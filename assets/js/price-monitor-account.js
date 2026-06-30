@@ -23,11 +23,15 @@
         return fallback;
     }
 
-    function request(path, options) {
+    function endpoint(base, path) {
+        return String(base || '').replace(/\/$/, '') + path;
+    }
+
+    function request(path, options, base) {
         var settings = options || {};
         var method = settings.method || 'GET';
         var payload = settings.payload || null;
-        var url = String(config.restBase || '').replace(/\/$/, '') + path;
+        var url = endpoint(base || config.restBase || '', path);
         var requestOptions = {
             method: method,
             credentials: 'same-origin',
@@ -159,17 +163,49 @@
     }
 
     function openActivation(card) {
-        var activation = card.activation || {};
-        var targetUrl = activation.activation_page_url || (card.actions && card.actions.activation_page_url) || (card.actions && card.actions.direct_url) || '';
-        if (!targetUrl) {
+        var directUrl = (card.actions && card.actions.direct_url) || (card.item && card.item.canonical_url) || '';
+        if (!directUrl) {
+            setFeedback(text('cashbackUnavailable', 'Кэшбэк не начислится'), 'error');
             return;
         }
 
         var popup = window.open('about:blank', '_blank');
         if (popup) {
             popup.opener = null;
-            popup.location = targetUrl;
         }
+
+        request('/activate', {
+            method: 'POST',
+            payload: {
+                url: directUrl,
+                client_request_id: clientRequestId()
+            }
+        }, config.linkCheckerRestBase || '')
+            .then(function (data) {
+                var targetUrl = data.activation_page_url || data.redirect_url || data.cashback_url || '';
+
+                if (targetUrl && popup) {
+                    popup.location = targetUrl;
+                    return;
+                }
+
+                if (targetUrl) {
+                    window.location.href = targetUrl;
+                    return;
+                }
+
+                if (popup && typeof popup.close === 'function') {
+                    popup.close();
+                }
+                setFeedback(data.message || text('cashbackUnavailable', 'Кэшбэк не начислится'), 'error');
+            })
+            .catch(function (error) {
+                if (popup && typeof popup.close === 'function') {
+                    popup.close();
+                }
+
+                setFeedback(error.message || text('fetchFailed', 'Не удалось обновить данные товара'), 'error');
+            });
     }
 
     function buildCard(cardData) {

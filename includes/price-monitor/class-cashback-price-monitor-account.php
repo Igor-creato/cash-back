@@ -158,11 +158,12 @@ final class Cashback_Price_Monitor_Account {
 	 */
 	private function localized_config(): array {
 		return array(
-			'restBase'   => $this->rest_base_url(),
-			'nonce'      => wp_create_nonce( 'wp_rest' ),
-			'isLoggedIn' => function_exists( 'is_user_logged_in' ) && is_user_logged_in(),
-			'items'      => $this->initial_cards(),
-			'i18n'       => array(
+			'restBase'            => $this->rest_base_url(),
+			'linkCheckerRestBase' => $this->link_checker_rest_base_url(),
+			'nonce'               => wp_create_nonce( 'wp_rest' ),
+			'isLoggedIn'          => function_exists( 'is_user_logged_in' ) && is_user_logged_in(),
+			'items'               => $this->initial_cards(),
+			'i18n'                => array(
 				'title'                  => 'Мониторинг цен',
 				'unsupportedStore'       => 'Магазин не поддерживается',
 				'duplicateWatchlistItem' => 'Товар уже отслеживается',
@@ -191,6 +192,9 @@ final class Cashback_Price_Monitor_Account {
 		}
 
 		$client = new Cashback_Price_Monitor_Client();
+		$link_checker_service = class_exists( 'Cashback_Link_Checker_Service' )
+			? new Cashback_Link_Checker_Service()
+			: null;
 		$result = $client->request(
 			'GET',
 			'/api/v1/watchlist/items',
@@ -213,20 +217,22 @@ final class Cashback_Price_Monitor_Account {
 			if ( ! is_array( $item ) ) {
 				continue;
 			}
-			$cards[] = $this->build_card( $client, $item );
+			$cards[] = self::hydrate_card( $client, $link_checker_service, $item, $this->current_user_id() );
 		}
 
 		return $cards;
 	}
 
 	/**
-	 * Compose a single account card payload.
+	 * Compose a single account card payload from the backend item payload.
 	 *
-	 * @param Cashback_Price_Monitor_Client $client Backend client.
-	 * @param array                         $item   Watchlist item payload.
+	 * @param object      $client               Backend client.
+	 * @param object|null $link_checker_service Link checker service.
+	 * @param array       $item                 Watchlist item payload.
+	 * @param int         $user_id              Current user id.
 	 * @return array
 	 */
-	private function build_card( Cashback_Price_Monitor_Client $client, array $item ): array {
+	public static function hydrate_card( object $client, ?object $link_checker_service, array $item, int $user_id ): array {
 		$card = array(
 			'item'       => $item,
 			'product'    => array(),
@@ -248,6 +254,10 @@ final class Cashback_Price_Monitor_Account {
 			return $card;
 		}
 
+		if ( ! method_exists( $client, 'request' ) ) {
+			return $card;
+		}
+
 		$detail = $client->request( 'GET', '/api/v1/products/' . rawurlencode( $product_id ) );
 		if ( is_array( $detail ) ) {
 			$card['product'] = is_array( $detail['product'] ?? null ) ? $detail['product'] : array();
@@ -265,8 +275,13 @@ final class Cashback_Price_Monitor_Account {
 		}
 
 		$direct_url = isset( $card['actions']['direct_url'] ) ? (string) $card['actions']['direct_url'] : '';
-		if ( '' !== $direct_url && class_exists( 'Cashback_Link_Checker_Service' ) ) {
-			$activation = ( new Cashback_Link_Checker_Service() )->check( $direct_url, $this->current_user_id() );
+		if ( '' === $direct_url && isset( $item['canonical_url'] ) && is_string( $item['canonical_url'] ) ) {
+			$direct_url = $item['canonical_url'];
+			$card['actions']['direct_url'] = $direct_url;
+		}
+
+		if ( '' !== $direct_url && is_object( $link_checker_service ) && method_exists( $link_checker_service, 'check' ) ) {
+			$activation = $link_checker_service->check( $direct_url, $user_id );
 			if ( is_array( $activation ) ) {
 				$card['activation'] = $activation;
 			}
@@ -297,6 +312,17 @@ final class Cashback_Price_Monitor_Account {
 		}
 
 		return rtrim( home_url( '/wp-json/cashback/v1/price-monitor' ), '/' );
+	}
+
+	/**
+	 * Resolve the link-checker activation REST base URL.
+	 */
+	private function link_checker_rest_base_url(): string {
+		if ( function_exists( 'rest_url' ) ) {
+			return rtrim( (string) rest_url( 'cashback/v1/link-checker' ), '/' );
+		}
+
+		return rtrim( home_url( '/wp-json/cashback/v1/link-checker' ), '/' );
 	}
 
 	/**

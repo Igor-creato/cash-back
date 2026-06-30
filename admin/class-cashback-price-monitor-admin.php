@@ -331,9 +331,14 @@ final class Cashback_Price_Monitor_Admin {
 		$this->assert_manage_options();
 		$this->assert_nonce( 'cashback_price_monitor_save_settings' );
 
+		$backend_secret = trim( $this->post_string( 'backend_secret' ) );
+		if ( '' === $backend_secret ) {
+			$backend_secret = trim( (string) get_option( Cashback_Price_Monitor_Client::OPTION_SECRET, '' ) );
+		}
+
 		$payload = array(
 			'backend_url'                   => esc_url_raw( $this->post_string( 'backend_url' ) ),
-			'backend_secret'                => trim( $this->post_string( 'backend_secret' ) ),
+			'backend_secret'                => $backend_secret,
 			'enabled'                       => $this->post_bool( 'enabled' ) ? 1 : 0,
 			'max_tracked_products_per_user' => $this->sanitize_positive_int( $this->post_value( 'max_tracked_products_per_user', 10 ), 10 ),
 		);

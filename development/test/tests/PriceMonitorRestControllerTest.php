@@ -162,7 +162,7 @@ final class PriceMonitorRestControllerTest extends TestCase {
         self::assertSame(array( 'url' => 'https://unsupported.example/item' ), $calls[0]['payload']);
     }
 
-    public function test_create_item_checks_supported_source_then_creates_watch_and_returns_activation_metadata(): void {
+    public function test_create_item_returns_enriched_card_shape_after_watch_creation(): void {
         $this->load_controller();
 
         $GLOBALS['_cb_test_is_logged_in'] = true;
@@ -181,12 +181,45 @@ final class PriceMonitorRestControllerTest extends TestCase {
                 public function request(string $method, string $path, array $payload = array(), ?string $idempotency_key = null): array {
                     $this->calls[] = compact('method', 'path', 'payload', 'idempotency_key');
 
-                    if ($method === 'GET') {
+                    if ($method === 'GET' && $path === '/api/v1/sources/supported') {
                         return array(
                             'supported' => true,
                             'source'    => array(
                                 'source_domain' => 'shop.example',
                                 'display_name'  => 'Shop Example',
+                            ),
+                        );
+                    }
+
+                    if ($method === 'GET' && $path === '/api/v1/products/product-1') {
+                        return array(
+                            'product' => array(
+                                'title'               => 'Example Product',
+                                'image_url'           => 'https://example.com/image.jpg',
+                                'rating_value'        => '4.7',
+                                'current_price_minor' => 11888,
+                                'currency'            => 'RUB',
+                            ),
+                            'source'  => array(
+                                'source_domain' => 'shop.example',
+                                'display_name'  => 'Shop Example',
+                                'logo_url'      => 'https://example.com/logo.png',
+                            ),
+                            'actions' => array(
+                                'direct_url' => 'https://shop.example/item',
+                            ),
+                        );
+                    }
+
+                    if ($method === 'GET' && $path === '/api/v1/products/product-1/price-chart') {
+                        return array(
+                            'currency' => 'RUB',
+                            'points'   => array(
+                                array(
+                                    'date'            => '2026-06-30',
+                                    'min_price_minor' => 11888,
+                                    'max_price_minor' => 11888,
+                                ),
                             ),
                         );
                     }
@@ -200,7 +233,7 @@ final class PriceMonitorRestControllerTest extends TestCase {
                             'canonical_url'     => 'https://shop.example/item',
                             'target_price_minor'=> 12345,
                             'currency'          => 'RUB',
-                            'status'            => 'active',
+                        'status'            => 'active',
                         ),
                     );
                 }
@@ -237,7 +270,7 @@ final class PriceMonitorRestControllerTest extends TestCase {
         $data     = $response->get_data();
 
         self::assertSame(200, $response->get_status());
-        self::assertCount(2, $calls);
+        self::assertCount(4, $calls);
         self::assertSame('GET', $calls[0]['method']);
         self::assertSame('POST', $calls[1]['method']);
         self::assertSame('/api/v1/watchlist/items', $calls[1]['path']);
@@ -251,7 +284,19 @@ final class PriceMonitorRestControllerTest extends TestCase {
             ),
             $calls[1]['payload']
         );
+        self::assertSame('GET', $calls[2]['method']);
+        self::assertSame('/api/v1/products/product-1', $calls[2]['path']);
+        self::assertSame(array(), $calls[2]['payload']);
+        self::assertSame('GET', $calls[3]['method']);
+        self::assertSame('/api/v1/products/product-1/price-chart', $calls[3]['path']);
+        self::assertSame(array( 'days' => 30 ), $calls[3]['payload']);
+        self::assertTrue($data['created']);
         self::assertSame('item-1', $data['item']['id']);
+        self::assertSame('Example Product', $data['product']['title']);
+        self::assertSame('Shop Example', $data['source']['display_name']);
+        self::assertSame('https://shop.example/item', $data['actions']['direct_url']);
+        self::assertSame('RUB', $data['chart']['currency']);
+        self::assertCount(1, $data['chart']['points']);
         self::assertSame('available', $data['activation']['status']);
         self::assertTrue($data['activation']['activation_required']);
         self::assertCount(1, $activation_calls);

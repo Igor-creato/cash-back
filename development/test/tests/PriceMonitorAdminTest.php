@@ -263,6 +263,31 @@ final class PriceMonitorAdminTest extends TestCase {
 	}
 
 	/**
+	 * Ensure an empty secret field preserves the saved backend secret.
+	 */
+	public function test_blank_backend_secret_preserves_existing_secret_option(): void {
+		$calls = array();
+		$admin = $this->load_admin( $this->spy_client( $calls ) );
+
+		update_option( Cashback_Price_Monitor_Client::OPTION_SECRET, 'persist-me', false );
+
+		$_POST = array(
+			'_wpnonce'                      => wp_create_nonce( 'cashback_price_monitor_save_settings' ),
+			'backend_url'                   => 'https://backend.example',
+			'backend_secret'                => '   ',
+			'enabled'                       => '1',
+			'max_tracked_products_per_user' => '15',
+		);
+
+		$payload = $admin->handle_save_settings();
+
+		self::assertSame( 'persist-me', get_option( Cashback_Price_Monitor_Client::OPTION_SECRET, '' ) );
+		self::assertSame( 'persist-me', $payload['backend_secret'] );
+		self::assertCount( 1, $calls );
+		self::assertSame( array( 'max_tracked_products_per_user' => 15 ), $calls[0]['payload'] );
+	}
+
+	/**
 	 * Ensure source payloads are normalized before backend submission.
 	 */
 	public function test_source_payload_is_sanitized_before_client_request(): void {

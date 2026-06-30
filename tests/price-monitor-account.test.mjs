@@ -179,6 +179,7 @@ function createEnvironment({
     window: {
       CashbackPriceMonitorAccount: {
         restBase: 'https://savelloclub.test/wp-json/cashback/v1/price-monitor',
+        linkCheckerRestBase: 'https://savelloclub.test/wp-json/cashback/v1/link-checker',
         nonce: 'nonce',
         isLoggedIn: true,
         items: initialItems,
@@ -283,9 +284,11 @@ function errorJson(status, payload) {
 
 function cardFixture() {
   return {
+    created: true,
     item: {
       id: 'item-1',
       product_id: 'product-1',
+      canonical_url: 'https://shop.example/item',
       target_price_minor: 12345
     },
     product: {
@@ -309,7 +312,7 @@ function cardFixture() {
       ]
     },
     activation: {
-      activation_page_url: 'https://savelloclub.test/cashback-go/item-1',
+      status: 'available',
       button_text: 'Активировать кэшбэк'
     },
     actions: {
@@ -365,7 +368,7 @@ test('duplicate and limit responses use exact Russian copy', async () => {
   }
 });
 
-test('successful add renders product card with image, rating, source logo, chart, and cashback action', async () => {
+test('successful add renders product card from the real enriched proxy response shape', async () => {
   const env = createEnvironment({
     responses: [okJson(cardFixture())]
   });
@@ -388,7 +391,7 @@ test('successful add renders product card with image, rating, source logo, chart
   assert.match(card.textContent, /Shop Example/);
 });
 
-test('edit, delete, and cashback action use PATCH, DELETE, and activation URL flow', async () => {
+test('edit, cashback action, and delete stay behind REST endpoints and activation uses link-checker activate', async () => {
   const env = createEnvironment({
     initialItems: [cardFixture()],
     responses: [
@@ -397,6 +400,10 @@ test('edit, delete, and cashback action use PATCH, DELETE, and activation URL fl
           id: 'item-1',
           target_price_minor: 4999
         }
+      }),
+      okJson({
+        status: 'ok',
+        activation_page_url: 'https://savelloclub.test/cashback-go/item-1'
       }),
       okJson({})
     ]
@@ -412,15 +419,20 @@ test('edit, delete, and cashback action use PATCH, DELETE, and activation URL fl
   await flushPromises();
   assert.equal(env.requests[0].options.method, 'PATCH');
   assert.match(String(env.requests[0].options.body), /4999/);
+  assert.equal(env.requests[0].options.headers['X-WP-Nonce'], 'nonce');
 
   card.querySelector('.price-monitor-account__action').click();
   await flushPromises();
+  assert.equal(env.requests[1].url, 'https://savelloclub.test/wp-json/cashback/v1/link-checker/activate');
+  assert.equal(env.requests[1].options.method, 'POST');
+  assert.equal(env.requests[1].options.headers['X-WP-Nonce'], 'nonce');
+  assert.match(String(env.requests[1].options.body), /https:\/\/shop\.example\/item/);
   assert.equal(env.opened[0], 'about:blank');
   assert.equal(env.popup.location, 'https://savelloclub.test/cashback-go/item-1');
 
   card.querySelector('.price-monitor-account__menu-delete').click();
   await flushPromises();
-  assert.equal(env.requests[1].options.method, 'DELETE');
+  assert.equal(env.requests[2].options.method, 'DELETE');
   assert.equal(env.items.querySelector('.price-monitor-account__card'), null);
   assert.equal(env.items.querySelector('.price-monitor-account__empty').textContent, 'Пока нет отслеживаемых товаров');
 });
