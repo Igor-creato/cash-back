@@ -99,6 +99,12 @@ final class Savello_Cashback_Internal_REST_Controller {
             'callback'            => array( $this, 'manifest' ),
             'permission_callback' => array( $this, 'check_hmac' ),
         ));
+
+        register_rest_route(self::NAMESPACE, '/price-monitor/alerts/send', array(
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => array( $this, 'send_price_monitor_alert' ),
+            'permission_callback' => array( $this, 'check_hmac' ),
+        ));
     }
 
     public function check_hmac( WP_REST_Request $request ) {
@@ -141,6 +147,10 @@ final class Savello_Cashback_Internal_REST_Controller {
     public function manifest( WP_REST_Request $request ) {
         unset($request);
         return $this->response($this->service->get_manifest());
+    }
+
+    public function send_price_monitor_alert( WP_REST_Request $request ) {
+        return $this->response($this->service->send_price_monitor_alert($this->request_payload($request)));
     }
 
     private function request_payload( WP_REST_Request $request ): array {
