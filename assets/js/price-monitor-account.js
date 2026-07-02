@@ -426,6 +426,7 @@
         }).catch(function (error) {
             var messages = {
                 unsupported_store: text('unsupportedStore', 'Магазин не поддерживается'),
+                monitoring_unavailable: text('monitoringUnavailable', 'Для данного магазина мониторинг временно недоступен.'),
                 duplicate_watchlist_item: text('duplicateWatchlistItem', 'Товар уже отслеживается'),
                 limit_exceeded: text('limitExceeded', 'Достигнут лимит отслеживаемых товаров'),
                 invalid_target_price: text('invalidTargetPrice', 'Проверьте желаемую цену')

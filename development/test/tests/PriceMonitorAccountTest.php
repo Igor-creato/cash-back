@@ -108,6 +108,7 @@ final class PriceMonitorAccountTest extends TestCase {
 		self::assertTrue( $localized['isLoggedIn'] );
 		self::assertSame( 'Мониторинг цен', $localized['i18n']['title'] );
 		self::assertSame( 'Магазин не поддерживается', $localized['i18n']['unsupportedStore'] );
+		self::assertSame( 'Для данного магазина мониторинг временно недоступен.', $localized['i18n']['monitoringUnavailable'] );
 		self::assertSame( 'Товар уже отслеживается', $localized['i18n']['duplicateWatchlistItem'] );
 		self::assertSame( 'Достигнут лимит отслеживаемых товаров', $localized['i18n']['limitExceeded'] );
 	}

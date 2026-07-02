@@ -369,6 +369,25 @@ test('unsupported store renders Russian error message', async () => {
   assert.equal(env.feedback.textContent, 'Магазин не поддерживается');
 });
 
+test('monitoring unavailable renders temporary unavailable Russian error message', async () => {
+  const env = createEnvironment({
+    responses: [
+      errorJson(422, {
+        code: 'monitoring_unavailable'
+      })
+    ]
+  });
+
+  vm.runInNewContext(source, env.context);
+  env.submitListener({
+    target: env.form,
+    preventDefault() {}
+  });
+  await flushPromises();
+
+  assert.equal(env.feedback.textContent, 'Для данного магазина мониторинг временно недоступен.');
+});
+
 test('duplicate and limit responses use exact Russian copy', async () => {
   for (const payload of [
     { code: 'duplicate_watchlist_item', message: 'Товар уже отслеживается' },

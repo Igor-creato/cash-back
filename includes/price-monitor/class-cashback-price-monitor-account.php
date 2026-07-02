@@ -166,6 +166,7 @@ final class Cashback_Price_Monitor_Account {
 			'i18n'                => array(
 				'title'                  => 'Мониторинг цен',
 				'unsupportedStore'       => 'Магазин не поддерживается',
+				'monitoringUnavailable'  => 'Для данного магазина мониторинг временно недоступен.',
 				'duplicateWatchlistItem' => 'Товар уже отслеживается',
 				'limitExceeded'          => 'Достигнут лимит отслеживаемых товаров',
 				'fetchPending'           => 'Данные товара загружаются',
