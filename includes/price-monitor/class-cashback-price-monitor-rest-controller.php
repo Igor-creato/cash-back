@@ -300,7 +300,7 @@ final class Cashback_Price_Monitor_REST_Controller {
 
         $account_class = 'Cashback_Price_Monitor_Account';
         if (!class_exists($account_class)) {
-            $account_path = dirname(__FILE__) . '/class-cashback-price-monitor-account.php';
+            $account_path = __DIR__ . '/class-cashback-price-monitor-account.php';
             if (file_exists($account_path)) {
                 require_once $account_path;
             }
