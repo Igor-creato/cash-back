@@ -82,6 +82,18 @@ if ( ! function_exists( 'wp_safe_redirect' ) ) {
 	}
 }
 
+if ( ! function_exists( 'esc_url' ) ) {
+	/**
+	 * Test stub for esc_url().
+	 *
+	 * @param string $url URL to escape.
+	 * @return string
+	 */
+	function esc_url( string $url ): string {
+		return htmlspecialchars( $url, ENT_QUOTES, 'UTF-8' );
+	}
+}
+
 /**
  * Admin settings page tests.
  */
@@ -199,6 +211,7 @@ final class PriceMonitorAdminTest extends TestCase {
 					return array(
 						'settings' => array(
 							'max_tracked_products_per_user' => 25,
+							'price_refresh_interval_hours'  => 8,
 						),
 					);
 				}
@@ -238,6 +251,7 @@ final class PriceMonitorAdminTest extends TestCase {
 					return array(
 						'settings' => array(
 							'max_tracked_products_per_user' => 25,
+							'price_refresh_interval_hours'  => 8,
 						),
 					);
 				}
@@ -257,16 +271,56 @@ final class PriceMonitorAdminTest extends TestCase {
 	/**
 	 * Ensure the submenu is attached to the existing cashback overview menu.
 	 */
-	public function test_admin_submenu_is_registered_under_cashback_overview(): void {
+	public function test_monitoring_settings_submenu_is_registered_under_cashback_overview(): void {
 		$calls = array();
 		$admin = $this->load_admin( $this->spy_client( $calls ) );
 
 		$admin->register_menu();
 
+		self::assertTrue( defined( 'Cashback_Price_Monitor_Admin::SETTINGS_PAGE_SLUG' ) );
 		self::assertCount( 1, $GLOBALS['_cb_test_submenu_pages'] );
 		self::assertSame( 'cashback-overview', $GLOBALS['_cb_test_submenu_pages'][0]['parent_slug'] );
-		self::assertSame( 'Мониторинг цен', $GLOBALS['_cb_test_submenu_pages'][0]['menu_title'] );
+		self::assertSame( 'Настройки мониторинга', $GLOBALS['_cb_test_submenu_pages'][0]['page_title'] );
+		self::assertSame( 'Настройки мониторинга', $GLOBALS['_cb_test_submenu_pages'][0]['menu_title'] );
 		self::assertSame( 'manage_options', $GLOBALS['_cb_test_submenu_pages'][0]['capability'] );
+		self::assertSame( Cashback_Price_Monitor_Admin::SETTINGS_PAGE_SLUG, $GLOBALS['_cb_test_submenu_pages'][0]['menu_slug'] );
+	}
+
+	public function test_monitoring_settings_page_contains_store_logo_and_provider_fields(): void {
+		$calls = array();
+		$admin = $this->load_admin( $this->spy_client( $calls ) );
+
+		ob_start();
+		$admin->render_page();
+		$html = (string) ob_get_clean();
+
+		self::assertStringContainsString( 'Настройки мониторинга', $html );
+		self::assertStringContainsString( 'Подключение backend', $html );
+		self::assertStringContainsString( 'Магазины мониторинга', $html );
+		self::assertStringContainsString( 'Прокси-пулы', $html );
+
+		foreach (
+			array(
+				'name="source_domain"',
+				'name="display_name"',
+				'name="logo_url"',
+				'Логотип магазина URL',
+				'name="status"',
+				'name="fetch_interval_hours"',
+				'name="price_refresh_interval_hours"',
+				'Частота обновления цены, часов',
+				'name="history_retention_days"',
+				'name="browser_fallback_allowed"',
+				'name="proxy_pool_id"',
+				'name="joom_browser_provider_url"',
+				'name="joom_browser_provider_token"',
+				'name="joom_browser_provider_timeout_seconds"',
+				'name="joom_browser_provider_wait_selector"',
+				'name="max_tracked_products_per_user"',
+			) as $needle
+		) {
+			self::assertStringContainsString( $needle, $html );
+		}
 	}
 
 	/**
@@ -282,6 +336,7 @@ final class PriceMonitorAdminTest extends TestCase {
 			'backend_secret'                => 'secret-value',
 			'enabled'                       => '1',
 			'max_tracked_products_per_user' => '25',
+			'price_refresh_interval_hours'  => '8',
 		);
 
 		try {
@@ -345,7 +400,13 @@ final class PriceMonitorAdminTest extends TestCase {
 		self::assertCount( 1, $calls );
 		self::assertSame( 'PATCH', $calls[0]['method'] );
 		self::assertSame( '/api/v1/admin/settings', $calls[0]['path'] );
-		self::assertSame( array( 'max_tracked_products_per_user' => 25 ), $calls[0]['payload'] );
+		self::assertSame(
+			array(
+				'max_tracked_products_per_user' => 25,
+				'price_refresh_interval_hours'  => 8,
+			),
+			$calls[0]['payload']
+		);
 
 		ob_start();
 		$admin->render_page();
@@ -370,6 +431,7 @@ final class PriceMonitorAdminTest extends TestCase {
 			'backend_secret'                => '   ',
 			'enabled'                       => '1',
 			'max_tracked_products_per_user' => '15',
+			'price_refresh_interval_hours'  => '8',
 		);
 
 		$payload = $admin->handle_save_settings();
@@ -377,7 +439,13 @@ final class PriceMonitorAdminTest extends TestCase {
 		self::assertSame( 'persist-me', get_option( Cashback_Price_Monitor_Client::OPTION_SECRET, '' ) );
 		self::assertSame( 'persist-me', $payload['backend_secret'] );
 		self::assertCount( 1, $calls );
-		self::assertSame( array( 'max_tracked_products_per_user' => 15 ), $calls[0]['payload'] );
+		self::assertSame(
+			array(
+				'max_tracked_products_per_user' => 15,
+				'price_refresh_interval_hours'  => 8,
+			),
+			$calls[0]['payload']
+		);
 	}
 
 	public function test_joom_provider_settings_are_rendered_and_saved_without_exposing_token(): void {
@@ -396,6 +464,7 @@ final class PriceMonitorAdminTest extends TestCase {
 					return array(
 						'settings' => array(
 							'max_tracked_products_per_user'         => 25,
+							'price_refresh_interval_hours'          => 8,
 							'joom_browser_provider_url'             => 'https://renderer.example/render',
 							'joom_browser_provider_timeout_seconds' => 12.5,
 							'joom_browser_provider_wait_selector'   => '#price',
@@ -433,6 +502,7 @@ final class PriceMonitorAdminTest extends TestCase {
 			'backend_secret'                        => 'top-secret',
 			'enabled'                               => '1',
 			'max_tracked_products_per_user'         => '25',
+			'price_refresh_interval_hours'          => '8',
 			'joom_browser_provider_url'             => ' https://renderer.example/render ',
 			'joom_browser_provider_token'           => ' secret-token ',
 			'joom_browser_provider_timeout_seconds' => '12.5',
@@ -446,6 +516,7 @@ final class PriceMonitorAdminTest extends TestCase {
 		self::assertSame(
 			array(
 				'max_tracked_products_per_user'         => 25,
+				'price_refresh_interval_hours'          => 8,
 				'joom_browser_provider_url'             => 'https://renderer.example/render',
 				'joom_browser_provider_token'           => 'secret-token',
 				'joom_browser_provider_timeout_seconds' => 12.5,

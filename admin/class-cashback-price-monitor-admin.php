@@ -16,7 +16,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Cashback_Price_Monitor_Admin {
 
-	public const PAGE_SLUG         = 'cashback-price-monitor';
+	public const SETTINGS_PAGE_SLUG = 'cashback-price-monitor';
+	public const PAGE_SLUG         = self::SETTINGS_PAGE_SLUG;
 	public const OPTION_USER_LIMIT = 'cashback_price_monitor_user_limit';
 
 	/**
@@ -54,8 +55,8 @@ class Cashback_Price_Monitor_Admin {
 	public function register_menu(): void {
 		$this->hook_suffix = add_submenu_page(
 			'cashback-overview',
-			'Мониторинг цен',
-			'Мониторинг цен',
+			'Настройки мониторинга',
+			'Настройки мониторинга',
 			'manage_options',
 			self::PAGE_SLUG,
 			array( $this, 'render_page' )
@@ -96,8 +97,8 @@ class Cashback_Price_Monitor_Admin {
 				'pageSlug'  => self::PAGE_SLUG,
 				'userLimit' => $this->user_limit(),
 				'i18n'      => array(
-					'backendSection' => 'Настройки backend',
-					'sourceSection'  => 'Поддерживаемые источники',
+					'backendSection' => 'Подключение backend',
+					'sourceSection'  => 'Магазины мониторинга',
 					'proxySection'   => 'Прокси-пулы',
 				),
 			)
@@ -118,6 +119,9 @@ class Cashback_Price_Monitor_Admin {
 		$user_limit        = isset( $remote_settings['max_tracked_products_per_user'] )
 			? (int) $remote_settings['max_tracked_products_per_user']
 			: $this->user_limit();
+		$price_refresh_interval_hours = isset( $remote_settings['price_refresh_interval_hours'] )
+			? (int) $remote_settings['price_refresh_interval_hours']
+			: 8;
 		$joom_provider_url        = (string) ( $remote_settings['joom_browser_provider_url'] ?? '' );
 		$joom_provider_timeout    = (string) ( $remote_settings['joom_browser_provider_timeout_seconds'] ?? '25.0' );
 		$joom_provider_selector   = (string) ( $remote_settings['joom_browser_provider_wait_selector'] ?? 'meta[property="product:price:amount"]' );
@@ -125,14 +129,14 @@ class Cashback_Price_Monitor_Admin {
 		$joom_provider_token_set  = ! empty( $remote_settings['joom_browser_provider_token_set'] );
 		?>
 		<div class="wrap cashback-price-monitor-admin">
-			<h1><?php echo esc_html( 'Мониторинг цен' ); ?></h1>
+			<h1><?php echo esc_html( 'Настройки мониторинга' ); ?></h1>
 			<?php if ( null !== $notice ) : ?>
 				<div class="notice <?php echo esc_attr( $notice['class'] ); ?> is-dismissible"><p><?php echo esc_html( $notice['message'] ); ?></p></div>
 			<?php endif; ?>
 
 			<div class="cashback-price-monitor-admin__grid">
 				<section class="cashback-price-monitor-admin__section">
-					<h2><?php echo esc_html( 'Настройки backend' ); ?></h2>
+					<h2><?php echo esc_html( 'Подключение backend' ); ?></h2>
 					<form method="post" action="<?php echo esc_url( $admin_post_url ); ?>">
 						<input type="hidden" name="action" value="cashback_price_monitor_save_settings" />
 						<?php wp_nonce_field( 'cashback_price_monitor_save_settings' ); ?>
@@ -185,6 +189,19 @@ class Cashback_Price_Monitor_Admin {
 										name="max_tracked_products_per_user"
 										class="small-text"
 										value="<?php echo esc_attr( (string) $user_limit ); ?>"
+									/>
+								</td>
+							</tr>
+							<tr>
+								<th scope="row"><label for="cashback-price-monitor-refresh-interval"><?php echo esc_html( 'Частота обновления цены, часов' ); ?></label></th>
+								<td>
+									<input
+										id="cashback-price-monitor-refresh-interval"
+										type="number"
+										min="1"
+										name="price_refresh_interval_hours"
+										class="small-text"
+										value="<?php echo esc_attr( (string) $price_refresh_interval_hours ); ?>"
 									/>
 								</td>
 							</tr>
@@ -249,7 +266,7 @@ class Cashback_Price_Monitor_Admin {
 				</section>
 
 				<section class="cashback-price-monitor-admin__section">
-					<h2><?php echo esc_html( 'Поддерживаемые источники' ); ?></h2>
+					<h2><?php echo esc_html( 'Магазины мониторинга' ); ?></h2>
 					<form method="post" action="<?php echo esc_url( $admin_post_url ); ?>">
 						<input type="hidden" name="action" value="cashback_price_monitor_save_source" />
 						<?php wp_nonce_field( 'cashback_price_monitor_save_source' ); ?>
@@ -264,7 +281,7 @@ class Cashback_Price_Monitor_Admin {
 								<td><input id="cashback-price-monitor-source-name" type="text" name="display_name" class="regular-text" /></td>
 							</tr>
 							<tr>
-								<th scope="row"><label for="cashback-price-monitor-source-logo"><?php echo esc_html( 'Logo URL' ); ?></label></th>
+								<th scope="row"><label for="cashback-price-monitor-source-logo"><?php echo esc_html( 'Логотип магазина URL' ); ?></label></th>
 								<td><input id="cashback-price-monitor-source-logo" type="url" name="logo_url" class="regular-text" /></td>
 							</tr>
 							<tr>
@@ -279,7 +296,7 @@ class Cashback_Price_Monitor_Admin {
 							</tr>
 							<tr>
 								<th scope="row"><label for="cashback-price-monitor-source-interval"><?php echo esc_html( 'Интервал, часы' ); ?></label></th>
-								<td><input id="cashback-price-monitor-source-interval" type="number" min="1" name="fetch_interval_hours" class="small-text" value="6" /></td>
+								<td><input id="cashback-price-monitor-source-interval" type="number" min="1" name="fetch_interval_hours" class="small-text" value="<?php echo esc_attr( (string) $price_refresh_interval_hours ); ?>" /></td>
 							</tr>
 							<tr>
 								<th scope="row"><label for="cashback-price-monitor-source-retention"><?php echo esc_html( 'Хранение истории, дней' ); ?></label></th>
@@ -297,7 +314,7 @@ class Cashback_Price_Monitor_Admin {
 							</tr>
 						</table>
 
-						<p><button type="submit" class="button button-primary"><?php echo esc_html( 'Сохранить источник' ); ?></button></p>
+						<p><button type="submit" class="button button-primary"><?php echo esc_html( 'Сохранить магазин' ); ?></button></p>
 					</form>
 				</section>
 
@@ -359,7 +376,7 @@ class Cashback_Price_Monitor_Admin {
 						<tr>
 							<th><?php echo esc_html( 'Домен' ); ?></th>
 							<th><?php echo esc_html( 'Название' ); ?></th>
-							<th><?php echo esc_html( 'Logo URL' ); ?></th>
+							<th><?php echo esc_html( 'Логотип магазина URL' ); ?></th>
 							<th><?php echo esc_html( 'Интервал' ); ?></th>
 							<th><?php echo esc_html( 'Хранение' ); ?></th>
 							<th><?php echo esc_html( 'Browser fallback' ); ?></th>
@@ -408,6 +425,7 @@ class Cashback_Price_Monitor_Admin {
 			'backend_secret'                => $backend_secret,
 			'enabled'                       => $this->post_bool( 'enabled' ) ? 1 : 0,
 			'max_tracked_products_per_user' => $this->sanitize_positive_int( $this->post_value( 'max_tracked_products_per_user', 10 ), 10 ),
+			'price_refresh_interval_hours'  => $this->sanitize_positive_int( $this->post_value( 'price_refresh_interval_hours', 8 ), 8 ),
 		);
 
 		update_option( Cashback_Price_Monitor_Client::OPTION_BACKEND_URL, $payload['backend_url'], false );
@@ -417,10 +435,17 @@ class Cashback_Price_Monitor_Admin {
 
 		$backend_payload = array(
 			'max_tracked_products_per_user' => $payload['max_tracked_products_per_user'],
+			'price_refresh_interval_hours'  => $payload['price_refresh_interval_hours'],
 		);
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce is verified at the start of this handler.
 		if ( array_key_exists( 'joom_browser_provider_url', $_POST ) ) {
 			$backend_payload['joom_browser_provider_url']             = esc_url_raw( $this->post_string( 'joom_browser_provider_url' ) );
+
+			$joom_provider_token = trim( $this->post_string( 'joom_browser_provider_token' ) );
+			if ( '' !== $joom_provider_token ) {
+				$backend_payload['joom_browser_provider_token'] = $joom_provider_token;
+			}
+
 			$backend_payload['joom_browser_provider_timeout_seconds'] = $this->sanitize_bounded_float(
 				$this->post_value( 'joom_browser_provider_timeout_seconds', '25.0' ),
 				1.0,
@@ -431,11 +456,6 @@ class Cashback_Price_Monitor_Admin {
 				$this->post_string( 'joom_browser_provider_wait_selector' ),
 				'meta[property="product:price:amount"]'
 			);
-
-			$joom_provider_token = trim( $this->post_string( 'joom_browser_provider_token' ) );
-			if ( '' !== $joom_provider_token ) {
-				$backend_payload['joom_browser_provider_token'] = $joom_provider_token;
-			}
 		}
 
 		$this->ensure_backend_success( 'PATCH', '/api/v1/admin/settings', $backend_payload );

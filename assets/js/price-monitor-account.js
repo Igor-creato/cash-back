@@ -429,7 +429,11 @@
                 monitoring_unavailable: text('monitoringUnavailable', 'Для данного магазина мониторинг временно недоступен.'),
                 duplicate_watchlist_item: text('duplicateWatchlistItem', 'Товар уже отслеживается'),
                 limit_exceeded: text('limitExceeded', 'Достигнут лимит отслеживаемых товаров'),
-                invalid_target_price: text('invalidTargetPrice', 'Проверьте желаемую цену')
+                invalid_target_price: text('invalidTargetPrice', 'Проверьте желаемую цену'),
+                not_product_url: text('notProductUrl', 'Укажите ссылку на карточку товара.'),
+                unsafe_url: text('unsafeUrl', 'Ссылка небезопасна или недоступна для проверки.'),
+                source_product_id_missing: text('sourceProductIdMissing', 'Не удалось определить товар по ссылке.'),
+                source_url_pattern_unsupported: text('sourceUrlPatternUnsupported', 'Формат ссылки пока не поддерживается.')
             };
             var message = messages[error.code] || error.message || text('fetchFailed', 'Не удалось обновить данные товара');
             setFeedback(message, 'error');

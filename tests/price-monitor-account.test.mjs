@@ -388,6 +388,45 @@ test('monitoring unavailable renders temporary unavailable Russian error message
   assert.equal(env.feedback.textContent, 'Для данного магазина мониторинг временно недоступен.');
 });
 
+test('not product url response renders exact Russian validation copy', async () => {
+  const env = createEnvironment({
+    responses: [
+      errorJson(422, {
+        code: 'not_product_url',
+        message: 'Укажите ссылку на карточку товара.'
+      })
+    ]
+  });
+
+  vm.runInNewContext(source, env.context);
+  env.submitListener({
+    target: env.form,
+    preventDefault() {}
+  });
+  await flushPromises();
+
+  assert.equal(env.feedback.textContent, 'Укажите ссылку на карточку товара.');
+});
+
+test('unsafe url response falls back to the new exact Russian validation copy', async () => {
+  const env = createEnvironment({
+    responses: [
+      errorJson(422, {
+        code: 'unsafe_url'
+      })
+    ]
+  });
+
+  vm.runInNewContext(source, env.context);
+  env.submitListener({
+    target: env.form,
+    preventDefault() {}
+  });
+  await flushPromises();
+
+  assert.equal(env.feedback.textContent, 'Ссылка небезопасна или недоступна для проверки.');
+});
+
 test('duplicate and limit responses use exact Russian copy', async () => {
   for (const payload of [
     { code: 'duplicate_watchlist_item', message: 'Товар уже отслеживается' },
