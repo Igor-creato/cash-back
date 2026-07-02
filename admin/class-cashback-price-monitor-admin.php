@@ -118,6 +118,11 @@ class Cashback_Price_Monitor_Admin {
 		$user_limit        = isset( $remote_settings['max_tracked_products_per_user'] )
 			? (int) $remote_settings['max_tracked_products_per_user']
 			: $this->user_limit();
+		$joom_provider_url        = (string) ( $remote_settings['joom_browser_provider_url'] ?? '' );
+		$joom_provider_timeout    = (string) ( $remote_settings['joom_browser_provider_timeout_seconds'] ?? '25.0' );
+		$joom_provider_selector   = (string) ( $remote_settings['joom_browser_provider_wait_selector'] ?? 'meta[property="product:price:amount"]' );
+		$joom_provider_configured = ! empty( $remote_settings['joom_browser_provider_configured'] );
+		$joom_provider_token_set  = ! empty( $remote_settings['joom_browser_provider_token_set'] );
 		?>
 		<div class="wrap cashback-price-monitor-admin">
 			<h1><?php echo esc_html( 'Мониторинг цен' ); ?></h1>
@@ -128,7 +133,7 @@ class Cashback_Price_Monitor_Admin {
 			<div class="cashback-price-monitor-admin__grid">
 				<section class="cashback-price-monitor-admin__section">
 					<h2><?php echo esc_html( 'Настройки backend' ); ?></h2>
-					<form method="post" action="<?php echo esc_attr( $admin_post_url ); ?>">
+					<form method="post" action="<?php echo esc_url( $admin_post_url ); ?>">
 						<input type="hidden" name="action" value="cashback_price_monitor_save_settings" />
 						<?php wp_nonce_field( 'cashback_price_monitor_save_settings' ); ?>
 
@@ -183,6 +188,60 @@ class Cashback_Price_Monitor_Admin {
 									/>
 								</td>
 							</tr>
+							<tr>
+								<th scope="row"><label for="cashback-price-monitor-joom-provider-url"><?php echo esc_html( 'Joom provider URL' ); ?></label></th>
+								<td>
+									<input
+										id="cashback-price-monitor-joom-provider-url"
+										type="url"
+										name="joom_browser_provider_url"
+										class="regular-text"
+										value="<?php echo esc_attr( $joom_provider_url ); ?>"
+									/>
+								</td>
+							</tr>
+							<tr>
+								<th scope="row"><label for="cashback-price-monitor-joom-provider-token"><?php echo esc_html( 'Joom provider token' ); ?></label></th>
+								<td>
+									<input
+										id="cashback-price-monitor-joom-provider-token"
+										type="password"
+										name="joom_browser_provider_token"
+										class="regular-text"
+										value=""
+										autocomplete="off"
+										placeholder="<?php echo esc_attr( $joom_provider_token_set ? '[redacted]' : '' ); ?>"
+									/>
+									<p class="description"><?php echo esc_html( 'Оставьте пустым, чтобы сохранить текущий token.' ); ?></p>
+								</td>
+							</tr>
+							<tr>
+								<th scope="row"><label for="cashback-price-monitor-joom-provider-timeout"><?php echo esc_html( 'Joom provider timeout, sec' ); ?></label></th>
+								<td>
+									<input
+										id="cashback-price-monitor-joom-provider-timeout"
+										type="number"
+										min="1"
+										max="120"
+										step="0.1"
+										name="joom_browser_provider_timeout_seconds"
+										class="small-text"
+										value="<?php echo esc_attr( $joom_provider_timeout ); ?>"
+									/>
+								</td>
+							</tr>
+							<tr>
+								<th scope="row"><label for="cashback-price-monitor-joom-provider-selector"><?php echo esc_html( 'Joom wait selector' ); ?></label></th>
+								<td>
+									<input
+										id="cashback-price-monitor-joom-provider-selector"
+										type="text"
+										name="joom_browser_provider_wait_selector"
+										class="regular-text"
+										value="<?php echo esc_attr( $joom_provider_selector ); ?>"
+									/>
+								</td>
+							</tr>
 						</table>
 
 						<p><button type="submit" class="button button-primary"><?php echo esc_html( 'Сохранить настройки' ); ?></button></p>
@@ -191,7 +250,7 @@ class Cashback_Price_Monitor_Admin {
 
 				<section class="cashback-price-monitor-admin__section">
 					<h2><?php echo esc_html( 'Поддерживаемые источники' ); ?></h2>
-					<form method="post" action="<?php echo esc_attr( $admin_post_url ); ?>">
+					<form method="post" action="<?php echo esc_url( $admin_post_url ); ?>">
 						<input type="hidden" name="action" value="cashback_price_monitor_save_source" />
 						<?php wp_nonce_field( 'cashback_price_monitor_save_source' ); ?>
 
@@ -244,7 +303,7 @@ class Cashback_Price_Monitor_Admin {
 
 				<section class="cashback-price-monitor-admin__section">
 					<h2><?php echo esc_html( 'Прокси-пулы' ); ?></h2>
-					<form method="post" action="<?php echo esc_attr( $admin_post_url ); ?>">
+					<form method="post" action="<?php echo esc_url( $admin_post_url ); ?>">
 						<input type="hidden" name="action" value="cashback_price_monitor_save_proxy_pool" />
 						<?php wp_nonce_field( 'cashback_price_monitor_save_proxy_pool' ); ?>
 
@@ -283,6 +342,10 @@ class Cashback_Price_Monitor_Admin {
 						<tr>
 							<th><?php echo esc_html( 'Лимит товаров' ); ?></th>
 							<td><?php echo esc_html( (string) $user_limit ); ?></td>
+						</tr>
+						<tr>
+							<th><?php echo esc_html( 'Joom provider' ); ?></th>
+							<td><?php echo esc_html( $joom_provider_configured ? 'configured' : 'not configured' ); ?></td>
 						</tr>
 						<tr>
 							<th><?php echo esc_html( 'Источников' ); ?></th>
@@ -352,13 +415,30 @@ class Cashback_Price_Monitor_Admin {
 		update_option( Cashback_Price_Monitor_Client::OPTION_ENABLED, $payload['enabled'], false );
 		update_option( self::OPTION_USER_LIMIT, $payload['max_tracked_products_per_user'], false );
 
-		$this->ensure_backend_success(
-			'PATCH',
-			'/api/v1/admin/settings',
-			array(
-				'max_tracked_products_per_user' => $payload['max_tracked_products_per_user'],
-			)
+		$backend_payload = array(
+			'max_tracked_products_per_user' => $payload['max_tracked_products_per_user'],
 		);
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce is verified at the start of this handler.
+		if ( array_key_exists( 'joom_browser_provider_url', $_POST ) ) {
+			$backend_payload['joom_browser_provider_url']             = esc_url_raw( $this->post_string( 'joom_browser_provider_url' ) );
+			$backend_payload['joom_browser_provider_timeout_seconds'] = $this->sanitize_bounded_float(
+				$this->post_value( 'joom_browser_provider_timeout_seconds', '25.0' ),
+				1.0,
+				120.0,
+				25.0
+			);
+			$backend_payload['joom_browser_provider_wait_selector']   = $this->sanitize_text_with_fallback(
+				$this->post_string( 'joom_browser_provider_wait_selector' ),
+				'meta[property="product:price:amount"]'
+			);
+
+			$joom_provider_token = trim( $this->post_string( 'joom_browser_provider_token' ) );
+			if ( '' !== $joom_provider_token ) {
+				$backend_payload['joom_browser_provider_token'] = $joom_provider_token;
+			}
+		}
+
+		$this->ensure_backend_success( 'PATCH', '/api/v1/admin/settings', $backend_payload );
 
 		return $payload;
 	}
@@ -592,7 +672,9 @@ class Cashback_Price_Monitor_Admin {
 	 * @return array<string,string>|null
 	 */
 	private function admin_notice(): ?array {
-		$status  = isset( $_GET['status'] ) ? sanitize_key( (string) wp_unslash( $_GET['status'] ) ) : '';
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect notice args.
+		$status = isset( $_GET['status'] ) ? sanitize_key( (string) wp_unslash( $_GET['status'] ) ) : '';
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect notice args.
 		$message = isset( $_GET['message'] ) ? sanitize_key( (string) wp_unslash( $_GET['message'] ) ) : '';
 
 		if ( ! in_array( $status, array( 'success', 'error' ), true ) ) {
@@ -642,6 +724,33 @@ class Cashback_Price_Monitor_Admin {
 		$number = max( $min, $number );
 
 		return min( $max, $number );
+	}
+
+	/**
+	 * Sanitize a float inside a bounded range.
+	 *
+	 * @param mixed $value    Raw value.
+	 * @param float $min      Minimum value.
+	 * @param float $max      Maximum value.
+	 * @param float $fallback Fallback value.
+	 */
+	private function sanitize_bounded_float( mixed $value, float $min, float $max, float $fallback ): float {
+		$number = is_numeric( $value ) ? (float) $value : $fallback;
+		$number = max( $min, $number );
+
+		return min( $max, $number );
+	}
+
+	/**
+	 * Sanitize text and return a default when the value is blank.
+	 *
+	 * @param string $value    Raw value.
+	 * @param string $fallback Fallback value.
+	 */
+	private function sanitize_text_with_fallback( string $value, string $fallback ): string {
+		$clean = sanitize_text_field( $value );
+
+		return '' === $clean ? $fallback : $clean;
 	}
 
 	/**

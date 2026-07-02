@@ -380,6 +380,81 @@ final class PriceMonitorAdminTest extends TestCase {
 		self::assertSame( array( 'max_tracked_products_per_user' => 15 ), $calls[0]['payload'] );
 	}
 
+	public function test_joom_provider_settings_are_rendered_and_saved_without_exposing_token(): void {
+		$calls  = array();
+		$client = new class( $calls ) {
+			public array $calls;
+
+			public function __construct( array &$calls ) {
+				$this->calls = &$calls;
+			}
+
+			public function request( string $method, string $path, array $payload = array(), ?string $idempotency_key = null ): array {
+				$this->calls[] = compact( 'method', 'path', 'payload', 'idempotency_key' );
+
+				if ( 'GET' === $method && '/api/v1/admin/settings' === $path ) {
+					return array(
+						'settings' => array(
+							'max_tracked_products_per_user'         => 25,
+							'joom_browser_provider_url'             => 'https://renderer.example/render',
+							'joom_browser_provider_timeout_seconds' => 12.5,
+							'joom_browser_provider_wait_selector'   => '#price',
+							'joom_browser_provider_configured'      => true,
+							'joom_browser_provider_token_set'       => true,
+						),
+					);
+				}
+
+				if ( 'GET' === $method && '/api/v1/admin/sources' === $path ) {
+					return array( 'sources' => array() );
+				}
+
+				return array( 'settings' => $payload );
+			}
+		};
+		$admin  = $this->load_admin( $client );
+
+		ob_start();
+		$admin->render_page();
+		$html = (string) ob_get_clean();
+
+		self::assertStringContainsString( 'Joom provider URL', $html );
+		self::assertStringContainsString( 'https://renderer.example/render', $html );
+		self::assertStringContainsString( '12.5', $html );
+		self::assertStringContainsString( '#price', $html );
+		self::assertStringContainsString( '[redacted]', $html );
+		self::assertStringNotContainsString( 'secret-token', $html );
+
+		$calls = array();
+		$admin = $this->load_admin( $this->spy_client( $calls ) );
+		$_POST = array(
+			'_wpnonce'                              => wp_create_nonce( 'cashback_price_monitor_save_settings' ),
+			'backend_url'                           => 'https://backend.example',
+			'backend_secret'                        => 'top-secret',
+			'enabled'                               => '1',
+			'max_tracked_products_per_user'         => '25',
+			'joom_browser_provider_url'             => ' https://renderer.example/render ',
+			'joom_browser_provider_token'           => ' secret-token ',
+			'joom_browser_provider_timeout_seconds' => '12.5',
+			'joom_browser_provider_wait_selector'   => ' #price ',
+		);
+
+		$admin->handle_save_settings();
+
+		self::assertSame( 'PATCH', $calls[0]['method'] );
+		self::assertSame( '/api/v1/admin/settings', $calls[0]['path'] );
+		self::assertSame(
+			array(
+				'max_tracked_products_per_user'         => 25,
+				'joom_browser_provider_url'             => 'https://renderer.example/render',
+				'joom_browser_provider_token'           => 'secret-token',
+				'joom_browser_provider_timeout_seconds' => 12.5,
+				'joom_browser_provider_wait_selector'   => '#price',
+			),
+			$calls[0]['payload']
+		);
+	}
+
 	/**
 	 * Ensure source payloads are normalized before backend submission.
 	 */
