@@ -111,6 +111,8 @@ final class PriceMonitorAccountTest extends TestCase {
 		self::assertSame( 'Для данного магазина мониторинг временно недоступен.', $localized['i18n']['monitoringUnavailable'] );
 		self::assertSame( 'Товар уже отслеживается', $localized['i18n']['duplicateWatchlistItem'] );
 		self::assertSame( 'Достигнут лимит отслеживаемых товаров', $localized['i18n']['limitExceeded'] );
+		self::assertArrayNotHasKey( 'price_refresh_interval_hours', $localized );
+		self::assertArrayNotHasKey( 'priceRefreshIntervalHours', $localized );
 	}
 
 	/**

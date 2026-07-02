@@ -228,6 +228,37 @@ final class PriceMonitorAdminTest extends TestCase {
 		};
 	}
 
+	private function settings_client( array &$calls, array $settings ): object {
+		return new class( $calls, $settings ) {
+			public array $calls;
+			private array $settings;
+
+			public function __construct( array &$calls, array $settings ) {
+				$this->calls    = &$calls;
+				$this->settings = $settings;
+			}
+
+			public function request( string $method, string $path, array $payload = array(), ?string $idempotency_key = null ): array {
+				$this->calls[] = compact( 'method', 'path', 'payload', 'idempotency_key' );
+
+				if ( 'GET' === $method && '/api/v1/admin/settings' === $path ) {
+					return array(
+						'settings' => $this->settings,
+					);
+				}
+
+				if ( 'GET' === $method && '/api/v1/admin/sources' === $path ) {
+					return array( 'sources' => array() );
+				}
+
+				return array(
+					'settings' => $payload,
+					'sources'  => array( $payload ),
+				);
+			}
+		};
+	}
+
 	private function failing_spy_client( array &$calls, string $method, string $path ): object {
 		return new class( $calls, $method, $path ) {
 			public array $calls;
@@ -280,8 +311,8 @@ final class PriceMonitorAdminTest extends TestCase {
 		self::assertTrue( defined( 'Cashback_Price_Monitor_Admin::SETTINGS_PAGE_SLUG' ) );
 		self::assertCount( 1, $GLOBALS['_cb_test_submenu_pages'] );
 		self::assertSame( 'cashback-overview', $GLOBALS['_cb_test_submenu_pages'][0]['parent_slug'] );
-		self::assertSame( 'Настройки мониторинга', $GLOBALS['_cb_test_submenu_pages'][0]['page_title'] );
-		self::assertSame( 'Настройки мониторинга', $GLOBALS['_cb_test_submenu_pages'][0]['menu_title'] );
+		self::assertSame( 'Мониторинг цен', $GLOBALS['_cb_test_submenu_pages'][0]['page_title'] );
+		self::assertSame( 'Мониторинг цен', $GLOBALS['_cb_test_submenu_pages'][0]['menu_title'] );
 		self::assertSame( 'manage_options', $GLOBALS['_cb_test_submenu_pages'][0]['capability'] );
 		self::assertSame( Cashback_Price_Monitor_Admin::SETTINGS_PAGE_SLUG, $GLOBALS['_cb_test_submenu_pages'][0]['menu_slug'] );
 	}
@@ -294,9 +325,9 @@ final class PriceMonitorAdminTest extends TestCase {
 		$admin->render_page();
 		$html = (string) ob_get_clean();
 
-		self::assertStringContainsString( 'Настройки мониторинга', $html );
-		self::assertStringContainsString( 'Подключение backend', $html );
-		self::assertStringContainsString( 'Магазины мониторинга', $html );
+		self::assertStringContainsString( 'Мониторинг цен', $html );
+		self::assertStringContainsString( 'Настройки backend', $html );
+		self::assertStringContainsString( 'Поддерживаемые источники', $html );
 		self::assertStringContainsString( 'Прокси-пулы', $html );
 
 		foreach (
@@ -304,7 +335,7 @@ final class PriceMonitorAdminTest extends TestCase {
 				'name="source_domain"',
 				'name="display_name"',
 				'name="logo_url"',
-				'Логотип магазина URL',
+				'Logo URL',
 				'name="status"',
 				'name="fetch_interval_hours"',
 				'name="price_refresh_interval_hours"',
@@ -321,6 +352,66 @@ final class PriceMonitorAdminTest extends TestCase {
 		) {
 			self::assertStringContainsString( $needle, $html );
 		}
+
+		self::assertStringContainsString( 'value="8"', $html );
+		self::assertStringNotContainsString( 'Сохранить магазин', $html );
+		self::assertStringContainsString( 'Сохранить источник', $html );
+	}
+
+	public function test_monitoring_settings_page_clamps_invalid_remote_cadence_for_admin_and_source_forms(): void {
+		$calls = array();
+		$admin = $this->load_admin(
+			$this->settings_client(
+				$calls,
+				array(
+					'max_tracked_products_per_user' => 25,
+					'price_refresh_interval_hours'  => 0,
+				)
+			)
+		);
+
+		ob_start();
+		$admin->render_page();
+		$html = (string) ob_get_clean();
+
+		self::assertMatchesRegularExpression(
+			'/name="price_refresh_interval_hours"[\s\S]*value="1"/',
+			$html
+		);
+		self::assertStringContainsString(
+			'name="fetch_interval_hours" class="small-text" value="1"',
+			$html
+		);
+		self::assertStringNotContainsString(
+			'name="fetch_interval_hours" class="small-text" value="6"',
+			$html
+		);
+	}
+
+	public function test_monitoring_settings_page_defaults_non_numeric_remote_cadence_to_eight(): void {
+		$calls = array();
+		$admin = $this->load_admin(
+			$this->settings_client(
+				$calls,
+				array(
+					'max_tracked_products_per_user' => 25,
+					'price_refresh_interval_hours'  => 'oops',
+				)
+			)
+		);
+
+		ob_start();
+		$admin->render_page();
+		$html = (string) ob_get_clean();
+
+		self::assertMatchesRegularExpression(
+			'/name="price_refresh_interval_hours"[\s\S]*value="8"/',
+			$html
+		);
+		self::assertStringContainsString(
+			'name="fetch_interval_hours" class="small-text" value="8"',
+			$html
+		);
 	}
 
 	/**
@@ -389,6 +480,7 @@ final class PriceMonitorAdminTest extends TestCase {
 			'backend_secret'                => 'top-secret',
 			'enabled'                       => '1',
 			'max_tracked_products_per_user' => '25',
+			'price_refresh_interval_hours'  => '8',
 		);
 
 		$admin->handle_save_settings();
@@ -443,6 +535,31 @@ final class PriceMonitorAdminTest extends TestCase {
 			array(
 				'max_tracked_products_per_user' => 15,
 				'price_refresh_interval_hours'  => 8,
+			),
+			$calls[0]['payload']
+		);
+	}
+
+	public function test_save_settings_coerces_price_refresh_interval_to_minimum_one(): void {
+		$calls = array();
+		$admin = $this->load_admin( $this->spy_client( $calls ) );
+
+		$_POST = array(
+			'_wpnonce'                      => wp_create_nonce( 'cashback_price_monitor_save_settings' ),
+			'backend_url'                   => 'https://backend.example',
+			'backend_secret'                => 'top-secret',
+			'enabled'                       => '1',
+			'max_tracked_products_per_user' => '25',
+			'price_refresh_interval_hours'  => '0',
+		);
+
+		$payload = $admin->handle_save_settings();
+
+		self::assertSame( 1, $payload['price_refresh_interval_hours'] );
+		self::assertSame(
+			array(
+				'max_tracked_products_per_user' => 25,
+				'price_refresh_interval_hours'  => 1,
 			),
 			$calls[0]['payload']
 		);

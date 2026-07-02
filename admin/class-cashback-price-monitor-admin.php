@@ -55,8 +55,8 @@ class Cashback_Price_Monitor_Admin {
 	public function register_menu(): void {
 		$this->hook_suffix = add_submenu_page(
 			'cashback-overview',
-			'Настройки мониторинга',
-			'Настройки мониторинга',
+			'Мониторинг цен',
+			'Мониторинг цен',
 			'manage_options',
 			self::PAGE_SLUG,
 			array( $this, 'render_page' )
@@ -97,8 +97,8 @@ class Cashback_Price_Monitor_Admin {
 				'pageSlug'  => self::PAGE_SLUG,
 				'userLimit' => $this->user_limit(),
 				'i18n'      => array(
-					'backendSection' => 'Подключение backend',
-					'sourceSection'  => 'Магазины мониторинга',
+					'backendSection' => 'Настройки backend',
+					'sourceSection'  => 'Поддерживаемые источники',
 					'proxySection'   => 'Прокси-пулы',
 				),
 			)
@@ -119,9 +119,10 @@ class Cashback_Price_Monitor_Admin {
 		$user_limit        = isset( $remote_settings['max_tracked_products_per_user'] )
 			? (int) $remote_settings['max_tracked_products_per_user']
 			: $this->user_limit();
-		$price_refresh_interval_hours = isset( $remote_settings['price_refresh_interval_hours'] )
-			? (int) $remote_settings['price_refresh_interval_hours']
-			: 8;
+		$price_refresh_interval_hours = $this->sanitize_positive_int(
+			$remote_settings['price_refresh_interval_hours'] ?? 8,
+			8
+		);
 		$joom_provider_url        = (string) ( $remote_settings['joom_browser_provider_url'] ?? '' );
 		$joom_provider_timeout    = (string) ( $remote_settings['joom_browser_provider_timeout_seconds'] ?? '25.0' );
 		$joom_provider_selector   = (string) ( $remote_settings['joom_browser_provider_wait_selector'] ?? 'meta[property="product:price:amount"]' );
@@ -129,14 +130,14 @@ class Cashback_Price_Monitor_Admin {
 		$joom_provider_token_set  = ! empty( $remote_settings['joom_browser_provider_token_set'] );
 		?>
 		<div class="wrap cashback-price-monitor-admin">
-			<h1><?php echo esc_html( 'Настройки мониторинга' ); ?></h1>
+			<h1><?php echo esc_html( 'Мониторинг цен' ); ?></h1>
 			<?php if ( null !== $notice ) : ?>
 				<div class="notice <?php echo esc_attr( $notice['class'] ); ?> is-dismissible"><p><?php echo esc_html( $notice['message'] ); ?></p></div>
 			<?php endif; ?>
 
 			<div class="cashback-price-monitor-admin__grid">
 				<section class="cashback-price-monitor-admin__section">
-					<h2><?php echo esc_html( 'Подключение backend' ); ?></h2>
+					<h2><?php echo esc_html( 'Настройки backend' ); ?></h2>
 					<form method="post" action="<?php echo esc_url( $admin_post_url ); ?>">
 						<input type="hidden" name="action" value="cashback_price_monitor_save_settings" />
 						<?php wp_nonce_field( 'cashback_price_monitor_save_settings' ); ?>
@@ -266,7 +267,7 @@ class Cashback_Price_Monitor_Admin {
 				</section>
 
 				<section class="cashback-price-monitor-admin__section">
-					<h2><?php echo esc_html( 'Магазины мониторинга' ); ?></h2>
+					<h2><?php echo esc_html( 'Поддерживаемые источники' ); ?></h2>
 					<form method="post" action="<?php echo esc_url( $admin_post_url ); ?>">
 						<input type="hidden" name="action" value="cashback_price_monitor_save_source" />
 						<?php wp_nonce_field( 'cashback_price_monitor_save_source' ); ?>
@@ -281,7 +282,7 @@ class Cashback_Price_Monitor_Admin {
 								<td><input id="cashback-price-monitor-source-name" type="text" name="display_name" class="regular-text" /></td>
 							</tr>
 							<tr>
-								<th scope="row"><label for="cashback-price-monitor-source-logo"><?php echo esc_html( 'Логотип магазина URL' ); ?></label></th>
+								<th scope="row"><label for="cashback-price-monitor-source-logo"><?php echo esc_html( 'Logo URL' ); ?></label></th>
 								<td><input id="cashback-price-monitor-source-logo" type="url" name="logo_url" class="regular-text" /></td>
 							</tr>
 							<tr>
@@ -314,7 +315,7 @@ class Cashback_Price_Monitor_Admin {
 							</tr>
 						</table>
 
-						<p><button type="submit" class="button button-primary"><?php echo esc_html( 'Сохранить магазин' ); ?></button></p>
+						<p><button type="submit" class="button button-primary"><?php echo esc_html( 'Сохранить источник' ); ?></button></p>
 					</form>
 				</section>
 
@@ -376,7 +377,7 @@ class Cashback_Price_Monitor_Admin {
 						<tr>
 							<th><?php echo esc_html( 'Домен' ); ?></th>
 							<th><?php echo esc_html( 'Название' ); ?></th>
-							<th><?php echo esc_html( 'Логотип магазина URL' ); ?></th>
+							<th><?php echo esc_html( 'Logo URL' ); ?></th>
 							<th><?php echo esc_html( 'Интервал' ); ?></th>
 							<th><?php echo esc_html( 'Хранение' ); ?></th>
 							<th><?php echo esc_html( 'Browser fallback' ); ?></th>

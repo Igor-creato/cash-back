@@ -427,6 +427,44 @@ test('unsafe url response falls back to the new exact Russian validation copy', 
   assert.equal(env.feedback.textContent, 'Ссылка небезопасна или недоступна для проверки.');
 });
 
+test('source product id missing response falls back to the exact Russian validation copy', async () => {
+  const env = createEnvironment({
+    responses: [
+      errorJson(422, {
+        code: 'source_product_id_missing'
+      })
+    ]
+  });
+
+  vm.runInNewContext(source, env.context);
+  env.submitListener({
+    target: env.form,
+    preventDefault() {}
+  });
+  await flushPromises();
+
+  assert.equal(env.feedback.textContent, 'Не удалось определить товар по ссылке.');
+});
+
+test('unsupported source url pattern falls back to the exact Russian validation copy', async () => {
+  const env = createEnvironment({
+    responses: [
+      errorJson(422, {
+        code: 'source_url_pattern_unsupported'
+      })
+    ]
+  });
+
+  vm.runInNewContext(source, env.context);
+  env.submitListener({
+    target: env.form,
+    preventDefault() {}
+  });
+  await flushPromises();
+
+  assert.equal(env.feedback.textContent, 'Формат ссылки пока не поддерживается.');
+});
+
 test('duplicate and limit responses use exact Russian copy', async () => {
   for (const payload of [
     { code: 'duplicate_watchlist_item', message: 'Товар уже отслеживается' },
