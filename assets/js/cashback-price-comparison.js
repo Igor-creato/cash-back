@@ -1,0 +1,111 @@
+(function () {
+  'use strict';
+
+  function text(value) {
+    return value == null ? '' : String(value);
+  }
+
+  function clear(node) {
+    while (node.firstChild) {
+      node.removeChild(node.firstChild);
+    }
+  }
+
+  function renderItems(root, items) {
+    clear(root);
+    items.forEach(function (item) {
+      var card = document.createElement('article');
+      card.className = 'cashback-price-card';
+
+      var title = document.createElement('h3');
+      title.textContent = text(item.title);
+      card.appendChild(title);
+
+      var meta = document.createElement('p');
+      meta.textContent = [item.store_name || item.store_domain, item.price, item.currency]
+        .filter(Boolean)
+        .join(' · ');
+      card.appendChild(meta);
+
+      var action = document.createElement('a');
+      action.textContent = text(item.action_label || 'Купить');
+      action.href = text(item.action_url || item.url || '#');
+      action.rel = 'nofollow sponsored noopener';
+      card.appendChild(action);
+
+      root.appendChild(card);
+    });
+  }
+
+  function config() {
+    return window.CashbackPriceComparison || { copy: {} };
+  }
+
+  function copy(key, fallback) {
+    return (config().copy && config().copy[key]) || fallback;
+  }
+
+  function setMessage(form, message) {
+    var node = form.querySelector('[data-price-comparison-message]');
+    if (node) {
+      node.textContent = message;
+    }
+  }
+
+  function handleSubmit(event) {
+    var form = event.target;
+    if (!form || !form.matches || !form.matches('[data-price-comparison-form]')) {
+      return;
+    }
+
+    event.preventDefault();
+
+    var cityInput = form.querySelector('[name="city"]');
+    var queryInput = form.querySelector('[name="query"]');
+    var results = form.querySelector('[data-price-comparison-results]');
+    var city = cityInput && cityInput.value ? cityInput.value.trim() : '';
+    var query = queryInput && queryInput.value ? queryInput.value.trim() : '';
+
+    if (!city) {
+      setMessage(form, copy('emptyCity', 'Укажите город для поиска'));
+      return;
+    }
+    if (!query) {
+      setMessage(form, copy('emptyQuery', 'Укажите название товара'));
+      return;
+    }
+
+    setMessage(form, '');
+    fetch(config().restUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-WP-Nonce': config().nonce || ''
+      },
+      body: JSON.stringify({ city: city, query: query })
+    })
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (payload) {
+        var items = Array.isArray(payload.items) ? payload.items : [];
+        if (!items.length) {
+          setMessage(form, copy('notFound', 'Товаров не нашлось'));
+        }
+        if (results) {
+          renderItems(results, items);
+        }
+      })
+      .catch(function () {
+        setMessage(form, copy('error', 'Ошибка поиска'));
+      });
+  }
+
+  if (typeof document !== 'undefined' && document.addEventListener) {
+    document.addEventListener('submit', handleSubmit);
+  }
+
+  window.CashbackPriceComparisonRenderer = {
+    renderItems: renderItems,
+  };
+})();

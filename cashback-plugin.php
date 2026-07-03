@@ -1012,6 +1012,7 @@ class CashbackPlugin {
         $this->require_file('admin/class-cashback-settings-admin.php');
         $this->require_file('admin/class-cashback-shop-import-admin.php');
         $this->require_file('admin/class-cashback-shop-groups-admin.php');
+        $this->require_file('admin/class-cashback-price-comparison-admin.php');
 
         // --- Click-session service (12i-2 ADR) — общий сервис для /activate и ?cashback_click= ---
         $this->require_file('includes/class-cashback-click-session-service.php');
@@ -1029,6 +1030,12 @@ $this->require_file('includes/rest/class-cashback-internal-rest-controller.php')
         $this->require_file('includes/link-checker/class-cashback-link-checker-service.php');
         $this->require_file('includes/link-checker/class-cashback-link-checker-rest-controller.php');
         $this->require_file('includes/link-checker/class-cashback-link-checker-shortcode.php');
+
+        // Price comparison: account UI + REST proxy over the external search service.
+        $this->require_file('includes/price-comparison/class-cashback-price-comparison-client.php');
+        $this->require_file('includes/price-comparison/class-cashback-price-comparison-service.php');
+        $this->require_file('includes/price-comparison/class-cashback-price-comparison-rest-controller.php');
+        $this->require_file('includes/price-comparison/class-cashback-price-comparison-account.php');
 
         // Шорткоды (доступны на фронтенде и в превью редактора)
         $this->require_file('includes/class-cashback-shortcodes.php');
@@ -1902,6 +1909,10 @@ $this->require_file('includes/rest/class-cashback-internal-rest-controller.php')
             Cashback_Balance_Reconciliation_Admin::init();
         }
 
+        if (is_admin() && class_exists('Cashback_Price_Comparison_Admin')) {
+            Cashback_Price_Comparison_Admin::init();
+        }
+
         // --- REST API для браузерного расширения ---
         if (class_exists('Cashback_REST_API')) {
             Cashback_REST_API::get_instance();
@@ -1919,6 +1930,14 @@ Savello_Cashback_Internal_REST_Controller::init();
 
         if (class_exists('Cashback_Link_Checker_Shortcode')) {
             Cashback_Link_Checker_Shortcode::init();
+        }
+
+        if (class_exists('Cashback_Price_Comparison_REST_Controller')) {
+            Cashback_Price_Comparison_REST_Controller::init();
+        }
+
+        if (class_exists('Cashback_Price_Comparison_Account')) {
+            Cashback_Price_Comparison_Account::init();
         }
 
         // Шорткоды
