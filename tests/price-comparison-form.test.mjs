@@ -62,6 +62,33 @@ function createForm(city, query) {
   return { form, message, results };
 }
 
+function createAccountMarkup(city, query) {
+  const { form, message, results } = createForm(city, query);
+  const wrapper = new FakeElement('section');
+
+  form.querySelector = (selector) => {
+    if (selector === '[name="city"]') {
+      return { value: city };
+    }
+    if (selector === '[name="query"]') {
+      return { value: query };
+    }
+    return null;
+  };
+  form.closest = (selector) => (selector === '[data-cashback-price-comparison]' ? wrapper : null);
+  wrapper.querySelector = (selector) => {
+    if (selector === '[data-price-comparison-message]') {
+      return message;
+    }
+    if (selector === '[data-price-comparison-results]') {
+      return results;
+    }
+    return null;
+  };
+
+  return { form, message, results };
+}
+
 async function flushPromises() {
   for (let i = 0; i < 6; i += 1) {
     await Promise.resolve();
@@ -205,4 +232,54 @@ test('price comparison form posts to WordPress REST and renders returned items',
   assert.equal(requests[0].options.headers['X-WP-Nonce'], 'nonce');
   assert.deepEqual(JSON.parse(requests[0].options.body), { city: 'Москва', query: 'iphone' });
   assert.equal(results.children[0].children[0].textContent, 'iPhone 15');
+});
+
+test('price comparison form renders no-results message outside the form node', async () => {
+  let submitListener = null;
+  const { form, message, results } = createAccountMarkup('Москва', 'iphone');
+  const context = {
+    window: {
+      CashbackPriceComparison: {
+        restUrl: 'https://savelloclub.test/wp-json/cashback/v1/price-comparison/search',
+        nonce: 'nonce',
+        copy: {
+          emptyCity: 'Укажите город для поиска',
+          emptyQuery: 'Укажите название товара',
+          notFound: 'Товаров не нашлось',
+          error: 'Ошибка поиска'
+        }
+      }
+    },
+    document: {
+      addEventListener(type, callback) {
+        if (type === 'submit') {
+          submitListener = callback;
+        }
+      },
+      createElement(tagName) {
+        return new FakeElement(tagName);
+      }
+    },
+    fetch() {
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          status: 'ok',
+          items: [],
+          meta: { warnings: ['Товаров не нашлось'] }
+        })
+      });
+    }
+  };
+  context.window.window = context.window;
+
+  vm.runInNewContext(source, context);
+  submitListener({
+    target: form,
+    preventDefault() {}
+  });
+  await flushPromises();
+
+  assert.equal(message.textContent, 'Товаров не нашлось');
+  assert.equal(results.children.length, 0);
 });

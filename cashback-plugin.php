@@ -232,8 +232,8 @@ register_activation_hook(__FILE__, 'cashback_check_requirements');
  */
 // phpcs:ignore Universal.Files.SeparateFunctionsFromOO.Mixed -- Main plugin bootstrap file mixes class definitions with helper functions by design.
 class CashbackPlugin {
-
     private const ACTIVATION_ERROR_TITLE = 'Ошибка активации плагина';
+    private const PRICE_COMPARISON_REWRITE_OPTION = 'cashback_price_comparison_rewrite_2026_07_03_done';
 
     /**
      * Конструктор класса
@@ -552,6 +552,7 @@ class CashbackPlugin {
         add_rewrite_endpoint('cashback-affiliate', EP_ROOT | EP_PAGES);
         add_rewrite_endpoint('cashback_lost_cashback', EP_ROOT | EP_PAGES);
         add_rewrite_endpoint('cashback-notifications', EP_ROOT | EP_PAGES);
+        add_rewrite_endpoint('price-comparison', EP_ROOT | EP_PAGES);
 
         // Сбрасываем переписывание URL
         flush_rewrite_rules();
@@ -740,8 +741,8 @@ class CashbackPlugin {
                     error_log('[Cashback] Required-schema artifacts missing (admin features degraded): ' . $schema_error);
                 }
             }
-
             $this->initialize_components();
+            $this->maybe_flush_price_comparison_rewrite_rules();
 
             // Одноразовый сброс rewrite rules после обновления кода
             add_action('init', function () {
@@ -1126,6 +1127,21 @@ $this->require_file('includes/rest/class-cashback-internal-rest-controller.php')
         if (class_exists('Cashback_Faq_Bootstrap')) {
             Cashback_Faq_Bootstrap::init();
         }
+    }
+
+    private function maybe_flush_price_comparison_rewrite_rules(): void {
+        if (get_option(self::PRICE_COMPARISON_REWRITE_OPTION, '') === '1') {
+            return;
+        }
+
+        add_action('init', static function (): void {
+            if (function_exists('add_rewrite_endpoint')) {
+                add_rewrite_endpoint('price-comparison', EP_ROOT | EP_PAGES);
+            }
+
+            flush_rewrite_rules(false);
+            update_option(self::PRICE_COMPARISON_REWRITE_OPTION, '1', false);
+        }, 1000);
     }
 
     /**
