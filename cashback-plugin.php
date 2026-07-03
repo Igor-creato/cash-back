@@ -1019,10 +1019,10 @@ class CashbackPlugin {
         // --- REST API для браузерного расширения ---
         $this->require_file('includes/class-cashback-rest-api.php');
 
-        // --- Internal REST API для server-to-server integrations ---
+        // --- Internal REST API для server-to-server price-monitor ---
         $this->require_file('includes/services/class-internal-hmac-auth-service.php');
-$this->require_file('includes/services/class-cashback-internal-api-service.php');
-$this->require_file('includes/rest/class-cashback-internal-rest-controller.php');
+        $this->require_file('includes/services/class-cashback-internal-api-service.php');
+        $this->require_file('includes/rest/class-cashback-internal-rest-controller.php');
 
         // Direct link checker: публичный shortcode + REST endpoints поверх существующих click/session путей.
         $this->require_file('includes/link-checker/class-cashback-link-checker-url-validator.php');
@@ -1901,9 +1901,9 @@ $this->require_file('includes/rest/class-cashback-internal-rest-controller.php')
             Cashback_REST_API::get_instance();
         }
 
-        // --- Internal REST API для server-to-server integrations ---
+        // --- Internal REST API для server-to-server price-monitor ---
         if (class_exists('Savello_Cashback_Internal_REST_Controller')) {
-Savello_Cashback_Internal_REST_Controller::init();
+            Savello_Cashback_Internal_REST_Controller::init();
         }
 
         // --- Public REST API + shortcode for direct product/store link checker ---

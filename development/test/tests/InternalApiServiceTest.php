@@ -335,6 +335,21 @@ final class InternalApiServiceTest extends TestCase
         self::assertSame(32, strlen($this->wpdb->insert_rows[0]['client_request_id']));
     }
 
+    public function test_user_limits_return_only_limits_and_cashback_rules(): void
+    {
+        $service = new Savello_Cashback_Internal_API_Service();
+
+        $limits = $service->get_user_price_monitor_limits('wp:savelloclub.test:77');
+        self::assertSame('wp:savelloclub.test:77', $limits['external_user_id']);
+        self::assertSame(0.65, $limits['cashback']['user_share']);
+        self::assertArrayNotHasKey('email', $limits);
+        self::assertArrayNotHasKey('balance', $limits);
+
+        $missing = $service->get_user_price_monitor_limits('wp:savelloclub.test:999');
+        self::assertInstanceOf(WP_Error::class, $missing);
+        self::assertSame('savello_internal_not_found', $missing->get_error_code());
+    }
+
     public function test_manifest_returns_version_and_timestamps(): void
     {
         $manifest = (new Savello_Cashback_Internal_API_Service())->get_manifest();

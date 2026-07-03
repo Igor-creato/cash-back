@@ -165,8 +165,8 @@ final class Savello_Cashback_Internal_API_Service {
         $cashback_url = add_query_arg(
             array(
                 'cashback_internal_click' => $click_id,
-                'cashback_source'         => 'internal_api',
-			),
+                'cashback_source'         => 'price_monitor',
+            ),
             $target_url
         );
 
@@ -285,10 +285,42 @@ final class Savello_Cashback_Internal_API_Service {
         return $result;
     }
 
+    public function get_user_price_monitor_limits( string $external_user_id ) {
+        $external_user_id = sanitize_text_field($external_user_id);
+        if (! preg_match('/^wp:[A-Za-z0-9_.:-]+:(\d+)$/', $external_user_id, $m)) {
+            return $this->bad_request('Invalid external_user_id.');
+        }
+
+        $user_id = (int) $m[1];
+        $profile = $this->load_user_profile($user_id);
+        if ($profile === null) {
+            return new WP_Error('savello_internal_not_found', 'User not found.', array( 'status' => 404 ));
+        }
+
+        $rate = max(0.0, min(100.0, (float) ( $profile['cashback_rate'] ?? 60.0 )));
+
+        return array(
+            'external_user_id' => $external_user_id,
+            'tariff'           => 'basic',
+            'limits'           => array(
+                'max_tracked_products'        => 20,
+                'history_days'                => 30,
+                'min_fetch_interval_minutes'  => 360,
+                'alerts_per_day'              => 10,
+                'manual_refresh_per_day'      => 3,
+                'browser_fallback_allowed'    => false,
+            ),
+            'cashback'         => array(
+                'user_share'        => $this->round_rate($rate / 100),
+                'cashback_currency' => 'RUB',
+            ),
+        );
+    }
+
     public function get_manifest(): array {
         $merchants_updated = $this->max_updated_at('merchants');
-$rates_updated     = $this->max_updated_at('rates');
-$version_seed      = wp_json_encode(array( $merchants_updated, $rates_updated, self::VERSION ));
+        $rates_updated     = $this->max_updated_at('rates');
+        $version_seed      = wp_json_encode(array( $merchants_updated, $rates_updated, self::VERSION ));
 
         return array(
             'version'                    => hash('sha256', is_string($version_seed) ? $version_seed : self::VERSION),
