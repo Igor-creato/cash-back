@@ -165,8 +165,8 @@ final class Savello_Cashback_Internal_API_Service {
         $cashback_url = add_query_arg(
             array(
                 'cashback_internal_click' => $click_id,
-                'cashback_source'         => 'price_monitor',
-            ),
+                'cashback_source'         => 'internal_api',
+			),
             $target_url
         );
 
@@ -285,42 +285,10 @@ final class Savello_Cashback_Internal_API_Service {
         return $result;
     }
 
-    public function get_user_price_monitor_limits( string $external_user_id ) {
-        $external_user_id = sanitize_text_field($external_user_id);
-        if (! preg_match('/^wp:[A-Za-z0-9_.:-]+:(\d+)$/', $external_user_id, $m)) {
-            return $this->bad_request('Invalid external_user_id.');
-        }
-
-        $user_id = (int) $m[1];
-        $profile = $this->load_user_profile($user_id);
-        if ($profile === null) {
-            return new WP_Error('savello_internal_not_found', 'User not found.', array( 'status' => 404 ));
-        }
-
-        $rate = max(0.0, min(100.0, (float) ( $profile['cashback_rate'] ?? 60.0 )));
-
-        return array(
-            'external_user_id' => $external_user_id,
-            'tariff'           => 'basic',
-            'limits'           => array(
-                'max_tracked_products'        => 20,
-                'history_days'                => 30,
-                'min_fetch_interval_minutes'  => 360,
-                'alerts_per_day'              => 10,
-                'manual_refresh_per_day'      => 3,
-                'browser_fallback_allowed'    => false,
-            ),
-            'cashback'         => array(
-                'user_share'        => $this->round_rate($rate / 100),
-                'cashback_currency' => 'RUB',
-            ),
-        );
-    }
-
     public function get_manifest(): array {
         $merchants_updated = $this->max_updated_at('merchants');
-        $rates_updated     = $this->max_updated_at('rates');
-        $version_seed      = wp_json_encode(array( $merchants_updated, $rates_updated, self::VERSION ));
+$rates_updated     = $this->max_updated_at('rates');
+$version_seed      = wp_json_encode(array( $merchants_updated, $rates_updated, self::VERSION ));
 
         return array(
             'version'                    => hash('sha256', is_string($version_seed) ? $version_seed : self::VERSION),
@@ -330,31 +298,6 @@ final class Savello_Cashback_Internal_API_Service {
             'deeplink_rules_updated_at'  => $this->mysql_to_iso($merchants_updated),
             'display_policy_updated_at'  => $this->mysql_to_iso($rates_updated),
         );
-    }
-
-    public function send_price_monitor_alert( array $payload ): array|WP_Error {
-        $alert = $this->sanitize_price_monitor_alert_payload($payload);
-        if (is_wp_error($alert)) {
-            return $alert;
-        }
-
-        $user = $this->load_wp_user($alert['user_id']);
-        if ($user === null) {
-            return new WP_Error('savello_internal_not_found', 'User not found.', array( 'status' => 404 ));
-        }
-
-        $sent = wp_mail(
-            $user['email'],
-            $this->build_price_monitor_alert_subject($alert),
-            $this->build_price_monitor_alert_message($alert, $user),
-            array( 'Content-Type: text/plain; charset=UTF-8' )
-        );
-
-        if (! $sent) {
-            return new WP_Error('savello_internal_mail_failed', 'Failed to send alert email.', array( 'status' => 500 ));
-        }
-
-        return array( 'status' => 'sent' );
     }
 
     public function calculate_user_cashback( float $price, float $commission_rate, float $user_share ): array {
@@ -922,30 +865,6 @@ final class Savello_Cashback_Internal_API_Service {
         return is_array($row) ? $row : null;
     }
 
-    private function load_wp_user( int $user_id ): ?array {
-        if ($user_id <= 0 || ! function_exists('get_userdata')) {
-            return null;
-        }
-
-        $user = get_userdata($user_id);
-        if (! is_object($user)) {
-            return null;
-        }
-
-        $email = sanitize_email((string) ( $user->user_email ?? '' ));
-        if ($email === '') {
-            return null;
-        }
-
-        $name = sanitize_text_field((string) ( $user->display_name ?? '' ));
-
-        return array(
-            'id'    => $user_id,
-            'email' => $email,
-            'name'  => $name,
-        );
-    }
-
     private function max_updated_at( string $kind ): ?string {
         global $wpdb;
         if (! isset($wpdb) || ! is_object($wpdb)) {
@@ -1039,118 +958,6 @@ final class Savello_Cashback_Internal_API_Service {
         }
         $value = strtolower(trim((string) $value));
         return !in_array($value, array( '', '0', 'false', 'no', 'off', 'disabled' ), true);
-    }
-
-    private function sanitize_price_monitor_alert_payload( array $payload ) {
-        $user_id              = $this->required_positive_int($payload, 'user_id');
-        $product_id           = $this->required_positive_int($payload, 'product_id');
-        $watchlist_item_id    = $this->required_positive_int($payload, 'watchlist_item_id');
-        $target_price_minor   = $this->required_non_negative_int($payload, 'target_price_minor');
-        $observed_price_minor = $this->required_non_negative_int($payload, 'observed_price_minor');
-        $currency             = strtoupper(sanitize_text_field((string) ( $payload['currency'] ?? '' )));
-
-        if (
-            $user_id === null
-            || $product_id === null
-            || $watchlist_item_id === null
-            || $target_price_minor === null
-            || $observed_price_minor === null
-            || ! preg_match('/^[A-Z]{3,8}$/', $currency)
-        ) {
-            return $this->bad_request('Invalid price monitor alert payload.');
-        }
-
-        $alert = array(
-            'alert_event_id'        => sanitize_text_field((string) ( $payload['alert_event_id'] ?? '' )),
-            'watchlist_item_id'     => $watchlist_item_id,
-            'product_id'            => $product_id,
-            'user_id'               => $user_id,
-            'target_price_minor'    => $target_price_minor,
-            'observed_price_minor'  => $observed_price_minor,
-            'currency'              => $currency,
-            'product_title'         => trim(sanitize_text_field((string) ( $payload['product_title'] ?? '' ))),
-            'product_url'           => $this->sanitize_url((string) ( $payload['product_url'] ?? '' )),
-            'action_url'            => $this->sanitize_url((string) ( $payload['action_url'] ?? '' )),
-        );
-
-        if (
-            $alert['product_title'] === ''
-            || $alert['product_url'] === ''
-            || $alert['action_url'] === ''
-        ) {
-            return $this->bad_request('Invalid price monitor alert payload.');
-        }
-
-        return $alert;
-    }
-
-    private function required_positive_int( array $payload, string $key ): ?int {
-        if (! array_key_exists($key, $payload)) {
-            return null;
-        }
-
-        $value = $payload[ $key ];
-        if (is_int($value)) {
-            return $value > 0 ? $value : null;
-        }
-
-        if (! is_string($value) || $value === '' || ! ctype_digit($value)) {
-            return null;
-        }
-
-        $value = (int) $value;
-        return $value > 0 ? $value : null;
-    }
-
-    private function required_non_negative_int( array $payload, string $key ): ?int {
-        if (! array_key_exists($key, $payload)) {
-            return null;
-        }
-
-        $value = $payload[ $key ];
-        if (is_int($value)) {
-            return $value >= 0 ? $value : null;
-        }
-
-        if (! is_string($value) || $value === '' || ! ctype_digit($value)) {
-            return null;
-        }
-
-        $value = (int) $value;
-        return $value >= 0 ? $value : null;
-    }
-
-    private function build_price_monitor_alert_subject( array $alert ): string {
-        $title = $alert['product_title'] !== '' ? $alert['product_title'] : 'товар #' . $alert['product_id'];
-        return 'Цена снизилась: ' . $title;
-    }
-
-    private function build_price_monitor_alert_message( array $alert, array $user ): string {
-        $title = $alert['product_title'] !== '' ? $alert['product_title'] : 'Товар #' . $alert['product_id'];
-        $lines = array(
-            'Здравствуйте' . ( $user['name'] !== '' ? ', ' . $user['name'] : '' ) . '!',
-            '',
-            'Цена по вашему отслеживанию снизилась.',
-            'Товар: ' . $title,
-            'Текущая цена: ' . $this->format_minor_money($alert['observed_price_minor'], $alert['currency']),
-            'Целевая цена: ' . $this->format_minor_money($alert['target_price_minor'], $alert['currency']),
-        );
-
-        if ($alert['product_url'] !== '') {
-            $lines[] = 'Ссылка на товар: ' . $alert['product_url'];
-        }
-        if ($alert['action_url'] !== '') {
-            $lines[] = 'Открыть отслеживание: ' . $alert['action_url'];
-        }
-
-        $lines[] = '';
-        $lines[] = 'С уважением, команда Savello Club';
-
-        return implode("\n", $lines);
-    }
-
-    private function format_minor_money( int $value, string $currency ): string {
-        return number_format($value / 100, 2, '.', ' ') . ' ' . $currency;
     }
 
     private function bad_request( string $message ): WP_Error {

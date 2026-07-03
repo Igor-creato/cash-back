@@ -455,8 +455,7 @@ if (!function_exists('get_current_user_id')) {
 if (!function_exists('get_userdata')) {
     function get_userdata(int $user_id): object|false
     {
-        $users = $GLOBALS['_cb_test_users'] ?? array();
-        return isset($users[ $user_id ]) && is_object($users[ $user_id ]) ? $users[ $user_id ] : false;
+        return false;
     }
 }
 
@@ -1208,12 +1207,6 @@ if (!isset($GLOBALS['_cb_test_current_user_can'])) {
 if (!isset($GLOBALS['_cb_test_mail_calls'])) {
     $GLOBALS['_cb_test_mail_calls'] = array();
 }
-if (!array_key_exists('_cb_test_wp_mail_result', $GLOBALS)) {
-    $GLOBALS['_cb_test_wp_mail_result'] = true;
-}
-if (!isset($GLOBALS['_cb_test_users'])) {
-    $GLOBALS['_cb_test_users'] = array();
-}
 if (!isset($GLOBALS['_cb_test_admin_users'])) {
     $GLOBALS['_cb_test_admin_users'] = array();
 }
@@ -1234,7 +1227,7 @@ if (!function_exists('wp_mail')) {
             'message' => $message,
             'headers' => $headers,
         );
-        return (bool) ($GLOBALS['_cb_test_wp_mail_result'] ?? true);
+        return true;
     }
 }
 
