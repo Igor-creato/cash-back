@@ -1,0 +1,25 @@
+.cashback-price-comparison {
+    max-width: 960px;
+}
+
+.cashback-price-comparison__form {
+    display: grid;
+    gap: 12px;
+}
+
+.cashback-price-comparison__field {
+    display: grid;
+    gap: 6px;
+}
+
+.cashback-price-comparison__results {
+    display: grid;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.cashback-price-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+}

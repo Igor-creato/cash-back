@@ -1,0 +1,208 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+import vm from 'node:vm';
+
+const source = await readFile(
+  new URL('../assets/js/cashback-price-comparison.js', import.meta.url),
+  'utf8'
+);
+
+class FakeElement {
+  constructor(tagName) {
+    this.tagName = tagName.toUpperCase();
+    this.children = [];
+    this.firstChild = null;
+    this.className = '';
+    this.textContent = '';
+    this.href = '';
+    this.rel = '';
+    this.value = '';
+  }
+
+  appendChild(child) {
+    this.children.push(child);
+    this.firstChild = this.children[0] || null;
+    return child;
+  }
+
+  removeChild(child) {
+    this.children = this.children.filter((candidate) => candidate !== child);
+    this.firstChild = this.children[0] || null;
+    return child;
+  }
+}
+
+function createForm(city, query) {
+  const form = new FakeElement('form');
+  const cityInput = new FakeElement('input');
+  const queryInput = new FakeElement('input');
+  const message = new FakeElement('div');
+  const results = new FakeElement('div');
+  cityInput.value = city;
+  queryInput.value = query;
+
+  form.matches = (selector) => selector === '[data-price-comparison-form]';
+  form.querySelector = (selector) => {
+    if (selector === '[name="city"]') {
+      return cityInput;
+    }
+    if (selector === '[name="query"]') {
+      return queryInput;
+    }
+    if (selector === '[data-price-comparison-message]') {
+      return message;
+    }
+    if (selector === '[data-price-comparison-results]') {
+      return results;
+    }
+    return null;
+  };
+
+  return { form, message, results };
+}
+
+async function flushPromises() {
+  for (let i = 0; i < 6; i += 1) {
+    await Promise.resolve();
+  }
+}
+
+function renderer() {
+  const context = {
+    window: {},
+    document: {
+      createElement(tagName) {
+        return new FakeElement(tagName);
+      }
+    }
+  };
+  context.window.window = context.window;
+
+  vm.runInNewContext(source, context);
+  return context.window.CashbackPriceComparisonRenderer;
+}
+
+test('price comparison renderer uses text nodes for product titles and buy links', () => {
+  const root = new FakeElement('div');
+
+  renderer().renderItems(root, [
+    {
+      title: '<img src=x onerror=alert(1)>iPhone',
+      store_domain: 'ozon.ru',
+      price: 80000,
+      currency: 'RUB',
+      action_label: 'Купить',
+      action_url: 'https://ozon.ru/product/1'
+    }
+  ]);
+
+  const card = root.children[0];
+  assert.equal(card.children[0].tagName, 'H3');
+  assert.equal(card.children[0].textContent, '<img src=x onerror=alert(1)>iPhone');
+  assert.equal(card.children[2].tagName, 'A');
+  assert.equal(card.children[2].textContent, 'Купить');
+  assert.equal(card.children[2].href, 'https://ozon.ru/product/1');
+});
+
+test('price comparison form validates city before sending request', () => {
+  let submitListener = null;
+  const { form, message } = createForm('', 'iphone');
+  const context = {
+    window: {
+      CashbackPriceComparison: {
+        restUrl: 'https://savelloclub.test/wp-json/cashback/v1/price-comparison/search',
+        nonce: 'nonce',
+        copy: {
+          emptyCity: 'Укажите город для поиска',
+          emptyQuery: 'Укажите название товара',
+          notFound: 'Товаров не нашлось',
+          error: 'Ошибка поиска'
+        }
+      }
+    },
+    document: {
+      addEventListener(type, callback) {
+        if (type === 'submit') {
+          submitListener = callback;
+        }
+      },
+      createElement(tagName) {
+        return new FakeElement(tagName);
+      }
+    },
+    fetch() {
+      throw new Error('fetch should not run for invalid city');
+    }
+  };
+  context.window.window = context.window;
+
+  vm.runInNewContext(source, context);
+  submitListener({
+    target: form,
+    preventDefault() {}
+  });
+
+  assert.equal(message.textContent, 'Укажите город для поиска');
+});
+
+test('price comparison form posts to WordPress REST and renders returned items', async () => {
+  let submitListener = null;
+  const requests = [];
+  const { form, results } = createForm('Москва', 'iphone');
+  const context = {
+    window: {
+      CashbackPriceComparison: {
+        restUrl: 'https://savelloclub.test/wp-json/cashback/v1/price-comparison/search',
+        nonce: 'nonce',
+        copy: {
+          emptyCity: 'Укажите город для поиска',
+          emptyQuery: 'Укажите название товара',
+          notFound: 'Товаров не нашлось',
+          error: 'Ошибка поиска'
+        }
+      }
+    },
+    document: {
+      addEventListener(type, callback) {
+        if (type === 'submit') {
+          submitListener = callback;
+        }
+      },
+      createElement(tagName) {
+        return new FakeElement(tagName);
+      }
+    },
+    fetch(url, options) {
+      requests.push({ url, options });
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          status: 'ok',
+          items: [{
+            title: 'iPhone 15',
+            store_domain: 'ozon.ru',
+            price: 80000,
+            currency: 'RUB',
+            action_label: 'Купить',
+            action_url: 'https://ozon.ru/product/1'
+          }],
+          meta: { warnings: [] }
+        })
+      });
+    }
+  };
+  context.window.window = context.window;
+
+  vm.runInNewContext(source, context);
+  submitListener({
+    target: form,
+    preventDefault() {}
+  });
+  await flushPromises();
+
+  assert.equal(requests[0].url, 'https://savelloclub.test/wp-json/cashback/v1/price-comparison/search');
+  assert.equal(requests[0].options.headers['X-WP-Nonce'], 'nonce');
+  assert.deepEqual(JSON.parse(requests[0].options.body), { city: 'Москва', query: 'iphone' });
+  assert.equal(results.children[0].children[0].textContent, 'iPhone 15');
+});
