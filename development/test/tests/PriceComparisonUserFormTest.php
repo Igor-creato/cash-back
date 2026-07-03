@@ -50,4 +50,19 @@ final class PriceComparisonUserFormTest extends TestCase {
         self::assertArrayNotHasKey('hmacSecret', $config);
         self::assertArrayNotHasKey('backendBaseUrl', $config);
     }
+
+    public function test_price_comparison_endpoint_is_registered_before_rewrite_flush(): void {
+        $source = (string) file_get_contents(dirname(__DIR__, 3) . '/cashback-plugin.php');
+
+        self::assertMatchesRegularExpression(
+            "/add_rewrite_endpoint\\(\\s*'price-comparison'\\s*,\\s*EP_ROOT\\s*\\|\\s*EP_PAGES\\s*\\);.*flush_rewrite_rules\\(/s",
+            $source,
+            'Новый my-account endpoint должен попадать в rewrite rules при activation/rewrite flush.'
+        );
+        self::assertStringContainsString(
+            'cashback_price_comparison_rewrite_2026_07_03_done',
+            $source,
+            'Existing installs после git deploy должны получить одноразовый flush без re-activation.'
+        );
+    }
 }
