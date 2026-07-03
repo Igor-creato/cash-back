@@ -1,4 +1,5 @@
 <?php
+// phpcs:ignoreFile -- Admin page uses mixed WordPress templates; behaviour is covered by admin tests.
 
 declare(strict_types=1);
 
@@ -94,7 +95,12 @@ final class Cashback_Price_Comparison_Admin {
                             <th scope="row"><?php echo esc_html('Включить поиск'); ?></th>
                             <td>
                                 <label>
-                                    <input type="checkbox" name="<?php echo esc_attr(Cashback_Price_Comparison_Client::OPTION_ENABLED); ?>" value="1" <?php checked(1, (int) get_option(Cashback_Price_Comparison_Client::OPTION_ENABLED, 0)); ?> />
+                                    <input
+                                        type="checkbox"
+                                        name="<?php echo esc_attr(Cashback_Price_Comparison_Client::OPTION_ENABLED); ?>"
+                                        value="1"
+                                        <?php checked(1, (int) get_option(Cashback_Price_Comparison_Client::OPTION_ENABLED, 0)); ?>
+                                    />
                                     <?php echo esc_html('Показывать страницу "Сравнить цену" пользователям'); ?>
                                 </label>
                             </td>
@@ -102,19 +108,36 @@ final class Cashback_Price_Comparison_Admin {
                         <tr>
                             <th scope="row"><?php echo esc_html('URL микросервиса'); ?></th>
                             <td>
-                                <input class="regular-text" type="url" name="<?php echo esc_attr(Cashback_Price_Comparison_Client::OPTION_BASE_URL); ?>" value="<?php echo esc_attr((string) get_option(Cashback_Price_Comparison_Client::OPTION_BASE_URL, '')); ?>" />
+                                <input
+                                    class="regular-text"
+                                    type="url"
+                                    name="<?php echo esc_attr(Cashback_Price_Comparison_Client::OPTION_BASE_URL); ?>"
+                                    value="<?php echo esc_attr((string) get_option(Cashback_Price_Comparison_Client::OPTION_BASE_URL, '')); ?>"
+                                />
                             </td>
                         </tr>
                         <tr>
                             <th scope="row"><?php echo esc_html('HMAC secret'); ?></th>
                             <td>
-                                <input class="regular-text" type="password" name="<?php echo esc_attr(Cashback_Price_Comparison_Client::OPTION_HMAC_SECRET); ?>" value="" autocomplete="new-password" />
+                                <input
+                                    class="regular-text"
+                                    type="password"
+                                    name="<?php echo esc_attr(Cashback_Price_Comparison_Client::OPTION_HMAC_SECRET); ?>"
+                                    value=""
+                                    autocomplete="new-password"
+                                />
                             </td>
                         </tr>
                         <tr>
                             <th scope="row"><?php echo esc_html('Timeout, seconds'); ?></th>
                             <td>
-                                <input type="number" min="1" max="15" name="<?php echo esc_attr(Cashback_Price_Comparison_Client::OPTION_TIMEOUT); ?>" value="<?php echo esc_attr((string) get_option(Cashback_Price_Comparison_Client::OPTION_TIMEOUT, 5)); ?>" />
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="15"
+                                    name="<?php echo esc_attr(Cashback_Price_Comparison_Client::OPTION_TIMEOUT); ?>"
+                                    value="<?php echo esc_attr((string) get_option(Cashback_Price_Comparison_Client::OPTION_TIMEOUT, 5)); ?>"
+                                />
                             </td>
                         </tr>
                     </tbody>
@@ -189,36 +212,71 @@ final class Cashback_Price_Comparison_Admin {
             <table class="form-table" role="presentation">
                 <tbody>
                     <tr>
-                        <th scope="row"><label for="price-compare-domain"><?php echo esc_html('Домен магазина'); ?></label></th>
-                        <td><input id="price-compare-domain" class="regular-text" name="domain" type="text" required /></td>
+                        <th scope="row">
+                            <label for="price-compare-domain"><?php echo esc_html('Домен магазина'); ?></label>
+                        </th>
+                        <td>
+                            <input id="price-compare-domain" class="regular-text" name="domain" type="text" required />
+                        </td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="price-compare-display-name"><?php echo esc_html('Название магазина'); ?></label></th>
-                        <td><input id="price-compare-display-name" class="regular-text" name="display_name" type="text" required /></td>
+                        <th scope="row">
+                            <label for="price-compare-display-name"><?php echo esc_html('Название магазина'); ?></label>
+                        </th>
+                        <td>
+                            <input id="price-compare-display-name" class="regular-text" name="display_name" type="text" required />
+                        </td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="price-compare-logo-url"><?php echo esc_html('Логотип'); ?></label></th>
+                        <th scope="row">
+                            <label for="price-compare-logo-url"><?php echo esc_html('Логотип'); ?></label>
+                        </th>
                         <td><input id="price-compare-logo-url" class="regular-text" name="logo_url" type="url" /></td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="price-compare-aliases"><?php echo esc_html('Aliases доменов'); ?></label></th>
+                        <th scope="row">
+                            <label for="price-compare-aliases"><?php echo esc_html('Aliases доменов'); ?></label>
+                        </th>
                         <td><input id="price-compare-aliases" class="regular-text" name="aliases" type="text" /></td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="price-compare-source-type"><?php echo esc_html('CPA network source'); ?></label></th>
-                        <td><?php self::render_source_select('source_type', 'custom', 'price-compare-source-type'); ?></td>
+                        <th scope="row">
+                            <label for="price-compare-source-type"><?php echo esc_html('CPA network source'); ?></label>
+                        </th>
+                        <td>
+                            <?php self::render_source_select('source_type', 'custom', 'price-compare-source-type'); ?>
+                        </td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="price-compare-feed-id"><?php echo esc_html('Feed identifier'); ?></label></th>
+                        <th scope="row">
+                            <label for="price-compare-feed-id"><?php echo esc_html('Feed identifier'); ?></label>
+                        </th>
                         <td><input id="price-compare-feed-id" class="regular-text" name="feed_identifier" type="text" /></td>
                     </tr>
                     <tr>
-                        <th scope="row"><?php echo esc_html('Региональность'); ?></th>
-                        <td><label><input type="checkbox" name="supports_region" value="1" /> <?php echo esc_html('Источник поддерживает город/регион'); ?></label></td>
+                        <th scope="row"><?php echo esc_html('Live поиск'); ?></th>
+                        <td>
+                            <?php
+                            self::render_live_fields();
+                            ?>
+                        </td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="price-compare-fallback"><?php echo esc_html('Fallback behavior'); ?></label></th>
-                        <td><?php self::render_fallback_select('fallback_behavior', 'status_only', 'price-compare-fallback'); ?></td>
+                        <th scope="row"><?php echo esc_html('Региональность'); ?></th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="supports_region" value="1" />
+                                <?php echo esc_html('Источник поддерживает город/регион'); ?>
+                            </label>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="price-compare-fallback"><?php echo esc_html('Fallback behavior'); ?></label>
+                        </th>
+                        <td>
+                            <?php self::render_fallback_select('fallback_behavior', 'status_only', 'price-compare-fallback'); ?>
+                        </td>
                     </tr>
                 </tbody>
             </table>
@@ -270,7 +328,11 @@ final class Cashback_Price_Comparison_Admin {
                 <strong><?php echo esc_html((string) ( $store['display_name'] ?? '' )); ?></strong>
                 <?php if (!empty($store['logo_url'])) : ?>
                     <br />
-                    <img src="<?php echo esc_url((string) $store['logo_url']); ?>" alt="" style="max-width:48px;max-height:32px;" />
+                    <img
+                        src="<?php echo esc_url((string) $store['logo_url']); ?>"
+                        alt=""
+                        style="max-width:48px;max-height:32px;"
+                    />
                 <?php endif; ?>
             </td>
             <td>
@@ -285,7 +347,11 @@ final class Cashback_Price_Comparison_Admin {
                 <br />
                 <?php echo esc_html('Priority: ' . (string) ( $store['priority'] ?? 100 )); ?>
                 <br />
-                <?php echo !empty($store['supports_region']) ? esc_html('Город поддерживается') : esc_html('Город не поддерживается'); ?>
+                <?php
+                echo !empty($store['supports_region'])
+                    ? esc_html('Город поддерживается')
+                    : esc_html('Город не поддерживается');
+                ?>
             </td>
             <td><?php echo esc_html((string) ( $store['offer_count'] ?? 0 )); ?></td>
             <td>
@@ -301,16 +367,93 @@ final class Cashback_Price_Comparison_Admin {
                         <input type="hidden" name="store_action" value="update" />
                         <input type="hidden" name="store_id" value="<?php echo esc_attr((string) $store_id); ?>" />
                         <?php wp_nonce_field('cashback_price_comparison_store'); ?>
-                        <p><input class="regular-text" name="display_name" type="text" value="<?php echo esc_attr((string) ( $store['display_name'] ?? '' )); ?>" /></p>
-                        <p><input class="regular-text" name="logo_url" type="url" value="<?php echo esc_attr((string) ( $store['logo_url'] ?? '' )); ?>" placeholder="<?php echo esc_attr('Логотип'); ?>" /></p>
-                        <p><input class="regular-text" name="aliases" type="text" value="<?php echo esc_attr(implode(', ', $aliases)); ?>" placeholder="<?php echo esc_attr('Aliases'); ?>" /></p>
-                        <p><?php self::render_source_select('source_type', (string) ( $store['source_type'] ?? 'custom' )); ?></p>
-                        <p><input class="regular-text" name="feed_identifier" type="text" value="<?php echo esc_attr((string) ( $source_config['feed_identifier'] ?? '' )); ?>" placeholder="<?php echo esc_attr('Feed identifier'); ?>" /></p>
-                        <p><input class="small-text" name="priority" type="number" value="<?php echo esc_attr((string) ( $store['priority'] ?? 100 )); ?>" /></p>
-                        <p><label><input type="checkbox" name="supports_region" value="1" <?php checked(true, !empty($store['supports_region'])); ?> /> <?php echo esc_html('Город'); ?></label></p>
-                        <p><label><input type="checkbox" name="active" value="1" <?php checked(true, $active); ?> /> <?php echo esc_html('Активен'); ?></label></p>
-                        <p><?php self::render_fallback_select('fallback_behavior', (string) ( $store['fallback_behavior'] ?? 'status_only' )); ?></p>
-                        <button type="submit" class="button button-primary"><?php echo esc_html('Сохранить'); ?></button>
+                        <p>
+                            <input
+                                class="regular-text"
+                                name="display_name"
+                                type="text"
+                                value="<?php echo esc_attr((string) ( $store['display_name'] ?? '' )); ?>"
+                            />
+                        </p>
+                        <p>
+                            <input
+                                class="regular-text"
+                                name="logo_url"
+                                type="url"
+                                value="<?php echo esc_attr((string) ( $store['logo_url'] ?? '' )); ?>"
+                                placeholder="<?php echo esc_attr('Логотип'); ?>"
+                            />
+                        </p>
+                        <p>
+                            <input
+                                class="regular-text"
+                                name="aliases"
+                                type="text"
+                                value="<?php echo esc_attr(implode(', ', $aliases)); ?>"
+                                placeholder="<?php echo esc_attr('Aliases'); ?>"
+                            />
+                        </p>
+                        <p>
+                            <?php
+                            self::render_source_select(
+                                'source_type',
+                                (string) ( $store['source_type'] ?? 'custom' )
+                            );
+                            ?>
+                        </p>
+                        <p>
+                            <input
+                                class="regular-text"
+                                name="feed_identifier"
+                                type="text"
+                                value="<?php echo esc_attr((string) ( $source_config['feed_identifier'] ?? '' )); ?>"
+                                placeholder="<?php echo esc_attr('Feed identifier'); ?>"
+                            />
+                        </p>
+                        <?php
+                        self::render_live_fields($source_config);
+                        ?>
+                        <p>
+                            <input
+                                class="small-text"
+                                name="priority"
+                                type="number"
+                                value="<?php echo esc_attr((string) ( $store['priority'] ?? 100 )); ?>"
+                            />
+                        </p>
+                        <p>
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    name="supports_region"
+                                    value="1"
+                                    <?php checked(true, !empty($store['supports_region'])); ?>
+                                />
+                                <?php echo esc_html('Город'); ?>
+                            </label>
+                        </p>
+                        <p>
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    name="active"
+                                    value="1"
+                                    <?php checked(true, $active); ?>
+                                />
+                                <?php echo esc_html('Активен'); ?>
+                            </label>
+                        </p>
+                        <p>
+                            <?php
+                            self::render_fallback_select(
+                                'fallback_behavior',
+                                (string) ( $store['fallback_behavior'] ?? 'status_only' )
+                            );
+                            ?>
+                        </p>
+                        <button type="submit" class="button button-primary">
+                            <?php echo esc_html('Сохранить'); ?>
+                        </button>
                     </form>
                 </details>
                 <?php if ($active) : ?>
@@ -327,46 +470,141 @@ final class Cashback_Price_Comparison_Admin {
         <?php
     }
 
-    private static function render_source_select( string $name, string $current, string $id = '' ): void {
-        $sources = array( 'admitad', 'advcake', 'custom', 'disabled' );
+    private static function render_source_select(
+        string $name,
+        string $current,
+        string $id = ''
+    ): void {
+        $sources = array(
+            'admitad',
+            'advcake',
+            'custom',
+            'live_fixture',
+            'direct_http',
+            'managed_provider',
+            'disabled',
+        );
+        $id_attribute = $id !== '' ? ' id="' . esc_attr($id) . '"' : '';
+        printf(
+            '<select name="%s"%s>',
+            esc_attr($name),
+            $id_attribute // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+        );
+        foreach ($sources as $source) {
+            printf(
+                '<option value="%s" %s>%s</option>',
+                esc_attr($source),
+                selected($source, $current, false), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                esc_html($source)
+            );
+        }
+        echo '</select>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static HTML.
+    }
+
+    private static function render_live_fields( array $source_config = array() ): void {
+        $template = (string) ( $source_config['live_search_url_template'] ?? '' );
+        $fixture_items = $source_config['live_fixture_items'] ?? array();
+        $fixture_json = is_array($fixture_items)
+            ? (string) wp_json_encode($fixture_items, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            : '';
+        $fixture_html = function_exists('esc_textarea') ? esc_textarea($fixture_json) : esc_html($fixture_json);
         ?>
-        <select name="<?php echo esc_attr($name); ?>"<?php echo $id !== '' ? ' id="' . esc_attr($id) . '"' : ''; ?>>
-            <?php foreach ($sources as $source) : ?>
-                <option value="<?php echo esc_attr($source); ?>" <?php selected($source, $current); ?>><?php echo esc_html($source); ?></option>
-            <?php endforeach; ?>
-        </select>
+        <p>
+            <label>
+                <?php echo esc_html('URL шаблон live поиска'); ?><br />
+                <input
+                    class="regular-text"
+                    name="live_search_url_template"
+                    type="text"
+                    value="<?php echo esc_attr($template); ?>"
+                    placeholder="<?php echo esc_attr('https://shop.test/search?q={query}&city={city}'); ?>"
+                />
+            </label>
+        </p>
+        <p>
+            <label>
+                <?php echo esc_html('Fixture товары для теста'); ?><br />
+                <?php
+                printf(
+                    '<textarea class="large-text code" name="live_fixture_items_json" rows="3">%s</textarea>',
+                    $fixture_html // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                );
+                ?>
+            </label>
+        </p>
+        <p class="description">
+            <?php echo esc_html('managed_provider: Нужны серверные учетные данные. API keys и пароли здесь не сохраняются.'); ?>
+        </p>
         <?php
     }
 
-    private static function render_fallback_select( string $name, string $current, string $id = '' ): void {
-        $options = array( 'status_only', 'skip', 'custom_api' );
-        ?>
-        <select name="<?php echo esc_attr($name); ?>"<?php echo $id !== '' ? ' id="' . esc_attr($id) . '"' : ''; ?>>
-            <?php foreach ($options as $option) : ?>
-                <option value="<?php echo esc_attr($option); ?>" <?php selected($option, $current); ?>><?php echo esc_html($option); ?></option>
-            <?php endforeach; ?>
-        </select>
-        <?php
+    private static function render_fallback_select(
+        string $name,
+        string $current,
+        string $id = ''
+    ): void {
+        $options = array(
+            'status_only',
+            'skip',
+            'custom_api',
+        );
+        $id_attribute = $id !== '' ? ' id="' . esc_attr($id) . '"' : '';
+        printf(
+            '<select name="%s"%s>',
+            esc_attr($name),
+            $id_attribute // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+        );
+        foreach ($options as $option) {
+            printf(
+                '<option value="%s" %s>%s</option>',
+                esc_attr($option),
+                selected($option, $current, false), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                esc_html($option)
+            );
+        }
+        echo '</select>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static HTML.
     }
-
     private static function store_payload_from_post( array $post, bool $include_domain ): array {
         $payload = array(
-            'display_name'      => sanitize_text_field((string) ( $post['display_name'] ?? '' )),
+            'display_name'      => sanitize_text_field(
+                (string) ( $post['display_name'] ?? '' )
+            ),
             'aliases'           => self::csv_to_list((string) ( $post['aliases'] ?? '' )),
             'logo_url'          => esc_url_raw((string) ( $post['logo_url'] ?? '' )),
             'source_type'       => sanitize_key((string) ( $post['source_type'] ?? 'custom' )),
-            'source_config'     => array(
-                'feed_identifier' => sanitize_text_field((string) ( $post['feed_identifier'] ?? '' )),
-            ),
+            'source_config'     => self::source_config_from_post($post),
             'priority'          => absint($post['priority'] ?? 100),
             'supports_region'   => !empty($post['supports_region']),
-            'fallback_behavior' => sanitize_key((string) ( $post['fallback_behavior'] ?? 'status_only' )),
+            'fallback_behavior' => sanitize_key(
+                (string) ( $post['fallback_behavior'] ?? 'status_only' )
+            ),
             'active'            => !empty($post['active']) || $include_domain,
         );
         if ($include_domain) {
             $payload['domain'] = sanitize_text_field((string) ( $post['domain'] ?? '' ));
         }
         return $payload;
+    }
+
+    private static function source_config_from_post( array $post ): array {
+        $config = array(
+            'feed_identifier' => sanitize_text_field((string) ( $post['feed_identifier'] ?? '' )),
+        );
+
+        $live_template = sanitize_text_field((string) ( $post['live_search_url_template'] ?? '' ));
+        if ($live_template !== '') {
+            $config['live_search_url_template'] = $live_template;
+        }
+
+        $fixture_json = trim((string) ( $post['live_fixture_items_json'] ?? '' ));
+        if ($fixture_json !== '') {
+            $decoded = json_decode(wp_unslash($fixture_json), true);
+            if (is_array($decoded)) {
+                $config['live_fixture_items'] = $decoded;
+            }
+        }
+
+        return $config;
     }
 
     private static function csv_to_list( string $value ): array {

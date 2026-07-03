@@ -67,4 +67,45 @@ final class PriceComparisonStoreAdminClientTest extends TestCase {
         self::assertJsonStringEqualsJsonString('{"active":false}', $call['args']['body']);
         self::assertStringNotContainsString('test-secret', wp_json_encode($call));
     }
+
+    public function test_client_starts_and_polls_live_search_with_hmac_headers(): void {
+        $GLOBALS['_cb_test_http_response_callback'] = static function ( string $url, array $args ): array {
+            if (str_ends_with($url, '/api/v1/live-search/runs')) {
+                return array(
+                    'response' => array( 'code' => 202 ),
+                    'body'     => wp_json_encode(array(
+                        'status'   => 'accepted',
+                        'run_id'   => 'run_1234',
+                        'poll_url' => '/api/v1/live-search/runs/run_1234',
+                    )),
+                );
+            }
+
+            return array(
+                'response' => array( 'code' => 200 ),
+                'body'     => wp_json_encode(array(
+                    'status' => 'ok',
+                    'items'  => array(),
+                )),
+            );
+        };
+
+        $client = new Cashback_Price_Comparison_Client();
+        $start  = $client->start_live_search(array(
+            'query'  => 'телевизор',
+            'city'   => 'Пенза',
+            'stores' => array( 'fixture.test' ),
+            'limit'  => 20,
+        ));
+        $poll   = $client->get_live_search('run_1234');
+
+        self::assertSame('accepted', $start['status']);
+        self::assertSame('ok', $poll['status']);
+        self::assertSame('POST', $GLOBALS['_cb_test_http_calls'][0]['method']);
+        self::assertSame('https://price-service.test/api/v1/live-search/runs', $GLOBALS['_cb_test_http_calls'][0]['url']);
+        self::assertSame('GET', $GLOBALS['_cb_test_http_calls'][1]['method']);
+        self::assertSame('https://price-service.test/api/v1/live-search/runs/run_1234', $GLOBALS['_cb_test_http_calls'][1]['url']);
+        self::assertNotEmpty($GLOBALS['_cb_test_http_calls'][0]['args']['headers']['X-Signature']);
+        self::assertStringNotContainsString('test-secret', wp_json_encode($GLOBALS['_cb_test_http_calls']));
+    }
 }

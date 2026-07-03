@@ -16,6 +16,8 @@ final class PriceComparisonUserFormTest extends TestCase {
         $GLOBALS['_cb_test_enqueued_scripts']  = array();
         $GLOBALS['_cb_test_enqueued_styles']   = array();
         $GLOBALS['_cb_test_localized_scripts'] = array();
+        $GLOBALS['_cb_test_user_id']           = 0;
+        $GLOBALS['_cb_test_user_meta']         = array();
     }
 
     public function test_account_page_renders_required_city_and_query_fields(): void {
@@ -31,6 +33,27 @@ final class PriceComparisonUserFormTest extends TestCase {
         self::assertStringContainsString('Город', $html);
         self::assertStringContainsString('Название товара', $html);
         self::assertStringContainsString('Поиск', $html);
+    }
+
+    public function test_account_page_prefills_saved_city_and_renders_change_button(): void {
+        $GLOBALS['_cb_test_user_id']   = 77;
+        $GLOBALS['_cb_test_user_meta'] = array(
+            77 => array(
+                'cashback_price_comparison_city' => 'Пенза',
+            ),
+        );
+
+        $account = new Cashback_Price_Comparison_Account();
+
+        ob_start();
+        $account->render_page();
+        $html = (string) ob_get_clean();
+
+        self::assertStringContainsString('name="city"', $html);
+        self::assertStringContainsString('value="Пенза"', $html);
+        self::assertStringContainsString('readonly', $html);
+        self::assertStringContainsString('data-price-comparison-city-edit', $html);
+        self::assertStringContainsString('Изменить', $html);
     }
 
     public function test_account_assets_localize_rest_nonce_and_no_backend_secret(): void {

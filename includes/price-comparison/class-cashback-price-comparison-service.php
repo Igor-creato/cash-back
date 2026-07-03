@@ -8,6 +8,8 @@ if (!defined('ABSPATH')) {
 
 final class Cashback_Price_Comparison_Service {
 
+    public const META_CITY = 'cashback_price_comparison_city';
+
     private object $client;
     private $cashback_resolver;
     private array $cashback_cache = array();
@@ -42,6 +44,8 @@ final class Cashback_Price_Comparison_Service {
             );
         }
 
+        $this->save_city_for_user($city, $user_id);
+
         $result = $this->client->search(
             array(
                 'query'  => $query,
@@ -63,8 +67,58 @@ final class Cashback_Price_Comparison_Service {
             }
         }
         $result['items'] = $items;
-
         return $result;
+}
+
+    public function start_live_search( string $city, string $query, int $user_id = 0, array $stores = array(), int $limit = 20, int $timeout_seconds = 120 ): array|WP_Error {
+        $city  = trim($city);
+$query = trim($query);
+if ($city === '') {
+return new WP_Error(
+                'INVALID_CITY', 'Укажите город для поиска.', array( 'status' => 400 )
+            );
+}
+        if ($query === '') {
+return new WP_Error(
+                'INVALID_QUERY', 'Укажите название товара.', array( 'status' => 400 )
+            );
+}
+
+        $this->save_city_for_user($city, $user_id);
+return $this->client->start_live_search(
+            array( 'query'           => $query, 'city'            => $city, 'stores'          => array_values(array_map('sanitize_text_field', $stores)), 'limit'           => max(1, min(50, $limit)), 'timeout_seconds' => max(10, min(180, $timeout_seconds)), 'mode'            => 'live' )
+        );
+}
+
+    public function get_live_search( string $run_id, int $user_id = 0 ): array|WP_Error {
+        $run_id = trim($run_id);
+if (preg_match('/\A[A-Za-z0-9_-]{8,80}\z/', $run_id) !== 1) {
+return new WP_Error(
+                'INVALID_LIVE_SEARCH_RUN', 'Live поиск не найден.', array( 'status' => 404 )
+            );
+}
+
+        $result = $this->client->get_live_search($run_id);
+if ($result instanceof WP_Error) {
+return $result;
+}
+
+        $items = array();
+foreach ((array) ( $result['items'] ?? array() ) as $item) {
+if (is_array($item)) {
+$items[] = $this->enrich_item($item, $user_id);
+}
+        }
+        $result['items'] = $items;
+return $result;
+    }
+
+    private function save_city_for_user( string $city, int $user_id ): void {
+        if ($user_id <= 0 || !function_exists('update_user_meta')) {
+            return;
+        }
+
+        update_user_meta($user_id, self::META_CITY, sanitize_text_field($city));
     }
 
     private function enrich_item( array $item, int $user_id ): array {
