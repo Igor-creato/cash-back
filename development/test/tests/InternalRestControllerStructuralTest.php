@@ -23,7 +23,6 @@ final class InternalRestControllerStructuralTest extends TestCase
             '/merchants/(?P<merchant_id>[A-Za-z0-9_-]+)/rates',
             '/resolve-product',
             '/deeplink',
-            '/users/(?P<external_user_id>[^/]+)/price-monitor-limits',
             '/manifest',
         ) as $route) {
             self::assertArrayHasKey('savello-internal/v1' . $route, $GLOBALS['_cb_test_rest_routes']);

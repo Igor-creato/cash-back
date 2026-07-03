@@ -88,16 +88,8 @@ final class Savello_Cashback_Internal_REST_Controller {
             'permission_callback' => array( $this, 'check_hmac' ),
         ));
 
-        register_rest_route(self::NAMESPACE, '/users/(?P<external_user_id>[^/]+)/price-monitor-limits', array(
-            'methods'             => WP_REST_Server::READABLE,
-            'callback'            => array( $this, 'user_limits' ),
-            'permission_callback' => array( $this, 'check_hmac' ),
-        ));
-
         register_rest_route(self::NAMESPACE, '/manifest', array(
-            'methods'             => WP_REST_Server::READABLE,
-            'callback'            => array( $this, 'manifest' ),
-            'permission_callback' => array( $this, 'check_hmac' ),
+			'methods'             => WP_REST_Server::READABLE, 'callback'            => array( $this, 'manifest' ), 'permission_callback' => array( $this, 'check_hmac' ),
         ));
     }
 
@@ -132,15 +124,9 @@ final class Savello_Cashback_Internal_REST_Controller {
         return $this->response($this->service->create_deeplink($this->request_payload($request)));
     }
 
-    public function user_limits( WP_REST_Request $request ) {
-        return $this->response($this->service->get_user_price_monitor_limits(
-            sanitize_text_field((string) $request->get_param('external_user_id'))
-        ));
-    }
-
     public function manifest( WP_REST_Request $request ) {
         unset($request);
-        return $this->response($this->service->get_manifest());
+return $this->response($this->service->get_manifest());
     }
 
     private function request_payload( WP_REST_Request $request ): array {
