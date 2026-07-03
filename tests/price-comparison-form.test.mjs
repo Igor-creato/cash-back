@@ -311,6 +311,61 @@ test('live search starts a run, polls status, and renders returned items', async
   assert.equal(results.children[0].children[0].textContent, 'Телевизор TCL 55C645');
 });
 
+test('live search shows blocked store message before no-results warning', async () => {
+  let submitListener = null;
+  const requests = [];
+  const { form, message, results } = createAccountMarkup('Пенза', 'телевизор');
+  const context = {
+    window: {
+      CashbackPriceComparison: {
+        liveStartUrl: 'https://savelloclub.test/wp-json/cashback/v1/price-comparison/live-search',
+        livePollBaseUrl: 'https://savelloclub.test/wp-json/cashback/v1/price-comparison/live-search',
+        nonce: 'nonce',
+        copy: {
+          emptyCity: 'Укажите город для поиска',
+          emptyQuery: 'Укажите название товара',
+          notFound: 'Товаров не нашлось',
+          error: 'Ошибка поиска',
+          searching: 'Ищем в магазинах...',
+          partial: 'Часть магазинов недоступна'
+        }
+      }
+    },
+    document: {
+      addEventListener(type, callback) {
+        if (type === 'submit') {
+          submitListener = callback;
+        }
+      },
+      createElement(tagName) {
+        return new FakeElement(tagName);
+      }
+    },
+    fetch(url, options) {
+      requests.push({ url, options });
+      if (requests.length === 1) {
+        return jsonResponse(202, { status: 'accepted', run_id: 'run_blocked' });
+      }
+      return jsonResponse(200, {
+        status: 'failed',
+        items: [],
+        meta: { warnings: ['Товаров не нашлось', 'Часть магазинов недоступна'] },
+        store_statuses: [
+          { store_domain: 'citilink.ru', status: 'BLOCKED_BY_ANTIBOT' }
+        ]
+      });
+    }
+  };
+  context.window.window = context.window;
+
+  vm.runInNewContext(source, context);
+  submitListener({ target: form, preventDefault() {} });
+  await flushPromises();
+
+  assert.equal(message.textContent, 'Часть магазинов недоступна');
+  assert.equal(results.children.length, 0);
+});
+
 test('price comparison form renders no-results message outside the form node', async () => {
   let submitListener = null;
   const { form, message, results } = createAccountMarkup('Москва', 'iphone');

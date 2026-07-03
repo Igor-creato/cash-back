@@ -97,11 +97,15 @@
     return String(config().livePollBaseUrl || '').replace(/\/$/, '') + '/' + encodeURIComponent(runId);
   }
 
-  function statusMessage(payload) {
+  function hasBlockedStore(payload) {
     var statuses = Array.isArray(payload.store_statuses) ? payload.store_statuses : [];
-    if (statuses.some(function (status) {
+    return statuses.some(function (status) {
       return status && status.status === 'BLOCKED_BY_ANTIBOT';
-    })) {
+    });
+  }
+
+  function statusMessage(payload) {
+    if (hasBlockedStore(payload)) {
       return copy('partial', 'Часть магазинов недоступна');
     }
     if (payload.progress && payload.progress.current_store) {
@@ -112,7 +116,7 @@
 
   function renderSearchPayload(form, payload, results) {
     var items = Array.isArray(payload.items) ? payload.items : [];
-    if (payload.status === 'partial') {
+    if (payload.status === 'partial' || hasBlockedStore(payload)) {
       setMessage(form, statusMessage(payload));
     } else if (!items.length) {
       var warnings = payload.meta && Array.isArray(payload.meta.warnings) ? payload.meta.warnings : [];
