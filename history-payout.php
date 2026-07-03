@@ -55,6 +55,15 @@ class HistoryPayout {
     }
 
     public function content() {
+        $this->render_account_tab_content();
+    }
+
+    /**
+     * Render payout history content for standalone endpoint or My Cashback tab.
+     *
+     * @return void
+     */
+    public function render_account_tab_content(): void {
         $user_id = get_current_user_id();
         if (!$user_id) {
             echo '<p>' . esc_html__('Вы должны быть авторизованы.', 'cashback-plugin') . '</p>';
@@ -130,7 +139,7 @@ class HistoryPayout {
         }
         echo '</div>';
 
-        echo '<div id="pagination-container">';
+        echo '<div id="payout-pagination-container">';
         if ($total_pages > 1) {
             Cashback_Pagination::render(array(
                 'mode'         => 'ajax',
@@ -360,7 +369,7 @@ class HistoryPayout {
     }
 
     public function enqueue_scripts() {
-        if (function_exists('is_account_page') && is_account_page() && $this->is_history_payout_page()) {
+        if (function_exists('is_account_page') && is_account_page() && ( $this->is_history_payout_page() || $this->is_my_cashback_page() )) {
             wp_enqueue_style(
                 'history-payout-css',
                 plugin_dir_url(__FILE__) . 'assets/css/history-payout.css',
@@ -395,6 +404,11 @@ class HistoryPayout {
     private function is_history_payout_page() {
         global $wp;
         return isset($wp->query_vars['history-payout']);
+    }
+
+    private function is_my_cashback_page() {
+        global $wp;
+        return isset($wp->query_vars['cashback-withdrawal']);
     }
 
     private function get_status_label( $status ) {

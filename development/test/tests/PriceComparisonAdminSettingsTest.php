@@ -104,7 +104,7 @@ final class PriceComparisonAdminSettingsTest extends TestCase {
             return;
         }
 
-        $source = str_replace("\r\n", "\n", self::method_source(Cashback_Price_Comparison_Admin::class, 'register_menu'));
+        $source = self::method_source(Cashback_Price_Comparison_Admin::class, 'register_menu');
         self::assertStringContainsString("add_submenu_page(\n            'cashback-overview'", $source);
         self::assertStringContainsString("'Сравнение цен'", $source);
         self::assertStringContainsString("'manage_options'", $source);

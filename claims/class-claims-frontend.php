@@ -16,9 +16,16 @@ if (!defined('ABSPATH')) {
  */
 class Cashback_Claims_Frontend {
 
+    /**
+     * @var self|null
+     */
+    private static $instance = null;
+
     private const PER_PAGE = 20;
 
     public function __construct() {
+        self::$instance = $this;
+
         add_action('init', array( $this, 'register_endpoint' ), 5);
         add_filter('query_vars', array( $this, 'add_query_vars' ), 10);
         add_filter('woocommerce_account_menu_items', array( $this, 'add_menu_item' ), 10);
@@ -31,6 +38,13 @@ class Cashback_Claims_Frontend {
         add_action('wp_ajax_claims_mark_read', array( $this, 'ajax_mark_read' ));
         add_action('wp_enqueue_scripts', array( $this, 'enqueue_scripts' ));
         add_action('wp_footer', array( $this, 'render_menu_badge' ));
+    }
+
+    /**
+     * @return self|null
+     */
+    public static function get_instance() {
+        return self::$instance;
     }
 
     public function register_endpoint(): void {
@@ -54,26 +68,27 @@ class Cashback_Claims_Frontend {
             return;
         }
 
-        ?>
-        <style id="cashback-claims-menu-badge-style">
-            .woocommerce-MyAccount-navigation-link--cashback_lost_cashback a::after {
-                content: '<?php echo esc_js((string) absint($count)); ?>';
-                display: inline-block;
-                min-width: 18px;
-                height: 18px;
-                line-height: 18px;
-                padding: 0 5px;
-                border-radius: 50%;
-                background: #f44336;
-                color: #fff !important;
-                font-size: 11px;
-                font-weight: bold;
-                text-align: center;
-                margin-left: 6px;
-                vertical-align: middle;
-            }
-        </style>
-        <?php
+        $badge_count = (string) absint($count);
+
+        echo '<style id="cashback-claims-menu-badge-style">';
+        echo '.woocommerce-MyAccount-navigation-link--cashback-withdrawal a::after,';
+        echo '.woocommerce-MyAccount-navigation-link--cashback_lost_cashback a::after{';
+        echo "content:'" . esc_html($badge_count) . "';";
+        echo 'display:inline-block;';
+        echo 'min-width:18px;';
+        echo 'height:18px;';
+        echo 'line-height:18px;';
+        echo 'padding:0 5px;';
+        echo 'border-radius:50%;';
+        echo 'background:#f44336;';
+        echo 'color:#fff !important;';
+        echo 'font-size:11px;';
+        echo 'font-weight:bold;';
+        echo 'text-align:center;';
+        echo 'margin-left:6px;';
+        echo 'vertical-align:middle;';
+        echo '}';
+        echo '</style>';
     }
 
     public function add_query_vars( array $vars ): array {
@@ -97,6 +112,13 @@ class Cashback_Claims_Frontend {
      * Main endpoint content — tabs + both tab contents.
      */
     public function endpoint_content(): void {
+        $this->render_account_tab_content(true);
+    }
+
+    /**
+     * Render lost cashback tabs for standalone endpoint or My Cashback tab.
+     */
+    public function render_account_tab_content( bool $show_heading = true ): void {
         $user_id = get_current_user_id();
         if (!$user_id) {
             echo '<p>' . esc_html__('Необходима авторизация.', 'cashback-plugin') . '</p>';
@@ -104,7 +126,9 @@ class Cashback_Claims_Frontend {
         }
 
         ?>
+        <?php if ($show_heading) : ?>
         <h2><?php esc_html_e('Потерянный кэшбэк', 'cashback-plugin'); ?></h2>
+        <?php endif; ?>
 
         <?php $unread_count = Cashback_Claims_DB::get_unread_events_count($user_id); ?>
         <!-- Вкладки -->
@@ -610,7 +634,7 @@ class Cashback_Claims_Frontend {
         // Check if we're on the claims endpoint page
         // get_query_var returns '' (empty string) when the endpoint is active without a value
         global $wp_query;
-        if (!isset($wp_query->query_vars['cashback_lost_cashback'])) {
+        if (!isset($wp_query->query_vars['cashback_lost_cashback']) && !isset($wp_query->query_vars['cashback-withdrawal'])) {
             return;
         }
 

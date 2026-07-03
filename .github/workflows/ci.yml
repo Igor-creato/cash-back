@@ -5,10 +5,12 @@ on:
     branches:
       - main
       - feature/product-price-monitor-service
+      - feature/price-compare-search-wordpress
   pull_request:
     branches:
       - main
       - feature/product-price-monitor-service
+      - feature/price-compare-search-wordpress
 
 concurrency:
   group: ci-${{ github.ref }}

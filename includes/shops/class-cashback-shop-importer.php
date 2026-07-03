@@ -641,7 +641,6 @@ class Cashback_Shop_Importer {
      */
     public static function compute_signature( Cashback_Campaign_Detail_DTO $dto ): string {
         $canonical = wp_json_encode(array(
-            'name'        => $dto->name,
             'site_url'    => $dto->site_url,
             'image_url'   => $dto->image_url,
             'description' => $dto->description,
@@ -826,7 +825,10 @@ class Cashback_Shop_Importer {
     }
 
     /**
-     * UPDATE существующего product (post_title/post_content) + refresh metas.
+     * Обновить мета существующего товара.
+     *
+     * Название магазина — только при первом импорте: CPA-сеть может
+     * переименовать оффер, но WC title уже мог быть отредактирован админом.
      */
     private static function update_existing_product(
         int $product_id,
@@ -837,17 +839,6 @@ class Cashback_Shop_Importer {
         string $now,
         string $adapter_slug
     ): void {
-        if (function_exists('wp_update_post')) {
-            // post_content НЕ обновляем при ре-импорте — иначе уничтожим
-            // отредактированное админом описание. Импорт создаёт draft с
-            // пустым content (см. insert_draft_product), дальше — admin
-            // территория.
-            wp_update_post(array(
-                'ID'         => $product_id,
-                'post_title' => $dto->name !== '' ? $dto->name : ('Кампания #' . $dto->id),
-                // post_status НЕ меняем — админ может уже его опубликовать.
-            ));
-        }
         self::write_product_meta($product_id, $dto, $network_id, $signature, $domain, $now, $adapter_slug);
         if ($dto->goto_link !== '') {
             update_post_meta($product_id, '_product_url', $dto->goto_link);

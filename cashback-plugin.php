@@ -6,7 +6,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Cashback Plugin
  * Description: Объединенный плагин для системы кэшбэка и аффилиат-партнерства
- * Version: 4.4.63
+ * Version: 4.4.67
  * Author: Cashback
  * Author URI: https://example.com
  * Text Domain: cashback-plugin
@@ -232,7 +232,6 @@ register_activation_hook(__FILE__, 'cashback_check_requirements');
  */
 // phpcs:ignore Universal.Files.SeparateFunctionsFromOO.Mixed -- Main plugin bootstrap file mixes class definitions with helper functions by design.
 class CashbackPlugin {
-
     private const ACTIVATION_ERROR_TITLE = 'Ошибка активации плагина';
     private const PRICE_COMPARISON_REWRITE_OPTION = 'cashback_price_comparison_rewrite_2026_07_03_done';
 
@@ -742,7 +741,6 @@ class CashbackPlugin {
                     error_log('[Cashback] Required-schema artifacts missing (admin features degraded): ' . $schema_error);
                 }
             }
-
             $this->initialize_components();
             $this->maybe_flush_price_comparison_rewrite_rules();
 
@@ -1023,10 +1021,10 @@ class CashbackPlugin {
         // --- REST API для браузерного расширения ---
         $this->require_file('includes/class-cashback-rest-api.php');
 
-        // --- Internal REST API для server-to-server price-monitor ---
+        // --- Internal REST API для server-to-server integrations ---
         $this->require_file('includes/services/class-internal-hmac-auth-service.php');
-        $this->require_file('includes/services/class-cashback-internal-api-service.php');
-        $this->require_file('includes/rest/class-cashback-internal-rest-controller.php');
+$this->require_file('includes/services/class-cashback-internal-api-service.php');
+$this->require_file('includes/rest/class-cashback-internal-rest-controller.php');
 
         // Direct link checker: публичный shortcode + REST endpoints поверх существующих click/session путей.
         $this->require_file('includes/link-checker/class-cashback-link-checker-url-validator.php');
@@ -1691,6 +1689,12 @@ class CashbackPlugin {
             Cashback_Frontend_Performance::init();
         }
 
+        // Dynamic cashback display cache: tariff sync changes custom-table data,
+        // so post_meta hooks do not fire. Invalidate before external HTML cache purge.
+        if (class_exists('Cashback_Cashback_Display_Calculator')) {
+            add_action('cashback_tariffs_changed', array( 'Cashback_Cashback_Display_Calculator', 'bust_cache_for_product' ), 5, 1);
+        }
+
         // Nginx fastcgi_cache invalidation (см. require_file выше).
         if (class_exists('Cashback_Nginx_Cache_Hooks')) {
             Cashback_Nginx_Cache_Hooks::init();
@@ -1930,9 +1934,9 @@ class CashbackPlugin {
             Cashback_REST_API::get_instance();
         }
 
-        // --- Internal REST API для server-to-server price-monitor ---
+        // --- Internal REST API для server-to-server integrations ---
         if (class_exists('Savello_Cashback_Internal_REST_Controller')) {
-            Savello_Cashback_Internal_REST_Controller::init();
+Savello_Cashback_Internal_REST_Controller::init();
         }
 
         // --- Public REST API + shortcode for direct product/store link checker ---

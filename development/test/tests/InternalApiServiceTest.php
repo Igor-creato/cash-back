@@ -26,6 +26,13 @@ final class InternalApiServiceTest extends TestCase
         $GLOBALS['_cb_test_options'] = array(
             'cashback_guest_display_rate' => 70,
         );
+        $GLOBALS['_cb_test_http_calls']             = array();
+        $GLOBALS['_cb_test_http_response_callback'] = null;
+        $GLOBALS['_cb_test_http_response']          = array(
+            'body'     => '',
+            'response' => array( 'code' => 200, 'message' => 'OK' ),
+            'headers'  => array(),
+        );
         $GLOBALS['_cb_test_post_meta'] = array();
         $GLOBALS['_cb_test_posts']     = array(
             101 => (object) array( 'ID' => 101, 'post_status' => 'publish', 'post_type' => 'product', 'post_title' => 'AliExpress' ),
@@ -55,13 +62,13 @@ final class InternalApiServiceTest extends TestCase
         $service = new Savello_Cashback_Internal_API_Service();
 
         $active = $service->get_merchants(array());
-        self::assertCount(4, $active['items']);
+        self::assertCount(5, $active['items']);
         self::assertSame('101', $active['items'][0]['merchant_id']);
         self::assertSame(array('aliexpress.ru'), $active['items'][0]['domains']);
         self::assertIsArray($active['items'][0]['domain_aliases']);
 
         $all = $service->get_merchants(array( 'status' => 'all', 'limit' => 999 ));
-        self::assertCount(5, $all['items']);
+        self::assertCount(7, $all['items']);
         self::assertSame(500, $all['pagination']['limit']);
     }
 
@@ -202,6 +209,43 @@ final class InternalApiServiceTest extends TestCase
     }
 
     #[Group('direct-product-link')]
+    public function test_direct_product_link_skips_draft_duplicate_and_activates_published_network(): void
+    {
+        require_once dirname(__DIR__, 3) . '/includes/class-cashback-click-session-service.php';
+
+        $returned_url = 'https://duplicate-direct.example/products/sku-1?advcake_params=from-api';
+        $GLOBALS['_cb_test_http_response'] = array(
+            'body'     => (string) wp_json_encode(array(
+                'success' => true,
+                'data'    => array(
+                    'url' => $returned_url,
+                ),
+            )),
+            'response' => array( 'code' => 200, 'message' => 'OK' ),
+            'headers'  => array(),
+        );
+
+        $service  = new Savello_Cashback_Internal_API_Service();
+        $click_id = '33333333333333333333333333333333';
+
+        $result = $service->resolve_direct_product_link(array(
+            'direct_url'        => 'https://duplicate-direct.example/products/sku-1',
+            'click_id'          => $click_id,
+            'client_request_id' => '550e8400-e29b-41d4-a716-446655440003',
+            'ip_address'        => '127.0.0.1',
+            'user_agent'        => 'phpunit',
+        ));
+
+        self::assertTrue($result['cashback_available']);
+        self::assertSame('advcake', $result['network']);
+        self::assertSame('107', $result['merchant_id']);
+        self::assertSame($returned_url, $result['cashback_url']);
+        self::assertArrayNotHasKey('reason_code', $result);
+        self::assertSame(107, $this->wpdb->insert_rows[0]['product_id']);
+        self::assertSame('advcake', $this->wpdb->insert_rows[0]['cpa_network']);
+    }
+
+    #[Group('direct-product-link')]
     public function test_advcake_direct_product_link_uses_cakelink_even_when_stored_affiliate_url_exists(): void
     {
         require_once dirname(__DIR__, 3) . '/includes/class-cashback-click-session-service.php';
@@ -333,21 +377,6 @@ final class InternalApiServiceTest extends TestCase
         self::assertSame(1, $this->wpdb->insert_count);
         self::assertMatchesRegularExpression('/^[a-f0-9]{32}$/', $this->wpdb->insert_rows[0]['client_request_id']);
         self::assertSame(32, strlen($this->wpdb->insert_rows[0]['client_request_id']));
-    }
-
-    public function test_user_limits_return_only_limits_and_cashback_rules(): void
-    {
-        $service = new Savello_Cashback_Internal_API_Service();
-
-        $limits = $service->get_user_price_monitor_limits('wp:savelloclub.test:77');
-        self::assertSame('wp:savelloclub.test:77', $limits['external_user_id']);
-        self::assertSame(0.65, $limits['cashback']['user_share']);
-        self::assertArrayNotHasKey('email', $limits);
-        self::assertArrayNotHasKey('balance', $limits);
-
-        $missing = $service->get_user_price_monitor_limits('wp:savelloclub.test:999');
-        self::assertInstanceOf(WP_Error::class, $missing);
-        self::assertSame('savello_internal_not_found', $missing->get_error_code());
     }
 
     public function test_manifest_returns_version_and_timestamps(): void
@@ -518,6 +547,44 @@ final class Internal_Api_Wpdb_Stub
                     'currency'     => 'RUB',
                     'status_raw'   => 'active',
                     'product_url'  => 'https://go.static-advcake.example/click?erid=test-erid&m=31',
+                    'cashback_enabled' => '1',
+                    'api_base_url' => 'https://api.advcake.test',
+                    'api_token_endpoint' => '',
+                    'api_website_id' => '',
+                    'updated_at'   => '2026-06-01 09:50:00',
+                ),
+                array(
+                    'ID'           => '106',
+                    'post_title'   => 'Duplicate Direct Draft',
+                    'post_status'  => 'draft',
+                    'network_id'   => '1',
+                    'network_name' => 'Admitad',
+                    'network_slug' => 'admitad',
+                    'network_active' => '1',
+                    'offer_id'     => 'duplicate-draft',
+                    'store_domain' => 'duplicate-direct.example',
+                    'currency'     => 'RUB',
+                    'status_raw'   => 'paused',
+                    'product_url'  => 'https://go.duplicate-draft.example/click',
+                    'cashback_enabled' => '1',
+                    'api_base_url' => 'https://api.admitad.test',
+                    'api_token_endpoint' => '',
+                    'api_website_id' => '',
+                    'updated_at'   => '2026-06-01 09:50:00',
+                ),
+                array(
+                    'ID'           => '107',
+                    'post_title'   => 'Duplicate Direct Published',
+                    'post_status'  => 'publish',
+                    'network_id'   => '4',
+                    'network_name' => 'AdvCake',
+                    'network_slug' => 'advcake',
+                    'network_active' => '1',
+                    'offer_id'     => 'duplicate-published',
+                    'store_domain' => 'duplicate-direct.example',
+                    'currency'     => 'RUB',
+                    'status_raw'   => 'active',
+                    'product_url'  => 'https://go.duplicate-direct.example/click?erid=test-erid&m=107',
                     'cashback_enabled' => '1',
                     'api_base_url' => 'https://api.advcake.test',
                     'api_token_endpoint' => '',

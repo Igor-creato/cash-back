@@ -171,7 +171,7 @@ final class ShopImporterStructuralTest extends TestCase
         $this->assertSame(64, strlen($a), 'sha256 hex = 64 chars');
     }
 
-    public function test_compute_signature_differs_when_name_changes(): void
+    public function test_compute_signature_ignores_name_changes_for_existing_store_title(): void
     {
         $a = Cashback_Shop_Importer::compute_signature(Cashback_Campaign_Detail_DTO::from_array(array(
             'id' => '1', 'name' => 'Joom', 'site_url' => 'https://joom.com',
@@ -179,7 +179,22 @@ final class ShopImporterStructuralTest extends TestCase
         $b = Cashback_Shop_Importer::compute_signature(Cashback_Campaign_Detail_DTO::from_array(array(
             'id' => '1', 'name' => 'Joom Ru', 'site_url' => 'https://joom.com',
         )));
-        $this->assertNotSame($a, $b);
+        $this->assertSame(
+            $a,
+            $b,
+            'Название магазина задаётся только при первом импорте и не должно триггерить update существующего товара.'
+        );
+    }
+
+    public function test_update_existing_product_does_not_write_post_title(): void
+    {
+        $body = self::method_source(new ReflectionMethod('Cashback_Shop_Importer', 'update_existing_product'));
+
+        $this->assertStringNotContainsString(
+            "'post_title'",
+            $body,
+            'Повторный импорт не должен менять название существующего магазина.'
+        );
     }
 
     public function test_compute_signature_ignores_id_and_raw(): void
@@ -1069,6 +1084,17 @@ final class ShopImporterStructuralTest extends TestCase
             'flush_deferred_tariff_side_effects',
             $run,
             'run() должен сбрасывать накопленные product_id после пачки/partial-run отдельным шагом.'
+        );
+    }
+
+    public function test_tariff_change_event_busts_dynamic_display_cache(): void
+    {
+        $source = (string) file_get_contents(dirname(__DIR__, 3) . '/cashback-plugin.php');
+
+        $this->assertMatchesRegularExpression(
+            "/add_action\s*\(\s*'cashback_tariffs_changed'\s*,\s*array\s*\(\s*'Cashback_Cashback_Display_Calculator'\s*,\s*'bust_cache_for_product'\s*\)/",
+            $source,
+            'cashback_tariffs_changed должен инвалидировать dynamic display cache, иначе витрина может показывать старую ставку до TTL.'
         );
     }
 

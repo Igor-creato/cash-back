@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - feature/product-price-monitor-service
+      - feature/price-compare-search-wordpress
 
 permissions:
   contents: read
@@ -17,7 +18,7 @@ jobs:
     if: >-
       ${{
         github.event.workflow_run.conclusion == 'success' &&
-        contains(fromJSON('["main","feature/product-price-monitor-service"]'), github.event.workflow_run.head_branch)
+        contains(fromJSON('["main","feature/product-price-monitor-service","feature/price-compare-search-wordpress"]'), github.event.workflow_run.head_branch)
       }}
     runs-on: ubuntu-latest
     steps:
@@ -32,7 +33,7 @@ jobs:
             set -e
             DEPLOY_BRANCH='${{ github.event.workflow_run.head_branch }}'
             case "$DEPLOY_BRANCH" in
-              main|feature/product-price-monitor-service) ;;
+              main|feature/product-price-monitor-service|feature/price-compare-search-wordpress) ;;
               *) echo "Unsupported deploy branch: $DEPLOY_BRANCH"; exit 1 ;;
             esac
 

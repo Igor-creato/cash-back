@@ -53,7 +53,7 @@ jQuery(document).ready(function ($) {
         }
         if (response.success) {
           $('#payouts-table-container').html(safeHtml(response.data.html));
-          $('#pagination-container').html(
+          $('#payout-pagination-container').html(
             safeHtml(window.CashbackPagination.build(response.data.current_page, response.data.total_pages))
           );
         }
@@ -62,7 +62,7 @@ jQuery(document).ready(function ($) {
   }
 
   // Pagination
-  $(document).on('click', '#pagination-container .page-numbers[data-page]', function (e) {
+  $(document).on('click', '#payout-pagination-container .page-numbers[data-page]', function (e) {
     e.preventDefault();
     var page = $(this).data('page');
     if (page) {

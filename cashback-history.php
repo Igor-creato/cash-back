@@ -83,6 +83,15 @@ class CashbackHistory {
      * @return void
      */
     public function content() {
+        $this->render_account_tab_content();
+    }
+
+    /**
+     * Render cashback history content for standalone endpoint or My Cashback tab.
+     *
+     * @return void
+     */
+    public function render_account_tab_content(): void {
         $user_id = get_current_user_id();
         if (!$user_id) {
             echo '<p>' . esc_html__('Вы должны быть авторизованы.', 'cashback-plugin') . '</p>';
@@ -157,7 +166,7 @@ class CashbackHistory {
         }
         echo '</div>';
 
-        echo '<div id="pagination-container">';
+        echo '<div id="history-pagination-container">';
         if ($total_pages > 1) {
             Cashback_Pagination::render(array(
                 'mode'         => 'ajax',
@@ -186,7 +195,7 @@ class CashbackHistory {
         echo '<th>' . esc_html__('ID', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Дата', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Магазин', 'cashback-plugin') . '</th>';
-        echo '<th>' . esc_html__('Номер заказа', 'cashback-plugin') . '</th>';
+        echo '<th>' . esc_html__('Сумма покупки', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Кэшбэк', 'cashback-plugin') . '</th>';
         echo '<th>' . esc_html__('Статус', 'cashback-plugin') . '</th>';
         if ($support_enabled) {
@@ -201,7 +210,7 @@ class CashbackHistory {
             echo '<td data-title="' . esc_attr__('ID', 'cashback-plugin') . '"><code>' . esc_html($transaction->reference_id ?? '') . '</code></td>';
             echo '<td data-title="' . esc_attr__('Дата', 'cashback-plugin') . '">' . $this->format_date($transaction->action_date ?? $transaction->created_at) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- format_date() возвращает уже экранированное значение.
             echo '<td data-title="' . esc_attr__('Магазин', 'cashback-plugin') . '">' . esc_html($transaction->offer_name ?? __('Н/Д', 'cashback-plugin')) . '</td>';
-            echo '<td data-title="' . esc_attr__('Номер заказа', 'cashback-plugin') . '">' . esc_html($transaction->order_number ?? __('Н/Д', 'cashback-plugin')) . '</td>';
+            echo '<td data-title="' . esc_attr__('Сумма покупки', 'cashback-plugin') . '">' . $this->format_purchase_amount($transaction->sum_order ?? null) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- format_purchase_amount() returns escaped text.
             echo '<td data-title="' . esc_attr__('Кэшбэк', 'cashback-plugin') . '">' . esc_html($transaction->cashback ?? '0.00') . '</td>';
             $status_key      = (string) ($transaction->order_status ?? '');
             $status_semantic = $this->map_status_semantic($status_key);
@@ -270,7 +279,7 @@ class CashbackHistory {
 
         // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where from allowlist conditions with %s/%d placeholders; array_merge hides actual argument count from sniff.
         $results = $wpdb->get_results( $wpdb->prepare(
-            "SELECT id, reference_id, action_date, created_at, offer_name, order_number, cashback, order_status
+            "SELECT id, reference_id, action_date, created_at, offer_name, sum_order, cashback, order_status
              FROM %i
              {$where}
              ORDER BY COALESCE(action_date, created_at) DESC
@@ -404,7 +413,7 @@ class CashbackHistory {
      */
     public function enqueue_scripts(): void {
         $is_account_page  = function_exists('is_account_page') && is_account_page();
-        $is_cashback_page = $this->is_cashback_history_page();
+        $is_cashback_page = $this->is_cashback_history_page() || $this->is_my_cashback_page();
 
         // Load script on account page
         if ($is_account_page) {
@@ -456,8 +465,15 @@ class CashbackHistory {
         if (isset($wp->query_vars['cashback-history'])) {
             return true;
         }
-
         return false;
+    }
+
+    /**
+     * Check if current page is the aggregated My Cashback page.
+     */
+    private function is_my_cashback_page(): bool {
+        global $wp;
+        return isset($wp->query_vars['cashback-withdrawal']);
     }
 
     /**
@@ -498,8 +514,21 @@ class CashbackHistory {
         if ($timestamp === false) {
             return esc_html__('Некорректная дата', 'cashback-plugin');
         }
-
         return esc_html(date_i18n(get_option('date_format'), $timestamp));
+    }
+
+    /**
+     * Format purchase amount for table output.
+     *
+     * @param mixed $amount Raw sum_order value.
+     * @return string Escaped amount or fallback.
+     */
+    private function format_purchase_amount( $amount ): string {
+        if ($amount === null || $amount === '') {
+            return esc_html__('Н/Д', 'cashback-plugin');
+        }
+
+        return esc_html(number_format_i18n((float) $amount, 2) . ' ₽');
     }
 }
 

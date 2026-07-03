@@ -193,6 +193,48 @@ final class LinkCheckerServiceTest extends TestCase {
         self::assertStringContainsString('временно недоступен', $result['message']);
     }
 
+    public function test_check_skips_draft_duplicate_and_returns_published_network(): void {
+        $this->seed_product(array(
+            'ID'             => 901,
+            'post_title'     => 'Duplicate Draft',
+            'post_status'    => 'draft',
+            'network_id'     => 9,
+            'offer_id'       => 'duplicate-draft',
+            'store_domain'   => 'duplicate.example',
+            'network_slug'   => 'advcake',
+            'network_name'   => 'AdvCake',
+            'network_active' => 1,
+        ));
+        $this->seed_product(array(
+            'ID'             => 902,
+            'post_title'     => 'Duplicate Published',
+            'post_status'    => 'publish',
+            'network_id'     => 7,
+            'offer_id'       => 'duplicate-published',
+            'store_domain'   => 'duplicate.example',
+            'network_slug'   => 'admitad',
+            'network_name'   => 'Admitad',
+            'network_active' => 1,
+        ));
+        $GLOBALS['_cb_test_link_checker_tariffs'] = array(
+            array(
+                'tariff_id'    => 'base',
+                'name'         => 'Оплаченный заказ на сайте',
+                'tariff_type'  => 'percent',
+                'payment_size' => '12',
+                'currency'     => 'RUB',
+                'is_deleted'   => 0,
+            ),
+        );
+
+        $result = ( new Cashback_Link_Checker_Service() )->check('https://duplicate.example/product', 0);
+
+        self::assertSame('available', $result['status']);
+        self::assertTrue($result['cashback_available']);
+        self::assertSame(902, $result['store']['product_id']);
+        self::assertSame('admitad', $result['store']['network']);
+    }
+
     /**
      * @param array<string,mixed> $row
      */
@@ -227,6 +269,11 @@ final class LinkCheckerServiceWpdbStub {
         }
 
         return $GLOBALS['_cb_test_link_checker_products'] ?? array();
+    }
+
+    public function get_row( string $query, string $output = ARRAY_A ): ?array {
+        unset($query, $output);
+        return null;
     }
 
     public function get_var( string $query ): mixed {

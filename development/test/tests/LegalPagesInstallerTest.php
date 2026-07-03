@@ -43,6 +43,7 @@ final class LegalPagesInstallerTest extends TestCase
         parent::setUp();
         $GLOBALS['_cb_test_options']       = array();
         $GLOBALS['_cb_test_post_statuses'] = array();
+        $GLOBALS['_cb_test_get_permalink'] = static fn( int $post_id = 0 ): string => 'http://localhost/?p=' . $post_id;
     }
 
     public function test_detect_missing_pages_returns_all_public_types_when_map_empty(): void

@@ -8,6 +8,7 @@
 /.claude-flow/
 /.specify/
 /.swarm/
+/graphify-out/
 /agentdb.rvf
 /agentdb.rvf.lock
 /ruvector.db

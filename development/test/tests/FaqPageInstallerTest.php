@@ -55,6 +55,7 @@ final class FaqPageInstallerTest extends TestCase
         $GLOBALS['_cb_test_inserted_posts']  = array();
         $GLOBALS['_cb_test_next_post_id']    = 100;
         $GLOBALS['_cb_test_current_user_can'] = true;
+        $GLOBALS['_cb_test_get_permalink']   = static fn( int $post_id = 0 ): string => 'http://localhost/?p=' . $post_id;
     }
 
     public function test_get_page_id_returns_zero_when_not_installed(): void

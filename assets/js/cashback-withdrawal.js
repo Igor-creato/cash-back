@@ -19,14 +19,29 @@ jQuery(document).ready(function ($) {
   // Идемпотентный ключ: генерируется при загрузке, обновляется только после успешного вывода
   var withdrawalIdempotencyKey = generateIdempotencyKey();
 
-  // Переключение вкладок
-  $(document).on('click', '.cashback-tab', function () {
-    $('.cashback-tab').removeClass('active cashback-tab--error');
-    $(this).addClass('active');
-    var target = $(this).data('tab');
-    $('.cashback-tab-content').removeClass('active');
+  // Переключение верхних вкладок "Мой кэшбэк".
+  function activateCashbackTab(target) {
+    var $container = $('.cashback-withdrawal-container').first();
+    var $tabs = $container.children('.cashback-tabs').find('.cashback-tab');
+    var $contents = $container.children('.cashback-tab-content');
+
+    if (!$tabs.filter('[data-tab="' + target + '"]').length || !$('#' + target).length) {
+      target = 'tab-history';
+    }
+
+    $tabs.removeClass('active cashback-tab--error');
+    $tabs.filter('[data-tab="' + target + '"]').addClass('active');
+    $contents.removeClass('active');
     $('#' + target).addClass('active');
+  }
+
+  $(document).on('click', '.cashback-withdrawal-container > .cashback-tabs .cashback-tab', function () {
+    activateCashbackTab($(this).data('tab'));
   });
+
+  if (typeof cashback_ajax !== 'undefined' && cashback_ajax.active_tab) {
+    activateCashbackTab('tab-' + cashback_ajax.active_tab);
+  }
 
   // Сброс подсветки ошибки при вводе суммы
   $('#withdrawal-amount').on('input', function () {
@@ -126,12 +141,8 @@ jQuery(document).ready(function ($) {
 
           if (isFormError) {
             // Подсвечиваем вкладку настроек красным
-            $('.cashback-tab[data-tab="tab-settings"]').addClass('cashback-tab--error');
-            // Переключаемся на вкладку настроек
-            $('.cashback-tab').removeClass('active');
-            $('.cashback-tab[data-tab="tab-settings"]').addClass('active');
-            $('.cashback-tab-content').removeClass('active');
-            $('#tab-settings').addClass('active');
+            activateCashbackTab('tab-settings');
+            $('.cashback-withdrawal-container > .cashback-tabs .cashback-tab[data-tab="tab-settings"]').addClass('cashback-tab--error');
             // Показываем форму редактирования
             $('#payout_settings_display').hide();
             $('#payout_settings_form').removeClass('payout-settings-form-hidden').show();
