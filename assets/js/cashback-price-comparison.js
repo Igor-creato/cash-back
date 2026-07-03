@@ -45,8 +45,21 @@
     return (config().copy && config().copy[key]) || fallback;
   }
 
+  function scope(form) {
+    if (form.closest) {
+      return form.closest('[data-cashback-price-comparison]') || form;
+    }
+    return form;
+  }
+
+  function scopedQuery(form, selector) {
+    var root = scope(form);
+    return (root && root.querySelector && root.querySelector(selector)) ||
+      (form.querySelector && form.querySelector(selector));
+  }
+
   function setMessage(form, message) {
-    var node = form.querySelector('[data-price-comparison-message]');
+    var node = scopedQuery(form, '[data-price-comparison-message]');
     if (node) {
       node.textContent = message;
     }
@@ -62,7 +75,7 @@
 
     var cityInput = form.querySelector('[name="city"]');
     var queryInput = form.querySelector('[name="query"]');
-    var results = form.querySelector('[data-price-comparison-results]');
+    var results = scopedQuery(form, '[data-price-comparison-results]');
     var city = cityInput && cityInput.value ? cityInput.value.trim() : '';
     var query = queryInput && queryInput.value ? queryInput.value.trim() : '';
 
