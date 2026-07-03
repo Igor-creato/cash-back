@@ -283,3 +283,53 @@ test('price comparison form renders no-results message outside the form node', a
   assert.equal(message.textContent, 'Товаров не нашлось');
   assert.equal(results.children.length, 0);
 });
+
+test('price comparison form renders backend error message instead of no-results text', async () => {
+  let submitListener = null;
+  const { form, message, results } = createAccountMarkup('Пенза', 'телевизор');
+  const context = {
+    window: {
+      CashbackPriceComparison: {
+        restUrl: 'https://savelloclub.test/wp-json/cashback/v1/price-comparison/search',
+        nonce: 'nonce',
+        copy: {
+          emptyCity: 'Укажите город для поиска',
+          emptyQuery: 'Укажите название товара',
+          notFound: 'Товаров не нашлось',
+          error: 'Ошибка поиска'
+        }
+      }
+    },
+    document: {
+      addEventListener(type, callback) {
+        if (type === 'submit') {
+          submitListener = callback;
+        }
+      },
+      createElement(tagName) {
+        return new FakeElement(tagName);
+      }
+    },
+    fetch() {
+      return Promise.resolve({
+        ok: false,
+        json: () => Promise.resolve({
+          status: 'error',
+          error_code: 'SEARCH_INDEX_EMPTY',
+          message: 'Индекс поиска пуст. Запустите импорт товаров.'
+        })
+      });
+    }
+  };
+  context.window.window = context.window;
+
+  vm.runInNewContext(source, context);
+  submitListener({
+    target: form,
+    preventDefault() {}
+  });
+  await flushPromises();
+
+  assert.equal(message.textContent, 'Индекс поиска пуст. Запустите импорт товаров.');
+  assert.equal(results.children.length, 0);
+});

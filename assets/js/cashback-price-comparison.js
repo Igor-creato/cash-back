@@ -98,12 +98,24 @@
       body: JSON.stringify({ city: city, query: query })
     })
       .then(function (response) {
-        return response.json();
+        return response.json().then(function (payload) {
+          return { ok: response.ok, payload: payload };
+        });
       })
-      .then(function (payload) {
+      .then(function (result) {
+        var payload = result.payload || {};
+        if (!result.ok || payload.status === 'error') {
+          setMessage(form, text(payload.message || copy('error', 'Ошибка поиска')));
+          if (results) {
+            renderItems(results, []);
+          }
+          return;
+        }
+
         var items = Array.isArray(payload.items) ? payload.items : [];
         if (!items.length) {
-          setMessage(form, copy('notFound', 'Товаров не нашлось'));
+          var warnings = payload.meta && Array.isArray(payload.meta.warnings) ? payload.meta.warnings : [];
+          setMessage(form, text(warnings[0] || copy('notFound', 'Товаров не нашлось')));
         }
         if (results) {
           renderItems(results, items);
