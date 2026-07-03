@@ -159,6 +159,23 @@ final class PriceComparisonAdminSettingsTest extends TestCase {
         self::assertStringNotContainsString('secret-value', $html);
     }
 
+    public function test_store_admin_renders_live_search_source_fields(): void {
+        ob_start();
+        try {
+            Cashback_Price_Comparison_Admin::render_page();
+            $html = ob_get_clean();
+        } catch (Throwable $throwable) {
+            ob_end_clean();
+            throw $throwable;
+        }
+
+        self::assertStringContainsString('Live поиск', $html);
+        self::assertStringContainsString('direct_http', $html);
+        self::assertStringContainsString('managed_provider', $html);
+        self::assertStringContainsString('live_search_url_template', $html);
+        self::assertStringNotContainsString('secret-value', $html);
+    }
+
     /**
      * Other test files may define the global register_setting() stub first.
      *

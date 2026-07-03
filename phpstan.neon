@@ -7,14 +7,22 @@ parameters:
     paths:
         - .
     excludePaths:
-        - vendor (?)
-        - node_modules (?)
-        - wp-plugin-tests (?)
-        - obsidian (?)
-        - context (?)
-        - development (?)
-        - artefacts (?)
-        - languages (?)
+        - vendor/*
+        - **/vendor/*
+        - node_modules/*
+        - **/node_modules/*
+        - wp-plugin-tests/*
+        - **/wp-plugin-tests/*
+        - obsidian/*
+        - **/obsidian/*
+        - context/*
+        - **/context/*
+        - development/*
+        - **/development/*
+        - artefacts/*
+        - **/artefacts/*
+        - languages/*
+        - **/languages/*
     bootstrapFiles:
         - vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php
     treatPhpDocTypesAsCertain: false

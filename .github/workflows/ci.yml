@@ -101,7 +101,7 @@ jobs:
 
       - name: Annotate PHPCS results
         if: always() && hashFiles('phpcs-report.xml') != ''
-        run: cat phpcs-report.xml | cs2pr
+        run: cat phpcs-report.xml | cs2pr || true
 
       - name: Fail on PHPCS errors
         run: vendor/bin/phpcs -q --report=summary --runtime-set ignore_warnings_on_exit 1

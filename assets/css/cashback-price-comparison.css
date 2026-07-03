@@ -12,6 +12,21 @@
     gap: 6px;
 }
 
+.cashback-price-comparison__city-control {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.cashback-price-comparison__city-edit {
+    align-self: stretch;
+}
+
+.cashback-price-comparison__message {
+    margin-top: 12px;
+    min-height: 24px;
+}
+
 .cashback-price-comparison__results {
     display: grid;
     gap: 12px;
@@ -22,4 +37,10 @@
     border: 1px solid #e2e8f0;
     border-radius: 8px;
     padding: 12px;
+}
+
+@media (max-width: 520px) {
+    .cashback-price-comparison__city-control {
+        grid-template-columns: 1fr;
+    }
 }

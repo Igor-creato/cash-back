@@ -9,6 +9,7 @@ if (!defined('ABSPATH')) {
 final class Cashback_Price_Comparison_Account {
 
     public const ENDPOINT = 'price-comparison';
+    public const META_CITY = 'cashback_price_comparison_city';
 
     public static function init(): void {
         $account = new self();
@@ -38,13 +39,16 @@ final class Cashback_Price_Comparison_Account {
 
     public function render_page(): void {
         $this->enqueue_assets();
+        $saved_city = $this->saved_city();
         ?>
         <section class="cashback-price-comparison" data-cashback-price-comparison>
             <h2><?php echo esc_html('Сравнить цену'); ?></h2>
             <form class="cashback-price-comparison__form" data-price-comparison-form>
                 <label class="cashback-price-comparison__field">
                     <span><?php echo esc_html('Город'); ?></span>
-                    <input type="text" name="city" required autocomplete="address-level2" />
+                    <span class="cashback-price-comparison__city-control">
+                        <?php $this->render_city_input($saved_city); ?>
+                    </span>
                 </label>
                 <label class="cashback-price-comparison__field">
                     <span><?php echo esc_html('Название товара'); ?></span>
@@ -70,17 +74,7 @@ final class Cashback_Price_Comparison_Account {
         wp_enqueue_script('cashback-price-comparison', $script_url, array(), '1.0.0', true);
         wp_localize_script(
             'cashback-price-comparison',
-            'CashbackPriceComparison',
-            array(
-                'restUrl' => $this->rest_url('cashback/v1/price-comparison/search'),
-                'nonce'   => wp_create_nonce('wp_rest'),
-                'copy'    => array(
-                    'emptyCity' => 'Укажите город для поиска',
-                    'emptyQuery' => 'Укажите название товара',
-                    'notFound'  => 'Товаров не нашлось',
-                    'error'     => 'Ошибка поиска',
-                ),
-            )
+            'CashbackPriceComparison', array( 'restUrl'         => $this->rest_url('cashback/v1/price-comparison/search'), 'liveStartUrl'    => $this->rest_url('cashback/v1/price-comparison/live-search'), 'livePollBaseUrl' => $this->rest_url('cashback/v1/price-comparison/live-search'), 'nonce'           => wp_create_nonce('wp_rest'), 'copy'            => array( 'emptyCity'  => 'Укажите город для поиска', 'emptyQuery' => 'Укажите название товара', 'notFound'   => 'Товаров не нашлось', 'error'      => 'Ошибка поиска', 'searching'  => 'Ищем в магазинах...', 'partial'    => 'Часть магазинов недоступна' ) )
         );
     }
 
@@ -90,5 +84,40 @@ final class Cashback_Price_Comparison_Account {
         }
 
         return rtrim(home_url('/wp-json/' . ltrim($path, '/')), '/');
+    }
+
+    private function render_city_input( string $saved_city ): void {
+        if ($saved_city !== '') {
+            printf(
+                '<input type="text" name="city" data-price-comparison-city-input required autocomplete="address-level2" value="%s" readonly />',
+                esc_attr($saved_city)
+            );
+            printf(
+                '<button type="button" class="cashback-price-comparison__city-edit" data-price-comparison-city-edit>%s</button>',
+                esc_html('Изменить')
+            );
+
+            return;
+        }
+
+        echo '<input type="text" name="city" data-price-comparison-city-input required autocomplete="address-level2" />';
+    }
+
+    private function saved_city(): string {
+        if (!function_exists('get_current_user_id') || !function_exists('get_user_meta')) {
+            return '';
+        }
+
+        $user_id = (int) get_current_user_id();
+        if ($user_id <= 0) {
+            return '';
+        }
+
+        $city = get_user_meta($user_id, self::META_CITY, true);
+        if (!is_scalar($city)) {
+            return '';
+        }
+
+        return sanitize_text_field((string) $city);
     }
 }

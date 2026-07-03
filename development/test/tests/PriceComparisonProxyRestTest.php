@@ -31,6 +31,20 @@ final class PriceComparisonProxyRestTest extends TestCase {
         self::assertArrayHasKey('query', $route['args']);
     }
 
+    public function test_live_search_routes_are_registered(): void {
+        $controller = new Cashback_Price_Comparison_REST_Controller();
+        $controller->register_routes();
+
+        self::assertArrayHasKey(
+            'cashback/v1/price-comparison/live-search',
+            $GLOBALS['_cb_test_rest_routes']
+        );
+        self::assertArrayHasKey(
+            'cashback/v1/price-comparison/live-search/(?P<run_id>[a-zA-Z0-9_-]+)',
+            $GLOBALS['_cb_test_rest_routes']
+        );
+    }
+
     public function test_rest_controller_requires_rest_nonce(): void {
         $controller = new Cashback_Price_Comparison_REST_Controller();
         $controller->register_routes();

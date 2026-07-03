@@ -13,6 +13,10 @@ final class PriceComparisonCashbackEnrichmentTest extends TestCase {
         require_once dirname(__DIR__, 3) . '/includes/price-comparison/class-cashback-price-comparison-service.php';
     }
 
+    protected function setUp(): void {
+        $GLOBALS['_cb_test_user_meta'] = array();
+    }
+
     public function test_cashback_available_item_uses_existing_activation_result(): void {
         $client = new Price_Comparison_Fake_Client(array(
             array(
@@ -68,6 +72,42 @@ final class PriceComparisonCashbackEnrichmentTest extends TestCase {
         self::assertSame('Кэшбэк не определён', $result['items'][0]['cashback_note']);
         self::assertStringNotContainsString('internal secret', wp_json_encode($result));
     }
+
+    public function test_search_saves_valid_city_for_current_user(): void {
+        $client  = new Price_Comparison_Fake_Client(array());
+        $service = new Cashback_Price_Comparison_Service($client, static fn(): array => array());
+
+        $service->search(' Пенза ', 'телевизор', 77);
+
+        self::assertSame(
+            'Пенза',
+            $GLOBALS['_cb_test_user_meta'][77]['cashback_price_comparison_city'] ?? null
+        );
+    }
+
+    public function test_live_search_poll_enriches_returned_items(): void {
+        $client = new Price_Comparison_Fake_Client(array(
+            array(
+                'title'        => 'Телевизор TCL 55C645',
+                'url'          => 'https://fixture.test/tcl-55',
+                'price'        => 39990,
+                'currency'     => 'RUB',
+                'store_domain' => 'fixture.test',
+            ),
+        ));
+        $resolver = static fn(): array => array(
+            'cashback_available'  => true,
+            'button_text'         => 'Активировать кэшбэк',
+            'activation_page_url' => 'https://savelloclub.test/?cashback_go=1',
+        );
+
+        $service = new Cashback_Price_Comparison_Service($client, $resolver);
+        $result  = $service->get_live_search('run_1234', 77);
+
+        self::assertSame('ok', $result['status']);
+        self::assertSame('Активировать кэшбэк', $result['items'][0]['action_label']);
+        self::assertSame('https://savelloclub.test/?cashback_go=1', $result['items'][0]['action_url']);
+    }
 }
 
 final class Price_Comparison_Fake_Client {
@@ -88,6 +128,26 @@ final class Price_Comparison_Fake_Client {
                 'total'    => count($this->items),
                 'warnings' => array(),
             ),
+        );
+    }
+
+    public function start_live_search( array $payload ): array {
+        unset($payload);
+
+        return array(
+            'status'   => 'accepted',
+            'run_id'   => 'run_1234',
+            'poll_url' => '/api/v1/live-search/runs/run_1234',
+        );
+    }
+
+    public function get_live_search( string $run_id ): array {
+        unset($run_id);
+
+        return array(
+            'status' => 'ok',
+            'items'  => $this->items,
+            'meta'   => array( 'warnings' => array() ),
         );
     }
 }

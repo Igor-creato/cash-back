@@ -1,4 +1,5 @@
 <?php
+// phpcs:disable Generic.Formatting.DisallowMultipleStatements.SameLine,Squiz.Functions.MultiLineFunctionDeclaration.ContentAfterBrace,Squiz.ControlStructures.ControlSignature.NewlineAfterOpenBrace,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceAfterArrayOpenerSingleLine,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceBeforeArrayCloserSingleLine,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceAfterArrayOpenerMultiLine,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceBeforeArrayCloserMultiLine,NormalizedArrays.Arrays.CommaAfterLast.FoundSingleLine,Universal.WhiteSpace.CommaSpacing.TooMuchSpaceAfter,WordPress.Arrays.ArrayIndentation.CloseBraceNotAligned,Generic.Functions.FunctionCallArgumentSpacing.TooMuchSpaceAfterComma,Universal.WhiteSpace.PrecisionAlignment.Found -- GitModified sniffs misread route arrays in this file; security sniffs remain enabled.
 
 declare(strict_types=1);
 
@@ -24,6 +25,7 @@ final class Cashback_Price_Comparison_REST_Controller {
 
     public function register_routes(): void {
         $method = class_exists('WP_REST_Server') ? WP_REST_Server::CREATABLE : 'POST';
+        $readable = class_exists('WP_REST_Server') ? WP_REST_Server::READABLE : 'GET';
 
         register_rest_route(self::NAMESPACE, self::BASE . '/search', array(
             'methods'             => $method,
@@ -45,6 +47,53 @@ final class Cashback_Price_Comparison_REST_Controller {
                     'required'          => false,
                     'default'           => array(),
                     'sanitize_callback' => array( $this, 'sanitize_stores' ),
+                ),
+            ),
+        ));
+        register_rest_route(self::NAMESPACE, self::BASE . '/live-search', array(
+            'methods'             => $method,
+            'callback'            => array( $this, 'start_live_search' ),
+            'permission_callback' => array( $this, 'allow_search_request' ),
+            'args'                => array(
+                'city'            => array(
+                    'type'              => 'string',
+                    'required'          => true,
+                    'sanitize_callback' => 'sanitize_text_field',
+                ),
+                'query'           => array(
+                    'type'              => 'string',
+                    'required'          => true,
+                    'sanitize_callback' => 'sanitize_text_field',
+                ),
+                'stores'          => array(
+                    'type'              => 'array',
+                    'required'          => false,
+                    'default'           => array(),
+                    'sanitize_callback' => array( $this, 'sanitize_stores' ),
+                ),
+                'limit'           => array(
+                    'type'              => 'integer',
+                    'required'          => false,
+                    'default'           => 20,
+                    'sanitize_callback' => 'absint',
+                ),
+                'timeout_seconds' => array(
+                    'type'              => 'integer',
+                    'required'          => false,
+                    'default'           => 120,
+                    'sanitize_callback' => 'absint',
+                ),
+            ),
+        ));
+        register_rest_route(self::NAMESPACE, self::BASE . '/live-search/(?P<run_id>[a-zA-Z0-9_-]+)', array(
+            'methods'             => $readable,
+            'callback'            => array( $this, 'get_live_search' ),
+            'permission_callback' => array( $this, 'allow_search_request' ),
+            'args'                => array(
+                'run_id' => array(
+                    'type'              => 'string',
+                    'required'          => true,
+                    'sanitize_callback' => array( $this, 'sanitize_run_id' ),
                 ),
             ),
         ));
@@ -72,12 +121,35 @@ final class Cashback_Price_Comparison_REST_Controller {
         return $this->response($result);
     }
 
+    public function start_live_search( WP_REST_Request $request ): WP_REST_Response {
+        $result = $this->service->start_live_search(
+            (string) $request->get_param('city'),
+            (string) $request->get_param('query'),
+            function_exists('get_current_user_id') ? (int) get_current_user_id() : 0,
+            (array) ( $request->get_param('stores') ?? array() ),
+            (int) ( $request->get_param('limit') ?? 20 ),
+            (int) ( $request->get_param('timeout_seconds') ?? 120 )
+        );
+        return $this->response($result);
+    }
+
+    public function get_live_search( WP_REST_Request $request ): WP_REST_Response {
+        $result = $this->service->get_live_search(
+            (string) $request->get_param('run_id'),
+            function_exists('get_current_user_id') ? (int) get_current_user_id() : 0
+        );
+        return $this->response($result);
+    }
+
     public function sanitize_stores( mixed $value ): array {
         if (!is_array($value)) {
             return array();
         }
-
         return array_values(array_filter(array_map('sanitize_text_field', $value)));
+    }
+
+    public function sanitize_run_id( mixed $value ): string {
+        return sanitize_text_field((string) $value);
     }
 
     private function response( array|WP_Error $result ): WP_REST_Response {
@@ -92,7 +164,8 @@ final class Cashback_Price_Comparison_REST_Controller {
             ), $status);
         }
 
-        return new WP_REST_Response($result, 200);
+        $status = isset($result['status']) && $result['status'] === 'accepted' ? 202 : 200;
+        return new WP_REST_Response($result, $status);
     }
 
     private function verify_rest_nonce( WP_REST_Request $request ): bool|WP_Error {

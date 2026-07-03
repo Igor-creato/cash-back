@@ -18,6 +18,9 @@ class FakeElement {
     this.href = '';
     this.rel = '';
     this.value = '';
+    this.readOnly = false;
+    this.focused = false;
+    this.selected = false;
   }
 
   appendChild(child) {
@@ -30,6 +33,14 @@ class FakeElement {
     this.children = this.children.filter((candidate) => candidate !== child);
     this.firstChild = this.children[0] || null;
     return child;
+  }
+
+  focus() {
+    this.focused = true;
+  }
+
+  select() {
+    this.selected = true;
   }
 }
 
@@ -90,9 +101,17 @@ function createAccountMarkup(city, query) {
 }
 
 async function flushPromises() {
-  for (let i = 0; i < 6; i += 1) {
+  for (let i = 0; i < 12; i += 1) {
     await Promise.resolve();
   }
+}
+
+function jsonResponse(status, payload) {
+  return Promise.resolve({
+    ok: status >= 200 && status < 300,
+    status,
+    json: () => Promise.resolve(payload)
+  });
 }
 
 function renderer() {
@@ -234,6 +253,64 @@ test('price comparison form posts to WordPress REST and renders returned items',
   assert.equal(results.children[0].children[0].textContent, 'iPhone 15');
 });
 
+test('live search starts a run, polls status, and renders returned items', async () => {
+  let submitListener = null;
+  const requests = [];
+  const { form, results } = createForm('Пенза', 'телевизор');
+  const context = {
+    window: {
+      CashbackPriceComparison: {
+        liveStartUrl: 'https://savelloclub.test/wp-json/cashback/v1/price-comparison/live-search',
+        livePollBaseUrl: 'https://savelloclub.test/wp-json/cashback/v1/price-comparison/live-search',
+        nonce: 'nonce',
+        copy: {
+          emptyCity: 'Укажите город для поиска',
+          emptyQuery: 'Укажите название товара',
+          notFound: 'Товаров не нашлось',
+          error: 'Ошибка поиска',
+          searching: 'Ищем в магазинах...',
+          partial: 'Часть магазинов недоступна'
+        }
+      }
+    },
+    document: {
+      addEventListener(type, callback) {
+        if (type === 'submit') {
+          submitListener = callback;
+        }
+      },
+      createElement(tagName) {
+        return new FakeElement(tagName);
+      }
+    },
+    fetch(url, options) {
+      requests.push({ url, options });
+      if (requests.length === 1) {
+        return jsonResponse(202, { status: 'accepted', run_id: 'run_1234' });
+      }
+      return jsonResponse(200, {
+        status: 'ok',
+        items: [{
+          title: 'Телевизор TCL 55C645',
+          action_label: 'Купить',
+          action_url: 'https://shop.test/tv'
+        }],
+        meta: { warnings: [] },
+        store_statuses: [{ store_domain: 'fixture.test', status: 'ok' }]
+      });
+    }
+  };
+  context.window.window = context.window;
+
+  vm.runInNewContext(source, context);
+  submitListener({ target: form, preventDefault() {} });
+  await flushPromises();
+
+  assert.equal(requests[0].url, 'https://savelloclub.test/wp-json/cashback/v1/price-comparison/live-search');
+  assert.equal(requests[1].url, 'https://savelloclub.test/wp-json/cashback/v1/price-comparison/live-search/run_1234');
+  assert.equal(results.children[0].children[0].textContent, 'Телевизор TCL 55C645');
+});
+
 test('price comparison form renders no-results message outside the form node', async () => {
   let submitListener = null;
   const { form, message, results } = createAccountMarkup('Москва', 'iphone');
@@ -332,4 +409,44 @@ test('price comparison form renders backend error message instead of no-results 
 
   assert.equal(message.textContent, 'Индекс поиска пуст. Запустите импорт товаров.');
   assert.equal(results.children.length, 0);
+});
+test('price comparison city edit button unlocks saved city field', () => {
+  let clickListener = null;
+  let prevented = false;
+  const input = new FakeElement('input');
+  const button = new FakeElement('button');
+  const wrapper = new FakeElement('section');
+  input.readOnly = true;
+  button.matches = (selector) => selector === '[data-price-comparison-city-edit]';
+  button.closest = (selector) => (selector === '[data-cashback-price-comparison]' ? wrapper : null);
+  wrapper.querySelector = (selector) => (
+    selector === '[data-price-comparison-city-input]' ? input : null
+  );
+  const context = {
+    window: {},
+    document: {
+      addEventListener(type, callback) {
+        if (type === 'click') {
+          clickListener = callback;
+        }
+      },
+      createElement(tagName) {
+        return new FakeElement(tagName);
+      }
+    }
+  };
+  context.window.window = context.window;
+
+  vm.runInNewContext(source, context);
+  clickListener({
+    target: button,
+    preventDefault() {
+      prevented = true;
+    }
+  });
+
+  assert.equal(prevented, true);
+  assert.equal(input.readOnly, false);
+  assert.equal(input.focused, true);
+  assert.equal(input.selected, true);
 });

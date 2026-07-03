@@ -15,7 +15,15 @@ final class Cashback_Price_Comparison_Client {
 
     public function search( array $payload ): array|WP_Error {
         return $this->request_json('POST', '/api/v1/search', $payload);
-    }
+}
+
+    public function start_live_search( array $payload ): array|WP_Error {
+        return $this->request_json('POST', '/api/v1/live-search/runs', $payload);
+}
+
+    public function get_live_search( string $run_id ): array|WP_Error {
+        return $this->request_json('GET', '/api/v1/live-search/runs/' . rawurlencode($run_id));
+}
 
     public function list_stores(): array|WP_Error {
         return $this->request_json('GET', '/api/v1/stores');
