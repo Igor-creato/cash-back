@@ -47,6 +47,34 @@ final class PriceComparisonCashbackEnrichmentTest extends TestCase {
         self::assertSame('available', $result['items'][0]['cashback_status']);
     }
 
+    public function test_cashback_enrichment_uses_backend_action_url_when_url_is_missing(): void {
+        $client = new Price_Comparison_Fake_Client(array(
+            array(
+                'title'        => 'GROHE plate',
+                'action_url'   => 'https://shop.grohe.ru/catalog/product-1',
+                'price'        => 110,
+                'currency'     => 'RUB',
+                'store_domain' => 'grohe-russia.shop',
+            ),
+        ));
+        $resolver = static function ( array $payload ): array {
+            self::assertSame('https://shop.grohe.ru/catalog/product-1', $payload['direct_url']);
+
+            return array(
+                'cashback_available'  => true,
+                'button_text'         => 'Активировать кэшбэк',
+                'activation_page_url' => 'https://savelloclub.test/?cashback_go=1&click_id=abc',
+            );
+        };
+
+        $service = new Cashback_Price_Comparison_Service($client, $resolver);
+        $result  = $service->search('Москва', 'grohe', 77);
+
+        self::assertSame('Активировать кэшбэк', $result['items'][0]['action_label']);
+        self::assertSame('https://savelloclub.test/?cashback_go=1&click_id=abc', $result['items'][0]['action_url']);
+        self::assertSame('available', $result['items'][0]['cashback_status']);
+    }
+
     public function test_cashback_lookup_failure_keeps_buy_button_and_safe_note(): void {
         $client = new Price_Comparison_Fake_Client(array(
             array(

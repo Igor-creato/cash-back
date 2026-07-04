@@ -15,7 +15,7 @@ final class Cashback_Price_Comparison_Service {
     private array $cashback_cache = array();
 
     public function __construct( ?object $client = null, ?callable $cashback_resolver = null ) {
-        $this->client = $client ?: new Cashback_Price_Comparison_Client();
+        $this->client            = $client ?: new Cashback_Price_Comparison_Client();
         $this->cashback_resolver = $cashback_resolver ?: array( $this, 'resolve_cashback' );
     }
 
@@ -67,50 +67,73 @@ final class Cashback_Price_Comparison_Service {
             }
         }
         $result['items'] = $items;
-        return $result;
-}
 
-    public function start_live_search( string $city, string $query, int $user_id = 0, array $stores = array(), int $limit = 20, int $timeout_seconds = 120 ): array|WP_Error {
+        return $result;
+    }
+
+    public function start_live_search(
+        string $city,
+        string $query,
+        int $user_id = 0,
+        array $stores = array(),
+        int $limit = 20,
+        int $timeout_seconds = 120
+    ): array|WP_Error {
         $city  = trim($city);
-$query = trim($query);
-if ($city === '') {
-return new WP_Error(
-                'INVALID_CITY', 'Укажите город для поиска.', array( 'status' => 400 )
+        $query = trim($query);
+        if ($city === '') {
+            return new WP_Error(
+                'INVALID_CITY',
+                'Укажите город для поиска.',
+                array( 'status' => 400 )
             );
-}
+        }
         if ($query === '') {
-return new WP_Error(
-                'INVALID_QUERY', 'Укажите название товара.', array( 'status' => 400 )
+            return new WP_Error(
+                'INVALID_QUERY',
+                'Укажите название товара.',
+                array( 'status' => 400 )
             );
-}
+        }
 
         $this->save_city_for_user($city, $user_id);
-return $this->client->start_live_search(
-            array( 'query'           => $query, 'city'            => $city, 'stores'          => array_values(array_map('sanitize_text_field', $stores)), 'limit'           => max(1, min(50, $limit)), 'timeout_seconds' => max(10, min(180, $timeout_seconds)), 'mode'            => 'live' )
+
+        return $this->client->start_live_search(
+            array(
+                'query'           => $query,
+                'city'            => $city,
+                'stores'          => array_values(array_map('sanitize_text_field', $stores)),
+                'limit'           => max(1, min(50, $limit)),
+                'timeout_seconds' => max(10, min(180, $timeout_seconds)),
+                'mode'            => 'live',
+            )
         );
-}
+    }
 
     public function get_live_search( string $run_id, int $user_id = 0 ): array|WP_Error {
         $run_id = trim($run_id);
-if (preg_match('/\A[A-Za-z0-9_-]{8,80}\z/', $run_id) !== 1) {
-return new WP_Error(
-                'INVALID_LIVE_SEARCH_RUN', 'Live поиск не найден.', array( 'status' => 404 )
+        if (preg_match('/\A[A-Za-z0-9_-]{8,80}\z/', $run_id) !== 1) {
+            return new WP_Error(
+                'INVALID_LIVE_SEARCH_RUN',
+                'Live поиск не найден.',
+                array( 'status' => 404 )
             );
-}
+        }
 
         $result = $this->client->get_live_search($run_id);
-if ($result instanceof WP_Error) {
-return $result;
-}
+        if ($result instanceof WP_Error) {
+            return $result;
+        }
 
         $items = array();
-foreach ((array) ( $result['items'] ?? array() ) as $item) {
-if (is_array($item)) {
-$items[] = $this->enrich_item($item, $user_id);
-}
+        foreach ((array) ( $result['items'] ?? array() ) as $item) {
+            if (is_array($item)) {
+                $items[] = $this->enrich_item($item, $user_id);
+            }
         }
         $result['items'] = $items;
-return $result;
+
+        return $result;
     }
 
     private function save_city_for_user( string $city, int $user_id ): void {
@@ -122,7 +145,11 @@ return $result;
     }
 
     private function enrich_item( array $item, int $user_id ): array {
-        $url = esc_url_raw((string) ( $item['url'] ?? '' ));
+        $url = esc_url_raw((string) ( $item['action_url'] ?? '' ));
+        if ($url === '') {
+            $url = esc_url_raw((string) ( $item['url'] ?? '' ));
+        }
+
         $item['action_label']    = 'Купить';
         $item['action_url']      = $url;
         $item['cashback_status'] = 'unknown';
@@ -137,7 +164,7 @@ return $result;
             return $item;
         }
 
-        $action_url = (string) ( $cashback['activation_page_url'] ?? $cashback['cashback_url'] ?? $url );
+        $action_url              = (string) ( $cashback['activation_page_url'] ?? $cashback['cashback_url'] ?? $url );
         $item['action_label']    = (string) ( $cashback['button_text'] ?? 'Активировать кэшбэк' );
         $item['action_url']      = esc_url_raw($action_url);
         $item['cashback_status'] = 'available';
@@ -153,13 +180,15 @@ return $result;
         }
 
         $resolver = $this->cashback_resolver;
-        $result   = $resolver(array(
-            'direct_url'        => $url,
-            'user_id'           => $user_id,
-            'client_request_id' => function_exists('wp_generate_uuid4') ? wp_generate_uuid4() : '',
-            'ip_address'        => class_exists('Cashback_Encryption') ? Cashback_Encryption::get_client_ip() : '',
-            'user_agent'        => isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : null,
-        ));
+        $result   = $resolver(
+            array(
+                'direct_url'        => $url,
+                'user_id'           => $user_id,
+                'client_request_id' => function_exists('wp_generate_uuid4') ? wp_generate_uuid4() : '',
+                'ip_address'        => class_exists('Cashback_Encryption') ? Cashback_Encryption::get_client_ip() : '',
+                'user_agent'        => isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : null,
+            )
+        );
 
         $this->cashback_cache[ $cache_key ] = $result;
         return $result;
