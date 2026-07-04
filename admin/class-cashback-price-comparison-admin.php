@@ -322,6 +322,7 @@ final class Cashback_Price_Comparison_Admin {
         $aliases = array_map('strval', (array) ( $store['aliases'] ?? array() ));
         $source_config = is_array($store['source_config'] ?? null) ? $store['source_config'] : array();
         $import_status = is_array($store['import_status'] ?? null) ? $store['import_status'] : array();
+        $feed_health = is_array($store['feed_health'] ?? null) ? $store['feed_health'] : array();
         ?>
         <tr>
             <td>
@@ -358,6 +359,7 @@ final class Cashback_Price_Comparison_Admin {
                 <?php echo esc_html((string) ( $import_status['status'] ?? 'idle' )); ?>
                 <br />
                 <?php echo esc_html('Импортировано: ' . (string) ( $import_status['imported_count'] ?? 0 )); ?>
+                <?php self::render_feed_health($feed_health); ?>
             </td>
             <td>
                 <details>
@@ -467,6 +469,41 @@ final class Cashback_Price_Comparison_Admin {
                 <?php endif; ?>
             </td>
         </tr>
+        <?php
+    }
+
+    private static function render_feed_health( array $feed_health ): void {
+        if ($feed_health === array()) {
+            return;
+        }
+
+        ?>
+        <br />
+        <?php echo esc_html('Статус фида: ' . (string) ( $feed_health['last_import_status'] ?? 'idle' )); ?>
+        <br />
+        <?php echo esc_html('Активных фидов: ' . (string) ( $feed_health['active_feed_count'] ?? 0 )); ?>
+        <?php if (!empty($feed_health['last_feed_updated_at'])) : ?>
+            <br />
+            <?php echo esc_html('Фид обновлён: ' . (string) $feed_health['last_feed_updated_at']); ?>
+        <?php endif; ?>
+        <?php if (!empty($feed_health['last_import_finished_at'])) : ?>
+            <br />
+            <?php echo esc_html('Импорт завершён: ' . (string) $feed_health['last_import_finished_at']); ?>
+        <?php endif; ?>
+        <br />
+        <?php
+        echo esc_html(sprintf(
+            'Создано: %d, обновлено: %d, пропущено: %d, карантин: %d',
+            absint($feed_health['created_count'] ?? 0),
+            absint($feed_health['updated_count'] ?? 0),
+            absint($feed_health['skipped_count'] ?? 0),
+            absint($feed_health['quarantined_count'] ?? 0)
+        ));
+        ?>
+        <?php if (!empty($feed_health['last_error_code'])) : ?>
+            <br />
+            <?php echo esc_html('Ошибка: ' . (string) $feed_health['last_error_code']); ?>
+        <?php endif; ?>
         <?php
     }
 

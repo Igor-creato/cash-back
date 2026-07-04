@@ -86,6 +86,18 @@ final class PriceComparisonAdminSettingsTest extends TestCase {
                             'imported_count' => 12,
                             'skipped_count'  => 1,
                         ),
+                        'feed_health'   => array(
+                            'active_feed_count'       => 1,
+                            'last_import_status'      => 'success',
+                            'last_import_finished_at' => '2026-07-04T13:00:00Z',
+                            'last_feed_updated_at'    => '2026-07-04T12:30:00Z',
+                            'created_count'           => 7,
+                            'updated_count'           => 2,
+                            'skipped_count'           => 1,
+                            'quarantined_count'       => 0,
+                            'last_error_code'         => null,
+                            'feed_url'                => 'https://secret-feed.test/private.csv',
+                        ),
                     ),
                 ),
             )),
@@ -104,7 +116,7 @@ final class PriceComparisonAdminSettingsTest extends TestCase {
             return;
         }
 
-        $source = self::method_source(Cashback_Price_Comparison_Admin::class, 'register_menu');
+        $source = str_replace("\r\n", "\n", self::method_source(Cashback_Price_Comparison_Admin::class, 'register_menu'));
         self::assertStringContainsString("add_submenu_page(\n            'cashback-overview'", $source);
         self::assertStringContainsString("'Сравнение цен'", $source);
         self::assertStringContainsString("'manage_options'", $source);
@@ -153,10 +165,15 @@ final class PriceComparisonAdminSettingsTest extends TestCase {
         self::assertStringContainsString('custom', $html);
         self::assertStringContainsString('disabled', $html);
         self::assertStringContainsString('Последний импорт', $html);
+        self::assertStringContainsString('Статус фида: success', $html);
+        self::assertStringContainsString('Активных фидов: 1', $html);
+        self::assertStringContainsString('Фид обновлён: 2026-07-04T12:30:00Z', $html);
+        self::assertStringContainsString('Создано: 7', $html);
         self::assertStringContainsString('Ozon', $html);
         self::assertStringContainsString('12', $html);
         self::assertStringContainsString('Деактивировать', $html);
         self::assertStringNotContainsString('secret-value', $html);
+        self::assertStringNotContainsString('secret-feed.test', $html);
     }
 
     public function test_store_admin_renders_live_search_source_fields(): void {

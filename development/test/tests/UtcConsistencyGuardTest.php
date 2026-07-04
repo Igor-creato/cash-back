@@ -60,7 +60,7 @@ final class UtcConsistencyGuardTest extends TestCase
             }
             $rel = str_replace('\\', '/', substr($path, strlen($root) + 1));
             foreach (self::EXCLUDED_DIRS as $dir) {
-                if (strpos('/' . $rel, $dir) === 0 || strpos($rel, ltrim($dir, '/')) === 0) {
+                if (strpos('/' . $rel, $dir) !== false || strpos($rel, ltrim($dir, '/')) === 0) {
                     continue 2;
                 }
             }
