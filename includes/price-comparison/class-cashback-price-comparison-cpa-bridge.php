@@ -210,6 +210,7 @@ final class Cashback_Price_Comparison_CPA_Bridge {
 				break;
 			}
 
+			// phpcs:ignore WordPressVIPMinimum.Performance.RemoteRequestTimeout.timeout_timeout -- Server-side CPA feed imports download large partner catalog files; short page-render timeouts would truncate valid feeds.
 			$response = wp_remote_get($url, array( 'timeout' => 60 ));
 			if (is_wp_error($response)) {
 				return new WP_Error(
@@ -491,6 +492,7 @@ final class Cashback_Price_Comparison_CPA_Bridge {
 			$this->advcake_feeds_api_base_url($config) . '/common-feeds'
 		);
 
+		// phpcs:ignore WordPressVIPMinimum.Performance.RemoteRequestTimeout.timeout_timeout -- Server-side AdvCake feed discovery runs during sync and can be slower than user-facing requests.
 		$response = wp_remote_get($url, array( 'timeout' => 20 ));
 		if (is_wp_error($response)) {
 			return array();
