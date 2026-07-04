@@ -200,7 +200,7 @@ final class Cashback_Price_Comparison_CPA_Bridge {
 			);
 		}
 
-		foreach ($this->feed_rows_from_context($context['config'], $context['credentials']) as $index => $row) {
+		foreach ($this->feed_rows_for_network($network, $context['config'], $context['credentials']) as $index => $row) {
 			if ($this->safe_feed_id($network, $row, $index) !== $feed_id) {
 				continue;
 			}
@@ -391,7 +391,7 @@ final class Cashback_Price_Comparison_CPA_Bridge {
 	 */
 	private function descriptors_from_context( string $network, array $config, array $credentials ): array {
 		$descriptors = array();
-		foreach ($this->feed_rows_from_context($config, $credentials) as $index => $row) {
+		foreach ($this->feed_rows_for_network($network, $config, $credentials) as $index => $row) {
 			$url = $this->first_scalar($row, array( 'url', 'feed_url', 'download_url', 'products_xml_link', 'products_csv_link', 'link' ));
 			$format = strtolower($this->first_scalar($row, array( 'format', 'type' )));
 			if ($format === '' && $url !== '') {
@@ -409,6 +409,10 @@ final class Cashback_Price_Comparison_CPA_Bridge {
 					'feed_id'          => $this->safe_feed_id($network, $row, $index),
 					'name'             => $this->first_scalar($row, array( 'name', 'title' )),
 					'format'           => $format,
+					'offer_id'         => $this->first_scalar($row, array( 'offer_id', 'campaign_id', 'program_id' )),
+					'products_count'   => $this->first_scalar($row, array( 'products_count' )),
+					'last_update'      => $this->first_scalar($row, array( 'last_update', 'admitad_last_update', 'advertiser_last_update' )),
+					'last_download'    => $this->first_scalar($row, array( 'last_download' )),
 					'configured'       => true,
 					'available'        => $url !== '',
 					'feed_url_secret'  => true,
@@ -419,6 +423,20 @@ final class Cashback_Price_Comparison_CPA_Bridge {
 		}
 
 		return $descriptors;
+	}
+
+	/**
+	 * @param array<string,mixed> $config
+	 * @param array<string,mixed> $credentials
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function feed_rows_for_network( string $network, array $config, array $credentials ): array {
+		$rows = $this->feed_rows_from_context($config, $credentials);
+		if ($network === 'advcake') {
+			array_push($rows, ...$this->discover_advcake_feed_rows($config, $credentials));
+		}
+
+		return $this->unique_feed_rows($network, $rows);
 	}
 
 	/**
@@ -450,6 +468,110 @@ final class Cashback_Price_Comparison_CPA_Bridge {
 		}
 
 		return $rows;
+	}
+
+	/**
+	 * @param array<string,mixed> $config
+	 * @param array<string,mixed> $credentials
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function discover_advcake_feed_rows( array $config, array $credentials ): array {
+		$token = trim((string) ( $credentials['api_key'] ?? '' ));
+		if ($token === '' || !preg_match('/^[A-Za-z0-9_-]+$/', $token)) {
+			return array();
+		}
+
+		$url = add_query_arg(
+			array(
+				'pass'  => $token,
+				'limit' => 100,
+			),
+			$this->advcake_feeds_api_base_url($config) . '/common-feeds'
+		);
+
+		$response = wp_remote_get($url, array( 'timeout' => 20 ));
+		if (is_wp_error($response)) {
+			return array();
+		}
+
+		$code = (int) wp_remote_retrieve_response_code($response);
+		$body = wp_remote_retrieve_body($response);
+		if ($code < 200 || $code >= 300 || !is_string($body) || trim($body) === '') {
+			return array();
+		}
+
+		$decoded = json_decode($body, true);
+		return $this->normalize_advcake_common_feed_rows($decoded);
+	}
+
+	/**
+	 * @param array<string,mixed> $config
+	 */
+	private function advcake_feeds_api_base_url( array $config ): string {
+		foreach (array( 'product_feeds_api_base_url', 'feeds_api_base_url' ) as $key) {
+			$url = isset($config[ $key ]) && is_scalar($config[ $key ])
+				? $this->sanitize_http_url((string) $config[ $key ])
+				: '';
+			$host = strtolower((string) wp_parse_url($url, PHP_URL_HOST));
+			if (in_array($host, array( 'api.advcake.com', 'api.advcake.ru' ), true)) {
+				return rtrim($url, '/');
+			}
+		}
+
+		return 'https://api.advcake.com';
+	}
+
+	/**
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function normalize_advcake_common_feed_rows( mixed $decoded ): array {
+		if (!is_array($decoded)) {
+			return array();
+		}
+		if (array_is_list($decoded)) {
+			return array_values(array_filter($decoded, 'is_array'));
+		}
+		if (isset($decoded['feed_id']) || isset($decoded['url'])) {
+			return array( $decoded );
+		}
+
+		$rows = array();
+		foreach (array( 'feeds', 'items', 'data', 'result' ) as $key) {
+			if (!array_key_exists($key, $decoded)) {
+				continue;
+			}
+			$value = $decoded[ $key ];
+			if (is_array($value) && !array_is_list($value)) {
+				foreach (array( 'feeds', 'items' ) as $nested_key) {
+					array_push($rows, ...$this->normalize_feed_rows($value[ $nested_key ] ?? null));
+				}
+			}
+			array_push($rows, ...$this->normalize_feed_rows($value));
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * @param array<int,array<string,mixed>> $rows
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function unique_feed_rows( string $network, array $rows ): array {
+		$unique = array();
+		$seen   = array();
+		foreach ($rows as $index => $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+			$id = $this->safe_feed_id($network, $row, (int) $index);
+			if (isset($seen[ $id ])) {
+				continue;
+			}
+			$seen[ $id ] = true;
+			$unique[]    = $row;
+		}
+
+		return $unique;
 	}
 
 	/**

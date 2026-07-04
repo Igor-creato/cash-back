@@ -1155,6 +1155,25 @@ if (!function_exists('wp_remote_retrieve_response_code')) {
     }
 }
 
+if (!function_exists('wp_remote_retrieve_header')) {
+    function wp_remote_retrieve_header(array|WP_Error $response, string $header): string
+    {
+        if ($response instanceof WP_Error) {
+            return '';
+        }
+        $headers = $response['headers'] ?? array();
+        if (!is_array($headers)) {
+            return '';
+        }
+        foreach ($headers as $key => $value) {
+            if (strtolower((string) $key) === strtolower($header) && is_scalar($value)) {
+                return (string) $value;
+            }
+        }
+        return '';
+    }
+}
+
 if (!function_exists('add_query_arg')) {
     function add_query_arg(array|string $args, mixed $value_or_url = null, ?string $url = null): string
     {
