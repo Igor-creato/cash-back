@@ -47,6 +47,35 @@ final class PriceComparisonCashbackEnrichmentTest extends TestCase {
         self::assertSame('available', $result['items'][0]['cashback_status']);
     }
 
+    public function test_cashback_enrichment_prefers_product_url_over_backend_action_url(): void {
+        $client = new Price_Comparison_Fake_Client(array(
+            array(
+                'title'        => 'Samsung S25',
+                'url'          => 'https://merchant.example/products/source-s25',
+                'action_url'   => 'https://backend.example/clickout/stale-s25',
+                'price'        => 90000,
+                'currency'     => 'RUB',
+                'store_domain' => 'merchant.example',
+            ),
+        ));
+        $resolver = static function ( array $payload ): array {
+            self::assertSame('https://merchant.example/products/source-s25', $payload['direct_url']);
+
+            return array(
+                'cashback_available'  => true,
+                'button_text'         => 'Активировать кэшбэк',
+                'activation_page_url' => 'https://savelloclub.test/?cashback_go=1&click_id=product-url',
+            );
+        };
+
+        $service = new Cashback_Price_Comparison_Service($client, $resolver);
+        $result  = $service->search('Москва', 'samsung', 77);
+
+        self::assertSame('Активировать кэшбэк', $result['items'][0]['action_label']);
+        self::assertSame('https://savelloclub.test/?cashback_go=1&click_id=product-url', $result['items'][0]['action_url']);
+        self::assertSame('available', $result['items'][0]['cashback_status']);
+    }
+
     public function test_cashback_enrichment_uses_backend_action_url_when_url_is_missing(): void {
         $client = new Price_Comparison_Fake_Client(array(
             array(

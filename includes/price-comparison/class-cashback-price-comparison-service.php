@@ -145,9 +145,9 @@ final class Cashback_Price_Comparison_Service {
     }
 
     private function enrich_item( array $item, int $user_id ): array {
-        $url = esc_url_raw((string) ( $item['action_url'] ?? '' ));
+        $url = esc_url_raw((string) ( $item['url'] ?? '' ));
         if ($url === '') {
-            $url = esc_url_raw((string) ( $item['url'] ?? '' ));
+            $url = esc_url_raw((string) ( $item['action_url'] ?? '' ));
         }
 
         $item['action_label']    = 'Купить';
