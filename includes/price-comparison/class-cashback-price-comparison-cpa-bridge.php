@@ -409,6 +409,8 @@ final class Cashback_Price_Comparison_CPA_Bridge {
 					'feed_id'          => $this->safe_feed_id($network, $row, $index),
 					'name'             => $this->first_scalar($row, array( 'name', 'title' )),
 					'format'           => $format,
+					'store_domain'     => $this->store_domain_from_feed_row($network, $row, $index),
+					'store_name'       => $this->store_name_from_feed_row($row),
 					'offer_id'         => $this->first_scalar($row, array( 'offer_id', 'campaign_id', 'program_id' )),
 					'products_count'   => $this->first_scalar($row, array( 'products_count' )),
 					'last_update'      => $this->first_scalar($row, array( 'last_update', 'admitad_last_update', 'advertiser_last_update' )),
@@ -616,6 +618,33 @@ final class Cashback_Price_Comparison_CPA_Bridge {
 		$id = sanitize_key($id);
 
 		return $id !== '' ? $id : $network . '-feed-' . ( $index + 1 );
+	}
+
+	/**
+	 * @param array<string,mixed> $row
+	 */
+	private function store_domain_from_feed_row( string $network, array $row, int $index ): string {
+		$value = $this->first_scalar($row, array( 'store_domain', 'domain', 'website_url', 'site_url', 'offer', 'advertiser', 'merchant', 'shop' ));
+		if ($value !== '') {
+			$host = strtolower((string) wp_parse_url($value, PHP_URL_HOST));
+			if ($host === '') {
+				$host = $value;
+			}
+			$host = strtolower((string) preg_replace('/[^a-z0-9.-]+/i', '-', $host));
+			$host = trim($host, '-.');
+			if ($host !== '') {
+				return $host;
+			}
+		}
+
+		return $network . '-' . $this->safe_feed_id($network, $row, $index);
+	}
+
+	/**
+	 * @param array<string,mixed> $row
+	 */
+	private function store_name_from_feed_row( array $row ): string {
+		return $this->first_scalar($row, array( 'store_name', 'offer', 'advertiser', 'merchant', 'shop' ));
 	}
 
 	/**

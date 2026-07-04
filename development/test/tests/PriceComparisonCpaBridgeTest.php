@@ -126,6 +126,8 @@ final class PriceComparisonCpaBridgeTest extends TestCase {
 		self::assertSame('56', $advcake[0]['feed_id']);
 		self::assertSame('Common product feed', $advcake[0]['name']);
 		self::assertSame('yml', $advcake[0]['format']);
+		self::assertSame('merchant.example', $advcake[0]['store_domain']);
+		self::assertSame('merchant.example', $advcake[0]['store_name']);
 		self::assertTrue($advcake[0]['available']);
 		self::assertSame('configured', $advcake[0]['feed_health_code']);
 
