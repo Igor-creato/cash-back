@@ -39,6 +39,10 @@ final class Cashback_Price_Comparison_Client {
 
     public function deactivate_store( int $store_id ): array|WP_Error {
         return $this->request_json('DELETE', '/api/v1/stores/' . absint($store_id));
+}
+
+    public function start_feed_import(): array|WP_Error {
+        return $this->request_json('POST', '/api/v1/feed-import/runs');
     }
 
     private function request_json( string $method, string $path, ?array $payload = null ): array|WP_Error {

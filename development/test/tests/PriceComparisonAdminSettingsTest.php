@@ -169,6 +169,8 @@ final class PriceComparisonAdminSettingsTest extends TestCase {
         self::assertStringContainsString('Активных фидов: 1', $html);
         self::assertStringContainsString('Фид обновлён: 2026-07-04T12:30:00Z', $html);
         self::assertStringContainsString('Создано: 7', $html);
+        self::assertStringContainsString('Синхронизировать фиды', $html);
+        self::assertStringContainsString('name="store_action" value="feed_import"', $html);
         self::assertStringContainsString('Ozon', $html);
         self::assertStringContainsString('12', $html);
         self::assertStringContainsString('Деактивировать', $html);
@@ -198,6 +200,31 @@ final class PriceComparisonAdminSettingsTest extends TestCase {
      *
      * @return array{option_group?: string, option_name?: string, group?: string, name?: string, args: array}
      */
+    public function test_process_store_action_starts_feed_import(): void {
+        $GLOBALS['_cb_test_http_response'] = array(
+            'response' => array( 'code' => 202 ),
+            'body'     => wp_json_encode(array(
+                'status'   => 'accepted',
+                'task_id'  => 'feed-import-task-123',
+                'poll_url' => '/api/v1/stores',
+            )),
+        );
+
+        $result = Cashback_Price_Comparison_Admin::process_store_action(array(
+            'store_action' => 'feed_import',
+        ));
+
+        self::assertIsArray($result);
+        self::assertSame('accepted', $result['status']);
+        self::assertSame('feed-import-task-123', $result['task_id']);
+        self::assertCount(1, $GLOBALS['_cb_test_http_calls']);
+        self::assertSame(
+            'https://price-service.test/api/v1/feed-import/runs',
+            $GLOBALS['_cb_test_http_calls'][0]['url']
+        );
+        self::assertStringNotContainsString('secret-value', wp_json_encode($GLOBALS['_cb_test_http_calls']));
+    }
+
     private static function registered_setting( string $option_name ): array {
         $settings = $GLOBALS['_cb_test_registered_settings'] ?? array();
         if (isset($settings[ $option_name ]) && is_array($settings[ $option_name ])) {

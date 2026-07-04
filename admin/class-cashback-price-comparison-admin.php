@@ -190,6 +190,9 @@ final class Cashback_Price_Comparison_Admin {
         if ($action === 'deactivate' && $store_id > 0) {
             return $client->deactivate_store($store_id);
         }
+        if ($action === 'feed_import') {
+            return $client->start_feed_import();
+        }
 
         return new WP_Error('invalid_store_action', 'Некорректное действие магазина.', array( 'status' => 400 ));
     }
@@ -199,6 +202,14 @@ final class Cashback_Price_Comparison_Admin {
         ?>
         <hr />
         <h2><?php echo esc_html('Магазины поиска'); ?></h2>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+            <input type="hidden" name="action" value="cashback_price_comparison_store" />
+            <input type="hidden" name="store_action" value="feed_import" />
+            <?php wp_nonce_field('cashback_price_comparison_store'); ?>
+            <button type="submit" class="button">
+                <?php echo esc_html('Синхронизировать фиды'); ?>
+            </button>
+        </form>
         <?php if ($stores instanceof WP_Error) : ?>
             <div class="notice notice-warning inline">
                 <p><?php echo esc_html($stores->get_error_message()); ?></p>

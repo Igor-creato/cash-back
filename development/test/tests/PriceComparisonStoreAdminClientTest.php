@@ -108,4 +108,27 @@ final class PriceComparisonStoreAdminClientTest extends TestCase {
         self::assertNotEmpty($GLOBALS['_cb_test_http_calls'][0]['args']['headers']['X-Signature']);
         self::assertStringNotContainsString('test-secret', wp_json_encode($GLOBALS['_cb_test_http_calls']));
     }
+
+    public function test_client_starts_feed_import_with_hmac_headers(): void {
+        $GLOBALS['_cb_test_http_response'] = array(
+            'response' => array( 'code' => 202 ),
+            'body'     => wp_json_encode(array(
+                'status'   => 'accepted',
+                'task_id'  => 'feed-import-task-123',
+                'poll_url' => '/api/v1/stores',
+            )),
+        );
+
+        $result = (new Cashback_Price_Comparison_Client())->start_feed_import();
+
+        self::assertSame('accepted', $result['status']);
+        self::assertSame('feed-import-task-123', $result['task_id']);
+        self::assertCount(1, $GLOBALS['_cb_test_http_calls']);
+        $call = $GLOBALS['_cb_test_http_calls'][0];
+        self::assertSame('POST', $call['method']);
+        self::assertSame('https://price-service.test/api/v1/feed-import/runs', $call['url']);
+        self::assertArrayNotHasKey('body', $call['args']);
+        self::assertNotEmpty($call['args']['headers']['X-Signature']);
+        self::assertStringNotContainsString('test-secret', wp_json_encode($call));
+    }
 }
