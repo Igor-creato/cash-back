@@ -143,7 +143,13 @@ final class Cashback_Price_Comparison_Client {
         if ($secret === '' || !class_exists('Cashback_Encryption')) {
             return $secret;
         }
-        return Cashback_Encryption::decrypt_if_ciphertext($secret);
+        if (Cashback_Encryption::is_option_ciphertext($secret)) {
+            return Cashback_Encryption::decrypt_if_ciphertext($secret);
+        }
+        if (Cashback_Encryption::is_configured()) {
+            update_option(self::OPTION_HMAC_SECRET, Cashback_Encryption::encrypt_if_needed($secret), false);
+        }
+        return $secret;
     }
 
     private function signed_headers( string $method, string $path, string $body, string $secret ): array {

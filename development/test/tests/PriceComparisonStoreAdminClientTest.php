@@ -159,4 +159,23 @@ final class PriceComparisonStoreAdminClientTest extends TestCase {
         self::assertSame(hash_hmac('sha256', $message, 'test-secret'), $headers['X-Signature']);
         self::assertNotSame(hash_hmac('sha256', $message, $encrypted), $headers['X-Signature']);
     }
+
+    public function test_client_migrates_existing_plaintext_hmac_secret_to_encrypted_option(): void {
+        $GLOBALS['_cb_test_options'][ Cashback_Price_Comparison_Client::OPTION_HMAC_SECRET ] = 'test-secret';
+        $GLOBALS['_cb_test_http_response'] = array(
+            'response' => array( 'code' => 202 ),
+            'body'     => wp_json_encode(array(
+                'status'   => 'accepted',
+                'task_id'  => 'feed-import-task-123',
+                'poll_url' => '/api/v1/feed-import/tasks/feed-import-task-123',
+            )),
+        );
+
+        (new Cashback_Price_Comparison_Client())->start_feed_import();
+
+        $saved = (string) $GLOBALS['_cb_test_options'][ Cashback_Price_Comparison_Client::OPTION_HMAC_SECRET ];
+        self::assertNotSame('test-secret', $saved);
+        self::assertStringStartsWith('ENC:v1:', $saved);
+        self::assertSame('test-secret', Cashback_Encryption::decrypt_if_ciphertext($saved));
+    }
 }
