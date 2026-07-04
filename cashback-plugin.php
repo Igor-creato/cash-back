@@ -1034,6 +1034,7 @@ $this->require_file('includes/rest/class-cashback-internal-rest-controller.php')
 
         // Price comparison: account UI + REST proxy over the external search service.
         $this->require_file('includes/price-comparison/class-cashback-price-comparison-client.php');
+        $this->require_file('includes/price-comparison/class-cashback-price-comparison-cpa-bridge.php');
         $this->require_file('includes/price-comparison/class-cashback-price-comparison-service.php');
         $this->require_file('includes/price-comparison/class-cashback-price-comparison-rest-controller.php');
         $this->require_file('includes/price-comparison/class-cashback-price-comparison-account.php');

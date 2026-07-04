@@ -27,6 +27,14 @@
         .join(' · ');
       card.appendChild(meta);
 
+      var signals = itemSignals(item);
+      if (signals.length) {
+        var signalNode = document.createElement('p');
+        signalNode.className = 'cashback-price-card__signals';
+        signalNode.textContent = signals.join(' · ');
+        card.appendChild(signalNode);
+      }
+
       var action = document.createElement('a');
       action.textContent = text(item.action_label || 'Купить');
       action.href = text(item.action_url || item.url || '#');
@@ -34,6 +42,41 @@
       card.appendChild(action);
 
       root.appendChild(card);
+    });
+  }
+
+  function itemSignals(item) {
+    var signals = [];
+    var freshness = freshnessLabel(item.price_updated_at || item.feed_updated_at || item.updated_at);
+    if (freshness) {
+      signals.push(freshness);
+    }
+    if (item.region_supported === true) {
+      signals.push(item.city ? 'Регион: ' + text(item.city) : 'Регион учтён');
+    } else if (item.region_supported === false) {
+      signals.push('Регион уточняется');
+    }
+    if (item.availability === 'in_stock') {
+      signals.push('В наличии');
+    } else if (item.availability === 'out_of_stock') {
+      signals.push('Нет в наличии');
+    }
+    return signals;
+  }
+
+  function freshnessLabel(value) {
+    if (!value) {
+      return '';
+    }
+    var date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+    return 'Обновлено ' + date.toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
     });
   }
 
@@ -267,5 +310,6 @@
 
   window.CashbackPriceComparisonRenderer = {
     renderItems: renderItems,
+    itemSignals: itemSignals,
   };
 })();

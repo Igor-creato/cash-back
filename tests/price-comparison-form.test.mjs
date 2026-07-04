@@ -151,6 +151,29 @@ test('price comparison renderer uses text nodes for product titles and buy links
   assert.equal(card.children[2].href, 'https://ozon.ru/product/1');
 });
 
+test('price comparison renderer shows freshness and region confidence signals', () => {
+  const root = new FakeElement('div');
+
+  renderer().renderItems(root, [
+    {
+      title: 'Redmi Note 13',
+      store_domain: 'merchant.test',
+      price: 12990,
+      currency: 'RUB',
+      price_updated_at: '2026-07-04T12:30:00+00:00',
+      region_supported: false,
+      action_label: 'Купить',
+      action_url: 'https://merchant.test/p/1'
+    }
+  ]);
+
+  const card = root.children[0];
+  assert.equal(card.children[2].className, 'cashback-price-card__signals');
+  assert.match(card.children[2].textContent, /Обновлено/);
+  assert.match(card.children[2].textContent, /Регион уточняется/);
+  assert.equal(card.children[3].tagName, 'A');
+});
+
 test('price comparison form validates city before sending request', () => {
   let submitListener = null;
   const { form, message } = createForm('', 'iphone');

@@ -39,6 +39,12 @@
     padding: 12px;
 }
 
+.cashback-price-card__signals {
+    color: #475569;
+    font-size: 13px;
+    margin: 8px 0;
+}
+
 @media (max-width: 520px) {
     .cashback-price-comparison__city-control {
         grid-template-columns: 1fr;
