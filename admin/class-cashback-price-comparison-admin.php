@@ -61,7 +61,14 @@ final class Cashback_Price_Comparison_Admin {
     }
 
     public static function sanitize_secret( mixed $value ): string {
-        return sanitize_text_field((string) $value);
+        $secret = sanitize_text_field((string) $value);
+        if ($secret === '') {
+            return (string) get_option(Cashback_Price_Comparison_Client::OPTION_HMAC_SECRET, '');
+        }
+        if (class_exists('Cashback_Encryption') && Cashback_Encryption::is_configured()) {
+            return Cashback_Encryption::encrypt_if_needed($secret);
+        }
+        return (string) get_option(Cashback_Price_Comparison_Client::OPTION_HMAC_SECRET, '');
     }
 
     public static function sanitize_timeout( mixed $value ): int {

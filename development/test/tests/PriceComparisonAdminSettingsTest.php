@@ -55,6 +55,7 @@ final class PriceComparisonAdminSettingsTest extends TestCase {
             }
         }
 
+        require_once dirname(__DIR__, 3) . '/includes/class-cashback-encryption.php';
         require_once dirname(__DIR__, 3) . '/includes/price-comparison/class-cashback-price-comparison-client.php';
         require_once dirname(__DIR__, 3) . '/admin/class-cashback-price-comparison-admin.php';
     }
@@ -135,14 +136,27 @@ final class PriceComparisonAdminSettingsTest extends TestCase {
 
         $secret = self::registered_setting(Cashback_Price_Comparison_Client::OPTION_HMAC_SECRET);
         self::assertFalse($secret['args']['show_in_rest']);
-        self::assertSame(
-            'abc123',
-            call_user_func($secret['args']['sanitize_callback'], '<b>abc123</b>')
-        );
+        $sanitized_secret = call_user_func($secret['args']['sanitize_callback'], '<b>abc123</b>');
+        self::assertNotSame('abc123', $sanitized_secret);
+        self::assertStringStartsWith('ENC:v1:', $sanitized_secret);
+        self::assertSame('abc123', Cashback_Encryption::decrypt_if_ciphertext($sanitized_secret));
 
         $timeout = self::registered_setting(Cashback_Price_Comparison_Client::OPTION_TIMEOUT);
         self::assertSame(15, call_user_func($timeout['args']['sanitize_callback'], 99));
         self::assertSame(1, call_user_func($timeout['args']['sanitize_callback'], -5));
+    }
+
+    public function test_blank_hmac_secret_keeps_existing_encrypted_secret_and_new_value_is_encrypted(): void {
+        $existing = Cashback_Encryption::encrypt_if_needed('existing-secret');
+        $GLOBALS['_cb_test_options'][ Cashback_Price_Comparison_Client::OPTION_HMAC_SECRET ] = $existing;
+
+        self::assertSame($existing, Cashback_Price_Comparison_Admin::sanitize_secret(''));
+
+        $saved = Cashback_Price_Comparison_Admin::sanitize_secret('new-secret');
+
+        self::assertNotSame('new-secret', $saved);
+        self::assertStringStartsWith('ENC:v1:', $saved);
+        self::assertSame('new-secret', Cashback_Encryption::decrypt_if_ciphertext($saved));
     }
 
     public function test_render_page_includes_store_crud_controls_and_status(): void {
@@ -206,7 +220,7 @@ final class PriceComparisonAdminSettingsTest extends TestCase {
             'body'     => wp_json_encode(array(
                 'status'   => 'accepted',
                 'task_id'  => 'feed-import-task-123',
-                'poll_url' => '/api/v1/stores',
+                'poll_url' => '/api/v1/feed-import/tasks/feed-import-task-123',
             )),
         );
 

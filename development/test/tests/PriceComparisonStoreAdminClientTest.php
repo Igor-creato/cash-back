@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 final class PriceComparisonStoreAdminClientTest extends TestCase {
 
     public static function setUpBeforeClass(): void {
+        require_once dirname(__DIR__, 3) . '/includes/class-cashback-encryption.php';
         require_once dirname(__DIR__, 3) . '/includes/price-comparison/class-cashback-price-comparison-client.php';
     }
 
@@ -115,7 +116,7 @@ final class PriceComparisonStoreAdminClientTest extends TestCase {
             'body'     => wp_json_encode(array(
                 'status'   => 'accepted',
                 'task_id'  => 'feed-import-task-123',
-                'poll_url' => '/api/v1/stores',
+                'poll_url' => '/api/v1/feed-import/tasks/feed-import-task-123',
             )),
         );
 
@@ -130,5 +131,32 @@ final class PriceComparisonStoreAdminClientTest extends TestCase {
         self::assertArrayNotHasKey('body', $call['args']);
         self::assertNotEmpty($call['args']['headers']['X-Signature']);
         self::assertStringNotContainsString('test-secret', wp_json_encode($call));
+    }
+
+    public function test_client_decrypts_encrypted_hmac_secret_before_signing_requests(): void {
+        $encrypted = Cashback_Encryption::encrypt_if_needed('test-secret');
+        $GLOBALS['_cb_test_options'][ Cashback_Price_Comparison_Client::OPTION_HMAC_SECRET ] = $encrypted;
+        $GLOBALS['_cb_test_http_response'] = array(
+            'response' => array( 'code' => 202 ),
+            'body'     => wp_json_encode(array(
+                'status'   => 'accepted',
+                'task_id'  => 'feed-import-task-123',
+                'poll_url' => '/api/v1/feed-import/tasks/feed-import-task-123',
+            )),
+        );
+
+        (new Cashback_Price_Comparison_Client())->start_feed_import();
+
+        $headers = $GLOBALS['_cb_test_http_calls'][0]['args']['headers'];
+        $message = implode("\n", array(
+            'POST',
+            '/api/v1/feed-import/runs',
+            $headers['X-Request-Timestamp'],
+            $headers['X-Request-Id'],
+            $headers['X-Body-SHA256'],
+        ));
+
+        self::assertSame(hash_hmac('sha256', $message, 'test-secret'), $headers['X-Signature']);
+        self::assertNotSame(hash_hmac('sha256', $message, $encrypted), $headers['X-Signature']);
     }
 }

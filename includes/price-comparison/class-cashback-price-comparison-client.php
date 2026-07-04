@@ -55,7 +55,7 @@ final class Cashback_Price_Comparison_Client {
         }
 
         $base_url = rtrim((string) get_option(self::OPTION_BASE_URL, ''), '/');
-        $secret   = (string) get_option(self::OPTION_HMAC_SECRET, '');
+        $secret   = $this->hmac_secret();
         if ($base_url === '' || $secret === '') {
             return new WP_Error(
                 'price_compare_not_configured',
@@ -136,6 +136,14 @@ final class Cashback_Price_Comparison_Client {
             return 15;
         }
         return $timeout;
+    }
+
+    private function hmac_secret(): string {
+        $secret = (string) get_option(self::OPTION_HMAC_SECRET, '');
+        if ($secret === '' || !class_exists('Cashback_Encryption')) {
+            return $secret;
+        }
+        return Cashback_Encryption::decrypt_if_ciphertext($secret);
     }
 
     private function signed_headers( string $method, string $path, string $body, string $secret ): array {
