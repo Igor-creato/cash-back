@@ -23,9 +23,9 @@ final class Savello_Internal_HMAC_Auth_Service {
             return $this->missing_error();
         }
 
-        $site      = trim($request->get_header('X-Savello-Site'));
-        $timestamp = trim($request->get_header('X-Savello-Timestamp'));
-        $signature = trim($request->get_header('X-Savello-Signature'));
+        $site      = trim((string) $request->get_header('X-Savello-Site'));
+        $timestamp = trim((string) $request->get_header('X-Savello-Timestamp'));
+        $signature = trim((string) $request->get_header('X-Savello-Signature'));
 
         if ($site === '' || $timestamp === '' || $signature === '') {
             return $this->missing_error();

@@ -142,9 +142,9 @@ if (!class_exists('WP_REST_Request')) {
             $this->headers[ strtolower($key) ] = $value;
         }
 
-        public function get_header(string $key): string
+        public function get_header(string $key): ?string
         {
-            return (string) ( $this->headers[ strtolower($key) ] ?? '' );
+            return $this->headers[ strtolower($key) ] ?? null;
         }
 
         public function set_param(string $key, mixed $value): void
