@@ -47,11 +47,27 @@
 
   function itemSignals(item) {
     var signals = [];
-    var freshness = freshnessLabel(item.price_updated_at || item.feed_updated_at || item.updated_at);
+    var freshnessInfo = item.freshness && typeof item.freshness === 'object' ? item.freshness : {};
+    var warnings = Array.isArray(freshnessInfo.warnings) ? freshnessInfo.warnings : [];
+    var freshness = freshnessLabel(
+      freshnessInfo.feed_updated_at ||
+      freshnessInfo.import_finished_at ||
+      item.price_updated_at ||
+      item.feed_updated_at ||
+      item.updated_at
+    );
     if (freshness) {
       signals.push(freshness);
     }
-    if (item.region_supported === true) {
+    if (freshnessInfo.coverage === 'partner_feed' || freshnessInfo.mode === 'affiliate_feed') {
+      signals.push('Партнерский фид');
+    }
+    if (freshnessInfo.realtime === false || warnings.indexOf('FEED_NOT_REALTIME') !== -1) {
+      signals.push('Фид не в реальном времени');
+    }
+    if (warnings.indexOf('REGION_NOT_GUARANTEED') !== -1) {
+      signals.push('Регион не гарантирован');
+    } else if (item.region_supported === true) {
       signals.push(item.city ? 'Регион: ' + text(item.city) : 'Регион учтён');
     } else if (item.region_supported === false) {
       signals.push('Регион уточняется');

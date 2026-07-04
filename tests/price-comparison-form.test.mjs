@@ -174,6 +174,34 @@ test('price comparison renderer shows freshness and region confidence signals', 
   assert.equal(card.children[3].tagName, 'A');
 });
 
+test('price comparison renderer shows affiliate feed freshness warnings', () => {
+  const root = new FakeElement('div');
+
+  renderer().renderItems(root, [
+    {
+      title: 'Redmi Note 13',
+      store_domain: 'merchant.test',
+      price: 12990,
+      currency: 'RUB',
+      freshness: {
+        mode: 'affiliate_feed',
+        realtime: false,
+        coverage: 'partner_feed',
+        feed_updated_at: '2026-07-04T12:30:00+00:00',
+        warnings: ['FEED_NOT_REALTIME', 'REGION_NOT_GUARANTEED']
+      },
+      action_label: 'Купить',
+      action_url: 'https://merchant.test/p/1'
+    }
+  ]);
+
+  const signals = root.children[0].children[2].textContent;
+  assert.match(signals, /Обновлено/);
+  assert.match(signals, /Партнерский фид/);
+  assert.match(signals, /Фид не в реальном времени/);
+  assert.match(signals, /Регион не гарантирован/);
+});
+
 test('price comparison form validates city before sending request', () => {
   let submitListener = null;
   const { form, message } = createForm('', 'iphone');
