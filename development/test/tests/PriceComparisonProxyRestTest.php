@@ -29,6 +29,8 @@ final class PriceComparisonProxyRestTest extends TestCase {
         self::assertArrayHasKey('permission_callback', $route);
         self::assertArrayHasKey('city', $route['args']);
         self::assertArrayHasKey('query', $route['args']);
+        self::assertArrayHasKey('limit', $route['args']);
+        self::assertArrayHasKey('offset', $route['args']);
     }
 
     public function test_live_search_routes_are_registered(): void {

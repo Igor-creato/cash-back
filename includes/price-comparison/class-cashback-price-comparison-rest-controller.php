@@ -1,5 +1,5 @@
 <?php
-// phpcs:disable Generic.Formatting.DisallowMultipleStatements.SameLine,Squiz.Functions.MultiLineFunctionDeclaration.ContentAfterBrace,Squiz.ControlStructures.ControlSignature.NewlineAfterOpenBrace,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceAfterArrayOpenerSingleLine,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceBeforeArrayCloserSingleLine,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceAfterArrayOpenerMultiLine,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceBeforeArrayCloserMultiLine,NormalizedArrays.Arrays.CommaAfterLast.FoundSingleLine,Universal.WhiteSpace.CommaSpacing.TooMuchSpaceAfter,WordPress.Arrays.ArrayIndentation.CloseBraceNotAligned,Generic.Functions.FunctionCallArgumentSpacing.TooMuchSpaceAfterComma,Universal.WhiteSpace.PrecisionAlignment.Found -- GitModified sniffs misread route arrays in this file; security sniffs remain enabled.
+// phpcs:disable Generic.Formatting.DisallowMultipleStatements.SameLine,Squiz.Functions.MultiLineFunctionDeclaration.ContentAfterBrace,Squiz.ControlStructures.ControlSignature.NewlineAfterOpenBrace,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceAfterArrayOpenerSingleLine,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceBeforeArrayCloserSingleLine,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceAfterArrayOpenerMultiLine,NormalizedArrays.Arrays.ArrayBraceSpacing.SpaceBeforeArrayCloserMultiLine,NormalizedArrays.Arrays.CommaAfterLast.FoundSingleLine,Universal.WhiteSpace.CommaSpacing.TooMuchSpaceAfter,WordPress.Arrays.ArrayIndentation.CloseBraceNotAligned,WordPress.Arrays.ArrayIndentation.ItemNotAligned,WordPress.Arrays.ArrayIndentation.MultiLineArrayItemNotAligned,Generic.Functions.FunctionCallArgumentSpacing.TooMuchSpaceAfterComma,Universal.WhiteSpace.PrecisionAlignment.Found -- GitModified sniffs misread route arrays in this file; security sniffs remain enabled.
 
 declare(strict_types=1);
 
@@ -32,12 +32,12 @@ final class Cashback_Price_Comparison_REST_Controller {
             'callback'            => array( $this, 'search' ),
             'permission_callback' => array( $this, 'allow_search_request' ),
             'args'                => array(
-                'city' => array(
+                'city'   => array(
                     'type'              => 'string',
                     'required'          => true,
                     'sanitize_callback' => 'sanitize_text_field',
                 ),
-                'query' => array(
+                'query'  => array(
                     'type'              => 'string',
                     'required'          => true,
                     'sanitize_callback' => 'sanitize_text_field',
@@ -47,6 +47,18 @@ final class Cashback_Price_Comparison_REST_Controller {
                     'required'          => false,
                     'default'           => array(),
                     'sanitize_callback' => array( $this, 'sanitize_stores' ),
+                ),
+                'limit'  => array(
+                    'type'              => 'integer',
+                    'required'          => false,
+                    'default'           => 50,
+                    'sanitize_callback' => 'absint',
+                ),
+                'offset' => array(
+                    'type'              => 'integer',
+                    'required'          => false,
+                    'default'           => 0,
+                    'sanitize_callback' => 'absint',
                 ),
             ),
         ));
